@@ -193,6 +193,32 @@ SCRIPT
     fi
 }
 
+test_make_build_app_uses_installer_download_flow_by_default() {
+    info "Checking make build-app default DMG behavior"
+    local workspace="$TMP_DIR/make-build-app"
+    local install_log="$workspace/install-args.log"
+
+    mkdir -p "$workspace"
+
+    cat > "$workspace/install.sh" <<'SCRIPT'
+#!/bin/bash
+set -eu
+printf '%s\n' "$#" > "$TEST_INSTALL_LOG"
+if [ "$#" -gt 0 ]; then
+    printf '%s\n' "$1" >> "$TEST_INSTALL_LOG"
+fi
+SCRIPT
+    chmod +x "$workspace/install.sh"
+
+    TEST_INSTALL_LOG="$install_log" make -f "$REPO_DIR/Makefile" -C "$workspace" build-app >/dev/null
+
+    assert_file_exists "$install_log"
+    first_line="$(sed -n '1p' "$install_log")"
+    second_line="$(sed -n '2p' "$install_log")"
+    [ "$first_line" = "1" ] || fail "Expected make build-app to call install.sh with a single default argument slot, got: $(cat "$install_log")"
+    [ -z "$second_line" ] || fail "Expected make build-app default DMG argument to be empty so install.sh falls back to reuse/download, got: $(cat "$install_log")"
+}
+
 test_launcher_template_sanity() {
     info "Checking launcher template markers"
     assert_contains "$REPO_DIR/install.sh" "nohup python3 -m http.server 5175"
@@ -203,6 +229,7 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/install.sh" "--ozone-platform-hint=auto"
     assert_contains "$REPO_DIR/install.sh" "--disable-gpu-sandbox"
     assert_contains "$REPO_DIR/install.sh" "PACKAGED_RUNTIME_HELPER"
+    assert_contains "$REPO_DIR/install.sh" "--allow-install-missing"
     assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "CHROME_DESKTOP"
     assert_contains "$REPO_DIR/packaging/linux/codex-desktop.desktop" "BAMF_DESKTOP_FILE_HINT"
 }
@@ -289,6 +316,7 @@ main() {
     test_deb_builder_smoke
     test_rpm_builder_smoke
     test_missing_input_failure
+    test_make_build_app_uses_installer_download_flow_by_default
     test_launcher_template_sanity
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
