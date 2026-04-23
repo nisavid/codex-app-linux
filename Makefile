@@ -1,7 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-DEFAULT_DMG := $(CURDIR)/Codex.dmg
 APP_DIR := $(CURDIR)/codex-app
 PACKAGE_NAME := codex-desktop
 DEB_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)_*.deb
@@ -29,7 +28,7 @@ help:
 	@printf '  %-18s %s\n' "make clean-dist" "Remove generated dist/ artifacts"
 	@printf '  %-18s %s\n' "make clean-state" "Remove updater runtime state from XDG directories"
 	@printf '\nVariables:\n\n'
-	@printf '  %-18s %s\n' "DMG=/path/file.dmg" "Override the DMG passed to install.sh (default: $(DEFAULT_DMG))"
+	@printf '  %-18s %s\n' "DMG=/path/file.dmg" "Override the DMG passed to install.sh (default: let install.sh reuse/download Codex.dmg)"
 	@printf '  %-18s %s\n' "PACKAGE_VERSION=..." "Override the package version for make deb / make rpm / make pacman"
 	@printf '  %-18s %s\n' "DEB=/path/file.deb" "Override the .deb used by make install"
 	@printf '  %-18s %s\n' "RPM=/path/file.rpm" "Override the .rpm used by make install"
@@ -57,7 +56,7 @@ build-updater:
 
 build-app:
 	@echo "[make] Regenerating codex-app from DMG"
-	./install.sh "$(or $(DMG),$(DEFAULT_DMG))"
+	./install.sh "$(DMG)"
 
 run-app:
 	@echo "[make] Launching local Electron app"

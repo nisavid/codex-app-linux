@@ -404,8 +404,8 @@ run_cli_preflight() {
     fi
 
     local refreshed_path=""
-    if ! refreshed_path="$(codex-update-manager cli-preflight --cli-path "$CODEX_CLI_PATH" --print-path)"; then
-        notify_error "Codex CLI prelaunch update check failed. Continuing with the current CLI. Check the launcher and updater logs if Codex Desktop misbehaves."
+    if ! refreshed_path="$(codex-update-manager cli-preflight --cli-path "$CODEX_CLI_PATH" --print-path --allow-install-missing)"; then
+        notify_error "Codex CLI prelaunch check or automatic installation failed. Continuing with the current CLI state. Check the launcher and updater logs if Codex Desktop misbehaves."
         return 0
     fi
 
