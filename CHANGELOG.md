@@ -3,6 +3,17 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.4.2] - 2026-04-23
+
+### Changed
+
+- `make build-app` now defers to `install.sh` when no `DMG=...` override is provided, so fresh checkouts can reuse or download `Codex.dmg` through the installer's normal flow instead of failing on a missing local cache path.
+- Launcher CLI preflight now enables the updater's missing-CLI auto-install path, so packaged installs can attempt to recover automatically before Electron starts.
+
+### Fixed
+
+- `codex-update-manager` now refreshes CLI status when the daemon starts and shows a desktop notification if the Codex CLI is missing, so package installs do not rely on the user manually checking updater state to understand why Codex Desktop cannot launch cleanly.
+
 ## [0.4.1] - 2026-04-19
 
 ### Added
