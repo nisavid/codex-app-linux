@@ -17,6 +17,7 @@ use tokio::time::{self, Duration};
 use tracing::{error, info, warn};
 
 const RECONCILE_INTERVAL_SECONDS: u64 = 15;
+const CLI_MISSING_NOTIFICATION_EVENT: &str = "cli_missing";
 
 /// Runs the updater command-line entrypoint.
 pub async fn run(cli: Cli) -> Result<()> {
@@ -112,6 +113,8 @@ async fn run_daemon(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(state, paths)?;
+    codex_cli::refresh_status(state, paths)?;
+    maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
     if packaged_runtime_removed(config) {
         info!("packaged app files are gone; stopping updater daemon");
@@ -167,6 +170,8 @@ async fn run_check_now(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(state, paths)?;
+    codex_cli::refresh_status(state, paths)?;
+    maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
     run_check_cycle(config, state, paths).await?;
     reconcile_pending_install(config, state, paths).await
@@ -456,7 +461,18 @@ fn maybe_notify(
         .as_deref()
         .unwrap_or(&state.installed_version);
     let event_key = format!("{event_name}:{version}");
-    if !state.notified_events.insert(event_key) {
+    maybe_notify_with_event_key(state, paths, enabled, &event_key, summary, body)
+}
+
+fn maybe_notify_with_event_key(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    enabled: bool,
+    event_key: &str,
+    summary: &str,
+    body: &str,
+) -> Result<()> {
+    if !state.notified_events.insert(event_key.to_string()) {
         return Ok(());
     }
 
@@ -468,6 +484,41 @@ fn maybe_notify(
 
     persist_state(paths, state)?;
     Ok(())
+}
+
+fn clear_notification_event(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    event_key: &str,
+) -> Result<()> {
+    if state.notified_events.remove(event_key) {
+        persist_state(paths, state)?;
+    }
+
+    Ok(())
+}
+
+fn cli_is_missing(state: &PersistedState) -> bool {
+    state.cli_path.is_none() && state.cli_installed_version.is_none()
+}
+
+fn maybe_notify_cli_missing(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    enabled: bool,
+) -> Result<()> {
+    if !cli_is_missing(state) {
+        return clear_notification_event(state, paths, CLI_MISSING_NOTIFICATION_EVENT);
+    }
+
+    maybe_notify_with_event_key(
+        state,
+        paths,
+        enabled,
+        CLI_MISSING_NOTIFICATION_EVENT,
+        "Codex CLI not installed",
+        "Codex Desktop needs the Codex CLI. Install it with npm or open the app to retry the automatic install flow.",
+    )
 }
 
 fn maybe_notify_installed(
@@ -875,6 +926,59 @@ mod tests {
         assert!(state
             .notified_events
             .contains("installed:2026.04.16.120000"));
+        Ok(())
+    }
+
+    #[test]
+    fn cli_missing_notifications_are_deduplicated() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let mut state = PersistedState::new(true);
+        state.cli_path = None;
+        state.cli_installed_version = None;
+        state.cli_error_message =
+            Some("Codex CLI not found in PATH or known install locations".to_string());
+
+        maybe_notify_cli_missing(&mut state, &paths, false)?;
+        let notified_count = state.notified_events.len();
+        maybe_notify_cli_missing(&mut state, &paths, false)?;
+
+        assert_eq!(state.notified_events.len(), notified_count);
+        assert!(state.notified_events.contains("cli_missing"));
+        Ok(())
+    }
+
+    #[test]
+    fn cli_missing_notification_marker_is_cleared_after_recovery() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let mut state = PersistedState::new(true);
+        state.notified_events.insert("cli_missing".to_string());
+        state.cli_path = Some(temp.path().join("codex"));
+        state.cli_installed_version = Some("0.42.0".to_string());
+        state.cli_error_message = None;
+
+        maybe_notify_cli_missing(&mut state, &paths, false)?;
+
+        assert!(!state.notified_events.contains("cli_missing"));
         Ok(())
     }
 }
