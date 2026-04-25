@@ -14,7 +14,6 @@ codex_packaged_runtime_prelaunch() {
     fi
 
     systemctl --user import-environment \
-        PATH \
         DISPLAY \
         WAYLAND_DISPLAY \
         DBUS_SESSION_BUS_ADDRESS \
@@ -23,7 +22,6 @@ codex_packaged_runtime_prelaunch() {
 
     if command -v dbus-update-activation-environment >/dev/null 2>&1; then
         dbus-update-activation-environment --systemd \
-            PATH \
             DISPLAY \
             WAYLAND_DISPLAY \
             DBUS_SESSION_BUS_ADDRESS \

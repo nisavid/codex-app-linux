@@ -168,14 +168,14 @@ Non-capabilities:
 
 ### T6: Build environment influences package contents
 
-- Entry points: imported `PATH`, `builder_bundle_root`, npm/npx resolution, generated app payload staging.
-- Abuse path: user config or PATH points updater at malicious tooling/scripts -> local rebuild emits compromised package -> package is offered for privileged install or public distribution.
+- Entry points: `builder_bundle_root`, npm/npx resolution, generated app payload staging.
+- Abuse path: user config points updater at malicious builder scripts -> local rebuild emits compromised package -> package is offered for privileged install or public distribution.
 - Likelihood: Medium for developer/local systems; lower for locked packaged systems if config is hardened.
 - Impact: Medium to High depending whether package is installed locally or published.
 - Priority: Medium.
-- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors; package staging rejects unsafe app symlinks and normalizes app payload modes.
-- Gaps: packaged mode accepts custom builder roots and inherited PATH.
-- Recommendations: fixed build PATH, root-owned builder root in packaged mode, and developer-mode gate for custom builders.
+- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors; updater rebuild commands use a fixed system PATH; package staging rejects unsafe app symlinks and normalizes app payload modes.
+- Gaps: packaged mode accepts custom builder roots.
+- Recommendations: root-owned builder root in packaged mode and developer-mode gate for custom builders.
 
 ### T7: Logs and state expose sensitive configured URLs or command output
 
@@ -212,7 +212,7 @@ High-priority implementation targets:
 Medium-priority implementation targets:
 
 - Remove fixed-port webview spoofing where feasible.
-- Sanitize service/build PATH and lock packaged builder root.
+- Lock packaged builder root behind an explicit developer-mode override.
 - Keep package payload symlink and mode checks covered by smoke tests.
 - Keep updater download timeout and maximum-size checks covered by regression tests.
 - Add service hardening directives compatible with `systemd --user`.
