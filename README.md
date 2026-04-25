@@ -110,9 +110,11 @@ For a local signed rehearsal where signatures are optional, omit
 
 The gate verifies the DMG hash, scans the generated app for high-confidence
 Electron security anti-patterns, validates package metadata, writes
-`dist/SHA256SUMS`, writes `dist/SHA256SUMS.asc`, exports
-`dist/release-signing-key.asc`, and verifies the detached signature against that
-public key in a temporary keyring.
+`dist/SHA256SUMS`. When `CODEX_RELEASE_GPG_KEY` is set, it also writes
+`dist/SHA256SUMS.asc`, exports `dist/release-signing-key.asc`, and verifies the
+detached signature against that public key in a temporary keyring. Unsigned
+rehearsal runs omit those signature artifacts unless `REQUIRE_RELEASE_SIGNATURE=1`
+is set.
 
 Install the newest package in `dist/`:
 

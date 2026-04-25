@@ -652,6 +652,100 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
 }
 
+test_launcher_lifecycle_cleans_child_processes() {
+    info "Checking generated launcher process lifecycle"
+    local workspace="$TMP_DIR/generated-launcher-lifecycle"
+    local app_dir="$workspace/codex-app"
+    local generated="$app_dir/start.sh"
+    local bin_dir="$workspace/bin"
+    local http_pid_file="$workspace/http.pid"
+    local electron_pid_file="$workspace/electron.pid"
+    local electron_args_file="$workspace/electron.args"
+    local xdg_cache="$workspace/cache"
+    local xdg_state="$workspace/state"
+    local app_pid_file="$xdg_state/codex-app/app.pid"
+    local launcher_pid=""
+
+    mkdir -p "$workspace" "$bin_dir" "$app_dir/content/webview" "$xdg_cache" "$xdg_state"
+    printf '<!doctype html><title>Codex</title><div>startup-loader</div>\n' > "$app_dir/content/webview/index.html"
+    (
+        export CODEX_INSTALLER_SKIP_MAIN=1
+        export CODEX_INSTALL_DIR="$app_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        create_start_script
+    )
+
+    cat > "$bin_dir/python3" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+case "${1:-} ${2:-}" in
+    "-m http.server")
+        printf '%s\n' "$$" > "$TEST_HTTP_PID_FILE"
+        sleep 60
+        ;;
+    "-c "*)
+        exit 0
+        ;;
+    "- "*)
+        cat >/dev/null
+        exit 0
+        ;;
+    *)
+        exit 2
+        ;;
+esac
+SCRIPT
+    cat > "$app_dir/electron" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$$" > "$TEST_ELECTRON_PID_FILE"
+printf '%s\n' "$@" > "$TEST_ELECTRON_ARGS_FILE"
+sleep 1
+SCRIPT
+    chmod +x "$bin_dir/python3" "$app_dir/electron" "$generated"
+
+    TEST_HTTP_PID_FILE="$http_pid_file" \
+    TEST_ELECTRON_PID_FILE="$electron_pid_file" \
+    TEST_ELECTRON_ARGS_FILE="$electron_args_file" \
+    PATH="$bin_dir:$PATH" \
+    XDG_CACHE_HOME="$xdg_cache" \
+    XDG_STATE_HOME="$xdg_state" \
+    CODEX_CLI_PATH=/bin/true \
+    CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 \
+    "$generated" >/dev/null 2>&1 &
+    launcher_pid="$!"
+
+    local attempts
+    for ((attempts = 0; attempts < 100; attempts += 1)); do
+        [ -s "$http_pid_file" ] && [ -s "$electron_pid_file" ] && [ -s "$app_pid_file" ] && break
+        sleep 0.05
+    done
+    [ -s "$http_pid_file" ] || fail "Expected launcher to start webview server"
+    [ -s "$electron_pid_file" ] || fail "Expected launcher to start Electron"
+    [ -s "$app_pid_file" ] || fail "Expected launcher to write app pid"
+
+    local http_pid electron_pid recorded_app_pid
+    http_pid="$(cat "$http_pid_file")"
+    electron_pid="$(cat "$electron_pid_file")"
+    recorded_app_pid="$(cat "$app_pid_file")"
+    [ "$recorded_app_pid" = "$electron_pid" ] || fail "Expected app pid to track Electron pid"
+    assert_contains "$electron_args_file" "--no-sandbox"
+    assert_contains "$electron_args_file" "--disable-gpu-sandbox"
+
+    wait "$launcher_pid" || fail "Expected generated launcher to exit with Electron"
+    launcher_pid=""
+    sleep 0.1
+
+    if kill -0 "$http_pid" 2>/dev/null; then
+        fail "Expected launcher cleanup to stop webview server"
+    fi
+    if kill -0 "$electron_pid" 2>/dev/null; then
+        fail "Expected Electron fixture to exit"
+    fi
+    [ ! -e "$app_pid_file" ] || fail "Expected launcher cleanup to remove app pid"
+}
+
 test_hash_workflow_opens_review_pr() {
     info "Checking hash refresh workflow requires review"
     local workflow="$REPO_DIR/.github/workflows/update-codex-hash.yml"
@@ -1021,6 +1115,7 @@ main() {
     test_installer_rejects_alphanumeric_app_version_metadata
     test_installer_rejects_short_app_version_metadata
     test_launcher_template_sanity
+    test_launcher_lifecycle_cleans_child_processes
     test_hash_workflow_opens_review_pr
     test_apple_dmg_verifier_pins_upstream_trust_inputs
     test_apple_dmg_workflow_runs_on_macos
