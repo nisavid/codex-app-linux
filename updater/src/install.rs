@@ -958,6 +958,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn rejects_symlink_install_candidates() -> Result<()> {
         let temp = tempfile::tempdir()?;

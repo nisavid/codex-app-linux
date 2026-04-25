@@ -100,68 +100,75 @@ async fn download_dmg_with_max_bytes(
     let temp_destination = destination_dir.join(".Codex.dmg.tmp");
     let _ = fs::remove_file(&temp_destination).await;
 
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .with_context(|| format!("Failed GET request for {safe_url}"))?
-        .error_for_status()
-        .with_context(|| format!("GET request for {safe_url} returned an error status"))?;
-    if let Some(content_length) = response.content_length() {
-        ensure!(
-            content_length <= max_bytes,
-            "DMG download size {content_length} exceeds maximum {max_bytes} bytes"
-        );
-    }
-
-    let mut file = File::create(&temp_destination)
-        .await
-        .with_context(|| format!("Failed to create {}", temp_destination.display()))?;
-    let mut hasher = Sha256::new();
-    let mut stream = response.bytes_stream();
-    let mut downloaded_bytes = 0_u64;
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.with_context(|| format!("Failed downloading {safe_url}"))?;
-        downloaded_bytes += chunk.len() as u64;
-        if downloaded_bytes > max_bytes {
-            let _ = fs::remove_file(&temp_destination).await;
+    let result: Result<DownloadedDmg> = async {
+        let response = client
+            .get(url)
+            .send()
+            .await
+            .with_context(|| format!("Failed GET request for {safe_url}"))?
+            .error_for_status()
+            .with_context(|| format!("GET request for {safe_url} returned an error status"))?;
+        if let Some(content_length) = response.content_length() {
             ensure!(
-                downloaded_bytes <= max_bytes,
-                "DMG download size exceeds maximum {max_bytes} bytes"
+                content_length <= max_bytes,
+                "DMG download size {content_length} exceeds maximum {max_bytes} bytes"
             );
         }
-        file.write_all(&chunk)
+
+        let mut file = File::create(&temp_destination)
             .await
-            .with_context(|| format!("Failed writing {}", temp_destination.display()))?;
-        hasher.update(&chunk);
+            .with_context(|| format!("Failed to create {}", temp_destination.display()))?;
+        let mut hasher = Sha256::new();
+        let mut stream = response.bytes_stream();
+        let mut downloaded_bytes = 0_u64;
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.with_context(|| format!("Failed downloading {safe_url}"))?;
+            downloaded_bytes += chunk.len() as u64;
+            if downloaded_bytes > max_bytes {
+                let _ = fs::remove_file(&temp_destination).await;
+                ensure!(
+                    downloaded_bytes <= max_bytes,
+                    "DMG download size exceeds maximum {max_bytes} bytes"
+                );
+            }
+            file.write_all(&chunk)
+                .await
+                .with_context(|| format!("Failed writing {}", temp_destination.display()))?;
+            hasher.update(&chunk);
+        }
+
+        file.flush()
+            .await
+            .with_context(|| format!("Failed flushing {}", temp_destination.display()))?;
+        drop(file);
+
+        let sha256 = hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+
+        fs::rename(&temp_destination, &destination)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed moving {} to {}",
+                    temp_destination.display(),
+                    destination.display()
+                )
+            })?;
+
+        Ok(DownloadedDmg {
+            path: destination,
+            sha256,
+        })
     }
-
-    file.flush()
-        .await
-        .with_context(|| format!("Failed flushing {}", temp_destination.display()))?;
-    drop(file);
-
-    let sha256 = hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-
-    fs::rename(&temp_destination, &destination)
-        .await
-        .with_context(|| {
-            format!(
-                "Failed moving {} to {}",
-                temp_destination.display(),
-                destination.display()
-            )
-        })?;
-
-    Ok(DownloadedDmg {
-        path: destination,
-        sha256,
-    })
+    .await;
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_destination).await;
+    }
+    result
 }
 
 fn parse_dmg_url(dmg_url: &str) -> Result<Url> {
@@ -170,6 +177,7 @@ fn parse_dmg_url(dmg_url: &str) -> Result<Url> {
         url.host_str(),
         Some("localhost") | Some("127.0.0.1") | Some("::1")
     );
+    ensure!(url.host_str().is_some(), "DMG URL must include a host");
     ensure!(
         url.scheme() == "https" || (url.scheme() == "http" && is_loopback_host),
         "DMG URL must use https unless it targets localhost/127.0.0.1/::1 over http"
