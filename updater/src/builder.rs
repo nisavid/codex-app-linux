@@ -459,7 +459,11 @@ fn is_native_package_file(path: &Path) -> bool {
 
 fn build_command_path() -> OsString {
     match std::env::var_os("HOME") {
-        Some(home) if !home.is_empty() => {
+        Some(home)
+            if !home.is_empty()
+                && Path::new(&home).is_absolute()
+                && !home.to_string_lossy().contains(':') =>
+        {
             let mut path = OsString::from(BUILD_COMMAND_PATH);
             path.push(":");
             path.push(Path::new(&home).join(".local/bin"));
@@ -809,6 +813,28 @@ exit 88
             build_command_path(),
             OsString::from("/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/home/user/.local/bin")
         );
+        match original_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+        match original_home {
+            Some(path) => std::env::set_var("HOME", path),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+
+    #[test]
+    fn build_command_path_rejects_home_path_injection() {
+        let _guard = environment_lock()
+            .lock()
+            .expect("environment lock should not be poisoned");
+        let original_path = std::env::var_os("PATH");
+        let original_home = std::env::var_os("HOME");
+        std::env::set_var("PATH", "/tmp/malicious");
+        std::env::set_var("HOME", "/home/user:/tmp/malicious");
+        assert_eq!(build_command_path(), OsString::from(BUILD_COMMAND_PATH));
+        std::env::set_var("HOME", "relative-home");
+        assert_eq!(build_command_path(), OsString::from(BUILD_COMMAND_PATH));
         match original_path {
             Some(path) => std::env::set_var("PATH", path),
             None => std::env::remove_var("PATH"),
