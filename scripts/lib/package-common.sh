@@ -20,6 +20,25 @@ ensure_app_layout() {
     [ -x "$APP_DIR/start.sh" ] || error "Missing launcher: $APP_DIR/start.sh"
 }
 
+validate_app_payload_source() {
+    local link target
+    while IFS= read -r -d '' link; do
+        target="$(readlink "$link")" || error "Failed to inspect symlink: $link"
+        case "$target" in
+            /*|../*|*/../*|*/..|..)
+                error "Unsafe symlink in app payload: $link -> $target"
+                ;;
+        esac
+    done < <(find "$APP_DIR" -type l -print0)
+}
+
+normalize_app_payload_modes() {
+    local app_root="$1"
+
+    find "$app_root" -type d -exec chmod u+rwx,go+rx,go-w,a-s {} +
+    find "$app_root" -type f -exec chmod u+rw,go+r,go-w,a-s {} +
+}
+
 resolve_package_version() {
     if [ -n "${PACKAGE_VERSION:-}" ]; then
         printf '%s\n' "$PACKAGE_VERSION"
@@ -101,8 +120,10 @@ stage_common_package_files() {
         "$root/usr/share/applications" \
         "$root/usr/share/icons/hicolor/256x256/apps"
 
+    validate_app_payload_source
     rm -rf "$app_root"
     cp -aT "$APP_DIR" "$app_root"
+    normalize_app_payload_modes "$app_root"
     cp "$DESKTOP_TEMPLATE" "$root/usr/share/applications/$app_install_name.desktop"
     cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$app_install_name.png"
     cp "$UPDATER_BINARY_SOURCE" "$root/usr/bin/codex-app-updater"

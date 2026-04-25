@@ -149,6 +149,68 @@ test_package_version_metadata_rejects_too_few_segments() {
     fi
 }
 
+test_package_staging_rejects_unsafe_symlinks() {
+    info "Checking package staging rejects unsafe symlinks"
+    local workspace="$TMP_DIR/package-unsafe-symlink"
+    local app_dir="$workspace/app"
+    local root="$workspace/root"
+    local updater_bin="$workspace/codex-app-updater"
+
+    make_fake_app "$app_dir"
+    ln -s /etc/passwd "$app_dir/unsafe-absolute"
+    printf '#!/bin/bash\nexit 0\n' > "$updater_bin"
+    chmod +x "$updater_bin"
+
+    if (
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        PACKAGE_NAME=codex-app \
+        APP_DIR="$app_dir" \
+        DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.desktop" \
+        ICON_SOURCE="$REPO_DIR/assets/codex.png" \
+        UPDATER_BINARY_SOURCE="$updater_bin" \
+        UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service" \
+        PACKAGED_RUNTIME_SOURCE="$REPO_DIR/packaging/linux/packaged-runtime.sh" \
+        stage_common_package_files "$root" >/dev/null 2>&1
+    ); then
+        fail "Expected package staging to reject absolute symlink"
+    fi
+}
+
+test_package_staging_normalizes_payload_modes() {
+    info "Checking package staging normalizes app payload modes"
+    local workspace="$TMP_DIR/package-normalize-modes"
+    local app_dir="$workspace/app"
+    local root="$workspace/root"
+    local updater_bin="$workspace/codex-app-updater"
+    local staged_file="$root/opt/codex-app/world-writable.txt"
+    local staged_exec="$root/opt/codex-app/setuid-helper"
+
+    make_fake_app "$app_dir"
+    printf 'data\n' > "$app_dir/world-writable.txt"
+    chmod 0666 "$app_dir/world-writable.txt"
+    printf '#!/bin/bash\nexit 0\n' > "$app_dir/setuid-helper"
+    chmod 6755 "$app_dir/setuid-helper"
+    printf '#!/bin/bash\nexit 0\n' > "$updater_bin"
+    chmod +x "$updater_bin"
+
+    (
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        PACKAGE_NAME=codex-app \
+        APP_DIR="$app_dir" \
+        DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.desktop" \
+        ICON_SOURCE="$REPO_DIR/assets/codex.png" \
+        UPDATER_BINARY_SOURCE="$updater_bin" \
+        UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service" \
+        PACKAGED_RUNTIME_SOURCE="$REPO_DIR/packaging/linux/packaged-runtime.sh" \
+        stage_common_package_files "$root"
+    )
+
+    [ "$(stat -c '%a' "$staged_file")" = "644" ] || fail "Expected staged regular file mode 644"
+    [ "$(stat -c '%a' "$staged_exec")" = "755" ] || fail "Expected staged executable mode 755"
+}
+
 test_deb_builder_smoke() {
     info "Running Debian packaging smoke test"
     local workspace="$TMP_DIR/deb"
@@ -563,6 +625,8 @@ main() {
     test_package_version_metadata_trims_trailing_whitespace
     test_package_version_metadata_rejects_alphanumeric_segments
     test_package_version_metadata_rejects_too_few_segments
+    test_package_staging_rejects_unsafe_symlinks
+    test_package_staging_normalizes_payload_modes
     test_deb_builder_smoke
     test_rpm_builder_smoke
     test_pacman_builder_metadata_smoke
