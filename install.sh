@@ -353,6 +353,11 @@ APP_NOTIFICATION_ICON_NAME="codex-desktop"
 APP_NOTIFICATION_ICON_BUNDLE="$SCRIPT_DIR/.codex-linux/$APP_NOTIFICATION_ICON_NAME.png"
 APP_NOTIFICATION_ICON_SYSTEM="/usr/share/icons/hicolor/256x256/apps/$APP_NOTIFICATION_ICON_NAME.png"
 APP_NOTIFICATION_ICON_REPO="$SCRIPT_DIR/../assets/codex.png"
+ORIGINAL_STDIN_IS_TTY=0
+ORIGINAL_STDOUT_IS_TTY=0
+
+[ -t 0 ] && ORIGINAL_STDIN_IS_TTY=1
+[ -t 1 ] && ORIGINAL_STDOUT_IS_TTY=1
 
 mkdir -p "$LOG_DIR" "$APP_STATE_DIR"
 
@@ -432,7 +437,7 @@ run_cli_preflight() {
 }
 
 is_interactive_terminal() {
-    [ -t 0 ] && [ -t 1 ]
+    [ "$ORIGINAL_STDIN_IS_TTY" = "1" ] && [ "$ORIGINAL_STDOUT_IS_TTY" = "1" ] && [ -r /dev/tty ] && [ -w /dev/tty ]
 }
 
 prompt_install_missing_cli() {
@@ -445,8 +450,8 @@ prompt_install_missing_cli() {
     fi
 
     local reply=""
-    printf 'Codex CLI is not installed. Install it now? [Y/n] '
-    if ! read -r reply; then
+    printf 'Codex CLI is not installed. Install it now? [Y/n] ' >/dev/tty
+    if ! read -r reply </dev/tty; then
         return 1
     fi
 

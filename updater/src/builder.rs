@@ -389,7 +389,7 @@ touch "${DIST_DIR_OVERRIDE}/codex-desktop-${PACKAGE_VERSION}.x86_64.rpm"
 set -euo pipefail
 VER="${PACKAGE_VERSION%%+*}"
 mkdir -p "${DIST_DIR_OVERRIDE}"
-touch "${DIST_DIR_OVERRIDE}/codex-desktop-${VER}-1-x86_64.pkg.tar.zst"
+touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
 "#
             }
         };
@@ -568,7 +568,7 @@ chmod +x "${CODEX_INSTALL_DIR}/start.sh"
         let temp = tempdir()?;
         let pkg_path = temp
             .path()
-            .join("codex-desktop-2026.03.30.120000-1-x86_64.pkg.tar.zst");
+            .join("codex-app-2026.03.30.120000-1-x86_64.pkg.tar.zst");
         fs::write(&pkg_path, b"pkg")?;
 
         let found = find_package_in(temp.path())?;

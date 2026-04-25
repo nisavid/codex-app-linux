@@ -273,14 +273,18 @@ Requires `codex-app/` to exist (run `make build-app` first).
 Output:
 
 ```bash
-dist/codex-desktop-YYYY.MM.DD.HHMMSS-1-x86_64.pkg.tar.zst
+dist/codex-app-YYYY.MM.DD.HHMMSS-1-x86_64.pkg.tar.zst
 ```
 
 Install it with:
 
 ```bash
-sudo pacman -U dist/codex-desktop-*.pkg.tar.zst
+sudo pacman -U dist/codex-app-*.pkg.tar.zst
 ```
+
+The pacman package is named `codex-app` and provides/conflicts with the older
+`codex-desktop` package name. The installed launcher and app layout remain
+`/usr/bin/codex-desktop` and `/opt/codex-desktop`.
 
 ### Install the newest package from `dist/`
 
@@ -342,7 +346,8 @@ The build and update flow is:
 3. it rebuilds native Node modules for Linux
 4. it downloads a Linux Electron runtime
 5. it writes the Linux launcher into `codex-app/start.sh`
-6. `scripts/build-deb.sh` or `scripts/build-rpm.sh` packages `codex-app/`
+6. `scripts/build-deb.sh`, `scripts/build-rpm.sh`, or
+   `scripts/build-pacman.sh` packages `codex-app/`
 7. the installed package provides `codex-update-manager` plus `codex-update-manager.service`
 8. the updater checks for newer upstream DMGs and rebuilds future Linux package updates locally
 
@@ -447,8 +452,8 @@ If `makepkg` is available (Arch Linux), also run:
 
 ```bash
 ./scripts/build-pacman.sh
-pacman -Qip dist/codex-desktop-*.pkg.tar.zst
-pacman -Qlp dist/codex-desktop-*.pkg.tar.zst | sed -n '1,40p'
+pacman -Qip dist/codex-app-*.pkg.tar.zst
+pacman -Qlp dist/codex-app-*.pkg.tar.zst | sed -n '1,40p'
 ```
 
 If launcher behavior changed, inspect:

@@ -1,0 +1,59 @@
+---
+name: maintaining-codex-desktop-package
+description: Use when changing native package metadata or payload, installer-generated launcher behavior, packaged runtime helper behavior, updater service or install behavior, or Arch/pacman package shape in the codex-desktop-linux repository.
+---
+
+# Maintaining Codex Desktop Package
+
+Use this skill for package and runtime maintenance in this repository.
+
+Do not use it for README-only, policy-only, review-only, or generated-output-only turns unless the change also affects native package behavior, launcher generation, packaged runtime behavior, or updater install/service behavior.
+
+## Start Discovery
+
+Read these first:
+
+1. `AGENTS.md`
+2. `docs/README.md`
+3. `docs/maintainers/package-runtime-maintenance.md`
+4. Source files for the touched area
+
+Then inspect the smallest relevant source set:
+
+- Installer, ASAR patches, and generated launcher: `install.sh`, `scripts/patch-linux-window-ui.js`
+- Native package builders: `scripts/build-deb.sh`, `scripts/build-rpm.sh`, `scripts/build-pacman.sh`
+- Shared package staging: `scripts/lib/package-common.sh`
+- Package templates, maintainer scripts, desktop entry, service unit, and packaged runtime helper: `packaging/linux/`
+- Updater service and CLI: `updater/`
+
+## Source Boundaries
+
+Source scripts, templates, and updater code are the durable source of truth. `codex-app/`, `dist/`, `Codex.dmg`, and XDG updater paths are generated or runtime artifacts.
+
+Inspect generated output to verify behavior, but do not make generated output the only fix.
+
+When package contents move, keep the relevant package builder, `scripts/lib/package-common.sh`, and `packaging/linux/` files aligned.
+
+## Arch Package Shape
+
+For pacman package changes:
+
+- Keep the `codex-app` package name, dependencies, `provides`, and `conflicts` aligned with the installed commands and package contract.
+- Inspect generated package metadata with `pacman -Qip` when practical.
+- Inspect package contents with `pacman -Qlp` when practical.
+- Keep payload paths consistent with launcher and updater expectations. The Arch package is named `codex-app`, but the installed app paths remain `/opt/codex-desktop`, `/usr/bin/codex-desktop`, `/usr/bin/codex-update-manager`, packaged runtime files, and the user service unit.
+
+## Verification
+
+Choose checks from `docs/maintainers/package-runtime-maintenance.md` that cover the changed behavior.
+
+- Shell changes: run `bash -n` on edited shell scripts.
+- Updater changes: run targeted `cargo check` or updater tests.
+- Package changes: build the affected package format when practical, then inspect metadata and the first package file listing.
+- Launcher changes: regenerate or inspect `codex-app/start.sh`.
+
+If a preferred tool is missing, record the missing tool and run the closest useful static check.
+
+## Documentation
+
+Update tracked docs when maintenance policy, package payload, installed paths, updater behavior, service lifecycle, package metadata, or the user-visible package contract changes.

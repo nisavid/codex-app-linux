@@ -59,7 +59,8 @@ Install the Rust toolchain:
 
 stage_common_package_files() {
     local root="$1"
-    local app_root="$root/opt/$PACKAGE_NAME"
+    local app_install_name="${APP_INSTALL_NAME:-$PACKAGE_NAME}"
+    local app_root="$root/opt/$app_install_name"
 
     mkdir -p \
         "$root/opt" \
@@ -71,9 +72,9 @@ stage_common_package_files() {
     rm -rf "$app_root"
     cp -aT "$APP_DIR" "$app_root"
     mkdir -p "$app_root/.codex-linux"
-    cp "$ICON_SOURCE" "$app_root/.codex-linux/$PACKAGE_NAME.png"
-    cp "$DESKTOP_TEMPLATE" "$root/usr/share/applications/$PACKAGE_NAME.desktop"
-    cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"
+    cp "$ICON_SOURCE" "$app_root/.codex-linux/$app_install_name.png"
+    cp "$DESKTOP_TEMPLATE" "$root/usr/share/applications/$app_install_name.desktop"
+    cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$app_install_name.png"
     cp "$UPDATER_BINARY_SOURCE" "$root/usr/bin/codex-update-manager"
     chmod 0755 "$root/usr/bin/codex-update-manager"
     cp "$UPDATER_SERVICE_SOURCE" "$root/usr/lib/systemd/user/codex-update-manager.service"
@@ -84,7 +85,8 @@ stage_common_package_files() {
 
 stage_update_builder_bundle() {
     local root="$1"
-    local update_builder_root="$root/opt/$PACKAGE_NAME/update-builder"
+    local app_install_name="${APP_INSTALL_NAME:-$PACKAGE_NAME}"
+    local update_builder_root="$root/opt/$app_install_name/update-builder"
 
     mkdir -p \
         "$update_builder_root/scripts" \
@@ -115,10 +117,12 @@ stage_update_builder_bundle() {
 
 write_launcher_stub() {
     local root="$1"
+    local app_install_name="${APP_INSTALL_NAME:-$PACKAGE_NAME}"
+    local launcher_name="${APP_LAUNCHER_NAME:-$app_install_name}"
 
-    cat > "$root/usr/bin/$PACKAGE_NAME" <<SCRIPT
+    cat > "$root/usr/bin/$launcher_name" <<SCRIPT
 #!/bin/bash
-exec /opt/$PACKAGE_NAME/start.sh "\$@"
+exec /opt/$app_install_name/start.sh "\$@"
 SCRIPT
-    chmod 0755 "$root/usr/bin/$PACKAGE_NAME"
+    chmod 0755 "$root/usr/bin/$launcher_name"
 }

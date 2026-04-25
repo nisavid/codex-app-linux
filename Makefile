@@ -3,9 +3,10 @@ SHELL := /bin/bash
 
 APP_DIR := $(CURDIR)/codex-app
 PACKAGE_NAME := codex-desktop
+PACMAN_PACKAGE_NAME := codex-app
 DEB_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)_*.deb
 RPM_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-*.rpm
-PACMAN_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-[0-9]*.pkg.tar.*
+PACMAN_GLOB := $(CURDIR)/dist/$(PACMAN_PACKAGE_NAME)-[0-9]*.pkg.tar.*
 
 .DEFAULT_GOAL := help
 
@@ -72,12 +73,12 @@ rpm: build-updater
 
 pacman: build-updater
 	@echo "[make] Building pacman package"
-	PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-pacman.sh
+	PACKAGE_NAME="$(PACMAN_PACKAGE_NAME)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-pacman.sh
 
 package: build-updater
 	@echo "[make] Building native package (auto-detecting distro)"
 	@if command -v makepkg >/dev/null 2>&1 && ! command -v dpkg-deb >/dev/null 2>&1; then \
-		PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-pacman.sh; \
+		PACKAGE_NAME="$(PACMAN_PACKAGE_NAME)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-pacman.sh; \
 	elif command -v dpkg-deb >/dev/null 2>&1; then \
 		PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-deb.sh; \
 	elif command -v rpmbuild >/dev/null 2>&1; then \

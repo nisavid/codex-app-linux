@@ -7,7 +7,8 @@ use std::{
     process::Command,
 };
 
-const PACKAGE_NAME: &str = "codex-desktop";
+const DEB_RPM_PACKAGE_NAME: &str = "codex-desktop";
+const PACMAN_PACKAGE_NAME: &str = "codex-app";
 const INSTALLED_UPDATER_BINARY: &str = "/usr/bin/codex-update-manager";
 const APT_CANDIDATES: &[&str] = &["/usr/bin/apt", "/bin/apt"];
 const DNF_CANDIDATES: &[&str] = &["/usr/bin/dnf", "/bin/dnf", "/usr/bin/dnf5", "/bin/dnf5"];
@@ -178,20 +179,20 @@ pub fn is_primary_package_installed() -> bool {
 fn installed_deb_version() -> String {
     installed_version_from_command(
         &program_path(DPKG_QUERY_CANDIDATES, "dpkg-query"),
-        &["-W", "-f=${Version}", PACKAGE_NAME],
+        &["-W", "-f=${Version}", DEB_RPM_PACKAGE_NAME],
     )
 }
 
 fn installed_rpm_version() -> String {
     installed_version_from_command(
         &program_path(RPM_CANDIDATES, "rpm"),
-        &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", PACKAGE_NAME],
+        &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", DEB_RPM_PACKAGE_NAME],
     )
 }
 
 fn installed_pacman_version() -> String {
     match Command::new(program_path(PACMAN_CANDIDATES, "pacman"))
-        .args(["-Q", PACKAGE_NAME])
+        .args(["-Q", PACMAN_PACKAGE_NAME])
         .output()
     {
         Ok(output) if output.status.success() => parse_pacman_installed_version(output.stdout),
@@ -432,7 +433,7 @@ fn pacman_package_version(path: &Path) -> Result<String> {
 
     let stripped = strip_pacman_package_suffix(file_name)
         .with_context(|| format!("Not a valid pacman package filename: {file_name}"))?;
-    let prefix = format!("{PACKAGE_NAME}-");
+    let prefix = format!("{PACMAN_PACKAGE_NAME}-");
     let without_name = stripped
         .strip_prefix(&prefix)
         .with_context(|| format!("Pacman package filename does not start with {prefix}"))?;
@@ -756,7 +757,7 @@ mod tests {
     #[test]
     fn parses_pacman_installed_version_output() {
         assert_eq!(
-            parse_pacman_installed_version(b"codex-desktop 2026.04.02.120000-1\n".to_vec()),
+            parse_pacman_installed_version(b"codex-app 2026.04.02.120000-1\n".to_vec()),
             "2026.04.02.120000-1"
         );
     }
@@ -765,7 +766,7 @@ mod tests {
     fn parses_pacman_package_version_from_filename() -> Result<()> {
         assert_eq!(
             pacman_package_version(Path::new(
-                "/tmp/codex-desktop-2026.04.02.120000-1-x86_64.pkg.tar.zst"
+                "/tmp/codex-app-2026.04.02.120000-1-x86_64.pkg.tar.zst"
             ))?,
             "2026.04.02.120000-1"
         );

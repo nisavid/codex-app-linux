@@ -171,6 +171,58 @@ SCRIPT
     assert_file_exists "$dist_dir/codex-desktop-2026.03.24.120000-deadbeef.x86_64.rpm"
 }
 
+test_pacman_builder_metadata_smoke() {
+    info "Running pacman packaging metadata smoke test"
+    local workspace="$TMP_DIR/pacman"
+    local bin_dir="$workspace/bin"
+    local app_dir="$workspace/app"
+    local dist_dir="$workspace/dist"
+    local updater_bin="$workspace/codex-update-manager"
+    local captured_pkgbuild="$workspace/PKGBUILD.rendered"
+
+    mkdir -p "$workspace" "$dist_dir"
+    make_stub_bin_dir "$bin_dir"
+    make_fake_app "$app_dir"
+    printf '#!/bin/bash\nexit 0\n' > "$updater_bin"
+    chmod +x "$updater_bin"
+
+    cat > "$bin_dir/makepkg" <<'SCRIPT'
+#!/bin/bash
+cp PKGBUILD "$TEST_PACMAN_CAPTURE"
+grep -q 'pkgname=codex-app' PKGBUILD || exit 11
+grep -q "provides=('codex-desktop')" PKGBUILD || exit 12
+grep -q "conflicts=('codex-desktop')" PKGBUILD || exit 13
+grep -q "install=codex-app.install" PKGBUILD || exit 14
+test -x "$TEST_PACMAN_STAGING/usr/bin/codex-desktop" || exit 15
+test -d "$TEST_PACMAN_STAGING/opt/codex-desktop" || exit 16
+test -f "$TEST_PACMAN_STAGING/opt/codex-desktop/.codex-linux/codex-packaged-runtime.sh" || exit 17
+touch "$PKGDEST/codex-app-2026.03.24.120000-1-x86_64.pkg.tar.zst"
+SCRIPT
+    cat > "$bin_dir/cargo" <<'SCRIPT'
+#!/bin/bash
+echo "cargo should not be called when UPDATER_BINARY_SOURCE exists" >&2
+exit 99
+SCRIPT
+    chmod +x "$bin_dir/makepkg" "$bin_dir/cargo"
+
+    PATH="$bin_dir:$PATH" \
+    APP_DIR_OVERRIDE="$app_dir" \
+    DIST_DIR_OVERRIDE="$dist_dir" \
+    UPDATER_BINARY_SOURCE="$updater_bin" \
+    TEST_PACMAN_CAPTURE="$captured_pkgbuild" \
+    TEST_PACMAN_STAGING="$workspace/staging" \
+    PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
+    "$REPO_DIR/scripts/build-pacman.sh"
+
+    assert_file_exists "$dist_dir/codex-app-2026.03.24.120000-1-x86_64.pkg.tar.zst"
+    assert_contains "$captured_pkgbuild" "pkgname=codex-app"
+    assert_contains "$captured_pkgbuild" "provides=('codex-desktop')"
+    assert_contains "$captured_pkgbuild" "conflicts=('codex-desktop')"
+    assert_contains "$captured_pkgbuild" "install=codex-app.install"
+    assert_file_exists "$workspace/staging/usr/bin/codex-desktop"
+    assert_file_exists "$workspace/staging/opt/codex-desktop/.codex-linux/codex-packaged-runtime.sh"
+}
+
 test_missing_input_failure() {
     info "Checking missing-input failure path"
     local workspace="$TMP_DIR/missing"
@@ -245,10 +297,10 @@ make_fake_extracted_asar() {
     mkdir -p "$root/webview/assets" "$root/.vite/build"
     printf 'png' > "$root/webview/assets/app-test.png"
     if [ -n "$settings_body" ]; then
-        printf '%s\n' "$settings_body" > "$root/webview/assets/general-settings-test.js"
+        printf '%s\n' "$settings_body" > "$root/webview/assets/code-theme-test.js"
     fi
     if [ -n "$index_body" ]; then
-        printf '%s\n' "$index_body" > "$root/webview/assets/index-test.js"
+        printf '%s\n' "$index_body" > "$root/webview/assets/use-resolved-theme-variant-test.js"
     fi
     cat > "$root/package.json" <<'JSON'
 {}
@@ -286,18 +338,18 @@ test_linux_translucent_sidebar_default_patch_smoke() {
     make_fake_extracted_asar \
         "$extracted" \
         'let D={removeMenu(){},setMenuBarVisibility(){},setIcon(){},once(){}};let t={join(){}};let a={existsSync(){return true},statSync(){return {isFile(){return false}}}};let n={shell:{openPath(){return ""},showItemInFolder(){}}};...process.platform===`win32`?{autoHideMenuBar:!0}:{},process.platform===`win32`&&D.removeMenu(),foo)}),D.once(`ready-to-show`,()=>{var sa=Mi({id:`fileManager`,label:`Finder`,icon:`apps/finder.png`,kind:`fileManager`,darwin:{detect:()=>`open`,args:e=>ai(e)},win32:{label:`File Explorer`,icon:`apps/file-explorer.png`,detect:ca,args:e=>ai(e),open:async({path:e})=>la(e)}});function ca(){let e=1;return e}async function la(e){let t=ua(e);if(t&&(0,a.statSync)(t).isFile()){n.shell.showItemInFolder(t);return}let r=t??e,i=await n.shell.openPath(r);if(i)throw Error(i)}function ua(e){return e}var Ua=Mi({id:`systemDefault`,label:`System Default App`,icon:`apps/file-explorer.png`,kind:`systemDefault`,hidden:!0,darwin:{icon:`apps/finder.png`,detect:()=>`system-default`,iconPath:()=>null,args:e=>[e],open:async({path:e})=>Wa(e)},win32:{detect:()=>`system-default`,iconPath:()=>null,args:e=>[e],open:async({path:e})=>Wa(e)},linux:{detect:()=>`system-default`,iconPath:()=>null,args:e=>[e],open:async({path:e})=>Wa(e)}});async function Wa(e){return e}' \
-        'function settings(){let d=ot(r,e),f=at(e),p={codeThemeId:tt(a,e).id,theme:d},x=`settings.general.appearance.chromeTheme.translucentSidebar`;return {p,x}}' \
-        'function runtime(){let o=`light`,a=`electron`,l=null,f=null,C=fl(l,`light`),w=fl(f,`dark`);let T=o===`light`?C:w,E;if(T.opaqueWindows&&!XZ()){document.body.classList.add(`electron-opaque`);return E}return E}'
+        'function settings(){return {opaqueWindows:e?.opaqueWindows??n.opaqueWindows,semanticColors:{}}}' \
+        'function runtime(){return {opaqueWindows:e?.opaqueWindows??n.opaqueWindows,semanticColors:{}}}'
 
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
-    assert_contains "$extracted/webview/assets/general-settings-test.js" 'navigator.userAgent.includes(`Linux`)&&r?.opaqueWindows==null&&(d={...d,opaqueWindows:!0})'
-    assert_contains "$extracted/webview/assets/index-test.js" 'document.documentElement.dataset.codexOs===`linux`&&((o===`light`?l:f)?.opaqueWindows==null&&(T={...T,opaqueWindows:!0}))'
-    assert_occurrence_count "$extracted/webview/assets/general-settings-test.js" 'navigator.userAgent.includes(`Linux`)' '1'
-    assert_occurrence_count "$extracted/webview/assets/index-test.js" 'dataset.codexOs===`linux`' '1'
+    assert_contains "$extracted/webview/assets/code-theme-test.js" 'opaqueWindows:e?.opaqueWindows??(typeof navigator<`u`&&((navigator.userAgentData?.platform??navigator.platform??navigator.userAgent).toLowerCase().includes(`linux`))?!0:n.opaqueWindows),semanticColors:'
+    assert_contains "$extracted/webview/assets/use-resolved-theme-variant-test.js" 'opaqueWindows:e?.opaqueWindows??(typeof navigator<`u`&&((navigator.userAgentData?.platform??navigator.platform??navigator.userAgent).toLowerCase().includes(`linux`))?!0:n.opaqueWindows),semanticColors:'
+    assert_occurrence_count "$extracted/webview/assets/code-theme-test.js" 'toLowerCase().includes(`linux`)' '1'
+    assert_occurrence_count "$extracted/webview/assets/use-resolved-theme-variant-test.js" 'toLowerCase().includes(`linux`)' '1'
 
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
-    assert_occurrence_count "$extracted/webview/assets/general-settings-test.js" 'navigator.userAgent.includes(`Linux`)' '1'
-    assert_occurrence_count "$extracted/webview/assets/index-test.js" 'dataset.codexOs===`linux`' '1'
+    assert_occurrence_count "$extracted/webview/assets/code-theme-test.js" 'toLowerCase().includes(`linux`)' '1'
+    assert_occurrence_count "$extracted/webview/assets/use-resolved-theme-variant-test.js" 'toLowerCase().includes(`linux`)' '1'
 }
 
 test_linux_file_manager_patch_fails_soft() {
@@ -317,6 +369,7 @@ main() {
     test_common_helper_sourcing
     test_deb_builder_smoke
     test_rpm_builder_smoke
+    test_pacman_builder_metadata_smoke
     test_missing_input_failure
     test_make_build_app_uses_installer_download_flow_by_default
     test_launcher_template_sanity

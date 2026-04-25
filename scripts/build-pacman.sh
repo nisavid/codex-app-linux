@@ -14,8 +14,11 @@ USER_SERVICE_HELPER_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager-use
 ICON_SOURCE="$REPO_DIR/assets/codex.png"
 PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
 
-PACKAGE_NAME="${PACKAGE_NAME:-codex-desktop}"
+PACKAGE_NAME="${PACKAGE_NAME:-codex-app}"
 PACKAGE_VERSION="${PACKAGE_VERSION:-$(date -u +%Y.%m.%d.%H%M%S)}"
+PACKAGE_PROVIDES="${PACKAGE_PROVIDES:-codex-desktop}"
+PACKAGE_CONFLICTS="${PACKAGE_CONFLICTS:-codex-desktop}"
+APP_INSTALL_NAME="${APP_INSTALL_NAME:-codex-desktop}"
 UPDATER_BINARY_SOURCE="${UPDATER_BINARY_SOURCE:-$REPO_DIR/target/release/codex-update-manager}"
 UPDATER_SERVICE_SOURCE="${UPDATER_SERVICE_SOURCE:-$SERVICE_TEMPLATE}"
 PACKAGED_RUNTIME_SOURCE="${PACKAGED_RUNTIME_SOURCE:-$PACKAGED_RUNTIME_TEMPLATE}"
@@ -60,7 +63,7 @@ main() {
 	# shellcheck disable=SC2064
 	trap "rm -rf '$build_root'" EXIT
 
-	local staging_root="$build_root/staging"
+	local staging_root="${TEST_PACMAN_STAGING:-$build_root/staging}"
 
 	stage_common_package_files "$staging_root"
 	stage_update_builder_bundle "$staging_root"
@@ -68,6 +71,8 @@ main() {
 
 	sed \
 		-e "s/__PACKAGE_NAME__/$PACKAGE_NAME/g" \
+		-e "s/__PACKAGE_PROVIDES__/$PACKAGE_PROVIDES/g" \
+		-e "s/__PACKAGE_CONFLICTS__/$PACKAGE_CONFLICTS/g" \
 		-e "s/__PKGVER__/$PACMAN_PKGVER/g" \
 		-e "s/__PKGREL__/$PACMAN_PKGREL/g" \
 		-e "s|__STAGING_DIR__|$staging_root|g" \
