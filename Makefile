@@ -10,7 +10,7 @@ PACMAN_GLOB := $(CURDIR)/dist/$(PACMAN_PACKAGE_NAME)-[0-9]*.pkg.tar.*
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check test build-updater build-app run-app deb rpm pacman package install service-enable service-status clean-dist clean-state
+.PHONY: help check test build-updater build-app run-app deb rpm pacman package release-gate install service-enable service-status clean-dist clean-state
 
 help:
 	@printf '\nCodex App Linux Make Targets\n\n'
@@ -23,6 +23,7 @@ help:
 	@printf '  %-18s %s\n' "make rpm" "Build the RPM package into dist/ (Fedora)"
 	@printf '  %-18s %s\n' "make pacman" "Build the pacman package into dist/ (Arch)"
 	@printf '  %-18s %s\n' "make package" "Build native package (auto-detects deb, rpm, or pacman)"
+	@printf '  %-18s %s\n' "make release-gate" "Verify DMG hash, generated app security, package metadata, checksums, and optional signature"
 	@printf '  %-18s %s\n' "make install" "Install the latest generated native package"
 	@printf '  %-18s %s\n' "make service-enable" "Enable and start codex-app-updater.service for the current user"
 	@printf '  %-18s %s\n' "make service-status" "Show codex-app-updater.service status for the current user"
@@ -87,6 +88,10 @@ package: build-updater
 		echo "[make] No supported packaging tool found. Install dpkg-dev (Debian), rpm-build (Fedora), or pacman (Arch)." >&2; \
 		exit 1; \
 	fi
+
+release-gate:
+	@echo "[make] Running release gate"
+	./scripts/release-gate.sh
 
 install:
 	@echo "[make] Installing latest native package"

@@ -237,6 +237,20 @@ pacman -Qip dist/codex-app-*.pkg.tar.*
 pacman -Qlp dist/codex-app-*.pkg.tar.* | sed -n '1,80p'
 ```
 
+Public release gate:
+
+```bash
+CODEX_DMG_SHA256=<reviewed-dmg-sha256> \
+REQUIRE_RELEASE_SIGNATURE=1 \
+CODEX_RELEASE_GPG_KEY=<key-id-or-email> \
+make release-gate
+```
+
+The gate verifies the upstream DMG hash, runs the generated-app Electron
+security inspector, requires matching native package metadata tools for package
+identity checks, writes `dist/SHA256SUMS`, and writes a detached
+`dist/SHA256SUMS.asc` signature when signing is required.
+
 Launcher or webview changes:
 
 ```bash

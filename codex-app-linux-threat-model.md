@@ -142,7 +142,7 @@ Non-capabilities:
 - Priority: High.
 - Existing mitigations: launcher keeps Chromium sandboxing enabled by default and has no Node-related flags visible; `scripts/inspect-electron-security.js` provides a static generated-app inspection gate.
 - Gaps: generated app has not been built and reviewed in this checkout; the scanner is not a substitute for manual IPC/navigation/CSP review; explicit lower-security sandbox opt-out remains.
-- Recommendations: after building the generated app, run the inspector and verify `contextIsolation`, `nodeIntegration`, sandbox, navigation/window/openExternal policy, CSP, and IPC behavior as a release gate.
+- Recommendations: after building the generated app, run `make release-gate` and verify `contextIsolation`, `nodeIntegration`, sandbox, navigation/window/openExternal policy, CSP, and IPC behavior before public release.
 
 ### T4: Local webview origin is spoofed
 
@@ -162,9 +162,9 @@ Non-capabilities:
 - Likelihood: Medium for supply-chain exposure over time.
 - Impact: High because public users rely on repo-published trust decisions.
 - Priority: High.
-- Existing mitigations: Nix hash syntax validation, PR-based hash refresh, and commit-pinned workflow actions.
-- Gaps: no package signing/attestation and no automated upstream signature/notarization evidence in hash PRs.
-- Recommendations: release checksums/signatures, artifact attestations, upstream signature/notarization verification output, and documented verification instructions.
+- Existing mitigations: Nix hash syntax validation, PR-based hash refresh, commit-pinned workflow actions, and a release gate that requires a reviewed DMG hash before writing package checksums and optional checksum signatures.
+- Gaps: no format-native package signing/attestation and no automated upstream signature/notarization evidence in hash PRs.
+- Recommendations: require release-gate checksums/signatures for public artifacts, add artifact attestations, add format-native package signing, include upstream signature/notarization verification output, and keep documented verification instructions.
 
 ### T6: Build environment influences package contents
 
@@ -205,9 +205,9 @@ High-priority implementation targets:
 
 - Verify upstream artifacts before extraction: signed manifest or verified upstream signature/notarization, with explicit failure if verification cannot run.
 - Harden privileged installs further: trusted package digest validation and canonical workspace path checks.
-- Inspect generated app security settings before public release.
+- Run the release gate and inspect generated app security settings before public release.
 - Add upstream version/build metadata and signature/notarization verification to hash-update PRs.
-- Add public artifact signing, checksums, attestations, and verification docs.
+- Require public artifact checksums/signatures, then add format-native signing and attestations.
 
 Medium-priority implementation targets:
 
