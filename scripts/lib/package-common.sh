@@ -29,10 +29,17 @@ resolve_package_version() {
     local metadata_file="$APP_DIR/codex-app-version.env"
     [ -f "$metadata_file" ] || error "Missing app version metadata: $metadata_file. Run ./install.sh first or set PACKAGE_VERSION."
 
-    # shellcheck disable=SC1090
-    . "$metadata_file"
+    local version=""
+    local key value
+    while IFS='=' read -r key value; do
+        case "$key" in
+            CODEX_APP_PACKAGE_VERSION)
+                version="$value"
+                break
+                ;;
+        esac
+    done < "$metadata_file"
 
-    local version="${CODEX_APP_PACKAGE_VERSION:-}"
     [ -n "$version" ] || error "Missing CODEX_APP_PACKAGE_VERSION in $metadata_file"
     case "$version" in
         *[!A-Za-z0-9.+~]*)

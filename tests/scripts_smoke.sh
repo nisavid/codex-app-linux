@@ -77,6 +77,27 @@ test_common_helper_sourcing() {
     ensure_file_exists "$probe_file" "probe file"
 }
 
+test_package_version_metadata_is_read_as_data() {
+    info "Checking package version metadata is not sourced"
+    local workspace="$TMP_DIR/package-version-data"
+    local app_dir="$workspace/app"
+    local marker="$workspace/sourced-marker"
+
+    mkdir -p "$app_dir"
+    cat > "$app_dir/codex-app-version.env" <<EOF
+CODEX_APP_PACKAGE_VERSION=\$(touch "$marker"; printf 26.422.30944.2080)
+EOF
+
+    if (
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        APP_DIR="$app_dir" PACKAGE_VERSION="" resolve_package_version >/dev/null 2>&1
+    ); then
+        fail "Expected malicious package version metadata to be rejected"
+    fi
+    [ ! -e "$marker" ] || fail "Package version metadata was executed as shell code"
+}
+
 test_deb_builder_smoke() {
     info "Running Debian packaging smoke test"
     local workspace="$TMP_DIR/deb"
@@ -297,8 +318,13 @@ with open(sys.argv[1], "wb") as handle:
     )
 PY
 
-    CODEX_INSTALLER_SKIP_MAIN=1 CODEX_INSTALL_DIR="$install_dir" source "$REPO_DIR/install.sh"
-    write_app_version_metadata "$app_bundle"
+    (
+        CODEX_INSTALLER_SKIP_MAIN=1
+        CODEX_INSTALL_DIR="$install_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        write_app_version_metadata "$app_bundle"
+    )
 
     assert_file_exists "$install_dir/codex-app-version.env"
     assert_contains "$install_dir/codex-app-version.env" "CODEX_APP_UPSTREAM_VERSION=26.422.30944"
@@ -402,6 +428,7 @@ test_linux_file_manager_patch_fails_soft() {
 
 main() {
     test_common_helper_sourcing
+    test_package_version_metadata_is_read_as_data
     test_deb_builder_smoke
     test_rpm_builder_smoke
     test_pacman_builder_metadata_smoke
