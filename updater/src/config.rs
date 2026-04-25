@@ -168,6 +168,7 @@ initial_check_delay_seconds = 5
 check_interval_hours = 12
 auto_install_on_app_exit = false
 notifications = false
+developer_mode = true
 workspace_root = "/tmp/codex-workspaces"
 builder_bundle_root = "/tmp/codex-builder"
 app_executable_path = "/opt/codex-app/electron"
