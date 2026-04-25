@@ -33,10 +33,10 @@ None identified in the tracked source review. The review did not include generat
 ### H-3: Privileged install subcommands accept caller-supplied package paths
 
 - Location: [updater/src/cli.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/cli.rs:31), [updater/src/app.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/app.rs:49), [updater/src/install.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/install.rs:227)
-- Evidence: `install-deb`, `install-rpm`, and `install-pacman` accept arbitrary `--path` values and invoke the host package manager on that path. Debian and pacman paths get version checks; RPM only checks existence before install.
+- Evidence: `install-deb`, `install-rpm`, and `install-pacman` still accept caller-supplied `--path` values, but now reject symlink/non-file inputs, require expected `codex-app` package filename shapes, copy the candidate into a private temp directory, and install that staged copy. Debian and pacman paths get version checks; RPM still lacks package-metadata parity.
 - Impact: a user who can satisfy `pkexec` for `codex-app-updater` can install an arbitrary package path through the updater binary rather than only the updater-generated artifact. If a future polkit policy narrows authorization by command instead of artifact, this becomes a stronger local privilege escalation primitive.
-- Current controls: `pkexec` prompts for privileged install, package manager arguments are passed without shell interpolation, Debian/pacman reject non-newer candidates.
-- Recommendation: bind privileged install to a verified updater artifact. Validate package identity, architecture, version, canonical path, and expected digest against root-trusted state; reject symlinks; copy the candidate to a root-owned temp location after privilege escalation and install that immutable copy.
+- Current controls: `pkexec` prompts for privileged install, package manager arguments are passed without shell interpolation, staged-copy install reduces source replacement races, and Debian/pacman reject non-newer candidates.
+- Recommendation: bind privileged install to a verified updater artifact. Validate package identity, architecture, version, canonical path, and expected digest against root-trusted state; add RPM metadata parity.
 
 ### H-4: CI hash refresh still needs stronger verification evidence
 
@@ -58,9 +58,9 @@ None identified in the tracked source review. The review did not include generat
 ### M-2: Package install validation has a TOCTOU window
 
 - Location: [updater/src/install.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/install.rs:234), [updater/src/install.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/install.rs:267), [updater/src/app.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/app.rs:329)
-- Evidence: package metadata is validated from a path under user-writable cache/state, then the same path is passed later to `apt`, `dpkg`, `rpm`, or `pacman`.
-- Impact: a local attacker with the same user privileges may replace or redirect an artifact between validation and privileged package-manager consumption.
-- Recommendation: after privilege escalation, open/copy the package into a root-owned temp directory, re-check digest and metadata immediately, and install by file descriptor or immutable root-owned path where practical.
+- Evidence: package candidates are now copied into a private temp directory before metadata validation and package-manager execution. The original source path still comes from user-writable cache/state, and no root-trusted digest is checked.
+- Impact: source replacement between validation and package-manager consumption is reduced, but a caller who can satisfy `pkexec` can still present a different valid-looking `codex-app` package path.
+- Recommendation: persist a trusted expected digest/identity for updater-generated artifacts and re-check it against the staged copy immediately before install.
 
 ### M-3: Updater rebuild inherits user-controlled build environment
 
@@ -161,7 +161,7 @@ None identified in the tracked source review. The review did not include generat
 
 1. Restore Electron sandboxing or make disablement an explicit, documented fallback.
 2. Require authenticated upstream artifact verification before rebuild/install.
-3. Bind privileged install subcommands to verified updater artifacts and close the TOCTOU window.
+3. Bind privileged install subcommands to verified updater artifacts and add RPM metadata parity.
 4. Add upstream version/build metadata and signature/notarization verification to hash-update PRs.
 5. Reduce fixed-port webview spoofing with a per-launch nonce or ephemeral loopback port.
 6. Sanitize updater build environment and package payload metadata.

@@ -1,10 +1,14 @@
 //! Installation helpers for privileged and non-privileged package application.
 
 use anyhow::{Context, Result};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     fs,
     path::{Path, PathBuf},
+    process,
     process::Command,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const PACKAGE_NAME: &str = "codex-app";
@@ -226,47 +230,39 @@ fn installed_pacman_version() -> String {
 
 /// Installs a rebuilt Debian package on the local machine.
 pub fn install_deb(path: &Path) -> Result<()> {
-    anyhow::ensure!(
-        path.exists(),
-        "Debian package not found: {}",
-        path.display()
-    );
-    ensure_upgrade_path(path)?;
+    let staged = stage_install_candidate(path, PackageKind::Deb)?;
+    ensure_upgrade_path(&staged.path)?;
 
     if program_exists(APT_CANDIDATES, "apt") {
-        let mut command = apt_install_command(path)?;
+        let mut command = apt_install_command(&staged.path)?;
         run_install(&mut command).context("apt install failed")?;
         return Ok(());
     }
 
-    let mut command = dpkg_install_command(path);
+    let mut command = dpkg_install_command(&staged.path);
     run_install(&mut command).context("dpkg -i failed")
 }
 
 /// Installs a rebuilt RPM package on the local machine.
 pub fn install_rpm(path: &Path) -> Result<()> {
-    anyhow::ensure!(path.exists(), "RPM package not found: {}", path.display());
+    let staged = stage_install_candidate(path, PackageKind::Rpm)?;
 
     if program_exists(DNF_CANDIDATES, "dnf") || program_exists(DNF_CANDIDATES, "dnf5") {
-        let mut command = dnf_install_command(path)?;
+        let mut command = dnf_install_command(&staged.path)?;
         run_install(&mut command).context("dnf install failed")?;
         return Ok(());
     }
 
-    let mut command = rpm_install_command(path);
+    let mut command = rpm_install_command(&staged.path);
     run_install(&mut command).context("rpm -Uvh failed")
 }
 
 /// Installs a rebuilt pacman package on the local machine.
 pub fn install_pacman(path: &Path) -> Result<()> {
-    anyhow::ensure!(
-        path.exists(),
-        "Pacman package not found: {}",
-        path.display()
-    );
-    ensure_upgrade_path_pacman(path)?;
+    let staged = stage_install_candidate(path, PackageKind::Pacman)?;
+    ensure_upgrade_path_pacman(&staged.path)?;
 
-    let mut command = pacman_install_command(path);
+    let mut command = pacman_install_command(&staged.path);
     run_install(&mut command).context("pacman -U failed")
 }
 
@@ -296,6 +292,100 @@ fn run_install(command: &mut Command) -> Result<()> {
         "installation command exited with {status}"
     );
     Ok(())
+}
+
+#[derive(Debug)]
+struct StagedPackage {
+    path: PathBuf,
+    dir: PathBuf,
+}
+
+impl Drop for StagedPackage {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn stage_install_candidate(path: &Path, expected_kind: PackageKind) -> Result<StagedPackage> {
+    ensure_install_candidate_source(path, expected_kind)?;
+
+    let file_name = path
+        .file_name()
+        .with_context(|| format!("Package path has no file name: {}", path.display()))?;
+    let dir = private_install_stage_dir();
+    fs::create_dir(&dir).with_context(|| format!("Failed to create {}", dir.display()))?;
+    #[cfg(unix)]
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))
+        .with_context(|| format!("Failed to restrict {}", dir.display()))?;
+
+    let staged_path = dir.join(file_name);
+    fs::copy(path, &staged_path).with_context(|| {
+        format!(
+            "Failed to copy install candidate {} to {}",
+            path.display(),
+            staged_path.display()
+        )
+    })?;
+
+    Ok(StagedPackage {
+        path: staged_path,
+        dir,
+    })
+}
+
+fn ensure_install_candidate_source(path: &Path, expected_kind: PackageKind) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("Package not found: {}", path.display()))?;
+    anyhow::ensure!(
+        !metadata.file_type().is_symlink(),
+        "Refusing to install package through symlink: {}",
+        path.display()
+    );
+    anyhow::ensure!(
+        metadata.file_type().is_file(),
+        "Package path is not a regular file: {}",
+        path.display()
+    );
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .with_context(|| format!("Package path has no UTF-8 file name: {}", path.display()))?;
+
+    match expected_kind {
+        PackageKind::Deb => {
+            anyhow::ensure!(
+                file_name.starts_with("codex-app_") && file_name.ends_with(".deb"),
+                "Debian package filename must match codex-app_*.deb: {file_name}"
+            );
+        }
+        PackageKind::Rpm => {
+            anyhow::ensure!(
+                file_name.starts_with("codex-app-") && file_name.ends_with(".rpm"),
+                "RPM package filename must match codex-app-*.rpm: {file_name}"
+            );
+        }
+        PackageKind::Pacman => {
+            anyhow::ensure!(
+                file_name.starts_with("codex-app-") && is_pacman_package_file_name(file_name),
+                "Pacman package filename must match codex-app-*.pkg.tar.*: {file_name}"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn private_install_stage_dir() -> PathBuf {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "codex-app-updater-install.{}.{}",
+        process::id(),
+        timestamp
+    ))
 }
 
 fn installed_version_from_command(program: &Path, args: &[&str]) -> String {
@@ -741,6 +831,49 @@ mod tests {
                 "/tmp/update.pkg.tar.zst"
             ]
         );
+    }
+
+    #[test]
+    fn rejects_symlink_install_candidates() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let target = temp.path().join("codex-app_26.422.30944.2080_amd64.deb");
+        let link = temp.path().join("linked.deb");
+        std::fs::write(&target, b"package")?;
+        std::os::unix::fs::symlink(&target, &link)?;
+
+        let error = stage_install_candidate(&link, PackageKind::Deb)
+            .expect_err("symlink package path should be rejected");
+
+        assert!(error.to_string().contains("symlink"));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_mismatched_install_candidate_kind() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("codex-app-26.422.30944.2080-1.x86_64.rpm");
+        std::fs::write(&path, b"package")?;
+
+        let error = stage_install_candidate(&path, PackageKind::Deb)
+            .expect_err("RPM path should not be accepted for Debian install");
+
+        assert!(error.to_string().contains("Debian package"));
+        Ok(())
+    }
+
+    #[test]
+    fn stages_install_candidate_to_private_copy() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("codex-app_26.422.30944.2080_amd64.deb");
+        std::fs::write(&path, b"original")?;
+
+        let staged = stage_install_candidate(&path, PackageKind::Deb)?;
+
+        assert_ne!(staged.path, path);
+        assert_eq!(std::fs::read(&staged.path)?, b"original");
+        std::fs::write(&path, b"replaced")?;
+        assert_eq!(std::fs::read(&staged.path)?, b"original");
+        Ok(())
     }
 
     #[test]
