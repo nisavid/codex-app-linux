@@ -126,7 +126,6 @@ async fn download_dmg_with_max_bytes(
             let chunk = chunk.with_context(|| format!("Failed downloading {safe_url}"))?;
             downloaded_bytes += chunk.len() as u64;
             if downloaded_bytes > max_bytes {
-                let _ = fs::remove_file(&temp_destination).await;
                 ensure!(
                     downloaded_bytes <= max_bytes,
                     "DMG download size exceeds maximum {max_bytes} bytes"
