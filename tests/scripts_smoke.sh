@@ -433,9 +433,9 @@ main() {
     test_rpm_builder_smoke
     test_pacman_builder_metadata_smoke
     test_missing_input_failure
-test_make_build_app_uses_installer_download_flow_by_default
-test_installer_writes_app_version_metadata
-test_launcher_template_sanity
+    test_make_build_app_uses_installer_download_flow_by_default
+    test_installer_writes_app_version_metadata
+    test_launcher_template_sanity
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
     test_linux_file_manager_patch_fails_soft
