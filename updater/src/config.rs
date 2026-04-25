@@ -9,7 +9,7 @@ use std::{
 };
 
 const SERVICE_NAME: &str = "codex-app-updater";
-const PACKAGED_BUILDER_BUNDLE_ROOT: &str = "/usr/lib/codex-app/update-builder";
+pub const PACKAGED_BUILDER_BUNDLE_ROOT: &str = "/usr/lib/codex-app/update-builder";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Runtime configuration values that control how the updater behaves on Linux.

@@ -173,9 +173,9 @@ Non-capabilities:
 - Likelihood: Medium for developer/local systems; lower for locked packaged systems if config is hardened.
 - Impact: Medium to High depending whether package is installed locally or published.
 - Priority: Medium.
-- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors; updater rebuild commands use a fixed system PATH; packaged builder-root redirects require explicit developer mode; package staging rejects unsafe app symlinks and normalizes app payload modes.
-- Gaps: packaged builder-root ownership and permissions are not checked before copy.
-- Recommendations: validate packaged builder-root ownership and permissions before copying builder scripts.
+- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors; updater rebuild commands use a fixed system PATH; packaged builder-root redirects require explicit developer mode; package staging rejects unsafe app symlinks and normalizes app payload modes; builder bundle copying rejects symlinked entries, rejects group/world-writable production roots, and requires the packaged root path to be owned by root.
+- Gaps: developer mode intentionally trusts the configured local builder root, and generated package contents still depend on unauthenticated upstream inputs.
+- Recommendations: keep builder-root validation covered by updater tests, and pair it with upstream artifact verification before public distribution.
 
 ### T7: Logs and state expose sensitive configured URLs or command output
 
@@ -184,9 +184,9 @@ Non-capabilities:
 - Likelihood: Low. Default URL has no secret.
 - Impact: Low to Medium depending token sensitivity.
 - Priority: Low.
-- Existing mitigations: no hardcoded secrets found.
-- Gaps: no URL userinfo rejection or redaction.
-- Recommendations: reject userinfo, redact query values and credential-looking stderr before persistence.
+- Existing mitigations: no hardcoded secrets found; updater DMG URLs reject userinfo before request execution; updater-generated URL error context redacts query values.
+- Gaps: subprocess stderr can still include arbitrary sensitive output and be persisted in build or package-manager failure logs.
+- Recommendations: keep URL validation/redaction tests and redact credential-looking stderr before persistence.
 
 ### T8: NPM latest-state trust changes runtime CLI behavior
 
@@ -212,7 +212,7 @@ High-priority implementation targets:
 Medium-priority implementation targets:
 
 - Remove fixed-port webview spoofing where feasible.
-- Validate packaged builder-root ownership and permissions.
+- Keep packaged builder-root ownership, permission, and symlink validation covered by tests.
 - Keep package payload symlink and mode checks covered by smoke tests.
 - Keep updater download timeout and maximum-size checks covered by regression tests.
 - Evaluate narrower service filesystem protections with explicit writable XDG paths.
