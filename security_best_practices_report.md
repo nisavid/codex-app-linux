@@ -10,17 +10,17 @@ Current Electron documentation was fetched through `ctx7` after resolving `/elec
 
 ## Critical Findings
 
-None identified in the tracked source review. The review did not include generated `codex-app/` or `Codex.dmg`; both were absent from this checkout during verification, so upstream Electron `webPreferences`, IPC handlers, CSP, and code-signing state remain open items.
+None identified in the tracked source review. The review did not include generated `codex-app/` or `Codex.dmg`; both were absent from this checkout during verification, so upstream Electron `webPreferences`, IPC handlers, CSP, and code-signing state remain open items. The branch now includes `scripts/inspect-electron-security.js` as a repeatable static gate for the generated app once it exists.
 
 ## High Findings
 
 ### H-1: Generated Electron app security settings remain unverified
 
 - Location: [install.sh](/home/nisavid/src/nisavid/codex-app-linux/install.sh:685)
-- Evidence: the generated launcher now omits `--no-sandbox` and `--disable-gpu-sandbox` by default. It retains an explicit `CODEX_APP_DISABLE_ELECTRON_SANDBOX=1` compatibility fallback. Generated upstream `BrowserWindow` settings were not inspectable because `codex-app/` is absent.
+- Evidence: the generated launcher now omits `--no-sandbox` and `--disable-gpu-sandbox` by default. It retains an explicit `CODEX_APP_DISABLE_ELECTRON_SANDBOX=1` compatibility fallback. Generated upstream `BrowserWindow` settings were not inspectable because `codex-app/` is absent. `scripts/inspect-electron-security.js` flags high-confidence static anti-patterns such as `nodeIntegration: true`, `contextIsolation: false`, `sandbox: false`, insecure `<webview>` attributes, and `shell.openExternal` review points.
 - Impact: renderer, webview, or malicious local-origin compromise now has a stronger Chromium process boundary by default, but generated app settings and the explicit opt-out still need release-gate review.
 - Current controls: sandboxed launch by default and an explicit documented lower-security fallback.
-- Recommendation: inspect generated app `webPreferences`, navigation, webview, IPC, and `openExternal` handling before public release; keep sandbox disablement opt-in only.
+- Recommendation: after building the current generated app, run `node scripts/inspect-electron-security.js codex-app` and manually inspect generated app `webPreferences`, navigation, webview, IPC, CSP, and `openExternal` handling before public release; keep sandbox disablement opt-in only.
 
 ### H-2: Mutable upstream/update payloads are not authenticated before rebuild and install
 

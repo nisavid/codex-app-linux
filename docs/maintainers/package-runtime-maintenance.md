@@ -231,6 +231,7 @@ Launcher or webview changes:
 ```bash
 make build-app
 sed -n '1,180p' codex-app/start.sh
+node scripts/inspect-electron-security.js codex-app
 ```
 
 When runtime behavior changes, launch the app or inspect

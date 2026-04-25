@@ -554,6 +554,37 @@ test_updater_service_hardening() {
     assert_contains "$service" "UMask=077"
 }
 
+test_electron_security_inspector_flags_insecure_generated_app() {
+    info "Checking Electron security inspector flags insecure generated app settings"
+    local workspace="$TMP_DIR/electron-security"
+    local report="$workspace/report.txt"
+    mkdir -p "$workspace/app"
+    cat > "$workspace/app/main.js" <<'SCRIPT'
+const { BrowserWindow, shell } = require('electron')
+new BrowserWindow({
+  webPreferences: {
+    nodeIntegration: true,
+    contextIsolation: false,
+    sandbox: false
+  }
+})
+shell.openExternal(url)
+SCRIPT
+    cat > "$workspace/app/index.html" <<'HTML'
+<webview src="https://example.invalid" nodeintegration allowpopups></webview>
+HTML
+
+    if node "$REPO_DIR/scripts/inspect-electron-security.js" "$workspace/app" > "$report" 2>&1; then
+        fail "Expected Electron security inspector to reject insecure fixture"
+    fi
+
+    assert_contains "$report" "nodeIntegration: true"
+    assert_contains "$report" "contextIsolation: false"
+    assert_contains "$report" "sandbox: false"
+    assert_contains "$report" "<webview> enables Node.js integration"
+    assert_contains "$report" "shell.openExternal"
+}
+
 make_fake_extracted_asar() {
     local root="$1"
     local bundle_body="$2"
@@ -650,6 +681,7 @@ main() {
     test_launcher_template_sanity
     test_hash_workflow_opens_review_pr
     test_updater_service_hardening
+    test_electron_security_inspector_flags_insecure_generated_app
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
     test_linux_file_manager_patch_fails_soft
