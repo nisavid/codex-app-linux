@@ -8,6 +8,7 @@ APP_DIR="${APP_DIR:-$PWD/codex-app}"
 DIST_DIR="${DIST_DIR:-$PWD/dist}"
 DMG_PATH="${DMG:-$PWD/Codex.dmg}"
 CHECKSUM_FILE="${CHECKSUM_FILE:-$DIST_DIR/SHA256SUMS}"
+PUBLIC_KEY_FILE="${CODEX_RELEASE_GPG_PUBLIC_KEY:-$DIST_DIR/release-signing-key.asc}"
 REQUIRE_RELEASE_SIGNATURE="${REQUIRE_RELEASE_SIGNATURE:-0}"
 CODEX_RELEASE_GATE_SKIP_PACKAGE_METADATA="${CODEX_RELEASE_GATE_SKIP_PACKAGE_METADATA:-0}"
 RELEASE_GATE_TMP_DIR=""
@@ -153,6 +154,7 @@ write_checksums() {
 
 sign_checksums() {
     local signature="${CHECKSUM_FILE}.asc"
+    local verify_home
 
     if [ "$REQUIRE_RELEASE_SIGNATURE" != "1" ] && [ -z "${CODEX_RELEASE_GPG_KEY:-}" ]; then
         info "Skipping detached signature; set REQUIRE_RELEASE_SIGNATURE=1 and CODEX_RELEASE_GPG_KEY for public releases"
@@ -169,7 +171,21 @@ sign_checksums() {
         --armor \
         "$CHECKSUM_FILE"
     require_file "$signature" "release checksum signature"
+
+    mkdir -p "$(dirname "$PUBLIC_KEY_FILE")"
+    if [ ! -f "$PUBLIC_KEY_FILE" ]; then
+        gpg --batch --yes --armor --export "$CODEX_RELEASE_GPG_KEY" > "$PUBLIC_KEY_FILE"
+    fi
+    require_file "$PUBLIC_KEY_FILE" "release signing public key"
+
+    verify_home="$(mktemp -d)"
+    chmod 0700 "$verify_home"
+    GNUPGHOME="$verify_home" gpg --batch --import "$PUBLIC_KEY_FILE" >/dev/null
+    GNUPGHOME="$verify_home" gpg --batch --verify "$signature" "$CHECKSUM_FILE" >/dev/null
+    rm -rf "$verify_home"
+
     info "Wrote $(realpath --relative-to="$PWD" "$signature" 2>/dev/null || printf '%s' "$signature")"
+    info "Wrote $(realpath --relative-to="$PWD" "$PUBLIC_KEY_FILE" 2>/dev/null || printf '%s' "$PUBLIC_KEY_FILE")"
 }
 
 main() {

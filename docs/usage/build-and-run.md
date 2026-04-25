@@ -266,8 +266,9 @@ make clean-state
 matching package type. `make release-gate` verifies the reviewed upstream DMG
 hash, scans the generated app, validates package metadata, writes
 `dist/SHA256SUMS`, and signs that checksum file when
-`REQUIRE_RELEASE_SIGNATURE=1` and `CODEX_RELEASE_GPG_KEY` are set. `make
-install` installs the newest built native package.
+`REQUIRE_RELEASE_SIGNATURE=1` and `CODEX_RELEASE_GPG_KEY` are set. Signed gates
+also publish `dist/release-signing-key.asc` and verify the signature against
+that public key. `make install` installs the newest built native package.
 
 ## How The Build Works
 

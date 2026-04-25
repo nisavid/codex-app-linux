@@ -693,6 +693,26 @@ test_release_gate_writes_checksums_and_requires_signature() {
     cat > "$bin_dir/gpg" <<'SCRIPT'
 #!/bin/bash
 output=""
+mode=""
+args=("$@")
+for arg in "${args[@]}"; do
+    case "$arg" in
+        --export) mode="export" ;;
+        --import) mode="import" ;;
+        --verify) mode="verify" ;;
+    esac
+done
+case "$mode" in
+    export)
+        printf '%s\n' '-----BEGIN PGP PUBLIC KEY BLOCK-----'
+        printf '%s\n' 'test'
+        printf '%s\n' '-----END PGP PUBLIC KEY BLOCK-----'
+        exit 0
+        ;;
+    import|verify)
+        exit 0
+        ;;
+esac
 while [ "$#" -gt 0 ]; do
     if [ "$1" = "--output" ]; then
         output="$2"
@@ -728,7 +748,9 @@ SCRIPT
 
     assert_file_exists "$workspace/dist/SHA256SUMS"
     assert_file_exists "$workspace/dist/SHA256SUMS.asc"
+    assert_file_exists "$workspace/dist/release-signing-key.asc"
     assert_contains "$workspace/dist/SHA256SUMS" "codex-app_26.422.30944.2080_amd64.deb"
+    assert_contains "$workspace/dist/release-signing-key.asc" "BEGIN PGP PUBLIC KEY"
     assert_not_contains "$workspace/dist/SHA256SUMS" ".pkg.tar.zst.sig"
 }
 

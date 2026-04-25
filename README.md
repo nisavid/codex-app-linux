@@ -106,7 +106,9 @@ make release-gate
 
 The gate verifies the DMG hash, scans the generated app for high-confidence
 Electron security anti-patterns, validates package metadata, writes
-`dist/SHA256SUMS`, and writes `dist/SHA256SUMS.asc`.
+`dist/SHA256SUMS`, writes `dist/SHA256SUMS.asc`, exports
+`dist/release-signing-key.asc`, and verifies the detached signature against that
+public key in a temporary keyring.
 
 Install the newest package in `dist/`:
 

@@ -249,7 +249,12 @@ make release-gate
 The gate verifies the upstream DMG hash, extracts and inspects
 `codex-app/resources/app.asar`, requires matching native package metadata tools
 for package identity checks, writes `dist/SHA256SUMS`, and writes a detached
-`dist/SHA256SUMS.asc` signature when signing is required.
+`dist/SHA256SUMS.asc` signature when signing is required. Signed release gates
+also publish `dist/release-signing-key.asc` and verify the detached checksum
+signature against that public key in a temporary keyring. Set
+`CODEX_RELEASE_GPG_PUBLIC_KEY=/path/to/public-key.asc` to supply a pre-exported
+public key; otherwise the gate exports the public key from
+`CODEX_RELEASE_GPG_KEY`.
 
 Launcher or webview changes:
 
