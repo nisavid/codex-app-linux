@@ -238,6 +238,39 @@ test_package_staging_normalizes_payload_modes() {
     [ "$(stat -c '%a' "$staged_exec")" = "755" ] || fail "Expected staged executable mode 755"
 }
 
+test_package_staging_normalizes_package_file_modes_under_private_umask() {
+    info "Checking package staging normalizes package file modes under private umask"
+    local workspace="$TMP_DIR/package-root-file-modes"
+    local app_dir="$workspace/app"
+    local root="$workspace/root"
+    local updater_bin="$workspace/codex-app-updater"
+
+    make_fake_app "$app_dir"
+    printf '#!/bin/bash\nexit 0\n' > "$updater_bin"
+    chmod +x "$updater_bin"
+
+    (
+        umask 077
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        PACKAGE_NAME=codex-app \
+        APP_DIR="$app_dir" \
+        DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.desktop" \
+        ICON_SOURCE="$REPO_DIR/assets/codex.png" \
+        UPDATER_BINARY_SOURCE="$updater_bin" \
+        UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service" \
+        PACKAGED_RUNTIME_SOURCE="$REPO_DIR/packaging/linux/packaged-runtime.sh" \
+        stage_common_package_files "$root"
+        PACKAGE_NAME=codex-app \
+        UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service" \
+        stage_update_builder_bundle "$root"
+        PACKAGE_NAME=codex-app write_launcher_stub "$root"
+    )
+
+    [ "$(stat -c '%a' "$root/usr/lib/codex-app/update-builder/install.sh")" = "755" ] || fail "Expected update-builder install.sh mode 755"
+    [ "$(stat -c '%a' "$root/usr/lib/codex-app/update-builder/scripts/lib/package-common.sh")" = "755" ] || fail "Expected update-builder package-common.sh mode 755"
+}
+
 test_package_staging_normalizes_system_directory_modes_under_private_umask() {
     info "Checking package staging normalizes system directory modes under private umask"
     local workspace="$TMP_DIR/package-system-dir-modes"
@@ -581,21 +614,39 @@ PY
 
 test_launcher_template_sanity() {
     info "Checking launcher template markers"
-    assert_contains "$REPO_DIR/install.sh" "nohup python3 -m http.server --bind 127.0.0.1 5175"
-    assert_not_contains "$REPO_DIR/install.sh" "pkill -f \"http.server 5175\""
-    assert_contains "$REPO_DIR/install.sh" "wait_for_webview_server"
-    assert_contains "$REPO_DIR/install.sh" "verify_webview_origin"
-    assert_contains "$REPO_DIR/install.sh" "Webview origin verified."
-    assert_contains "$REPO_DIR/install.sh" "--app-id=codex-app"
-    assert_contains "$REPO_DIR/install.sh" "--ozone-platform-hint=auto"
-    assert_contains "$REPO_DIR/install.sh" "CODEX_APP_DISABLE_ELECTRON_SANDBOX"
-    assert_contains "$REPO_DIR/install.sh" "electron_args=("
-    assert_not_contains "$REPO_DIR/install.sh" "    --no-sandbox \\\\"
-    assert_not_contains "$REPO_DIR/install.sh" "    --disable-gpu-sandbox \\\\"
-    assert_contains "$REPO_DIR/install.sh" "PACKAGED_RUNTIME_HELPER"
-    assert_contains "$REPO_DIR/install.sh" "prompt_install_missing_cli"
-    assert_contains "$REPO_DIR/install.sh" "Install it now? \\[Y/n\\]"
-    assert_contains "$REPO_DIR/install.sh" "is_interactive_terminal"
+    local workspace="$TMP_DIR/generated-launcher"
+    local generated="$workspace/codex-app/start.sh"
+
+    mkdir -p "$workspace"
+    (
+        CODEX_INSTALLER_SKIP_MAIN=1
+        CODEX_INSTALL_DIR="$workspace/codex-app"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        mkdir -p "$CODEX_INSTALL_DIR"
+        create_start_script
+    )
+
+    assert_file_exists "$generated"
+    assert_contains "$generated" "nohup python3 -m http.server --bind 127.0.0.1 5175"
+    assert_not_contains "$generated" "pkill -f \"http.server 5175\""
+    assert_contains "$generated" "cleanup_launcher"
+    assert_contains "$generated" "HTTP_PID"
+    assert_contains "$generated" "ELECTRON_PID"
+    assert_contains "$generated" "wait_for_webview_server"
+    assert_contains "$generated" "verify_webview_origin"
+    assert_contains "$generated" "Webview origin verified."
+    assert_contains "$generated" "--app-id=codex-app"
+    assert_contains "$generated" "--ozone-platform-hint=auto"
+    assert_contains "$generated" "CODEX_APP_DISABLE_ELECTRON_SANDBOX"
+    assert_contains "$generated" "electron_args=("
+    assert_not_contains "$generated" "    --no-sandbox \\\\"
+    assert_not_contains "$generated" "    --disable-gpu-sandbox \\\\"
+    assert_not_contains "$generated" 'exec "$SCRIPT_DIR'
+    assert_contains "$generated" "PACKAGED_RUNTIME_HELPER"
+    assert_contains "$generated" "prompt_install_missing_cli"
+    assert_contains "$generated" "Install it now? \\[Y/n\\]"
+    assert_contains "$generated" "is_interactive_terminal"
     assert_contains "$REPO_DIR/packaging/linux/packaged-runtime.sh" "CHROME_DESKTOP"
     assert_not_contains "$REPO_DIR/packaging/linux/packaged-runtime.sh" "        PATH \\\\"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
@@ -630,6 +681,8 @@ test_apple_dmg_verifier_pins_upstream_trust_inputs() {
     assert_contains "$script" "spctl -a -t open --context context:primary-signature"
     assert_contains "$script" "xcrun stapler validate"
     assert_contains "$script" "hdiutil verify"
+    assert_contains "$script" "flake_dmg_sri"
+    assert_contains "$script" "Codex\\.dmg"
     assert_contains "$script" "CODEX_REQUIRE_DMG_GATEKEEPER"
     assert_contains "$script" "CODEX_REQUIRE_DMG_STAPLE"
     assert_not_contains "$script" "CODEX_EXPECTED_BUNDLE_ID"
@@ -661,7 +714,7 @@ test_updater_service_hardening() {
     assert_not_contains "$service" "NoNewPrivileges=yes"
     assert_contains "$service" "PrivateTmp=yes"
     assert_contains "$service" "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"
-    assert_contains "$service" "Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/bin"
+    assert_contains "$service" "Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:%h/.local/bin"
     assert_contains "$service" "UMask=077"
 }
 
@@ -680,6 +733,7 @@ new BrowserWindow({
   }
 })
 shell.openExternal(url)
+new BrowserWindow({ webPreferences: { webSecurity: false } })
 SCRIPT
     cat > "$workspace/app/index.html" <<'HTML'
 <webview src="https://example.invalid" nodeintegration allowpopups></webview>
@@ -692,6 +746,7 @@ HTML
     assert_contains "$report" "nodeIntegration: true"
     assert_contains "$report" "contextIsolation: false"
     assert_contains "$report" "sandbox: false"
+    assert_contains "$report" "webSecurity: false"
     assert_contains "$report" "<webview> enables Node.js integration"
     assert_contains "$report" "shell.openExternal"
 }
@@ -713,6 +768,14 @@ test_release_gate_requires_verified_dmg_hash() {
     ); then
         fail "Expected release gate to reject missing trusted DMG hash"
     fi
+}
+
+test_release_gate_does_not_fetch_asar_with_npx() {
+    info "Checking release gate does not fetch asar with npx"
+    assert_not_contains "$REPO_DIR/scripts/release-gate.sh" "npx --yes asar"
+    assert_contains "$REPO_DIR/scripts/release-gate.sh" "npx --no-install asar"
+    assert_not_contains "$REPO_DIR/scripts/release-gate.sh" "grep -oP"
+    assert_contains "$REPO_DIR/scripts/release-gate.sh" "flake_dmg_sri"
 }
 
 test_release_gate_writes_checksums_and_requires_signature() {
@@ -947,6 +1010,7 @@ main() {
     test_package_identifiers_reject_path_characters
     test_package_staging_rejects_unsafe_symlinks
     test_package_staging_normalizes_payload_modes
+    test_package_staging_normalizes_package_file_modes_under_private_umask
     test_package_staging_normalizes_system_directory_modes_under_private_umask
     test_deb_builder_smoke
     test_rpm_builder_smoke
@@ -963,6 +1027,7 @@ main() {
     test_updater_service_hardening
     test_electron_security_inspector_flags_insecure_generated_app
     test_release_gate_requires_verified_dmg_hash
+    test_release_gate_does_not_fetch_asar_with_npx
     test_release_gate_writes_checksums_and_requires_signature
     test_release_gate_removes_stale_signature_when_unsigned
     test_release_gate_fails_on_insecure_asar_contents

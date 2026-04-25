@@ -265,8 +265,9 @@ make clean-state
 `make package` detects the native package manager on the host and builds the
 matching package type. `make release-gate` verifies the reviewed upstream DMG
 hash, scans the generated app, validates package metadata, writes
-`dist/SHA256SUMS`, and signs that checksum file when
-`REQUIRE_RELEASE_SIGNATURE=1` and `CODEX_RELEASE_GPG_KEY` are set. Signed gates
+`dist/SHA256SUMS`, and signs that checksum file whenever
+`CODEX_RELEASE_GPG_KEY` is set. `REQUIRE_RELEASE_SIGNATURE=1` makes the gate
+fail when that key is missing, which is the public-release mode. Signed gates
 also publish `dist/release-signing-key.asc` and verify the signature against
 that public key. `make install` installs the newest built native package.
 

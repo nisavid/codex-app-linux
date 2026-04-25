@@ -6,9 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process,
     process::Command,
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 const PACKAGE_NAME: &str = "codex-app";
@@ -303,13 +301,7 @@ fn run_install(command: &mut Command) -> Result<()> {
 #[derive(Debug)]
 struct StagedPackage {
     path: PathBuf,
-    dir: PathBuf,
-}
-
-impl Drop for StagedPackage {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.dir);
-    }
+    _dir: tempfile::TempDir,
 }
 
 fn stage_install_candidate(path: &Path, expected_kind: PackageKind) -> Result<StagedPackage> {
@@ -318,13 +310,22 @@ fn stage_install_candidate(path: &Path, expected_kind: PackageKind) -> Result<St
     let file_name = path
         .file_name()
         .with_context(|| format!("Package path has no file name: {}", path.display()))?;
-    let dir = private_install_stage_dir();
-    fs::create_dir(&dir).with_context(|| format!("Failed to create {}", dir.display()))?;
+    let dir = tempfile::Builder::new()
+        .prefix("codex-app-updater-install.")
+        .permissions(fs::Permissions::from_mode(0o700))
+        .tempdir()
+        .context("Failed to create private install staging directory")?;
     #[cfg(unix)]
-    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))
-        .with_context(|| format!("Failed to restrict {}", dir.display()))?;
+    {
+        let mode = dir.path().metadata()?.permissions().mode();
+        anyhow::ensure!(
+            mode & 0o077 == 0,
+            "Private install staging directory has unsafe mode {:o}",
+            mode & 0o777
+        );
+    }
 
-    let staged_path = dir.join(file_name);
+    let staged_path = dir.path().join(file_name);
     fs::copy(path, &staged_path).with_context(|| {
         format!(
             "Failed to copy install candidate {} to {}",
@@ -335,7 +336,7 @@ fn stage_install_candidate(path: &Path, expected_kind: PackageKind) -> Result<St
 
     Ok(StagedPackage {
         path: staged_path,
-        dir,
+        _dir: dir,
     })
 }
 
@@ -380,18 +381,6 @@ fn ensure_install_candidate_source(path: &Path, expected_kind: PackageKind) -> R
     }
 
     Ok(())
-}
-
-fn private_install_stage_dir() -> PathBuf {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    std::env::temp_dir().join(format!(
-        "codex-app-updater-install.{}.{}",
-        process::id(),
-        timestamp
-    ))
 }
 
 fn installed_version_from_command(program: &Path, args: &[&str]) -> String {

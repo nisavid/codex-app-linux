@@ -416,7 +416,15 @@ fn is_native_package_file(path: &Path) -> bool {
 }
 
 fn build_command_path() -> OsString {
-    OsString::from(BUILD_COMMAND_PATH)
+    match std::env::var_os("HOME") {
+        Some(home) if !home.is_empty() => {
+            let mut path = OsString::from(BUILD_COMMAND_PATH);
+            path.push(":");
+            path.push(Path::new(&home).join(".local/bin"));
+            path
+        }
+        _ => OsString::from(BUILD_COMMAND_PATH),
+    }
 }
 
 async fn run_and_log(command: &mut Command, log_path: &Path) -> Result<()> {
@@ -743,14 +751,20 @@ exit 88
     #[test]
     fn build_command_path_ignores_user_environment() {
         let original_path = std::env::var_os("PATH");
+        let original_home = std::env::var_os("HOME");
         std::env::set_var("PATH", "/tmp/malicious:/home/user/bin");
+        std::env::set_var("HOME", "/home/user");
         assert_eq!(
             build_command_path(),
-            OsString::from("/usr/local/sbin:/usr/local/bin:/usr/bin:/bin")
+            OsString::from("/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/home/user/.local/bin")
         );
         match original_path {
             Some(path) => std::env::set_var("PATH", path),
             None => std::env::remove_var("PATH"),
+        }
+        match original_home {
+            Some(path) => std::env::set_var("HOME", path),
+            None => std::env::remove_var("HOME"),
         }
     }
 
