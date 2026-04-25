@@ -53,9 +53,9 @@ pending package.
 | Stuck on the Codex logo splash | Check `~/.cache/codex-app/launcher.log`. Another process may be serving port `5175`, or `content/webview/` may be incomplete. |
 | `CODEX_CLI_PATH` error | Install the CLI with `npm i -g @openai/codex` or `npm i -g --prefix ~/.local @openai/codex`. |
 | Electron hangs while the CLI is outdated | Re-run the launcher, then inspect `~/.cache/codex-app/launcher.log` and `~/.local/state/codex-app-updater/service.log`. The CLI preflight is best-effort, uses a 1-hour registry lookup cooldown, falls back to `npm install -g --prefix ~/.local` when global install fails, and warns instead of blocking when automatic refresh fails. |
-| GPU, Vulkan, or Wayland errors | The launcher sets `--ozone-platform-hint=auto`, `--disable-gpu-sandbox`, `--disable-gpu-compositing`, and `--enable-features=WaylandWindowDecorations` by default. To force X11, try `./codex-app/start.sh --ozone-platform=x11`. |
+| GPU, Vulkan, or Wayland errors | The launcher sets `--ozone-platform-hint=auto`, `--disable-gpu-compositing`, and `--enable-features=WaylandWindowDecorations` by default. To force X11, try `./codex-app/start.sh --ozone-platform=x11`. |
 | Window flickering | GPU compositing is disabled by default. If flickering persists, try `./codex-app/start.sh --disable-gpu`. |
-| Sandbox errors | The launcher already sets `--no-sandbox`. |
+| Sandbox errors | The launcher keeps Electron sandboxing enabled by default. As a temporary compatibility fallback, run `CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 ./codex-app/start.sh` and treat that mode as lower security. |
 | Stale install or cached DMG | Run `./install.sh --fresh` to remove the generated app tree and redownload the DMG. |
 | Usage help | Run `./install.sh --help` or `./codex-app/start.sh --help`. |
 | `codex-app-updater` keeps running after package removal | Run `systemctl --user disable --now codex-app-updater.service`, then confirm `/opt/codex-app` is gone. |

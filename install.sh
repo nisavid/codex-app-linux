@@ -444,6 +444,7 @@ Options:
   --ozone-platform=x11        Force X11 instead of Wayland
 
 Extra flags are passed directly to Electron.
+Set CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 only as a compatibility fallback.
 
 Logs: ~/.cache/codex-app/launcher.log
 HELP
@@ -680,15 +681,19 @@ echo "Using CODEX_CLI_PATH=$CODEX_CLI_PATH"
 
 cd "$SCRIPT_DIR"
 echo "$$" > "$APP_PID_FILE"
-exec "$SCRIPT_DIR/electron" \
-    --no-sandbox \
-    --class=codex-app \
-    --app-id=codex-app \
-    --ozone-platform-hint=auto \
-    --disable-gpu-sandbox \
-    --disable-gpu-compositing \
-    --enable-features=WaylandWindowDecorations \
-    "$@"
+electron_args=(
+    --class=codex-app
+    --app-id=codex-app
+    --ozone-platform-hint=auto
+    --disable-gpu-compositing
+    --enable-features=WaylandWindowDecorations
+)
+
+if [ "${CODEX_APP_DISABLE_ELECTRON_SANDBOX:-0}" = "1" ]; then
+    electron_args+=(--no-sandbox --disable-gpu-sandbox)
+fi
+
+exec "$SCRIPT_DIR/electron" "${electron_args[@]}" "$@"
 SCRIPT
 
     chmod +x "$INSTALL_DIR/start.sh"
