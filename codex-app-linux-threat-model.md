@@ -140,9 +140,9 @@ Non-capabilities:
 - Likelihood: Medium. Requires renderer content compromise or local-origin spoofing, but local webview spoofing is plausible.
 - Impact: High. User files, tokens, CLI config, and local processes are exposed.
 - Priority: High.
-- Existing mitigations: launcher keeps Chromium sandboxing enabled by default and has no Node-related flags visible; upstream app settings remain unverified.
-- Gaps: absent generated-app review and explicit lower-security sandbox opt-out.
-- Recommendations: verify `contextIsolation`, `nodeIntegration`, sandbox, navigation/window/openExternal policy, and inspect generated app bundle as a release gate.
+- Existing mitigations: launcher keeps Chromium sandboxing enabled by default and has no Node-related flags visible; `scripts/inspect-electron-security.js` provides a static generated-app inspection gate.
+- Gaps: generated app has not been built and reviewed in this checkout; the scanner is not a substitute for manual IPC/navigation/CSP review; explicit lower-security sandbox opt-out remains.
+- Recommendations: after building the generated app, run the inspector and verify `contextIsolation`, `nodeIntegration`, sandbox, navigation/window/openExternal policy, CSP, and IPC behavior as a release gate.
 
 ### T4: Local webview origin is spoofed
 
