@@ -44,11 +44,9 @@ resolve_package_version() {
     done < "$metadata_file"
 
     [ -n "$version" ] || error "Missing CODEX_APP_PACKAGE_VERSION in $metadata_file"
-    case "$version" in
-        *[!0-9.]*)
-            error "Invalid package version in $metadata_file: $version"
-            ;;
-    esac
+    if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+){2,3}$ ]]; then
+        error "Invalid package version in $metadata_file: $version"
+    fi
 
     printf '%s\n' "$version"
 }
