@@ -63,14 +63,17 @@ pending package.
 ## Webview Startup Checks
 
 Codex expects the extracted webview assets to be available from a local
-origin on port `5175`. The launcher starts `python3 -m http.server 5175` from
-`content/webview/`, waits for the port, and checks that
+origin on port `5175`. The launcher starts
+`python3 -m http.server --bind 127.0.0.1 5175` from `content/webview/`, waits
+for the port, and checks that
 `http://127.0.0.1:5175/index.html` contains expected Codex startup markers.
+Only loopback access is expected.
 
 If the app opens to a blank window or never leaves the splash screen:
 
 ```bash
 ss -tlnp | grep 5175
+curl -fsS http://127.0.0.1:5175/index.html | grep 'startup-loader'
 sed -n '1,200p' ~/.cache/codex-app/launcher.log
 ```
 

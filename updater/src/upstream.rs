@@ -166,6 +166,14 @@ async fn download_dmg_with_max_bytes(
 
 fn parse_dmg_url(dmg_url: &str) -> Result<Url> {
     let url = Url::parse(dmg_url).context("Failed to parse DMG URL")?;
+    let is_loopback_host = matches!(
+        url.host_str(),
+        Some("localhost") | Some("127.0.0.1") | Some("::1")
+    );
+    ensure!(
+        url.scheme() == "https" || (url.scheme() == "http" && is_loopback_host),
+        "DMG URL must use https unless it targets localhost/127.0.0.1/::1 over http"
+    );
     ensure!(
         url.username().is_empty() && url.password().is_none(),
         "DMG URL must not include userinfo"
@@ -177,19 +185,22 @@ fn safe_url_for_log(dmg_url: &str) -> String {
     let Ok(mut url) = Url::parse(dmg_url) else {
         return "<invalid URL>".to_string();
     };
+    let had_fragment = url.fragment().is_some();
+    url.set_fragment(None);
     if url.query().is_some() {
-        let fragment = url.fragment().map(str::to_string);
-        url.set_fragment(None);
         url.set_query(None);
         let mut safe_url = url.to_string();
         safe_url.push_str("?<redacted>");
-        if let Some(fragment) = fragment {
-            safe_url.push('#');
-            safe_url.push_str(&fragment);
+        if had_fragment {
+            safe_url.push_str("#<redacted>");
         }
         return safe_url;
     }
-    url.to_string()
+    let mut safe_url = url.to_string();
+    if had_fragment {
+        safe_url.push_str("#<redacted>");
+    }
+    safe_url
 }
 
 #[cfg(test)]
@@ -256,11 +267,28 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn rejects_non_https_non_loopback_dmg_url_before_request() -> Result<()> {
+        let client = Client::builder().build()?;
+        let error = fetch_remote_metadata(&client, "http://example.com/Codex.dmg")
+            .await
+            .expect_err("non-HTTPS URL should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("DMG URL must use https unless it targets localhost"));
+        Ok(())
+    }
+
     #[test]
-    fn redacts_query_values_for_url_logging() {
+    fn redacts_query_and_fragment_values_for_url_logging() {
         assert_eq!(
-            safe_url_for_log("https://example.com/Codex.dmg?token=secret&build=123"),
-            "https://example.com/Codex.dmg?<redacted>"
+            safe_url_for_log("https://example.com/Codex.dmg?token=secret&build=123#nonce"),
+            "https://example.com/Codex.dmg?<redacted>#<redacted>"
+        );
+        assert_eq!(
+            safe_url_for_log("https://example.com/Codex.dmg#nonce"),
+            "https://example.com/Codex.dmg#<redacted>"
         );
     }
 

@@ -65,6 +65,13 @@ sri_to_hex() {
     printf '%s' "$payload" | base64 -D 2>/dev/null | od -An -tx1 | tr -d ' \n'
 }
 
+flake_dmg_sri() {
+    awk '
+        /Codex\.dmg/ { found_dmg = 1 }
+        found_dmg && /hash = "sha256-/ { print; exit }
+    ' "$REPO_DIR/flake.nix" | sed -E 's/.*(sha256-[^"]+).*/\1/'
+}
+
 expected_dmg_sha256() {
     if [ -n "${CODEX_DMG_SHA256:-}" ]; then
         printf '%s\n' "$CODEX_DMG_SHA256"
@@ -73,7 +80,7 @@ expected_dmg_sha256() {
 
     local sri="${CODEX_DMG_SRI:-}"
     if [ -z "$sri" ] && [ -f "$REPO_DIR/flake.nix" ]; then
-        sri="$(grep -Eo 'hash = "sha256-[^"]+' "$REPO_DIR/flake.nix" | sed 's/hash = "//' | head -n 1 || true)"
+        sri="$(flake_dmg_sri || true)"
     fi
 
     [ -n "$sri" ] || return 0

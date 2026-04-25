@@ -425,11 +425,24 @@ APP_NOTIFICATION_ICON_SYSTEM="/usr/share/icons/hicolor/256x256/apps/$APP_NOTIFIC
 APP_NOTIFICATION_ICON_REPO="$SCRIPT_DIR/../assets/codex.png"
 ORIGINAL_STDIN_IS_TTY=0
 ORIGINAL_STDOUT_IS_TTY=0
+HTTP_PID=""
+ELECTRON_PID=""
 
 [ -t 0 ] && ORIGINAL_STDIN_IS_TTY=1
 [ -t 1 ] && ORIGINAL_STDOUT_IS_TTY=1
 
 mkdir -p "$LOG_DIR" "$APP_STATE_DIR"
+
+cleanup_launcher() {
+    if [ -n "${HTTP_PID:-}" ]; then
+        kill "$HTTP_PID" 2>/dev/null || true
+    fi
+    if [ -n "${ELECTRON_PID:-}" ] && kill -0 "$ELECTRON_PID" 2>/dev/null; then
+        kill "$ELECTRON_PID" 2>/dev/null || true
+    fi
+    rm -f "$APP_PID_FILE"
+}
+trap cleanup_launcher EXIT
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     cat <<'HELP'
@@ -631,7 +644,6 @@ if [ -d "$WEBVIEW_DIR" ] && [ "$(ls -A "$WEBVIEW_DIR" 2>/dev/null)" ]; then
     cd "$WEBVIEW_DIR"
     nohup python3 -m http.server --bind 127.0.0.1 5175 &
     HTTP_PID=$!
-    trap "kill $HTTP_PID 2>/dev/null" EXIT
 
     echo "Started webview server pid=$HTTP_PID dir=$WEBVIEW_DIR"
 
@@ -680,7 +692,6 @@ export_packaged_runtime_env
 echo "Using CODEX_CLI_PATH=$CODEX_CLI_PATH"
 
 cd "$SCRIPT_DIR"
-echo "$$" > "$APP_PID_FILE"
 electron_args=(
     --class=codex-app
     --app-id=codex-app
@@ -693,7 +704,10 @@ if [ "${CODEX_APP_DISABLE_ELECTRON_SANDBOX:-0}" = "1" ]; then
     electron_args+=(--no-sandbox --disable-gpu-sandbox)
 fi
 
-exec "$SCRIPT_DIR/electron" "${electron_args[@]}" "$@"
+"$SCRIPT_DIR/electron" "${electron_args[@]}" "$@" &
+ELECTRON_PID=$!
+echo "$ELECTRON_PID" > "$APP_PID_FILE"
+wait "$ELECTRON_PID"
 SCRIPT
 
     chmod +x "$INSTALL_DIR/start.sh"

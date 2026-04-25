@@ -95,7 +95,8 @@ The installed launcher is `/usr/bin/codex-app`, and the app lives under
 `/opt/codex-app`.
 
 Before publishing packages, run the release gate with a trusted upstream DMG
-hash and a signing key:
+hash. Set `CODEX_RELEASE_GPG_KEY` to produce detached signatures, and set
+`REQUIRE_RELEASE_SIGNATURE=1` when public releases must fail without them:
 
 ```bash
 CODEX_DMG_SHA256=<reviewed-dmg-sha256> \
@@ -103,6 +104,9 @@ REQUIRE_RELEASE_SIGNATURE=1 \
 CODEX_RELEASE_GPG_KEY=<key-id-or-email> \
 make release-gate
 ```
+
+For a local signed rehearsal where signatures are optional, omit
+`REQUIRE_RELEASE_SIGNATURE=1` and keep `CODEX_RELEASE_GPG_KEY` set.
 
 The gate verifies the DMG hash, scans the generated app for high-confidence
 Electron security anti-patterns, validates package metadata, writes

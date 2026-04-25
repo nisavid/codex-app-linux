@@ -52,6 +52,11 @@ function scanFile(file, findings) {
       message: "contextIsolation: false weakens preload/renderer isolation.",
     },
     {
+      pattern: /\bwebSecurity\s*:\s*false\b/g,
+      severity: "high",
+      message: "webSecurity: false disables Chromium same-origin protections.",
+    },
+    {
       pattern: /\bsandbox\s*:\s*false\b/g,
       severity: "high",
       message: "sandbox: false disables the renderer sandbox for this window.",

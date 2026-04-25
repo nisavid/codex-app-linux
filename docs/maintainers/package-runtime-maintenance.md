@@ -138,7 +138,8 @@ package builders use `CODEX_APP_PACKAGE_VERSION` from that file unless
 numeric dot-separated segments because the updater's installed-version
 comparison depends on that shape.
 
-The packaged user service sets a fixed `PATH`, `PrivateTmp=yes`,
+The packaged user service sets a constrained `PATH` with system directories and
+`%h/.local/bin`, `PrivateTmp=yes`,
 `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, and `UMask=077`.
 `NoNewPrivileges` is intentionally not set because the updater must invoke
 `pkexec` for the final privileged package install. Package staging normalizes
@@ -271,9 +272,11 @@ make release-gate
 The gate verifies the upstream DMG hash, extracts and inspects
 `codex-app/resources/app.asar`, requires matching native package metadata tools
 for package identity checks, writes `dist/SHA256SUMS`, and writes a detached
-`dist/SHA256SUMS.asc` signature when signing is required. Signed release gates
-also publish `dist/release-signing-key.asc` and verify the detached checksum
-signature against that public key in a temporary keyring. Set
+`dist/SHA256SUMS.asc` signature whenever `CODEX_RELEASE_GPG_KEY` is set. Set
+`REQUIRE_RELEASE_SIGNATURE=1` for public releases so a missing signing key fails
+the gate. Signed release gates also publish `dist/release-signing-key.asc` and
+verify the detached checksum signature against that public key in a temporary
+keyring. Set
 `CODEX_RELEASE_GPG_PUBLIC_KEY=/path/to/public-key.asc` to supply a pre-exported
 public key; otherwise the gate exports the public key from
 `CODEX_RELEASE_GPG_KEY`.
