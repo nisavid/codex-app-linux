@@ -227,8 +227,8 @@ patchAssetFiles(
   `WARN: Could not find resolved theme bundle in ${webviewAssetsDir} — skipping translucent sidebar default patch`,
 );
 
-if (packageJson.desktopName !== "codex-desktop.desktop") {
-  packageJson.desktopName = "codex-desktop.desktop";
+if (packageJson.desktopName !== "codex-app.desktop") {
+  packageJson.desktopName = "codex-app.desktop";
   fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
 }
 

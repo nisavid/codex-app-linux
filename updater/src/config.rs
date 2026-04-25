@@ -5,7 +5,7 @@ use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 
-const SERVICE_NAME: &str = "codex-update-manager";
+const SERVICE_NAME: &str = "codex-app-updater";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Runtime configuration values that control how the updater behaves on Linux.
@@ -72,7 +72,7 @@ impl RuntimePaths {
 impl RuntimeConfig {
     /// Builds the default runtime configuration for the resolved paths.
     pub fn default_with_paths(paths: &RuntimePaths) -> Self {
-        let packaged_bundle_root = PathBuf::from("/opt/codex-desktop/update-builder");
+        let packaged_bundle_root = PathBuf::from("/usr/lib/codex-app/update-builder");
         let builder_bundle_root = if packaged_bundle_root.exists() {
             packaged_bundle_root
         } else {
@@ -90,7 +90,7 @@ impl RuntimeConfig {
             notifications: true,
             workspace_root: paths.cache_dir.clone(),
             builder_bundle_root,
-            app_executable_path: PathBuf::from("/opt/codex-desktop/electron"),
+            app_executable_path: PathBuf::from("/opt/codex-app/electron"),
         }
     }
 
@@ -156,7 +156,7 @@ auto_install_on_app_exit = false
 notifications = false
 workspace_root = "/tmp/codex-workspaces"
 builder_bundle_root = "/tmp/codex-builder"
-app_executable_path = "/opt/codex-desktop/electron"
+app_executable_path = "/opt/codex-app/electron"
 "#,
         )?;
 
@@ -176,7 +176,7 @@ app_executable_path = "/opt/codex-desktop/electron"
         );
         assert_eq!(
             config.app_executable_path,
-            PathBuf::from("/opt/codex-desktop/electron")
+            PathBuf::from("/opt/codex-app/electron")
         );
         Ok(())
     }

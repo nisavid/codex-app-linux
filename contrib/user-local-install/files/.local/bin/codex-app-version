@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "${HOME}/.local/opt/codex-desktop-linux/lib/codex-desktop-linux/common.sh"
+source "${HOME}/.local/lib/codex-app/lib/common.sh"
 
 ensure_layout
 load_install_config
 load_metadata
 
 if [ ! -f "$METADATA_FILE" ]; then
-    echo "No metadata recorded yet. Run: codex-desktop-update --record-only"
+    echo "No metadata recorded yet. Run: codex-app-update --record-only"
     exit 1
 fi
 
-echo "Install root:      $OPT_ROOT"
+echo "Install root:      $INSTALL_ROOT"
 echo "Repo root:         ${REPO_DIR-unknown}"
 echo "Build time:        ${BUILD_TIME-unknown}"
 echo "Wrapper repo:      ${REPO_HEAD-unknown}"
@@ -22,5 +22,5 @@ echo "DMG size:          ${DMG_SIZE-unknown}"
 echo "DMG etag:          ${DMG_ETAG-unknown}"
 echo "DMG modified:      ${DMG_LAST_MODIFIED-unknown}"
 echo "Electron version:  ${ELECTRON_VERSION-unknown}"
-echo "Launcher:          ${HOME}/.local/bin/codex-desktop"
-echo "Manager bin:       ${OPT_ROOT}/bin"
+echo "Launcher:          ${HOME}/.local/bin/codex-app"
+echo "Helper bin:        ${INSTALL_ROOT}/bin"

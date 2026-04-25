@@ -1,13 +1,13 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Codex Desktop
+Name=Codex
 Comment=OpenAI Codex desktop wrapper for Linux
-Exec=@HOME@/.local/bin/codex-desktop %U
-TryExec=@HOME@/.local/bin/codex-desktop
+Exec=@HOME@/.local/bin/codex-app %U
+TryExec=@HOME@/.local/bin/codex-app
 Terminal=false
 Categories=Development;IDE;
 Keywords=codex;openai;ai;coding;
 StartupNotify=true
-StartupWMClass=codex-desktop
-Icon=codex-desktop
+StartupWMClass=codex-app
+Icon=codex-app

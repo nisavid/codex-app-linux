@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 # ============================================================================
-# Codex Desktop for Linux — Installer
-# Converts the official macOS Codex Desktop app to run on Linux
+# Codex App for Linux — Installer
+# Converts the official macOS Codex app to run on Linux
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -52,7 +52,7 @@ usage() {
     cat <<'HELP'
 Usage: ./install.sh [OPTIONS] [path/to/Codex.dmg]
 
-Converts the official macOS Codex Desktop app to run on Linux.
+Converts the official macOS Codex app to run on Linux.
 
 Options:
   -h, --help     Show this help message and exit
@@ -158,7 +158,7 @@ get_dmg() {
         return
     fi
 
-    info "Downloading Codex Desktop DMG..."
+    info "Downloading Codex DMG..."
     local dmg_url="https://persistent.oaistatic.com/codex-app-prod/Codex.dmg"
     info "URL: $dmg_url"
 
@@ -344,13 +344,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WEBVIEW_DIR="$SCRIPT_DIR/content/webview"
-LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop"
+LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/codex-app"
 LOG_FILE="$LOG_DIR/launcher.log"
-APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/codex-desktop"
+APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/codex-app"
 APP_PID_FILE="$APP_STATE_DIR/app.pid"
-PACKAGED_RUNTIME_HELPER="$SCRIPT_DIR/.codex-linux/codex-packaged-runtime.sh"
-APP_NOTIFICATION_ICON_NAME="codex-desktop"
-APP_NOTIFICATION_ICON_BUNDLE="$SCRIPT_DIR/.codex-linux/$APP_NOTIFICATION_ICON_NAME.png"
+PACKAGED_RUNTIME_HELPER="${CODEX_PACKAGED_RUNTIME_HELPER:-/usr/lib/codex-app/packaged-runtime.sh}"
+APP_NOTIFICATION_ICON_NAME="codex-app"
 APP_NOTIFICATION_ICON_SYSTEM="/usr/share/icons/hicolor/256x256/apps/$APP_NOTIFICATION_ICON_NAME.png"
 APP_NOTIFICATION_ICON_REPO="$SCRIPT_DIR/../assets/codex.png"
 ORIGINAL_STDIN_IS_TTY=0
@@ -365,7 +364,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     cat <<'HELP'
 Usage: ./start.sh [OPTIONS] [-- ELECTRON_FLAGS...]
 
-Launches the Codex Desktop app.
+Launches the Codex app.
 
 Options:
   -h, --help                  Show this help message and exit
@@ -375,14 +374,14 @@ Options:
 
 Extra flags are passed directly to Electron.
 
-Logs: ~/.cache/codex-desktop/launcher.log
+Logs: ~/.cache/codex-app/launcher.log
 HELP
     exit 0
 fi
 
 exec >>"$LOG_FILE" 2>&1
 
-echo "[$(date -Is)] Starting Codex Desktop launcher"
+echo "[$(date -Is)] Starting Codex launcher"
 
 load_packaged_runtime_helper() {
     if [ -f "$PACKAGED_RUNTIME_HELPER" ]; then
@@ -405,7 +404,7 @@ export_packaged_runtime_env() {
 
 run_cli_preflight() {
     local allow_install_missing="${1:-0}"
-    if ! command -v codex-update-manager >/dev/null 2>&1; then
+    if ! command -v codex-app-updater >/dev/null 2>&1; then
         if [ "$allow_install_missing" = "1" ]; then
             return 1
         fi
@@ -422,11 +421,11 @@ run_cli_preflight() {
     fi
 
     local refreshed_path=""
-    if ! refreshed_path="$(codex-update-manager "${preflight_args[@]}")"; then
+    if ! refreshed_path="$(codex-app-updater "${preflight_args[@]}")"; then
         if [ "$allow_install_missing" = "1" ]; then
             return 1
         fi
-        notify_error "Codex CLI prelaunch check failed. Continuing with the current CLI state. Check the launcher and updater logs if Codex Desktop misbehaves."
+        notify_error "Codex CLI prelaunch check failed. Continuing with the current CLI state. Check the launcher and updater logs if Codex misbehaves."
         return 0
     fi
 
@@ -445,7 +444,7 @@ prompt_install_missing_cli() {
         return 1
     fi
 
-    if ! command -v codex-update-manager >/dev/null 2>&1; then
+    if ! command -v codex-app-updater >/dev/null 2>&1; then
         return 1
     fi
 
@@ -468,7 +467,6 @@ prompt_install_missing_cli() {
 resolve_notification_icon() {
     local candidate
     for candidate in \
-        "$APP_NOTIFICATION_ICON_BUNDLE" \
         "$APP_NOTIFICATION_ICON_SYSTEM" \
         "$APP_NOTIFICATION_ICON_REPO"
     do
@@ -487,31 +485,6 @@ find_codex_cli() {
         return 0
     fi
 
-    if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then
-        export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-        # shellcheck disable=SC1090
-        . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true
-        if command -v codex >/dev/null 2>&1; then
-            command -v codex
-            return 0
-        fi
-    fi
-
-    local candidate
-    for candidate in \
-        "$HOME/.nvm/versions/node/current/bin/codex" \
-        "$HOME/.nvm/versions/node"/*/bin/codex \
-        "$HOME/.local/share/pnpm/codex" \
-        "$HOME/.local/bin/codex" \
-        "/usr/local/bin/codex" \
-        "/usr/bin/codex"
-    do
-        if [ -x "$candidate" ]; then
-            echo "$candidate"
-            return 0
-        fi
-    done
-
     return 1
 }
 
@@ -522,10 +495,10 @@ notify_error() {
     echo "$message"
     if command -v notify-send >/dev/null 2>&1; then
         notify-send \
-            -a "Codex Desktop" \
+            -a "Codex" \
             -i "$icon" \
-            -h "string:desktop-entry:codex-desktop" \
-            "Codex Desktop" \
+            -h "string:desktop-entry:codex-app" \
+            "Codex" \
             "$message"
     fi
 }
@@ -593,17 +566,17 @@ if [ -d "$WEBVIEW_DIR" ] && [ "$(ls -A "$WEBVIEW_DIR" 2>/dev/null)" ]; then
     echo "Started webview server pid=$HTTP_PID dir=$WEBVIEW_DIR"
 
     if ! wait_for_webview_server; then
-        notify_error "Codex Desktop webview server did not become ready on port 5175. Check the launcher log for the embedded http.server output."
+        notify_error "Codex webview server did not become ready on port 5175. Check the launcher log for the embedded http.server output."
         exit 1
     fi
 
     if ! kill -0 "$HTTP_PID" 2>/dev/null; then
-        notify_error "Codex Desktop webview server exited before Electron launch. Another process may already be using port 5175."
+        notify_error "Codex webview server exited before Electron launch. Another process may already be using port 5175."
         exit 1
     fi
 
     if ! verify_webview_origin "http://127.0.0.1:5175/index.html"; then
-        notify_error "Codex Desktop webview origin validation failed. Another process may be serving port 5175 or the extracted webview bundle is incomplete."
+        notify_error "Codex webview origin validation failed. Another process may be serving port 5175 or the extracted webview bundle is incomplete."
         exit 1
     fi
 
@@ -614,7 +587,7 @@ if [ -z "${CODEX_CLI_PATH:-}" ]; then
     CODEX_CLI_PATH="$(find_codex_cli || true)"
     export CODEX_CLI_PATH
 fi
-export CHROME_DESKTOP="${CHROME_DESKTOP:-codex-desktop.desktop}"
+export CHROME_DESKTOP="${CHROME_DESKTOP:-codex-app.desktop}"
 
 if [ -z "$CODEX_CLI_PATH" ]; then
     if prompt_install_missing_cli; then
@@ -640,8 +613,8 @@ cd "$SCRIPT_DIR"
 echo "$$" > "$APP_PID_FILE"
 exec "$SCRIPT_DIR/electron" \
     --no-sandbox \
-    --class=codex-desktop \
-    --app-id=codex-desktop \
+    --class=codex-app \
+    --app-id=codex-app \
     --ozone-platform-hint=auto \
     --disable-gpu-sandbox \
     --disable-gpu-compositing \
@@ -650,19 +623,13 @@ exec "$SCRIPT_DIR/electron" \
 SCRIPT
 
     chmod +x "$INSTALL_DIR/start.sh"
-    mkdir -p "$INSTALL_DIR/.codex-linux"
-    if [ -f "$ICON_SOURCE" ]; then
-        cp "$ICON_SOURCE" "$INSTALL_DIR/.codex-linux/codex-desktop.png"
-    else
-        warn "Notification icon not found at $ICON_SOURCE"
-    fi
     info "Start script created"
 }
 
 # ---- Main ----
 main() {
     echo "============================================" >&2
-    echo "  Codex Desktop for Linux — Installer"       >&2
+    echo "  Codex App for Linux — Installer"       >&2
     echo "============================================" >&2
     echo ""                                             >&2
 

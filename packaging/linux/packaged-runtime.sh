@@ -31,14 +31,16 @@ codex_packaged_runtime_prelaunch() {
             XDG_RUNTIME_DIR >/dev/null 2>&1 || true
     fi
 
-    if systemctl --user is-enabled codex-update-manager.service >/dev/null 2>&1; then
-        systemctl --user restart codex-update-manager.service >/dev/null 2>&1 || true
+    systemctl --user disable --now codex-update-manager.service >/dev/null 2>&1 || true
+
+    if systemctl --user is-enabled codex-app-updater.service >/dev/null 2>&1; then
+        systemctl --user restart codex-app-updater.service >/dev/null 2>&1 || true
     else
-        systemctl --user enable --now codex-update-manager.service >/dev/null 2>&1 || true
+        systemctl --user enable --now codex-app-updater.service >/dev/null 2>&1 || true
     fi
 }
 
 codex_packaged_runtime_export_env() {
-    export CHROME_DESKTOP="codex-desktop.desktop"
-    export BAMF_DESKTOP_FILE_HINT="/usr/share/applications/codex-desktop.desktop"
+    export CHROME_DESKTOP="codex-app.desktop"
+    export BAMF_DESKTOP_FILE_HINT="/usr/share/applications/codex-app.desktop"
 }

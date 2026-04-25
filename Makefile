@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
 APP_DIR := $(CURDIR)/codex-app
-PACKAGE_NAME := codex-desktop
+PACKAGE_NAME := codex-app
 PACMAN_PACKAGE_NAME := codex-app
 DEB_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)_*.deb
 RPM_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-*.rpm
@@ -13,10 +13,10 @@ PACMAN_GLOB := $(CURDIR)/dist/$(PACMAN_PACKAGE_NAME)-[0-9]*.pkg.tar.*
 .PHONY: help check test build-updater build-app run-app deb rpm pacman package install service-enable service-status clean-dist clean-state
 
 help:
-	@printf '\nCodex Desktop Linux Make Targets\n\n'
-	@printf '  %-18s %s\n' "make check" "Run cargo check for codex-update-manager"
+	@printf '\nCodex App Linux Make Targets\n\n'
+	@printf '  %-18s %s\n' "make check" "Run cargo check for codex-app-updater"
 	@printf '  %-18s %s\n' "make test" "Run updater test suite"
-	@printf '  %-18s %s\n' "make build-updater" "Build codex-update-manager in release mode"
+	@printf '  %-18s %s\n' "make build-updater" "Build codex-app-updater in release mode"
 	@printf '  %-18s %s\n' "make build-app" "Run install.sh and regenerate codex-app/"
 	@printf '  %-18s %s\n' "make run-app" "Launch the local generated Electron app from codex-app/"
 	@printf '  %-18s %s\n' "make deb" "Build the Debian package into dist/"
@@ -24,8 +24,8 @@ help:
 	@printf '  %-18s %s\n' "make pacman" "Build the pacman package into dist/ (Arch)"
 	@printf '  %-18s %s\n' "make package" "Build native package (auto-detects deb, rpm, or pacman)"
 	@printf '  %-18s %s\n' "make install" "Install the latest generated native package"
-	@printf '  %-18s %s\n' "make service-enable" "Enable and start codex-update-manager.service for the current user"
-	@printf '  %-18s %s\n' "make service-status" "Show codex-update-manager.service status for the current user"
+	@printf '  %-18s %s\n' "make service-enable" "Enable and start codex-app-updater.service for the current user"
+	@printf '  %-18s %s\n' "make service-status" "Show codex-app-updater.service status for the current user"
 	@printf '  %-18s %s\n' "make clean-dist" "Remove generated dist/ artifacts"
 	@printf '  %-18s %s\n' "make clean-state" "Remove updater runtime state from XDG directories"
 	@printf '\nVariables:\n\n'
@@ -45,15 +45,15 @@ help:
 
 check:
 	@echo "[make] Running cargo check"
-	cargo check -p codex-update-manager
+	cargo check -p codex-app-updater
 
 test:
 	@echo "[make] Running cargo test"
-	cargo test -p codex-update-manager
+	cargo test -p codex-app-updater
 
 build-updater:
-	@echo "[make] Building codex-update-manager (release)"
-	cargo build --release -p codex-update-manager
+	@echo "[make] Building codex-app-updater (release)"
+	cargo build --release -p codex-app-updater
 
 build-app:
 	@echo "[make] Regenerating codex-app from DMG"
@@ -116,13 +116,13 @@ install:
 	fi
 
 service-enable:
-	@echo "[make] Enabling and starting codex-update-manager.service"
+	@echo "[make] Enabling and starting codex-app-updater.service"
 	systemctl --user daemon-reload
-	systemctl --user enable --now codex-update-manager.service
+	systemctl --user enable --now codex-app-updater.service
 
 service-status:
-	@echo "[make] Showing codex-update-manager.service status"
-	systemctl --user status codex-update-manager.service --no-pager
+	@echo "[make] Showing codex-app-updater.service status"
+	systemctl --user status codex-app-updater.service --no-pager
 
 clean-dist:
 	@echo "[make] Removing dist/"
@@ -131,6 +131,6 @@ clean-dist:
 clean-state:
 	@echo "[make] Removing updater runtime state"
 	rm -rf \
-		"$$HOME/.config/codex-update-manager" \
-		"$$HOME/.local/state/codex-update-manager" \
-		"$$HOME/.cache/codex-update-manager"
+		"$$HOME/.config/codex-app-updater" \
+		"$$HOME/.local/state/codex-app-updater" \
+		"$$HOME/.cache/codex-app-updater"

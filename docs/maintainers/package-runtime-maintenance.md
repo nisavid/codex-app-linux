@@ -1,7 +1,7 @@
 # Package and Runtime Maintenance
 
 This reference is for maintainers changing the Linux packaging, generated
-launcher, packaged runtime helper, or `codex-update-manager`.
+launcher, packaged runtime helper, or `codex-app-updater`.
 
 ## Source Of Truth
 
@@ -9,11 +9,11 @@ launcher, packaged runtime helper, or `codex-update-manager`.
 | --- | --- | --- |
 | DMG extraction, ASAR patching, Electron runtime, local launcher | `install.sh`, `scripts/patch-linux-window-ui.js` | `codex-app/`, `Codex.dmg`, `codex-app/start.sh` |
 | Debian package | `scripts/build-deb.sh`, `packaging/linux/control`, Debian maintainer scripts | `dist/*.deb`, `dist/deb-root/` |
-| RPM package | `scripts/build-rpm.sh`, `packaging/linux/codex-desktop.spec` | `dist/*.rpm`, temporary `rpmbuild` roots |
-| pacman package | `scripts/build-pacman.sh`, `packaging/linux/PKGBUILD.template`, `packaging/linux/codex-desktop.install` | `dist/codex-app-*.pkg.tar.*`, temporary `makepkg` roots |
-| Shared staged package files | `scripts/lib/package-common.sh` | `/opt/codex-desktop`, `/usr/bin/codex-desktop`, `/usr/bin/codex-update-manager` |
-| Packaged-only launcher behavior | `packaging/linux/codex-packaged-runtime.sh` | `/opt/codex-desktop/.codex-linux/codex-packaged-runtime.sh` |
-| User service lifecycle | `packaging/linux/codex-update-manager.service`, maintainer scripts, `packaging/linux/codex-update-manager-user-service.sh` | `systemd --user` service state |
+| RPM package | `scripts/build-rpm.sh`, `packaging/linux/codex-app.spec` | `dist/*.rpm`, temporary `rpmbuild` roots |
+| pacman package | `scripts/build-pacman.sh`, `packaging/linux/PKGBUILD.template`, `packaging/linux/codex-app.install` | `dist/codex-app-*.pkg.tar.*`, temporary `makepkg` roots |
+| Shared staged package files | `scripts/lib/package-common.sh` | `/opt/codex-app`, `/usr/bin/codex-app`, `/usr/bin/codex-app-updater` |
+| Packaged-only launcher behavior | `packaging/linux/packaged-runtime.sh` | `/usr/lib/codex-app/packaged-runtime.sh` |
+| User service lifecycle | `packaging/linux/codex-app-updater.service`, maintainer scripts, `packaging/linux/codex-app-updater-user-service.sh` | `systemd --user` service state |
 | Updater service and CLI | `updater/`, `updater/Cargo.toml` | XDG updater config, state, cache, and logs |
 
 Do not make `codex-app/`, `dist/`, or XDG runtime files the only durable fix.
@@ -27,43 +27,38 @@ Inspect them to confirm behavior, then change the source files above.
   regenerate or inspect the output.
 - `Codex.dmg` is the cached upstream input.
 - `dist/` contains native package outputs and staging roots.
-- `~/.config/codex-update-manager/config.toml` is optional runtime config.
-- `~/.local/state/codex-update-manager/state.json` stores updater progress,
+- `~/.config/codex-app-updater/config.toml` is optional runtime config.
+- `~/.local/state/codex-app-updater/state.json` stores updater progress,
   candidate metadata, artifact paths, CLI preflight status, and errors.
-- `~/.local/state/codex-update-manager/service.log` stores updater logs.
-- `~/.cache/codex-update-manager/` stores downloaded DMGs, rebuild workspaces,
+- `~/.local/state/codex-app-updater/service.log` stores updater logs.
+- `~/.cache/codex-app-updater/` stores downloaded DMGs, rebuild workspaces,
   package outputs, and build logs.
-- `~/.cache/codex-desktop/launcher.log` stores launcher diagnostics.
-- `~/.local/state/codex-desktop/app.pid` lets the updater detect whether the
+- `~/.cache/codex-app/launcher.log` stores launcher diagnostics.
+- `~/.local/state/codex-app/app.pid` lets the updater detect whether the
   Electron app is still running before installing an update.
 
 ## Package Payload
 
-Native packages install the generated app under `/opt/codex-desktop` and expose
-`/usr/bin/codex-desktop` as a launcher stub that execs
-`/opt/codex-desktop/start.sh`.
+Native packages install the generated app under `/opt/codex-app` and expose
+`/usr/bin/codex-app` as a launcher stub that execs
+`/opt/codex-app/start.sh`.
 
 The Arch package name is `codex-app`. It provides and conflicts with
-`codex-desktop` so pacman can replace older local packages while the installed
-launcher path and desktop identity remain stable. Debian and RPM packages keep
-the `codex-desktop` package name.
+`codex-desktop` so pacman can replace older local packages. Debian and RPM
+packages also use `codex-app` and declare replacement metadata for older
+`codex-desktop` packages.
 
 Package payload should stay aligned across formats. The top-level install
 destinations are:
 
 - the full generated app tree from `codex-app/`;
-- `/opt/codex-desktop/update-builder/`, which carries the scripts, templates,
+- `/usr/lib/codex-app/update-builder/`, which carries the scripts, templates,
   service files, icon, and patcher used for local updater rebuilds;
-- `/usr/bin/codex-update-manager`;
-- `/usr/lib/systemd/user/codex-update-manager.service`;
-- `/usr/share/applications/codex-desktop.desktop`;
-- `/usr/share/icons/hicolor/256x256/apps/codex-desktop.png`.
-
-Debian and pacman staging also install these packaged-runtime files through the
-shared helper:
-
-- `/opt/codex-desktop/.codex-linux/codex-desktop.png`;
-- `/opt/codex-desktop/.codex-linux/codex-packaged-runtime.sh`.
+- `/usr/bin/codex-app-updater`;
+- `/usr/lib/codex-app/packaged-runtime.sh`;
+- `/usr/lib/systemd/user/codex-app-updater.service`;
+- `/usr/share/applications/codex-app.desktop`;
+- `/usr/share/icons/hicolor/256x256/apps/codex-app.png`.
 
 Debian and pacman package builders use `scripts/lib/package-common.sh` for the
 shared staging path. The RPM builder stages much of the same payload directly in
@@ -73,24 +68,24 @@ builder and template together.
 ## Current Runtime Behaviors
 
 The generated launcher starts from `codex-app/start.sh` for checkout builds and
-from `/opt/codex-desktop/start.sh` for native packages.
+from `/opt/codex-app/start.sh` for native packages.
 
 Important launcher behavior:
 
-- It writes logs to `~/.cache/codex-desktop/launcher.log`.
-- It clears stale app PID files under `~/.local/state/codex-desktop/app.pid`.
-- It loads `.codex-linux/codex-packaged-runtime.sh` only when that helper is
-  present in a packaged install.
+- It writes logs to `~/.cache/codex-app/launcher.log`.
+- It clears stale app PID files under `~/.local/state/codex-app/app.pid`.
+- It loads `/usr/lib/codex-app/packaged-runtime.sh` only when that helper is
+  present.
 - The packaged runtime helper imports desktop/session environment into the user
-  systemd manager and enables or restarts `codex-update-manager.service` on a
-  best-effort basis.
+  systemd manager and enables or restarts `codex-app-updater.service` on a
+  best-effort basis. It also disables the legacy `codex-update-manager.service`
+  name when present.
 - It stops any matching `http.server 5175`, starts
   `python3 -m http.server 5175` from `content/webview/`, waits for the port,
   and verifies `http://127.0.0.1:5175/index.html` contains expected Codex
   startup markers before Electron launches.
-- It discovers the Codex CLI through `PATH`, NVM, common user install paths,
-  `/usr/local/bin/codex`, and `/usr/bin/codex`.
-- If `codex-update-manager` is available, it runs a best-effort CLI preflight.
+- It discovers the Codex CLI through explicit `CODEX_CLI_PATH` or `PATH`.
+- If `codex-app-updater` is available, it runs a best-effort CLI preflight.
   The preflight checks the installed CLI version, uses a one-hour registry
   lookup cooldown, tries to upgrade outdated CLI installs, and can install a
   missing CLI when the launcher is running interactively and the user accepts.
@@ -108,9 +103,9 @@ The ASAR patch step currently:
   saved preference, which makes the app's `Translucent sidebar` default off on
   Linux.
 
-## Update Manager Boundary
+## Updater Boundary
 
-`codex-update-manager` is an unprivileged user service until the final native
+`codex-app-updater` is an unprivileged user service until the final native
 package install step.
 
 Default runtime configuration:
@@ -120,10 +115,10 @@ Default runtime configuration:
 - check interval: 6 hours
 - auto-install after app exit: enabled
 - desktop notifications: enabled
-- workspace root: `~/.cache/codex-update-manager/`
-- builder bundle root: `/opt/codex-desktop/update-builder` when installed, or
+- workspace root: `~/.cache/codex-app-updater/`
+- builder bundle root: `/usr/lib/codex-app/update-builder` when installed, or
   the repository root for checkout runs
-- app executable path: `/opt/codex-desktop/electron`
+- app executable path: `/opt/codex-app/electron`
 
 The daemon checks upstream headers, downloads new DMGs, prepares a workspace,
 runs the bundled `install.sh`, builds the native package for the host package
@@ -131,9 +126,9 @@ manager, and records the package path in `state.json`.
 
 Privileged escalation belongs only to the install subcommands:
 
-- `codex-update-manager install-deb --path <package>`
-- `codex-update-manager install-rpm --path <package>`
-- `codex-update-manager install-pacman --path <package>`
+- `codex-app-updater install-deb --path <package>`
+- `codex-app-updater install-rpm --path <package>`
+- `codex-app-updater install-pacman --path <package>`
 
 The daemon invokes those subcommands through `pkexec` when an update is ready
 and Electron is not running. Debian installs use `apt install` when available,
@@ -182,8 +177,8 @@ bash -n install.sh scripts/build-deb.sh scripts/build-rpm.sh scripts/build-pacma
 Updater changes:
 
 ```bash
-cargo check -p codex-update-manager
-cargo test -p codex-update-manager
+cargo check -p codex-app-updater
+cargo test -p codex-app-updater
 ```
 
 Use targeted updater tests when the change is local. Run the full updater suite
@@ -195,8 +190,8 @@ Package payload changes:
 ```bash
 make build-app
 make deb
-dpkg-deb -I dist/codex-desktop_*.deb
-dpkg-deb -c dist/codex-desktop_*.deb | sed -n '1,80p'
+dpkg-deb -I dist/codex-app_*.deb
+dpkg-deb -c dist/codex-app_*.deb | sed -n '1,80p'
 ```
 
 Run the matching package builder and metadata/listing inspection for the target
@@ -204,8 +199,8 @@ format:
 
 ```bash
 make rpm
-rpm -qip dist/codex-desktop-*.rpm
-rpm -qlp dist/codex-desktop-*.rpm | sed -n '1,80p'
+rpm -qip dist/codex-app-*.rpm
+rpm -qlp dist/codex-app-*.rpm | sed -n '1,80p'
 ```
 
 ```bash
@@ -222,7 +217,7 @@ sed -n '1,180p' codex-app/start.sh
 ```
 
 When runtime behavior changes, launch the app or inspect
-`~/.cache/codex-desktop/launcher.log` on a host with the required desktop
+`~/.cache/codex-app/launcher.log` on a host with the required desktop
 runtime. For webview-serving changes, also use
 `docs/webview-server-evaluation.md` as the acceptance checklist.
 

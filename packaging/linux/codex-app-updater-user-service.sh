@@ -1,6 +1,7 @@
 #!/bin/sh
 
-SERVICE_NAME="${SERVICE_NAME:-codex-update-manager.service}"
+SERVICE_NAME="${SERVICE_NAME:-codex-app-updater.service}"
+LEGACY_SERVICE_NAME="${LEGACY_SERVICE_NAME:-codex-update-manager.service}"
 
 codex_foreach_user_manager() {
     if ! command -v runuser >/dev/null 2>&1 || ! command -v systemctl >/dev/null 2>&1; then
@@ -57,6 +58,7 @@ codex_ensure_one_user_service_running() {
     bus="$3"
 
     codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" daemon-reload || true
+    codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" disable --now "$LEGACY_SERVICE_NAME" || true
 
     if codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" is-active "$SERVICE_NAME"; then
         return

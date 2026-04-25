@@ -1,9 +1,9 @@
 ---
-name: maintaining-codex-desktop-package
-description: Use when changing native package metadata or payload, installer-generated launcher behavior, packaged runtime helper behavior, updater service or install behavior, or Arch/pacman package shape in the codex-desktop-linux repository.
+name: maintaining-codex-app-package
+description: Use when changing native package metadata or payload, installer-generated launcher behavior, packaged runtime helper behavior, updater service or install behavior, or native package shape in the codex-app-linux repository.
 ---
 
-# Maintaining Codex Desktop Package
+# Maintaining Codex App Package
 
 Use this skill for package and runtime maintenance in this repository.
 
@@ -34,14 +34,15 @@ Inspect generated output to verify behavior, but do not make generated output th
 
 When package contents move, keep the relevant package builder, `scripts/lib/package-common.sh`, and `packaging/linux/` files aligned.
 
-## Arch Package Shape
+## Native Package Shape
 
-For pacman package changes:
+For native package changes:
 
-- Keep the `codex-app` package name, dependencies, `provides`, and `conflicts` aligned with the installed commands and package contract.
-- Inspect generated package metadata with `pacman -Qip` when practical.
-- Inspect package contents with `pacman -Qlp` when practical.
-- Keep payload paths consistent with launcher and updater expectations. The Arch package is named `codex-app`, but the installed app paths remain `/opt/codex-desktop`, `/usr/bin/codex-desktop`, `/usr/bin/codex-update-manager`, packaged runtime files, and the user service unit.
+- Keep the `codex-app` package name, dependencies, replacement metadata, and installed paths aligned with the package contract.
+- Keep compatibility metadata for older `codex-desktop` packages where the package manager supports it.
+- Inspect generated package metadata with `dpkg-deb -I`, `rpm -qip`, or `pacman -Qip` when practical.
+- Inspect package contents with `dpkg-deb -c`, `rpm -qlp`, or `pacman -Qlp` when practical.
+- Keep payload paths consistent with launcher and updater expectations. The installed app paths are `/opt/codex-app`, `/usr/bin/codex-app`, `/usr/bin/codex-app-updater`, packaged runtime files, and the user service unit.
 
 ## Verification
 

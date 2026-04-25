@@ -1,5 +1,5 @@
 {
-  description = "Codex Desktop for Linux installer";
+  description = "Codex App for Linux installer";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -63,7 +63,7 @@
         electronLibPath = pkgs.lib.makeLibraryPath electronLibs;
 
         installer = pkgs.writeShellApplication {
-          name = "codex-desktop-installer";
+          name = "codex-app-installer";
           runtimeInputs = [
             pkgs.bash
             pkgs.nodejs
@@ -132,7 +132,7 @@
 
         apps.default = {
           type = "app";
-          program = "${installer}/bin/codex-desktop-installer";
+          program = "${installer}/bin/codex-app-installer";
         };
 
         devShells.default = pkgs.mkShell {

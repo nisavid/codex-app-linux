@@ -79,7 +79,7 @@ test_deb_builder_smoke() {
     local app_dir="$workspace/app"
     local dist_dir="$workspace/dist"
     local pkg_root="$workspace/deb-root"
-    local updater_bin="$workspace/codex-update-manager"
+    local updater_bin="$workspace/codex-app-updater"
 
     mkdir -p "$workspace" "$dist_dir"
     make_stub_bin_dir "$bin_dir"
@@ -116,11 +116,11 @@ SCRIPT
     PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     "$REPO_DIR/scripts/build-deb.sh"
 
-    assert_file_exists "$dist_dir/codex-desktop_2026.03.24.120000+deadbeef_amd64.deb"
+    assert_file_exists "$dist_dir/codex-app_2026.03.24.120000+deadbeef_amd64.deb"
     assert_file_exists "$pkg_root/DEBIAN/prerm"
     assert_file_exists "$pkg_root/DEBIAN/postrm"
-    assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/scripts/lib/package-common.sh"
-    assert_file_exists "$pkg_root/opt/codex-desktop/.codex-linux/codex-packaged-runtime.sh"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/package-common.sh"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/packaged-runtime.sh"
 }
 
 test_rpm_builder_smoke() {
@@ -129,7 +129,7 @@ test_rpm_builder_smoke() {
     local bin_dir="$workspace/bin"
     local app_dir="$workspace/app"
     local dist_dir="$workspace/dist"
-    local updater_bin="$workspace/codex-update-manager"
+    local updater_bin="$workspace/codex-app-updater"
 
     mkdir -p "$workspace" "$dist_dir"
     make_stub_bin_dir "$bin_dir"
@@ -152,7 +152,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$rpmdir" ] || exit 1
 mkdir -p "$rpmdir/x86_64"
-touch "$rpmdir/x86_64/codex-desktop-2026.03.24.120000-deadbeef.x86_64.rpm"
+touch "$rpmdir/x86_64/codex-app-2026.03.24.120000-deadbeef.x86_64.rpm"
 SCRIPT
     cat > "$bin_dir/cargo" <<'SCRIPT'
 #!/bin/bash
@@ -165,10 +165,13 @@ SCRIPT
     APP_DIR_OVERRIDE="$app_dir" \
     DIST_DIR_OVERRIDE="$dist_dir" \
     UPDATER_BINARY_SOURCE="$updater_bin" \
+    TEST_RPM_STAGING="$workspace/staging" \
     PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     "$REPO_DIR/scripts/build-rpm.sh"
 
-    assert_file_exists "$dist_dir/codex-desktop-2026.03.24.120000-deadbeef.x86_64.rpm"
+    assert_file_exists "$dist_dir/codex-app-2026.03.24.120000-deadbeef.x86_64.rpm"
+    assert_file_exists "$workspace/staging/usr/lib/codex-app/update-builder/scripts/lib/package-common.sh"
+    assert_file_exists "$workspace/staging/usr/lib/codex-app/update-builder/scripts/patch-linux-window-ui.js"
 }
 
 test_pacman_builder_metadata_smoke() {
@@ -177,7 +180,7 @@ test_pacman_builder_metadata_smoke() {
     local bin_dir="$workspace/bin"
     local app_dir="$workspace/app"
     local dist_dir="$workspace/dist"
-    local updater_bin="$workspace/codex-update-manager"
+    local updater_bin="$workspace/codex-app-updater"
     local captured_pkgbuild="$workspace/PKGBUILD.rendered"
 
     mkdir -p "$workspace" "$dist_dir"
@@ -193,9 +196,9 @@ grep -q 'pkgname=codex-app' PKGBUILD || exit 11
 grep -q "provides=('codex-desktop')" PKGBUILD || exit 12
 grep -q "conflicts=('codex-desktop')" PKGBUILD || exit 13
 grep -q "install=codex-app.install" PKGBUILD || exit 14
-test -x "$TEST_PACMAN_STAGING/usr/bin/codex-desktop" || exit 15
-test -d "$TEST_PACMAN_STAGING/opt/codex-desktop" || exit 16
-test -f "$TEST_PACMAN_STAGING/opt/codex-desktop/.codex-linux/codex-packaged-runtime.sh" || exit 17
+test -x "$TEST_PACMAN_STAGING/usr/bin/codex-app" || exit 15
+test -d "$TEST_PACMAN_STAGING/opt/codex-app" || exit 16
+test -f "$TEST_PACMAN_STAGING/usr/lib/codex-app/packaged-runtime.sh" || exit 17
 touch "$PKGDEST/codex-app-2026.03.24.120000-1-x86_64.pkg.tar.zst"
 SCRIPT
     cat > "$bin_dir/cargo" <<'SCRIPT'
@@ -219,8 +222,8 @@ SCRIPT
     assert_contains "$captured_pkgbuild" "provides=('codex-desktop')"
     assert_contains "$captured_pkgbuild" "conflicts=('codex-desktop')"
     assert_contains "$captured_pkgbuild" "install=codex-app.install"
-    assert_file_exists "$workspace/staging/usr/bin/codex-desktop"
-    assert_file_exists "$workspace/staging/opt/codex-desktop/.codex-linux/codex-packaged-runtime.sh"
+    assert_file_exists "$workspace/staging/usr/bin/codex-app"
+    assert_file_exists "$workspace/staging/usr/lib/codex-app/packaged-runtime.sh"
 }
 
 test_missing_input_failure() {
@@ -277,15 +280,15 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/install.sh" "wait_for_webview_server"
     assert_contains "$REPO_DIR/install.sh" "verify_webview_origin"
     assert_contains "$REPO_DIR/install.sh" "Webview origin verified."
-    assert_contains "$REPO_DIR/install.sh" "--app-id=codex-desktop"
+    assert_contains "$REPO_DIR/install.sh" "--app-id=codex-app"
     assert_contains "$REPO_DIR/install.sh" "--ozone-platform-hint=auto"
     assert_contains "$REPO_DIR/install.sh" "--disable-gpu-sandbox"
     assert_contains "$REPO_DIR/install.sh" "PACKAGED_RUNTIME_HELPER"
     assert_contains "$REPO_DIR/install.sh" "prompt_install_missing_cli"
     assert_contains "$REPO_DIR/install.sh" "Install it now? \\[Y/n\\]"
     assert_contains "$REPO_DIR/install.sh" "is_interactive_terminal"
-    assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "CHROME_DESKTOP"
-    assert_contains "$REPO_DIR/packaging/linux/codex-desktop.desktop" "BAMF_DESKTOP_FILE_HINT"
+    assert_contains "$REPO_DIR/packaging/linux/packaged-runtime.sh" "CHROME_DESKTOP"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
 }
 
 make_fake_extracted_asar() {

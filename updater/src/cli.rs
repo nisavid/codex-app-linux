@@ -4,8 +4,8 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "codex-update-manager")]
-#[command(about = "Local update manager for Codex Desktop on Linux")]
+#[command(name = "codex-app-updater")]
+#[command(about = "Local update manager for Codex App on Linux")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

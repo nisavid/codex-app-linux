@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPT_ROOT="${HOME}/.local/opt/codex-desktop-linux"
-APP_DIR="${OPT_ROOT}/codex-app"
-DMG_FILE="${OPT_ROOT}/Codex.dmg"
+INSTALL_ROOT="${HOME}/.local/lib/codex-app"
+APP_DIR="${INSTALL_ROOT}/app"
+DMG_FILE="${INSTALL_ROOT}/Codex.dmg"
 DMG_URL="https://persistent.oaistatic.com/codex-app-prod/Codex.dmg"
 
 XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 
-STATE_DIR="${XDG_STATE_HOME}/codex-desktop-linux"
+STATE_DIR="${XDG_STATE_HOME}/codex-app"
 LOG_DIR="${STATE_DIR}/logs"
 METADATA_FILE="${STATE_DIR}/metadata.env"
 INSTALL_CONFIG_FILE="${STATE_DIR}/install.env"
-ICON_PATH="${XDG_DATA_HOME}/icons/hicolor/512x512/apps/codex-desktop.png"
-DESKTOP_FILE="${XDG_DATA_HOME}/applications/codex-desktop.desktop"
+ICON_PATH="${XDG_DATA_HOME}/icons/hicolor/512x512/apps/codex-app.png"
+DESKTOP_FILE="${XDG_DATA_HOME}/applications/codex-app.desktop"
 
-REPO_DIR_DEFAULT="${HOME}/workspace/codex-desktop-linux"
+REPO_DIR_DEFAULT="${HOME}/workspace/codex-app-linux"
 REPO_DIR="$REPO_DIR_DEFAULT"
 
 ensure_layout() {
@@ -113,7 +113,7 @@ record_metadata() {
         write_kv ELECTRON_VERSION "$electron_version"
         write_kv APP_DIR "$APP_DIR"
         write_kv ICON_PATH "$ICON_PATH"
-        write_kv OPT_ROOT "$OPT_ROOT"
+        write_kv INSTALL_ROOT "$INSTALL_ROOT"
         write_kv REPO_DIR "$REPO_DIR"
     } > "$METADATA_FILE"
 }

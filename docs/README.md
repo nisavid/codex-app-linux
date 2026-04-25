@@ -2,7 +2,7 @@
 
 Use this index to choose the smallest document that matches your goal.
 
-## Run Or Install Codex Desktop
+## Run Or Install Codex
 
 - [Project README](../README.md) is the landing page for users and potential
   users.
@@ -11,7 +11,7 @@ Use this index to choose the smallest document that matches your goal.
   commands.
 - [Troubleshooting](usage/troubleshooting.md) lists common launch, CLI, webview,
   package, and updater symptoms.
-- [User-Local Desktop Integration](../contrib/user-local-install/README.md)
+- [User-Local App Integration](../contrib/user-local-install/README.md)
   describes the experimental rootless install layout under `~/.local`.
 
 ## Understand The Design

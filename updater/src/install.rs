@@ -7,9 +7,9 @@ use std::{
     process::Command,
 };
 
-const DEB_RPM_PACKAGE_NAME: &str = "codex-desktop";
-const PACMAN_PACKAGE_NAME: &str = "codex-app";
-const INSTALLED_UPDATER_BINARY: &str = "/usr/bin/codex-update-manager";
+const PACKAGE_NAME: &str = "codex-app";
+const LEGACY_PACKAGE_NAME: &str = "codex-desktop";
+const INSTALLED_UPDATER_BINARY: &str = "/usr/bin/codex-app-updater";
 const APT_CANDIDATES: &[&str] = &["/usr/bin/apt", "/bin/apt"];
 const DNF_CANDIDATES: &[&str] = &["/usr/bin/dnf", "/bin/dnf", "/usr/bin/dnf5", "/bin/dnf5"];
 const DPKG_CANDIDATES: &[&str] = &["/usr/bin/dpkg", "/bin/dpkg"];
@@ -177,27 +177,51 @@ pub fn is_primary_package_installed() -> bool {
 }
 
 fn installed_deb_version() -> String {
+    let version = installed_version_from_command(
+        &program_path(DPKG_QUERY_CANDIDATES, "dpkg-query"),
+        &["-W", "-f=${Version}", PACKAGE_NAME],
+    );
+    if version != "unknown" {
+        return version;
+    }
     installed_version_from_command(
         &program_path(DPKG_QUERY_CANDIDATES, "dpkg-query"),
-        &["-W", "-f=${Version}", DEB_RPM_PACKAGE_NAME],
+        &["-W", "-f=${Version}", LEGACY_PACKAGE_NAME],
     )
 }
 
 fn installed_rpm_version() -> String {
+    let version = installed_version_from_command(
+        &program_path(RPM_CANDIDATES, "rpm"),
+        &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", PACKAGE_NAME],
+    );
+    if version != "unknown" {
+        return version;
+    }
     installed_version_from_command(
         &program_path(RPM_CANDIDATES, "rpm"),
-        &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", DEB_RPM_PACKAGE_NAME],
+        &[
+            "-q",
+            "--queryformat",
+            "%{VERSION}-%{RELEASE}",
+            LEGACY_PACKAGE_NAME,
+        ],
     )
 }
 
 fn installed_pacman_version() -> String {
-    match Command::new(program_path(PACMAN_CANDIDATES, "pacman"))
-        .args(["-Q", PACMAN_PACKAGE_NAME])
-        .output()
-    {
-        Ok(output) if output.status.success() => parse_pacman_installed_version(output.stdout),
-        _ => "unknown".to_string(),
+    for package_name in [PACKAGE_NAME, LEGACY_PACKAGE_NAME] {
+        match Command::new(program_path(PACMAN_CANDIDATES, "pacman"))
+            .args(["-Q", package_name])
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                return parse_pacman_installed_version(output.stdout);
+            }
+            _ => {}
+        }
     }
+    "unknown".to_string()
 }
 
 /// Installs a rebuilt Debian package on the local machine.
@@ -433,7 +457,7 @@ fn pacman_package_version(path: &Path) -> Result<String> {
 
     let stripped = strip_pacman_package_suffix(file_name)
         .with_context(|| format!("Not a valid pacman package filename: {file_name}"))?;
-    let prefix = format!("{PACMAN_PACKAGE_NAME}-");
+    let prefix = format!("{PACKAGE_NAME}-");
     let without_name = stripped
         .strip_prefix(&prefix)
         .with_context(|| format!("Pacman package filename does not start with {prefix}"))?;
@@ -510,7 +534,7 @@ mod tests {
     #[test]
     fn builds_pkexec_command_for_privileged_deb_install() {
         let command = pkexec_command(
-            Path::new("/usr/bin/codex-update-manager"),
+            Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.deb"),
         );
         let args: Vec<_> = command
@@ -520,7 +544,7 @@ mod tests {
         assert_eq!(
             args,
             vec![
-                "/usr/bin/codex-update-manager",
+                "/usr/bin/codex-app-updater",
                 "install-deb",
                 "--path",
                 "/tmp/update.deb"
@@ -531,7 +555,7 @@ mod tests {
     #[test]
     fn builds_pkexec_command_for_privileged_rpm_install() {
         let command = pkexec_command(
-            Path::new("/usr/bin/codex-update-manager"),
+            Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.rpm"),
         );
         let args: Vec<_> = command
@@ -541,7 +565,7 @@ mod tests {
         assert_eq!(
             args,
             vec![
-                "/usr/bin/codex-update-manager",
+                "/usr/bin/codex-app-updater",
                 "install-rpm",
                 "--path",
                 "/tmp/update.rpm"
@@ -552,11 +576,11 @@ mod tests {
     #[test]
     fn prefers_installed_updater_path_for_pkexec() {
         let selected =
-            updater_binary_for_privileged_install(Path::new("/tmp/codex-update-manager-old"));
-        let expected = if Path::new("/usr/bin/codex-update-manager").is_file() {
-            PathBuf::from("/usr/bin/codex-update-manager")
+            updater_binary_for_privileged_install(Path::new("/tmp/codex-app-updater-old"));
+        let expected = if Path::new("/usr/bin/codex-app-updater").is_file() {
+            PathBuf::from("/usr/bin/codex-app-updater")
         } else {
-            PathBuf::from("/tmp/codex-update-manager-old")
+            PathBuf::from("/tmp/codex-app-updater-old")
         };
         assert_eq!(selected, expected);
     }
@@ -609,9 +633,7 @@ mod tests {
     #[test]
     fn package_kind_from_path_detects_pacman_zst() {
         assert_eq!(
-            PackageKind::from_path(Path::new(
-                "/tmp/codex-desktop-2026.03.30-1-x86_64.pkg.tar.zst"
-            )),
+            PackageKind::from_path(Path::new("/tmp/codex-app-2026.03.30-1-x86_64.pkg.tar.zst")),
             PackageKind::Pacman
         );
     }
@@ -619,9 +641,7 @@ mod tests {
     #[test]
     fn package_kind_from_path_detects_pacman_xz() {
         assert_eq!(
-            PackageKind::from_path(Path::new(
-                "/tmp/codex-desktop-2026.03.30-1-x86_64.pkg.tar.xz"
-            )),
+            PackageKind::from_path(Path::new("/tmp/codex-app-2026.03.30-1-x86_64.pkg.tar.xz")),
             PackageKind::Pacman
         );
     }
@@ -705,7 +725,7 @@ mod tests {
     #[test]
     fn builds_pkexec_command_for_privileged_pacman_install() {
         let command = pkexec_command(
-            Path::new("/usr/bin/codex-update-manager"),
+            Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.pkg.tar.zst"),
         );
         let args: Vec<_> = command
@@ -715,7 +735,7 @@ mod tests {
         assert_eq!(
             args,
             vec![
-                "/usr/bin/codex-update-manager",
+                "/usr/bin/codex-app-updater",
                 "install-pacman",
                 "--path",
                 "/tmp/update.pkg.tar.zst"

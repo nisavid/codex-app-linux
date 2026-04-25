@@ -1,6 +1,6 @@
 # Contributors
 
-Thanks to everyone who has contributed to codex-desktop-linux!
+Thanks to everyone who has contributed to codex-app-linux!
 
 ## Core Contributors
 

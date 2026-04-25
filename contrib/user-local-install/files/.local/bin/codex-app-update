@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "${HOME}/.local/opt/codex-desktop-linux/lib/codex-desktop-linux/common.sh"
+source "${HOME}/.local/lib/codex-app/lib/common.sh"
 
 ensure_layout
 load_install_config
@@ -73,7 +73,7 @@ if [ "$force" -eq 1 ] || [ "${DMG_ETAG-}" != "$remote_etag" ] || [ "${DMG_LAST_M
 fi
 
 if [ "$repo_changed" -eq 0 ] && [ "$dmg_changed" -eq 0 ] && [ "$force" -eq 0 ]; then
-    log "Codex desktop wrapper is already up to date."
+    log "Codex app wrapper is already up to date."
     exit 0
 fi
 
@@ -96,7 +96,7 @@ fi
 log "Rebuilding wrapper..."
 (
     cd "$REPO_DIR"
-    CODEX_INSTALL_ROOT="$OPT_ROOT" CODEX_INSTALL_DIR="$APP_DIR" ./install.sh
+    CODEX_INSTALL_ROOT="$INSTALL_ROOT" CODEX_INSTALL_DIR="$APP_DIR" ./install.sh
 )
 
 extract_icon

@@ -35,7 +35,7 @@ pub fn preflight(
     let cli_path = match resolve_cli_path(requested_path) {
         Some(path) => path,
         None if allow_install_missing => install_missing_cli(state, paths, requested_path)?,
-        None => anyhow::bail!("Codex CLI not found in PATH or known install locations"),
+        None => anyhow::bail!("Codex CLI not found in CODEX_CLI_PATH or PATH"),
     };
     let cached_installed_version = state.cli_installed_version.clone();
     let installed_version = read_installed_version(&cli_path)?;
@@ -150,7 +150,7 @@ pub fn refresh_status(state: &mut PersistedState, paths: &RuntimePaths) -> Resul
             state.cli_installed_version = None;
             state.cli_status = CliStatus::Unknown;
             state.cli_error_message =
-                Some("Codex CLI not found in PATH or known install locations".to_string());
+                Some("Codex CLI not found in CODEX_CLI_PATH or PATH".to_string());
             persist_state(paths, state)?;
             return Ok(());
         }
@@ -235,43 +235,15 @@ fn resolve_cli_path(explicit_path: Option<&Path>) -> Option<PathBuf> {
         }
     }
 
-    find_in_path("codex", &command_path_env()).or_else(|| {
-        known_cli_locations()
-            .into_iter()
-            .find(|path| is_executable(path))
-    })
-}
-
-fn known_cli_locations() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        candidates.push(home.join(".nvm/versions/node/current/bin/codex"));
-        let versions_root = home.join(".nvm/versions/node");
-        if let Ok(entries) = fs::read_dir(versions_root) {
-            let mut versioned_paths = entries
-                .filter_map(|entry| entry.ok().map(|item| item.path().join("bin/codex")))
-                .collect::<Vec<_>>();
-            versioned_paths.sort();
-            versioned_paths.reverse();
-            candidates.extend(versioned_paths);
-        }
-        candidates.push(home.join(".local/share/pnpm/codex"));
-        candidates.push(home.join(".local/bin/codex"));
-    }
-    candidates.push(PathBuf::from("/usr/local/bin/codex"));
-    candidates.push(PathBuf::from("/usr/bin/codex"));
-    candidates
+    find_in_path("codex", &command_path_env())
 }
 
 fn requested_cli_path(state: &PersistedState) -> Option<PathBuf> {
-    state
-        .cli_path
-        .clone()
-        .or_else(|| {
-            std::env::var_os("CODEX_CLI_PATH")
-                .filter(|value| !value.is_empty())
-                .map(PathBuf::from)
-        })
+    state.cli_path.clone().or_else(|| {
+        std::env::var_os("CODEX_CLI_PATH")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+    })
 }
 
 fn should_skip_latest_version_check(
@@ -540,46 +512,7 @@ fn find_in_path(name: &str, path_env: &OsString) -> Option<PathBuf> {
 }
 
 fn command_path_env() -> OsString {
-    let mut entries = preferred_node_bin_dirs();
-    entries.extend(std::env::split_paths(
-        &std::env::var_os("PATH").unwrap_or_default(),
-    ));
-    std::env::join_paths(entries).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
-}
-
-fn preferred_node_bin_dirs() -> Vec<PathBuf> {
-    let nvm_root = std::env::var_os("NVM_DIR")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".nvm")));
-
-    let Some(nvm_root) = nvm_root else {
-        return Vec::new();
-    };
-
-    let mut directories = Vec::new();
-    let current_bin = nvm_root.join("versions/node/current/bin");
-    if node_toolchain_dir(&current_bin) {
-        directories.push(current_bin);
-    }
-
-    let versions_root = nvm_root.join("versions/node");
-    if let Ok(entries) = fs::read_dir(versions_root) {
-        let mut version_bins = entries
-            .filter_map(|entry| entry.ok().map(|item| item.path().join("bin")))
-            .filter(|path| node_toolchain_dir(path))
-            .collect::<Vec<_>>();
-        version_bins.sort();
-        version_bins.reverse();
-        directories.extend(version_bins);
-    }
-
-    directories
-}
-
-fn node_toolchain_dir(path: &Path) -> bool {
-    ["node", "npm", "npx"]
-        .into_iter()
-        .all(|binary| path.join(binary).is_file())
+    std::env::var_os("PATH").unwrap_or_default()
 }
 
 fn is_executable(path: &Path) -> bool {

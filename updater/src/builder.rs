@@ -93,7 +93,7 @@ pub async fn build_update(
                 "UPDATER_SERVICE_SOURCE",
                 workspace
                     .bundle_dir
-                    .join("packaging/linux/codex-update-manager.service"),
+                    .join("packaging/linux/codex-app-updater.service"),
             )
             .env("PATH", &build_path)
             .current_dir(&workspace.bundle_dir),
@@ -278,58 +278,7 @@ fn is_native_package_file(path: &Path) -> bool {
 }
 
 fn build_command_path() -> OsString {
-    let mut entries = preferred_node_bin_dirs();
-    entries.extend(std::env::split_paths(
-        &std::env::var_os("PATH").unwrap_or_default(),
-    ));
-    std::env::join_paths(entries).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
-}
-
-fn preferred_node_bin_dirs() -> Vec<PathBuf> {
-    let nvm_root = std::env::var_os("NVM_DIR")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".nvm")));
-
-    let Some(nvm_root) = nvm_root else {
-        return Vec::new();
-    };
-
-    collect_nvm_bin_dirs(&nvm_root)
-}
-
-fn collect_nvm_bin_dirs(nvm_root: &Path) -> Vec<PathBuf> {
-    let mut directories = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-
-    let current_bin = nvm_root.join("versions/node/current/bin");
-    if is_node_toolchain_dir(&current_bin) {
-        seen.insert(current_bin.clone());
-        directories.push(current_bin);
-    }
-
-    let versions_root = nvm_root.join("versions/node");
-    if let Ok(entries) = fs::read_dir(&versions_root) {
-        let mut version_bins = entries
-            .filter_map(|entry| entry.ok().map(|item| item.path().join("bin")))
-            .filter(|path| is_node_toolchain_dir(path))
-            .collect::<Vec<_>>();
-        version_bins.sort();
-        version_bins.reverse();
-
-        for path in version_bins {
-            if seen.insert(path.clone()) {
-                directories.push(path);
-            }
-        }
-    }
-
-    directories
-}
-
-fn is_node_toolchain_dir(path: &Path) -> bool {
-    ["node", "npm", "npx"]
-        .into_iter()
-        .all(|binary| path.join(binary).is_file())
+    std::env::var_os("PATH").unwrap_or_default()
 }
 
 async fn run_and_log(command: &mut Command, log_path: &Path) -> Result<()> {
@@ -374,14 +323,14 @@ mod tests {
                 r#"#!/bin/bash
 set -euo pipefail
 mkdir -p "${DIST_DIR_OVERRIDE}"
-touch "${DIST_DIR_OVERRIDE}/codex-desktop_${PACKAGE_VERSION}_amd64.deb"
+touch "${DIST_DIR_OVERRIDE}/codex-app_${PACKAGE_VERSION}_amd64.deb"
 "#
             }
             FakePackageOutput::Rpm => {
                 r#"#!/bin/bash
 set -euo pipefail
 mkdir -p "${DIST_DIR_OVERRIDE}"
-touch "${DIST_DIR_OVERRIDE}/codex-desktop-${PACKAGE_VERSION}.x86_64.rpm"
+touch "${DIST_DIR_OVERRIDE}/codex-app-${PACKAGE_VERSION}.x86_64.rpm"
 "#
             }
             FakePackageOutput::Pacman => {
@@ -418,16 +367,16 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
             "Package: codex",
         )?;
         fs::write(
-            bundle_root.join("packaging/linux/codex-desktop.spec"),
+            bundle_root.join("packaging/linux/codex-app.spec"),
             "Name: codex",
         )?;
         fs::write(
-            bundle_root.join("packaging/linux/codex-desktop.desktop"),
+            bundle_root.join("packaging/linux/codex-app.desktop"),
             "[Desktop Entry]",
         )?;
         fs::write(
-            bundle_root.join("packaging/linux/codex-update-manager.service"),
-            "[Unit]\nDescription=Codex Update Manager\n",
+            bundle_root.join("packaging/linux/codex-app-updater.service"),
+            "[Unit]\nDescription=Codex App Updater\n",
         )?;
         fs::write(
             bundle_root.join("install.sh"),
@@ -486,7 +435,7 @@ chmod +x "${CODEX_INSTALL_DIR}/start.sh"
             notifications: true,
             workspace_root: cache_root,
             builder_bundle_root: bundle_root,
-            app_executable_path: PathBuf::from("/opt/codex-desktop/electron"),
+            app_executable_path: PathBuf::from("/opt/codex-app/electron"),
         };
         let dmg_path = temp.path().join("Codex.dmg");
         fs::write(&dmg_path, b"dmg")?;
@@ -535,8 +484,8 @@ chmod +x "${CODEX_INSTALL_DIR}/start.sh"
             b"Package: codex\n",
         )?;
         fs::write(
-            source_root.join("packaging/linux/codex-update-manager.service"),
-            b"[Unit]\nDescription=Codex Update Manager\n",
+            source_root.join("packaging/linux/codex-app-updater.service"),
+            b"[Unit]\nDescription=Codex App Updater\n",
         )?;
         fs::write(source_root.join("assets/codex.png"), b"png")?;
 
@@ -573,27 +522,6 @@ chmod +x "${CODEX_INSTALL_DIR}/start.sh"
 
         let found = find_package_in(temp.path())?;
         assert_eq!(found, pkg_path);
-        Ok(())
-    }
-
-    #[test]
-    fn collects_nvm_toolchain_bins_with_current_first() -> Result<()> {
-        let temp = tempdir()?;
-        let nvm_root = temp.path().join(".nvm");
-        let current_bin = nvm_root.join("versions/node/current/bin");
-        let version_bin = nvm_root.join("versions/node/v24.2.0/bin");
-
-        fs::create_dir_all(&current_bin)?;
-        fs::create_dir_all(&version_bin)?;
-        for dir in [&current_bin, &version_bin] {
-            for binary in ["node", "npm", "npx"] {
-                fs::write(dir.join(binary), b"bin")?;
-            }
-        }
-
-        let directories = collect_nvm_bin_dirs(&nvm_root);
-        assert_eq!(directories.first(), Some(&current_bin));
-        assert!(directories.contains(&version_bin));
         Ok(())
     }
 }

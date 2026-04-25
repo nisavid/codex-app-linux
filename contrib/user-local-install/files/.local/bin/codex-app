@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_ROOT="${HOME}/.local/lib/codex-app"
+APP_DIR="${INSTALL_ROOT}/app"
+exec "${APP_DIR}/start.sh" "$@"

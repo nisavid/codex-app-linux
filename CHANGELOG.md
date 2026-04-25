@@ -12,20 +12,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- `codex-update-manager` now refreshes CLI status when the daemon starts and shows a desktop notification if the Codex CLI is missing, so package installs do not rely on the user manually checking updater state to understand why Codex Desktop cannot launch cleanly.
+- `codex-app-updater` now refreshes CLI status when the daemon starts and shows a desktop notification if the Codex CLI is missing, so package installs do not rely on the user manually checking updater state to understand why Codex cannot launch cleanly.
 - When the Codex CLI is missing and the launcher starts from an interactive terminal, it now prompts before attempting installation instead of requiring the missing-CLI install behavior to be forced implicitly.
 
 ## [0.4.1] - 2026-04-19
 
 ### Added
 
-- Debian `postinst` maintainer script for `codex-update-manager` so package installs and upgrades can reload user managers and bring the updater service back online.
+- Debian `postinst` maintainer script for `codex-app-updater` so package installs and upgrades can reload user managers and bring the updater service back online.
 
 ### Changed
 
-- Native package install and upgrade flows now make a best-effort attempt to start or re-enable `codex-update-manager.service` for active user sessions across Debian, RPM, and pacman packaging paths.
-- `codex-update-manager status` now refreshes cached CLI status before printing and surfaces the current CLI error message in plain-text output.
-- Native package maintainer hooks now share a single `codex-update-manager-user-service.sh` helper for `systemd --user` reload, start, enable, stop, and disable behavior across Debian, RPM, and pacman packaging paths.
+- Native package install and upgrade flows now make a best-effort attempt to start or re-enable `codex-app-updater.service` for active user sessions across Debian, RPM, and pacman packaging paths.
+- `codex-app-updater status` now refreshes cached CLI status before printing and surfaces the current CLI error message in plain-text output.
+- Native package maintainer hooks now share a single `codex-app-updater-user-service.sh` helper for `systemd --user` reload, start, enable, stop, and disable behavior across Debian, RPM, and pacman packaging paths.
 - Packaging hook scripts now use explicit `shellcheck source=...` directives when sourcing the installed user-service helper so static linting can resolve the shared helper path cleanly.
 
 ### Fixed
@@ -33,7 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Restored the final success notification after automatic installs by replaying the `Installed` notification when the updater recovers from an interrupted `Installing` state or daemon restart.
 - Deduplicated `Installed` notifications so successful recovery does not spam repeated desktop toasts.
 - Hardened Codex CLI version-check caching and error handling so stale cached data does not mask a changed local CLI version or a failed version read.
-- `PersistedState::save` now replaces `state.json` atomically with a temporary file and rename, so ad-hoc `codex-update-manager status` refreshes cannot leave partially written updater state behind during concurrent access.
+- `PersistedState::save` now replaces `state.json` atomically with a temporary file and rename, so ad-hoc `codex-app-updater status` refreshes cannot leave partially written updater state behind during concurrent access.
 
 ## [0.4.0] - 2026-04-13
 
@@ -49,7 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Linux ASAR patching now also adjusts shell behavior, window icon handling, and default opaque window settings on Linux when the user has not explicitly chosen a translucent sidebar preference yet.
 - Desktop notifications now resolve icons from packaged, system, and repository locations and send them as file URIs for better desktop-environment compatibility.
 - `scripts/install-deps.sh` now owns the `7zz` bootstrap flow, probes pinned upstream tarballs newest-first with `HEAD` checks, and installs to `~/.local/bin` by default unless `SEVENZIP_SYSTEM_INSTALL=1`.
-- Updated bundled dependencies and metadata: Electron `40.8.5`, `tokio` `1.51.1`, `windows-sys` `0.61.2`, and `codex-update-manager` `0.4.0`.
+- Updated bundled dependencies and metadata: Electron `40.8.5`, `tokio` `1.51.1`, `windows-sys` `0.61.2`, and `codex-app-updater` `0.4.0`.
 
 ### Fixed
 
@@ -99,14 +99,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Fedora/RPM packaging support and update manager RPM integration.
 - `scripts/install-deps.sh` for automated dependency installation.
 - Shared native builders and hardened launcher startup.
-- Packaged runtime helper (`codex-packaged-runtime.sh`).
+- Packaged runtime helper (`packaged-runtime.sh`).
 - Failed privileged install no longer auto-retries every reconcile cycle.
 
 ### Fixed
 
 - Privilege escalation uses installed binary for self-update.
 - Pending install recovery from failed state.
-- NVM toolchain preferred for service rebuilds.
+- Service rebuilds use the caller's `PATH` for tool discovery.
 
 ## [0.1.0] - 2026-03-20
 
@@ -114,7 +114,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Initial release: automated macOS DMG to Linux Electron app conversion.
 - Debian (`.deb`) packaging.
-- `codex-update-manager` daemon with systemd user service.
+- `codex-app-updater` daemon with systemd user service.
 - Upstream DMG detection, local rebuild, and pending install flow.
 - Nix flake for NixOS support.
 - Wayland and X11 support with GPU error workarounds.

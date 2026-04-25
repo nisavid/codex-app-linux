@@ -4,10 +4,9 @@ use anyhow::Result;
 use notify_rust::Hint;
 use std::path::{Path, PathBuf};
 
-const APP_NAME: &str = "Codex Desktop";
-const DESKTOP_ENTRY: &str = "codex-desktop";
-const PACKAGED_BUNDLE_ICON_PATH: &str = "/opt/codex-desktop/.codex-linux/codex-desktop.png";
-const SYSTEM_ICON_PATH: &str = "/usr/share/icons/hicolor/256x256/apps/codex-desktop.png";
+const APP_NAME: &str = "Codex";
+const DESKTOP_ENTRY: &str = "codex-app";
+const SYSTEM_ICON_PATH: &str = "/usr/share/icons/hicolor/256x256/apps/codex-app.png";
 
 /// Sends a desktop notification through the host notification service.
 pub fn send(summary: &str, body: &str) -> Result<()> {
@@ -37,10 +36,7 @@ fn resolve_icon_path() -> Option<PathBuf> {
 }
 
 fn bundled_icon_candidates() -> Vec<PathBuf> {
-    let mut candidates = vec![
-        PathBuf::from(PACKAGED_BUNDLE_ICON_PATH),
-        PathBuf::from(SYSTEM_ICON_PATH),
-    ];
+    let mut candidates = vec![PathBuf::from(SYSTEM_ICON_PATH)];
 
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(repo_icon) = repo_icon_from_exe(&current_exe) {

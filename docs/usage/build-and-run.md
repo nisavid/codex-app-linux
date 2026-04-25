@@ -1,6 +1,6 @@
 # Build and Run Guide
 
-This guide is for users who want to run Codex Desktop on Linux or build a native
+This guide is for users who want to run Codex on Linux or build a native
 package from this repository.
 
 ## Prerequisites
@@ -15,7 +15,7 @@ You need:
 - `unzip`;
 - `make`;
 - `g++` or equivalent C++ build tooling;
-- Rust and `cargo` for `codex-update-manager`.
+- Rust and `cargo` for `codex-app-updater`.
 
 The dependency helper supports `apt`, `dnf5`, `dnf`, and `pacman`:
 
@@ -92,13 +92,13 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 Run the flake:
 
 ```bash
-nix run github:nisavid/codex-desktop-linux
+nix run github:nisavid/codex-app-linux
 ```
 
 Or enter a development shell:
 
 ```bash
-nix develop github:nisavid/codex-desktop-linux
+nix develop github:nisavid/codex-app-linux
 ```
 
 The flake pins the SRI hash of the upstream `Codex.dmg`. OpenAI republishes the
@@ -136,7 +136,7 @@ Equivalent direct command:
 If you want a shell shortcut for checkout builds:
 
 ```bash
-echo 'alias codex-desktop="~/codex-desktop-linux/codex-app/start.sh"' >> ~/.bashrc
+echo 'alias codex-app="~/codex-app-linux/codex-app/start.sh"' >> ~/.bashrc
 ```
 
 To use a DMG you already have:
@@ -188,14 +188,15 @@ PACKAGE_VERSION=2026.03.24.120000+deadbeef ./scripts/build-pacman.sh
 Expected outputs:
 
 ```text
-dist/codex-desktop_YYYY.MM.DD.HHMMSS_amd64.deb
-dist/codex-desktop-YYYY.MM.DD.HHMMSS-<release>.x86_64.rpm
+dist/codex-app_YYYY.MM.DD.HHMMSS_amd64.deb
+dist/codex-app-YYYY.MM.DD.HHMMSS-<release>.x86_64.rpm
 dist/codex-app-YYYY.MM.DD.HHMMSS-1-x86_64.pkg.tar.zst
 ```
 
-The Arch package is named `codex-app`. It provides and conflicts with
-`codex-desktop`, while keeping the installed launcher and app layout at
-`/usr/bin/codex-desktop` and `/opt/codex-desktop`.
+Native packages are named `codex-app`. They declare replacement metadata for
+the older `codex-desktop` package name where the package format supports it,
+while using the installed launcher and app layout at `/usr/bin/codex-app` and
+`/opt/codex-app`.
 
 Install the newest package in `dist/`:
 
@@ -211,7 +212,7 @@ sudo pacman -U dist/codex-app-*.pkg.tar.zst
 
 ## Updater Service
 
-Native packages install `codex-update-manager` and its `systemd --user` service.
+Native packages install `codex-app-updater` and its `systemd --user` service.
 The service checks for newer upstream DMGs, rebuilds a local native package, and
 uses privileged installation only for the final package install.
 
@@ -225,8 +226,8 @@ Inspect it:
 
 ```bash
 make service-status
-systemctl --user status codex-update-manager.service
-codex-update-manager status --json
+systemctl --user status codex-app-updater.service
+codex-app-updater status --json
 ```
 
 These targets make sense after installing a native package. A repo-only build
@@ -265,7 +266,7 @@ The build flow is:
 4. download a Linux Electron runtime;
 5. write `codex-app/start.sh`;
 6. optionally package `codex-app/` as a Debian, RPM, or pacman package;
-7. when installed from a native package, run `codex-update-manager` as a
+7. when installed from a native package, run `codex-app-updater` as a
    `systemd --user` service for local update checks and package rebuilds.
 
 The macOS Codex app is an Electron application. Most of the app bundle is

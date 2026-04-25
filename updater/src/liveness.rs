@@ -14,7 +14,7 @@ pub fn app_pid_file() -> Result<PathBuf> {
     let state_root = base_dirs
         .state_dir()
         .unwrap_or_else(|| base_dirs.data_local_dir());
-    Ok(state_root.join("codex-desktop").join("app.pid"))
+    Ok(state_root.join("codex-app").join("app.pid"))
 }
 
 /// Detects whether the managed Electron app is currently running.
@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn pid_file_is_located_under_xdg_state() -> Result<()> {
         let pid_file = app_pid_file()?;
-        assert!(pid_file.ends_with("codex-desktop/app.pid"));
+        assert!(pid_file.ends_with("codex-app/app.pid"));
         Ok(())
     }
 
@@ -94,7 +94,7 @@ mod tests {
         let mut config = crate::config::RuntimeConfig::default_with_paths(
             &crate::config::RuntimePaths::detect()?,
         );
-        config.app_executable_path = PathBuf::from("/opt/codex-desktop/electron");
+        config.app_executable_path = PathBuf::from("/opt/codex-app/electron");
 
         assert!(!process_matches(
             std::process::id(),

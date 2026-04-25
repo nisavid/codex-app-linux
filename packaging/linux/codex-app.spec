@@ -1,9 +1,11 @@
 Name:           __PACKAGE_NAME__
 Version:        __RPM_VERSION__
 Release:        __RPM_RELEASE__%{?dist}
-Summary:        Codex Desktop for Linux
+Summary:        Codex App for Linux
 License:        Proprietary
 ExclusiveArch:  __ARCH__
+Provides:       codex-desktop = %{version}-%{release}
+Obsoletes:      codex-desktop < %{version}-%{release}
 
 Requires:       nodejs, npm, python3, p7zip, curl, unzip, gcc-c++, make
 Requires:       alsa-lib, at-spi2-atk, atk, glib2, gtk3, libdrm
@@ -12,7 +14,7 @@ Requires:       libXcomposite, libXdamage, libXext, libXfixes, libxkbcommon, lib
 Requires:       mesa-libgbm
 
 %description
-Community-built Linux package for Codex Desktop generated from the macOS DMG.
+Community-built Linux package for Codex generated from the macOS DMG.
 Requires the Codex CLI to be available in PATH or CODEX_CLI_PATH.
 Local auto-updates rebuild a Linux package from the upstream Codex.dmg and therefore
 require the local packaging toolchain listed in Requires.
@@ -26,8 +28,10 @@ cp -a "__RPM_STAGING_DIR__/." "%{buildroot}/"
 %defattr(-,root,root,-)
 /opt/__PACKAGE_NAME__/
 /usr/bin/__PACKAGE_NAME__
-/usr/bin/codex-update-manager
-/usr/lib/systemd/user/codex-update-manager.service
+/usr/bin/codex-app-updater
+/usr/lib/__PACKAGE_NAME__/packaged-runtime.sh
+/usr/lib/__PACKAGE_NAME__/update-builder/
+/usr/lib/systemd/user/codex-app-updater.service
 /usr/share/applications/__PACKAGE_NAME__.desktop
 /usr/share/icons/hicolor/256x256/apps/__PACKAGE_NAME__.png
 
@@ -36,14 +40,14 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 fi
 
-SERVICE_HELPER=/opt/__PACKAGE_NAME__/update-builder/packaging/linux/codex-update-manager-user-service.sh
+SERVICE_HELPER=/usr/lib/__PACKAGE_NAME__/update-builder/packaging/linux/codex-app-updater-user-service.sh
 if [ -f "$SERVICE_HELPER" ]; then
     . "$SERVICE_HELPER"
     codex_ensure_user_service_running || true
 fi
 
 %preun
-SERVICE_HELPER=/opt/__PACKAGE_NAME__/update-builder/packaging/linux/codex-update-manager-user-service.sh
+SERVICE_HELPER=/usr/lib/__PACKAGE_NAME__/update-builder/packaging/linux/codex-app-updater-user-service.sh
 [ -f "$SERVICE_HELPER" ] && . "$SERVICE_HELPER"
 if [ -f "$SERVICE_HELPER" ]; then
     codex_cleanup_user_service stop || true
@@ -53,12 +57,12 @@ if [ $1 -eq 0 ] && [ -f "$SERVICE_HELPER" ]; then
 fi
 
 %postun
-SERVICE_HELPER=/opt/__PACKAGE_NAME__/update-builder/packaging/linux/codex-update-manager-user-service.sh
+SERVICE_HELPER=/usr/lib/__PACKAGE_NAME__/update-builder/packaging/linux/codex-app-updater-user-service.sh
 if [ -f "$SERVICE_HELPER" ]; then
     . "$SERVICE_HELPER"
     codex_reload_user_managers || true
 fi
 
 %changelog
-* Thu Jan 01 2026 Codex Desktop Linux Maintainers <maintainers@codex-desktop-linux>
+* Thu Jan 01 2026 Codex App Linux Maintainers <maintainers@codex-app-linux>
 - Initial RPM package

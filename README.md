@@ -1,23 +1,23 @@
-# Codex Desktop for Linux
+# Codex App for Linux
 
 <p align="center">
   <img src="assets/codex.png" alt="Codex app icon" width="96" height="96">
 </p>
 
-Run OpenAI Codex Desktop on Linux.
+Run OpenAI Codex on Linux.
 
-The official Codex Desktop app is published for macOS. This project adapts the
+The official Codex app is published for macOS. This project adapts the
 upstream `Codex.dmg` into a Linux Electron app, then gives you a few practical
 ways to run it: directly from a checkout, through a native package, or through
 the Nix flake.
 
 > [!NOTE]
 > This is an unofficial community project. It does not redistribute OpenAI
-> software; it automates a local conversion from the upstream Codex Desktop DMG.
+> software; it automates a local conversion from the upstream Codex DMG.
 
 ## Who This Is For
 
-- **Linux users** who want the Codex Desktop app on their workstation.
+- **Linux users** who want the Codex app on their workstation.
 - **Packagers** who want `.deb`, `.rpm`, or pacman artifacts built from a local
   app tree.
 - **NixOS users** who want the flake path and Electron patching handled for
@@ -28,8 +28,8 @@ the Nix flake.
 ## Quick Start
 
 ```bash
-git clone https://github.com/nisavid/codex-desktop-linux.git
-cd codex-desktop-linux
+git clone https://github.com/nisavid/codex-app-linux.git
+cd codex-app-linux
 bash scripts/install-deps.sh
 make build-app
 make run-app
@@ -82,13 +82,14 @@ Package outputs land in `dist/`:
 
 | Target | Output |
 | --- | --- |
-| Debian | `dist/codex-desktop_YYYY.MM.DD.HHMMSS_amd64.deb` |
-| RPM | `dist/codex-desktop-YYYY.MM.DD.HHMMSS-<release>.x86_64.rpm` |
+| Debian | `dist/codex-app_YYYY.MM.DD.HHMMSS_amd64.deb` |
+| RPM | `dist/codex-app-YYYY.MM.DD.HHMMSS-<release>.x86_64.rpm` |
 | Arch Linux | `dist/codex-app-YYYY.MM.DD.HHMMSS-1-x86_64.pkg.tar.zst` |
 
-The Arch package is named `codex-app` and provides/conflicts with the older
-`codex-desktop` package name. The installed launcher remains
-`/usr/bin/codex-desktop`, and the app still lives under `/opt/codex-desktop`.
+Native packages are named `codex-app`. They declare replacement metadata for
+the older `codex-desktop` package name where the package format supports it.
+The installed launcher is `/usr/bin/codex-app`, and the app lives under
+`/opt/codex-app`.
 
 Install the newest package in `dist/`:
 
@@ -101,14 +102,14 @@ make install
 The flake handles dependencies and Electron patching:
 
 ```bash
-nix run github:nisavid/codex-desktop-linux
+nix run github:nisavid/codex-app-linux
 ```
 
 This installs the generated app into `codex-app/` in the current directory. For
 a development shell:
 
 ```bash
-nix develop github:nisavid/codex-desktop-linux
+nix develop github:nisavid/codex-app-linux
 ```
 
 If `nix run` reports a fixed-output `hash mismatch`, the upstream DMG was likely
@@ -118,7 +119,7 @@ time to run; if it still fails, open an issue.
 
 ## Updates
 
-Native packages install `codex-update-manager`, a `systemd --user` service that
+Native packages install `codex-app-updater`, a `systemd --user` service that
 checks for newer upstream DMGs, rebuilds the matching Linux package locally, and
 uses `pkexec` only for the final package install step.
 
@@ -127,7 +128,7 @@ Useful service commands after installing a native package:
 ```bash
 make service-enable
 make service-status
-codex-update-manager status --json
+codex-app-updater status --json
 ```
 
 The packaged launcher also starts the user service on a best-effort basis when
@@ -138,7 +139,7 @@ you open the app.
 Start with the launcher log:
 
 ```bash
-sed -n '1,160p' ~/.cache/codex-desktop/launcher.log
+sed -n '1,160p' ~/.cache/codex-app/launcher.log
 ```
 
 Common next steps:
@@ -148,7 +149,7 @@ Common next steps:
 - Codex CLI warning: install `@openai/codex` globally or under `~/.local`;
 - stale app tree: rebuild with `./install.sh --fresh`;
 - updater service issue: inspect
-  `~/.local/state/codex-update-manager/service.log`.
+  `~/.local/state/codex-app-updater/service.log`.
 
 See [Troubleshooting](docs/usage/troubleshooting.md) for the full symptom table
 and log locations.

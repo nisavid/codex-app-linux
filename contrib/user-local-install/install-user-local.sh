@@ -4,10 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FILES_DIR="${SCRIPT_DIR}/files"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-OPT_ROOT="${HOME}/.local/opt/codex-desktop-linux"
-OPT_BIN_DIR="${OPT_ROOT}/bin"
-OPT_LIB_DIR="${OPT_ROOT}/lib/codex-desktop-linux"
-STATE_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/codex-desktop-linux"
+INSTALL_ROOT="${HOME}/.local/lib/codex-app"
+PRIVATE_BIN_DIR="${INSTALL_ROOT}/bin"
+PRIVATE_LIB_DIR="${INSTALL_ROOT}/lib"
+STATE_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/codex-app"
 FROM_UPDATE=0
 ENABLE_TIMER=0
 
@@ -36,55 +36,55 @@ copy_file() {
 
 install_manager_files() {
     local systemd_user_dir="${XDG_CONFIG_HOME:-${HOME}/.config}/systemd/user"
-    mkdir -p "$OPT_BIN_DIR" "$OPT_LIB_DIR" "${HOME}/.local/share/applications" "${HOME}/.local/bin" "$STATE_DIR" "$systemd_user_dir"
+    mkdir -p "$PRIVATE_BIN_DIR" "$PRIVATE_LIB_DIR" "${HOME}/.local/share/applications" "${HOME}/.local/bin" "$STATE_DIR" "$systemd_user_dir"
 
-    copy_file "${FILES_DIR}/.local/lib/codex-desktop-linux/common.sh" "${OPT_LIB_DIR}/common.sh"
-    copy_file "${FILES_DIR}/.local/bin/codex-desktop" "${OPT_BIN_DIR}/codex-desktop"
-    copy_file "${FILES_DIR}/.local/bin/codex-desktop-check-update" "${OPT_BIN_DIR}/codex-desktop-check-update"
-    copy_file "${FILES_DIR}/.local/bin/codex-desktop-update" "${OPT_BIN_DIR}/codex-desktop-update"
-    copy_file "${FILES_DIR}/.local/bin/codex-desktop-version" "${OPT_BIN_DIR}/codex-desktop-version"
+    copy_file "${FILES_DIR}/.local/lib/codex-app/common.sh" "${PRIVATE_LIB_DIR}/common.sh"
+    copy_file "${FILES_DIR}/.local/bin/codex-app" "${PRIVATE_BIN_DIR}/codex-app"
+    copy_file "${FILES_DIR}/.local/bin/codex-app-check-update" "${PRIVATE_BIN_DIR}/codex-app-check-update"
+    copy_file "${FILES_DIR}/.local/bin/codex-app-update" "${PRIVATE_BIN_DIR}/codex-app-update"
+    copy_file "${FILES_DIR}/.local/bin/codex-app-version" "${PRIVATE_BIN_DIR}/codex-app-version"
 
-    cat > "${HOME}/.local/bin/codex-desktop" <<'EOF'
+    cat > "${HOME}/.local/bin/codex-app" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-exec "${HOME}/.local/opt/codex-desktop-linux/bin/codex-desktop" "$@"
+exec "${HOME}/.local/lib/codex-app/bin/codex-app" "$@"
 EOF
-    cat > "${HOME}/.local/bin/codex-desktop-check-update" <<'EOF'
+    cat > "${HOME}/.local/bin/codex-app-check-update" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-exec "${HOME}/.local/opt/codex-desktop-linux/bin/codex-desktop-check-update" "$@"
+exec "${HOME}/.local/lib/codex-app/bin/codex-app-check-update" "$@"
 EOF
-    cat > "${HOME}/.local/bin/codex-desktop-update" <<'EOF'
+    cat > "${HOME}/.local/bin/codex-app-update" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-exec "${HOME}/.local/opt/codex-desktop-linux/bin/codex-desktop-update" "$@"
+exec "${HOME}/.local/lib/codex-app/bin/codex-app-update" "$@"
 EOF
-    cat > "${HOME}/.local/bin/codex-desktop-version" <<'EOF'
+    cat > "${HOME}/.local/bin/codex-app-version" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-exec "${HOME}/.local/opt/codex-desktop-linux/bin/codex-desktop-version" "$@"
+exec "${HOME}/.local/lib/codex-app/bin/codex-app-version" "$@"
 EOF
 
-    sed "s|@HOME@|${HOME}|g" "${FILES_DIR}/.local/share/applications/codex-desktop.desktop" > "${HOME}/.local/share/applications/codex-desktop.desktop"
+    sed "s|@HOME@|${HOME}|g" "${FILES_DIR}/.local/share/applications/codex-app.desktop" > "${HOME}/.local/share/applications/codex-app.desktop"
 
-    copy_file "${FILES_DIR}/.config/systemd/user/codex-desktop-update.service" "${systemd_user_dir}/codex-desktop-update.service"
-    copy_file "${FILES_DIR}/.config/systemd/user/codex-desktop-update.timer" "${systemd_user_dir}/codex-desktop-update.timer"
+    copy_file "${FILES_DIR}/.config/systemd/user/codex-app-update.service" "${systemd_user_dir}/codex-app-update.service"
+    copy_file "${FILES_DIR}/.config/systemd/user/codex-app-update.timer" "${systemd_user_dir}/codex-app-update.timer"
 
     cat > "${STATE_DIR}/install.env" <<EOF
 REPO_DIR=$(printf '%q' "$REPO_ROOT")
-OPT_ROOT=$(printf '%q' "$OPT_ROOT")
+INSTALL_ROOT=$(printf '%q' "$INSTALL_ROOT")
 EOF
 
     chmod +x \
-        "${OPT_BIN_DIR}/codex-desktop" \
-        "${OPT_BIN_DIR}/codex-desktop-check-update" \
-        "${OPT_BIN_DIR}/codex-desktop-update" \
-        "${OPT_BIN_DIR}/codex-desktop-version" \
-        "${OPT_LIB_DIR}/common.sh" \
-        "${HOME}/.local/bin/codex-desktop" \
-        "${HOME}/.local/bin/codex-desktop-check-update" \
-        "${HOME}/.local/bin/codex-desktop-update" \
-        "${HOME}/.local/bin/codex-desktop-version"
+        "${PRIVATE_BIN_DIR}/codex-app" \
+        "${PRIVATE_BIN_DIR}/codex-app-check-update" \
+        "${PRIVATE_BIN_DIR}/codex-app-update" \
+        "${PRIVATE_BIN_DIR}/codex-app-version" \
+        "${PRIVATE_LIB_DIR}/common.sh" \
+        "${HOME}/.local/bin/codex-app" \
+        "${HOME}/.local/bin/codex-app-check-update" \
+        "${HOME}/.local/bin/codex-app-update" \
+        "${HOME}/.local/bin/codex-app-version"
 }
 
 install_manager_files
@@ -92,7 +92,7 @@ install_manager_files
 if command -v systemctl >/dev/null 2>&1; then
     systemctl --user daemon-reload >/dev/null 2>&1 || true
     if [ "$ENABLE_TIMER" -eq 1 ]; then
-        systemctl --user enable --now codex-desktop-update.timer >/dev/null 2>&1 || true
+        systemctl --user enable --now codex-app-update.timer >/dev/null 2>&1 || true
     fi
 fi
 
@@ -100,10 +100,10 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "${HOME}/.local/share/applications" >/dev/null 2>&1 || true
 fi
 
-if [ -x "${HOME}/.local/bin/codex-desktop-update" ]; then
-    "${HOME}/.local/bin/codex-desktop-update" --record-only >/dev/null 2>&1 || true
+if [ -x "${HOME}/.local/bin/codex-app-update" ]; then
+    "${HOME}/.local/bin/codex-app-update" --record-only >/dev/null 2>&1 || true
 fi
 
 if [ "$FROM_UPDATE" -eq 0 ]; then
-    echo "Installed user-local Codex desktop integration."
+    echo "Installed user-local Codex app integration."
 fi

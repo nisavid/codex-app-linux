@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly update for Codex app user-local install
+
+[Timer]
+OnCalendar=Sun 05:00
+Persistent=true
+Unit=codex-app-update.service
+
+[Install]
+WantedBy=timers.target

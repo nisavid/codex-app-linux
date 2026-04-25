@@ -1,6 +1,6 @@
 *.dmg
 node_modules/
-codex-app/
+/codex-app/
 target/
 dist/
 .idea/

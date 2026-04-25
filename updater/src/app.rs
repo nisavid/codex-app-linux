@@ -89,7 +89,7 @@ fn mark_failed_and_persist(
 }
 
 fn packaged_runtime_removed(config: &RuntimeConfig) -> bool {
-    config.builder_bundle_root == Path::new("/opt/codex-desktop/update-builder")
+    config.builder_bundle_root == Path::new("/usr/lib/codex-app/update-builder")
         && !config.app_executable_path.exists()
         && !install::is_primary_package_installed()
 }
@@ -287,7 +287,7 @@ async fn run_check_cycle(
             paths,
             config.notifications,
             "update_detected",
-            "New Codex Desktop update detected",
+            "New Codex update detected",
             "Preparing a local Linux package from the new upstream DMG.",
         )?;
 
@@ -301,7 +301,7 @@ async fn run_check_cycle(
             paths,
             config.notifications,
             "ready_to_install",
-            "Codex Desktop update ready",
+            "Codex update ready",
             "A rebuilt Linux package is ready to install.",
         )?;
         Ok(())
@@ -350,8 +350,8 @@ async fn reconcile_pending_install(
                     paths,
                     config.notifications,
                     "waiting_for_app_exit",
-                    "Codex Desktop update ready",
-                    "An update is ready and will install after you close Codex Desktop.",
+                    "Codex update ready",
+                    "An update is ready and will install after you close Codex.",
                 )?;
                 return Ok(());
             }
@@ -517,7 +517,7 @@ fn maybe_notify_cli_missing(
         enabled,
         CLI_MISSING_NOTIFICATION_EVENT,
         "Codex CLI not installed",
-        "Codex Desktop needs the Codex CLI. Install it with npm or open the app to retry the automatic install flow.",
+        "Codex needs the Codex CLI. Install it with npm or open the app to retry the automatic install flow.",
     )
 }
 
@@ -535,7 +535,7 @@ fn maybe_notify_installed(
         paths,
         enabled,
         "installed",
-        "Codex Desktop updated",
+        "Codex updated",
         "The new package is installed and will be used the next time you open the app.",
     )
 }
@@ -550,7 +550,7 @@ async fn trigger_install(
     persist_state(paths, state)?;
 
     let _ = notify::send(
-        "Installing Codex Desktop update",
+        "Installing Codex update",
         "Applying the locally rebuilt Linux package.",
     );
 
@@ -884,7 +884,7 @@ mod tests {
             &paths,
             false,
             "ready_to_install",
-            "Codex Desktop update ready",
+            "Codex update ready",
             "An update is ready to install.",
         )?;
         let notified_count = state.notified_events.len();
@@ -893,7 +893,7 @@ mod tests {
             &paths,
             false,
             "ready_to_install",
-            "Codex Desktop update ready",
+            "Codex update ready",
             "An update is ready to install.",
         )?;
 
@@ -945,8 +945,7 @@ mod tests {
         let mut state = PersistedState::new(true);
         state.cli_path = None;
         state.cli_installed_version = None;
-        state.cli_error_message =
-            Some("Codex CLI not found in PATH or known install locations".to_string());
+        state.cli_error_message = Some("Codex CLI not found in CODEX_CLI_PATH or PATH".to_string());
 
         maybe_notify_cli_missing(&mut state, &paths, false)?;
         let notified_count = state.notified_events.len();
