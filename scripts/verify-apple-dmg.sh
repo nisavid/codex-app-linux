@@ -12,6 +12,7 @@ EXPECTED_SPARKLE_KEY="rhcBvttuqDFriyNqwTQJR3L4UT1WjIK4QxtwtwusVic="
 REQUIRE_DMG_GATEKEEPER="${CODEX_REQUIRE_DMG_GATEKEEPER:-0}"
 REQUIRE_DMG_STAPLE="${CODEX_REQUIRE_DMG_STAPLE:-0}"
 MOUNT_DIR=""
+APP_PATH=""
 
 usage() {
     cat <<'EOF'
@@ -102,8 +103,13 @@ verify_dmg_hash() {
 mount_dmg() {
     MOUNT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/codex-dmg.XXXXXX")"
     hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT_DIR" "$DMG_PATH" >/dev/null
-    APP_PATH="$MOUNT_DIR/Codex Installer/Codex.app"
-    [ -d "$APP_PATH" ] || error "Expected Codex.app at $APP_PATH"
+    local app_matches match_count
+    app_matches="$(find "$MOUNT_DIR" -maxdepth 4 -type d -name 'Codex.app' -print)"
+    match_count="$(printf '%s\n' "$app_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
+    [ "$match_count" = "1" ] || error "Expected exactly one Codex.app under $MOUNT_DIR, found $match_count"
+    APP_PATH="$app_matches"
+    [ -d "$APP_PATH" ] || error "Expected to find Codex.app under $MOUNT_DIR"
+    info "Found app bundle: $APP_PATH"
 }
 
 plist_value() {
