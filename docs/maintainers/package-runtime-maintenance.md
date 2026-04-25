@@ -157,8 +157,8 @@ State handling matters:
 
 ## Crate Versioning Policy
 
-The updater crate version is in `updater/Cargo.toml`. Keep the README's
-user-facing version reference in sync.
+The updater crate version is in `updater/Cargo.toml`. Keep the changelog and any
+user-facing version references in sync.
 
 Use:
 

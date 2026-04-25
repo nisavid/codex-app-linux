@@ -9,8 +9,8 @@ chat history.
 Persist current desired behavior in the smallest durable place:
 
 - `AGENTS.md` for always-loaded rules and high-value pointers;
-- `README.md` for user-facing install, operation, troubleshooting, and version
-  references;
+- `README.md` for the user-facing overview, quick start, and links into focused
+  usage docs;
 - `docs/` for maintainer references, decisions, policies, and validation
   checklists;
 - `packaging/linux/`, `scripts/`, `install.sh`, and `updater/` for executable

@@ -1,43 +1,38 @@
 # User-Local Desktop Integration
 
-This folder packages a user-local install layout for `codex-desktop-linux`.
+This directory contains an experimental rootless install path for users who do
+not want to install a native system package.
 
-It adds:
+It installs Codex Desktop support files under `~/.local`, creates convenient
+wrappers in `~/.local/bin`, and can opt in to a weekly user-level update timer.
+Use the native packages when you want the supported package-manager path; use
+this layout when you want a self-contained per-user install.
 
-- a stable install root under `~/.local/opt/codex-desktop-linux`
-- self-contained maintenance scripts under `~/.local/opt/codex-desktop-linux/bin`
-- thin launch/check/update/version wrappers under `~/.local/bin`
-- a desktop entry under `~/.local/share/applications`
-- an icon extracted from the local `Codex.dmg`
-- metadata tracking for the wrapper repo and cached `Codex.dmg`
-- an optional weekly `systemd --user` timer for unattended update checks and rebuilds (opt-in)
+## What It Installs
 
-## Files
+The installer creates:
 
-The package is laid out as reusable payload files. The installer copies them into:
+- `~/.local/opt/codex-desktop-linux/` as the stable install root;
+- helper scripts under `~/.local/opt/codex-desktop-linux/bin/`;
+- thin wrappers under `~/.local/bin/`;
+- a desktop entry under `~/.local/share/applications/`;
+- user `systemd` unit files under `~/.config/systemd/user/`;
+- metadata that records the source checkout and cached `Codex.dmg`;
+- an icon extracted from the local `Codex.dmg` when one is available.
 
-- `~/.local/opt/codex-desktop-linux/bin/`
-- `~/.local/opt/codex-desktop-linux/lib/codex-desktop-linux/`
-- `~/.local/bin/` wrappers
-- `files/.local/share/applications/codex-desktop.desktop`
-- `files/.config/systemd/user/codex-desktop-update.service`
-- `files/.config/systemd/user/codex-desktop-update.timer`
+The helper scripts are copied into `~/.local/opt`; they do not run directly from
+the git checkout. They record the checkout path in user state, then use that
+checkout for future `git pull` operations while rebuilding runtime assets into
+the user-local install root.
 
-## Expected Placement
+The preferred checkout location is:
 
-If installing manually, copy the files to:
+```text
+~/workspace/codex-desktop-linux
+```
 
-- `~/.local/opt/codex-desktop-linux/bin/`
-- `~/.local/opt/codex-desktop-linux/lib/codex-desktop-linux/`
-- `~/.local/bin/` wrappers that exec into `~/.local/opt/codex-desktop-linux/bin/`
-- `~/.local/share/applications/`
-- `~/.config/systemd/user/`
-
-The preferred git checkout location is:
-
-- `~/workspace/codex-desktop-linux`
-
-The installed maintenance scripts record the repo path in user state and use that checkout for `git pull`, while rebuilding runtime assets into `~/.local/opt/codex-desktop-linux` via `CODEX_INSTALL_ROOT` / `CODEX_INSTALL_DIR`.
+Other checkout paths work, but the recorded path must remain available for
+update checks.
 
 ## Install
 
@@ -47,26 +42,23 @@ From the repository root:
 ./contrib/user-local-install/install-user-local.sh
 ```
 
-To also enable the weekly auto-update timer, pass `--enable-timer`:
+Enable the weekly auto-update timer during installation:
 
 ```bash
 ./contrib/user-local-install/install-user-local.sh --enable-timer
 ```
 
-The installer:
+The timer runs `codex-desktop-update --quiet`. It is opt-in; you can also enable
+it later:
 
-1. copies standalone helper scripts into `~/.local/opt/codex-desktop-linux`
-2. installs thin wrappers into `~/.local/bin`
-3. copies systemd unit files to `~/.config/systemd/user/`
-4. makes the scripts executable
-5. reloads the user `systemd` daemon if available
-6. enables the weekly timer only if `--enable-timer` was passed
-7. refreshes desktop metadata if available
-8. records local metadata and extracts the icon if `Codex.dmg` already exists
+```bash
+systemctl --user enable --now codex-desktop-update.timer
+```
 
 ## Commands
 
-After installation:
+After installation, these wrappers should be on `PATH` if `~/.local/bin` is
+included in your shell environment:
 
 ```bash
 codex-desktop
@@ -75,9 +67,32 @@ codex-desktop-update
 codex-desktop-version
 ```
 
+## File Layout Reference
+
+Reusable payload files in this directory are copied into:
+
+```text
+~/.local/opt/codex-desktop-linux/bin/
+~/.local/opt/codex-desktop-linux/lib/codex-desktop-linux/
+~/.local/bin/
+~/.local/share/applications/
+~/.config/systemd/user/
+```
+
+The desktop entry source lives at
+`files/.local/share/applications/codex-desktop.desktop`. The optional timer and
+service sources live at:
+
+```text
+files/.config/systemd/user/codex-desktop-update.service
+files/.config/systemd/user/codex-desktop-update.timer
+```
+
 ## Notes
 
-- The icon is not committed as a binary asset here. It is generated locally from `Codex.dmg`.
-- The helper scripts track both upstream wrapper changes and upstream `Codex.dmg` headers.
-- The helper scripts are copied into `~/.local/opt` and do not run from the git checkout directly.
-- The weekly timer runs `codex-desktop-update --quiet`. It is opt-in: pass `--enable-timer` to `install-user-local.sh` to activate it, or run `systemctl --user enable --now codex-desktop-update.timer` manually after install.
+- The icon is generated locally from `Codex.dmg`; it is not committed here as a
+  binary asset.
+- The helper scripts check both wrapper repository changes and upstream
+  `Codex.dmg` headers.
+- The user-local path is separate from the native `codex-update-manager`
+  package service.

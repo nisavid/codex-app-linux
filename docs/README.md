@@ -1,28 +1,42 @@
 # Documentation Index
 
-Use this index to choose the smallest document that answers your question.
+Use this index to choose the smallest document that matches your goal.
 
-## If You Want To Install Or Run Codex Desktop
+## Run Or Install Codex Desktop
 
-- [README](../README.md) is the user-facing entry point for prerequisites,
-  local app generation, native packages, updater service commands, and
-  troubleshooting.
+- [Project README](../README.md) is the landing page for users and potential
+  users.
+- [Build and Run Guide](usage/build-and-run.md) covers prerequisites, local app
+  generation, native package builds, package installation, NixOS, and service
+  commands.
+- [Troubleshooting](usage/troubleshooting.md) lists common launch, CLI, webview,
+  package, and updater symptoms.
+- [User-Local Desktop Integration](../contrib/user-local-install/README.md)
+  describes the experimental rootless install layout under `~/.local`.
 
-## If You Are Maintaining Packages Or Runtime Behavior
+## Understand The Design
+
+- [Webview Server Evaluation](webview-server-evaluation.md) explains why the
+  launcher currently serves the extracted webview bundle with a local Python
+  HTTP server and what would need to change before replacing it.
+- [Changelog](../CHANGELOG.md) tracks user-visible releases and packaging
+  behavior changes.
+- [Contributors](../CONTRIBUTORS.md) records notable project contributions.
+
+## Maintain Packaging Or Runtime Behavior
 
 - [Package and Runtime Maintenance](maintainers/package-runtime-maintenance.md)
-  is the maintainer reference for source files, generated artifacts, package
-  payload, launcher behavior, updater state, privileged install boundaries,
-  crate versioning, and validation selection.
-- [Webview Server Evaluation](webview-server-evaluation.md) records the current
-  local-server model, risks, and acceptance criteria for future webview-serving
-  changes.
+  is the reference for source files, generated artifacts, package payloads,
+  launcher behavior, updater state, privileged install boundaries, versioning,
+  and validation.
+- [Agentic Maintenance Policy](policies/agentic-maintenance.md) explains what
+  belongs in tracked docs, what belongs in agent policy, and what should remain
+  local session evidence.
 
-## If You Are An Agent Picking Up Work
+## Pick Up Agent Work
 
-- Read `AGENTS.md` first for always-loaded rules.
-- Use [Package and Runtime Maintenance](maintainers/package-runtime-maintenance.md)
-  for detailed package and updater context that should not live in `AGENTS.md`.
-- Use [Agentic Maintenance Policy](policies/agentic-maintenance.md) when
-  deciding what to persist in tracked docs, what to leave as generated output,
-  and what to treat as local session evidence.
+- Read [AGENTS.md](../AGENTS.md) first. It is the always-loaded policy surface.
+- Use the package maintenance reference for details that are too large or too
+  situational for `AGENTS.md`.
+- Use repo-local skills under `.agents/skills/` when the task touches package
+  metadata, launcher behavior, updater behavior, or generated install payloads.
