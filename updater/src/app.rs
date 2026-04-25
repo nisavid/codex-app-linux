@@ -5,7 +5,7 @@ use crate::{
     cli::{Cli, Commands},
     codex_cli,
     config::{RuntimeConfig, RuntimePaths},
-    install, liveness, logging, notify,
+    install, liveness, logging, notify, package_version,
     state::{PersistedState, UpdateStatus},
     upstream,
 };
@@ -290,15 +290,19 @@ async fn run_check_cycle(
             "Preparing a local Linux package from the new upstream DMG.",
         )?;
 
-        builder::build_update(config, state, paths, &downloaded.sha256, &downloaded.path).await?;
-        maybe_notify(
-            state,
-            paths,
-            config.notifications,
-            "ready_to_install",
-            "Codex update ready",
-            "A rebuilt Linux package is ready to install.",
-        )?;
+        if builder::build_update(config, state, paths, &downloaded.sha256, &downloaded.path)
+            .await?
+            .is_some()
+        {
+            maybe_notify(
+                state,
+                paths,
+                config.notifications,
+                "ready_to_install",
+                "Codex update ready",
+                "A rebuilt Linux package is ready to install.",
+            )?;
+        }
         Ok(())
     }
     .await;
@@ -370,7 +374,7 @@ fn recover_interrupted_install(state: &mut PersistedState, paths: &RuntimePaths)
     }
 
     if state.candidate_version.as_deref().is_some_and(|candidate| {
-        installed_version_satisfies_candidate(&state.installed_version, candidate)
+        package_version::installed_version_satisfies_candidate(&state.installed_version, candidate)
     }) {
         state.status = UpdateStatus::Installed;
         state.candidate_version = None;
@@ -408,39 +412,6 @@ fn recover_interrupted_install(state: &mut PersistedState, paths: &RuntimePaths)
     persist_state(paths, state)?;
     info!(package = %package_path.display(), "recovered interrupted install state back to ready_to_install");
     Ok(())
-}
-
-fn installed_version_satisfies_candidate(installed: &str, candidate: &str) -> bool {
-    if installed == "unknown" {
-        return false;
-    }
-
-    match compare_package_versions(installed, candidate) {
-        Some(std::cmp::Ordering::Less) => false,
-        Some(_) => true,
-        None => installed == candidate,
-    }
-}
-
-fn compare_package_versions(left: &str, right: &str) -> Option<std::cmp::Ordering> {
-    let left = parse_package_version(left)?;
-    let right = parse_package_version(right)?;
-    Some(left.cmp(&right))
-}
-
-fn parse_package_version(version: &str) -> Option<Vec<u32>> {
-    let base = version
-        .split_once('+')
-        .map(|(prefix, _)| prefix)
-        .unwrap_or(version);
-    let mut parts = Vec::new();
-    for segment in base.split('.') {
-        parts.push(segment.parse::<u32>().ok()?);
-    }
-    if parts.len() != 4 {
-        return None;
-    }
-    Some(parts)
 }
 
 fn maybe_notify(
@@ -771,19 +742,6 @@ mod tests {
         assert_eq!(state.status, UpdateStatus::ReadyToInstall);
         assert_eq!(state.error_message, None);
         Ok(())
-    }
-
-    #[test]
-    fn package_versions_compare_by_numeric_segments() {
-        assert_eq!(
-            compare_package_versions("26.422.30944.2080", "26.422.30944.2079"),
-            Some(std::cmp::Ordering::Greater)
-        );
-    }
-
-    #[test]
-    fn package_version_comparison_rejects_unrecognized_versions() {
-        assert_eq!(compare_package_versions("0.34.1", "0.35.0"), None);
     }
 
     #[tokio::test]

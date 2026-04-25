@@ -9,6 +9,7 @@ mod install;
 mod liveness;
 mod logging;
 mod notify;
+mod package_version;
 mod state;
 mod upstream;
 

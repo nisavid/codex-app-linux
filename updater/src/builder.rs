@@ -3,6 +3,7 @@
 use crate::{
     config::{RuntimeConfig, RuntimePaths},
     install::PackageKind,
+    package_version,
     state::{ArtifactPaths, PersistedState, UpdateStatus},
 };
 use anyhow::{Context, Result};
@@ -56,7 +57,7 @@ pub async fn build_update(
     paths: &RuntimePaths,
     workspace_id: &str,
     dmg_path: &Path,
-) -> Result<BuildArtifacts> {
+) -> Result<Option<BuildArtifacts>> {
     let workspace = BuilderWorkspace::prepare(&config.workspace_root, workspace_id)?;
     let build_path = build_command_path();
 
@@ -80,6 +81,21 @@ pub async fn build_update(
     .context("install.sh failed during local rebuild")?;
 
     let package_version = app_package_version(&workspace.app_dir)?;
+    if package_version::installed_version_satisfies_candidate(
+        &state.installed_version,
+        &package_version,
+    ) {
+        state.status = UpdateStatus::Idle;
+        state.candidate_version = None;
+        state.artifact_paths = ArtifactPaths {
+            dmg_path: Some(dmg_path.to_path_buf()),
+            workspace_dir: Some(workspace.workspace_dir.clone()),
+            package_path: None,
+        };
+        state.save(&paths.state_file)?;
+        info!(candidate_version = %package_version, installed_version = %state.installed_version, "upstream app version is already installed; skipping package rebuild");
+        return Ok(None);
+    }
     state.candidate_version = Some(package_version.clone());
 
     state.status = UpdateStatus::BuildingPackage;
@@ -115,10 +131,10 @@ pub async fn build_update(
     state.save(&paths.state_file)?;
     info!(candidate_version = %package_version, package = %package_path.display(), "local update build ready");
 
-    Ok(BuildArtifacts {
+    Ok(Some(BuildArtifacts {
         workspace_dir: workspace.workspace_dir,
         package_path,
-    })
+    }))
 }
 
 fn app_package_version(app_dir: &Path) -> Result<String> {
@@ -471,8 +487,9 @@ EOF
         fs::write(&dmg_path, b"dmg")?;
 
         let mut state = PersistedState::new(true);
-        let artifacts =
-            build_update(&config, &mut state, &paths, "678cd508ffe0", &dmg_path).await?;
+        let artifacts = build_update(&config, &mut state, &paths, "678cd508ffe0", &dmg_path)
+            .await?
+            .expect("new package version should produce build artifacts");
         assert_eq!(state.status, UpdateStatus::ReadyToInstall);
         assert_eq!(
             state.candidate_version.as_deref(),
@@ -494,6 +511,117 @@ EOF
             "expected a native package (.deb, .rpm, or .pkg.tar.zst), got {}",
             artifacts.package_path.display()
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn skips_package_rebuild_when_installed_version_already_satisfies_candidate() -> Result<()>
+    {
+        let temp = tempdir()?;
+        let bundle_root = temp.path().join("bundle");
+        let state_root = temp.path().join("state");
+        let cache_root = temp.path().join("cache");
+        fs::create_dir_all(bundle_root.join("scripts/lib"))?;
+        fs::create_dir_all(bundle_root.join("packaging/linux"))?;
+        fs::create_dir_all(bundle_root.join("assets"))?;
+        fs::write(bundle_root.join("assets/codex.png"), b"png")?;
+        fs::write(
+            bundle_root.join("packaging/linux/control"),
+            "Package: codex",
+        )?;
+        fs::write(
+            bundle_root.join("packaging/linux/codex-app.spec"),
+            "Name: codex",
+        )?;
+        fs::write(
+            bundle_root.join("packaging/linux/codex-app.desktop"),
+            "[Desktop Entry]",
+        )?;
+        fs::write(
+            bundle_root.join("packaging/linux/codex-app-updater.service"),
+            "[Unit]\nDescription=Codex App Updater\n",
+        )?;
+        fs::write(
+            bundle_root.join("install.sh"),
+            r#"#!/bin/bash
+set -euo pipefail
+mkdir -p "${CODEX_INSTALL_DIR}"
+echo launcher > "${CODEX_INSTALL_DIR}/start.sh"
+chmod +x "${CODEX_INSTALL_DIR}/start.sh"
+cat > "${CODEX_INSTALL_DIR}/codex-app-version.env" <<'EOF'
+CODEX_APP_UPSTREAM_VERSION=26.422.30944
+CODEX_APP_UPSTREAM_BUILD=2080
+CODEX_APP_PACKAGE_VERSION=26.422.30944.2080
+EOF
+"#,
+        )?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(
+                bundle_root.join("install.sh"),
+                fs::Permissions::from_mode(0o755),
+            )?;
+        }
+
+        let failing_build_script = r#"#!/bin/bash
+echo "build script should not run for an already-installed version" >&2
+exit 88
+"#;
+        for script in [
+            "scripts/build-deb.sh",
+            "scripts/build-rpm.sh",
+            "scripts/build-pacman.sh",
+        ] {
+            let path = bundle_root.join(script);
+            fs::write(&path, failing_build_script)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
+            }
+        }
+        fs::write(
+            bundle_root.join("scripts/patch-linux-window-ui.js"),
+            b"console.log('patched');\n",
+        )?;
+        fs::write(
+            bundle_root.join("scripts/lib/package-common.sh"),
+            b"#!/bin/bash\n",
+        )?;
+
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: state_root.join("state.json"),
+            log_file: state_root.join("service.log"),
+            cache_dir: cache_root.clone(),
+            state_dir: state_root.clone(),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 30,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: true,
+            notifications: true,
+            workspace_root: cache_root,
+            builder_bundle_root: bundle_root,
+            app_executable_path: PathBuf::from("/opt/codex-app/electron"),
+        };
+        let dmg_path = temp.path().join("Codex.dmg");
+        fs::write(&dmg_path, b"dmg")?;
+
+        let mut state = PersistedState::new(true);
+        state.installed_version = "26.422.30944.2080-1".to_string();
+        let artifacts =
+            build_update(&config, &mut state, &paths, "678cd508ffe0", &dmg_path).await?;
+
+        assert_eq!(artifacts, None);
+        assert_eq!(state.status, UpdateStatus::Idle);
+        assert_eq!(state.candidate_version, None);
+        assert_eq!(state.artifact_paths.package_path, None);
         Ok(())
     }
 
