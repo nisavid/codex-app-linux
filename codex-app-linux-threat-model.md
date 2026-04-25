@@ -129,9 +129,9 @@ Non-capabilities:
 - Likelihood: Medium. Requires same-user access and polkit authorization timing, but same-user local processes are in scope.
 - Impact: High. Successful abuse writes root-owned package payloads and package scripts.
 - Priority: High.
-- Existing mitigations: `pkexec` authorization; argument-based subprocess calls; Debian/pacman version checks.
-- Gaps: arbitrary path acceptance, weak RPM validation, no digest binding, TOCTOU window.
-- Recommendations: root-owned immutable copy after escalation, digest/identity binding to updater state, canonical path checks under expected workspace, symlink rejection, re-validation immediately before install.
+- Existing mitigations: `pkexec` authorization; argument-based subprocess calls; symlink/non-file rejection; expected `codex-app` filename shapes; private staged-copy install; Debian/pacman version checks.
+- Gaps: caller-supplied path acceptance, weak RPM metadata validation, no root-trusted digest binding.
+- Recommendations: digest/identity binding to trusted updater state, canonical path checks under expected workspace, and RPM metadata parity.
 
 ### T3: Renderer compromise escapes meaningful containment because sandbox is disabled
 
@@ -204,7 +204,7 @@ Non-capabilities:
 High-priority implementation targets:
 
 - Verify upstream artifacts before extraction: signed manifest or verified upstream signature/notarization, with explicit failure if verification cannot run.
-- Harden privileged installs: package identity/digest validation, root-owned immutable copy, canonical workspace path, no symlinks, and RPM parity with Debian/pacman checks.
+- Harden privileged installs further: package identity/digest validation, canonical workspace path, and RPM parity with Debian/pacman checks.
 - Restore Electron sandboxing and inspect generated app security settings before public release.
 - Add upstream version/build metadata and signature/notarization verification to hash-update PRs.
 - Add public artifact signing, checksums, attestations, and verification docs.
