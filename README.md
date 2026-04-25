@@ -94,6 +94,20 @@ the older `codex-desktop` package name where the package format supports it.
 The installed launcher is `/usr/bin/codex-app`, and the app lives under
 `/opt/codex-app`.
 
+Before publishing packages, run the release gate with a trusted upstream DMG
+hash and a signing key:
+
+```bash
+CODEX_DMG_SHA256=<reviewed-dmg-sha256> \
+REQUIRE_RELEASE_SIGNATURE=1 \
+CODEX_RELEASE_GPG_KEY=<key-id-or-email> \
+make release-gate
+```
+
+The gate verifies the DMG hash, scans the generated app for high-confidence
+Electron security anti-patterns, validates package metadata, writes
+`dist/SHA256SUMS`, and writes `dist/SHA256SUMS.asc`.
+
 Install the newest package in `dist/`:
 
 ```bash

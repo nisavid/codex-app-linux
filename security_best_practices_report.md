@@ -10,7 +10,7 @@ Current Electron documentation was fetched through `ctx7` after resolving `/elec
 
 ## Critical Findings
 
-None identified in the tracked source review. The review did not include generated `codex-app/` or `Codex.dmg`; both were absent from this checkout during verification, so upstream Electron `webPreferences`, IPC handlers, CSP, and code-signing state remain open items. The branch now includes `scripts/inspect-electron-security.js` as a repeatable static gate for the generated app once it exists.
+None identified in the tracked source review. The review did not include generated `codex-app/` or `Codex.dmg`; both were absent from this checkout during verification, so upstream Electron `webPreferences`, IPC handlers, CSP, and code-signing state remain open items. The branch now includes `scripts/inspect-electron-security.js` and `scripts/release-gate.sh` as repeatable gates once generated app and release artifacts exist.
 
 ## High Findings
 
@@ -19,16 +19,16 @@ None identified in the tracked source review. The review did not include generat
 - Location: [install.sh](/home/nisavid/src/nisavid/codex-app-linux/install.sh:685)
 - Evidence: the generated launcher now omits `--no-sandbox` and `--disable-gpu-sandbox` by default. It retains an explicit `CODEX_APP_DISABLE_ELECTRON_SANDBOX=1` compatibility fallback. Generated upstream `BrowserWindow` settings were not inspectable because `codex-app/` is absent. `scripts/inspect-electron-security.js` flags high-confidence static anti-patterns such as `nodeIntegration: true`, `contextIsolation: false`, `sandbox: false`, insecure `<webview>` attributes, and `shell.openExternal` review points.
 - Impact: renderer, webview, or malicious local-origin compromise now has a stronger Chromium process boundary by default, but generated app settings and the explicit opt-out still need release-gate review.
-- Current controls: sandboxed launch by default and an explicit documented lower-security fallback.
-- Recommendation: after building the current generated app, run `node scripts/inspect-electron-security.js codex-app` and manually inspect generated app `webPreferences`, navigation, webview, IPC, CSP, and `openExternal` handling before public release; keep sandbox disablement opt-in only.
+- Current controls: sandboxed launch by default, an explicit documented lower-security fallback, and `make release-gate` runs the generated-app inspector before public artifact publication.
+- Recommendation: after building the current generated app, run `make release-gate` plus manual inspection of generated app `webPreferences`, navigation, webview, IPC, CSP, and `openExternal` handling before public release; keep sandbox disablement opt-in only.
 
 ### H-2: Mutable upstream/update payloads are not authenticated before rebuild and install
 
 - Location: [updater/src/config.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/config.rs:85), [updater/src/upstream.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/upstream.rs:70), [updater/src/app.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/app.rs:264), [updater/src/builder.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/builder.rs:73)
 - Evidence: the updater downloads `https://persistent.oaistatic.com/codex-app-prod/Codex.dmg`, computes SHA-256 after receipt, then uses that hash for change detection/workspace naming rather than verifying it against signed or maintainer-approved metadata.
 - Impact: compromise of the upstream distribution path, CDN, local trust store, or configured URL can feed arbitrary app content into a local rebuild and eventual privileged native-package install.
-- Current controls: HTTPS transport, post-download SHA-256 recording, Nix `fetchurl` fixed hash for the Nix path only.
-- Recommendation: add an authenticated update manifest containing version, hash, and signature, with a pinned verification key or equivalent trusted metadata. For public distribution, require maintainer review before accepting a new upstream hash. If the upstream DMG is Apple-signed/notarized, explicitly verify that signature before extraction and record the result; do not treat signing as present unless this repo enforces it.
+- Current controls: HTTPS transport, post-download SHA-256 recording, Nix `fetchurl` fixed hash for the Nix path, and a public release gate that requires the release DMG to match a reviewed SHA-256/SRI hash before checksums/signatures are produced.
+- Recommendation: add an authenticated updater manifest containing version, hash, and signature, with a pinned verification key or equivalent trusted metadata. If the upstream DMG is Apple-signed/notarized, explicitly verify that signature before extraction and record the result; do not treat signing as present unless this repo enforces it.
 
 ### H-3: Privileged install subcommands accept caller-supplied package paths
 
@@ -100,9 +100,9 @@ None identified in the tracked source review. The review did not include generat
 ### M-8: Native packages lack signing, attestations, and provenance for public distribution
 
 - Location: [scripts/build-deb.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-deb.sh:77), [scripts/build-rpm.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-rpm.sh:140), [scripts/build-pacman.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-pacman.sh:86)
-- Evidence: builders emit packages, but no signing/checksum/provenance workflow is present. Pacman build uses `--skipinteg` because there are no remote sources in the local PKGBUILD.
-- Impact: public users cannot independently verify artifact origin or detect post-build tampering.
-- Recommendation: publish checksums, sign RPM/pacman artifacts, consider minisign/cosign or dpkg signing where appropriate, and add GitHub artifact attestations for release builds.
+- Evidence: builders emit packages, and `make release-gate` now writes `dist/SHA256SUMS` and can require a detached GPG signature at `dist/SHA256SUMS.asc`. Pacman build uses `--skipinteg` because there are no remote sources in the local PKGBUILD.
+- Impact: public users can verify checksums and checksum signature when release maintainers run the gate with `REQUIRE_RELEASE_SIGNATURE=1`. Format-native package signing and hosted provenance remain open.
+- Recommendation: require the release gate for public artifacts, publish `SHA256SUMS` and `SHA256SUMS.asc`, then add format-native signing and GitHub artifact attestations for hosted release builds.
 
 ### M-9: Runtime CLI auto-upgrade trusts latest npm state
 
@@ -159,8 +159,8 @@ None identified in the tracked source review. The review did not include generat
 
 ## Follow-Up Priority
 
-1. Inspect generated Electron app security settings before public release.
-2. Require authenticated upstream artifact verification before rebuild/install.
+1. Run `make release-gate` and manually inspect generated Electron app security settings before public release.
+2. Add authenticated updater artifact verification before rebuild/install.
 3. Bind privileged install subcommands to verified updater artifacts with trusted digest and canonical workspace checks.
 4. Add upstream version/build metadata and signature/notarization verification to hash-update PRs.
 5. Reduce fixed-port webview spoofing with a per-launch nonce or ephemeral loopback port.

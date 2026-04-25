@@ -254,6 +254,7 @@ make deb
 make rpm
 make pacman
 make package
+make release-gate
 make install
 make service-enable
 make service-status
@@ -262,7 +263,11 @@ make clean-state
 ```
 
 `make package` detects the native package manager on the host and builds the
-matching package type. `make install` installs the newest built native package.
+matching package type. `make release-gate` verifies the reviewed upstream DMG
+hash, scans the generated app, validates package metadata, writes
+`dist/SHA256SUMS`, and signs that checksum file when
+`REQUIRE_RELEASE_SIGNATURE=1` and `CODEX_RELEASE_GPG_KEY` are set. `make
+install` installs the newest built native package.
 
 ## How The Build Works
 

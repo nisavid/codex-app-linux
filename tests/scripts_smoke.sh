@@ -658,6 +658,67 @@ HTML
     assert_contains "$report" "shell.openExternal"
 }
 
+test_release_gate_requires_verified_dmg_hash() {
+    info "Checking release gate requires verified DMG hash"
+    local workspace="$TMP_DIR/release-gate-missing-hash"
+
+    mkdir -p "$workspace/codex-app" "$workspace/dist"
+    printf 'dmg\n' > "$workspace/Codex.dmg"
+    printf 'console.log("safe")\n' > "$workspace/codex-app/main.js"
+    printf 'package\n' > "$workspace/dist/codex-app_26.422.30944.2080_amd64.deb"
+
+    if (
+        cd "$workspace"
+        PATH="$REPO_DIR/scripts:$PATH" \
+        CODEX_RELEASE_GATE_SKIP_PACKAGE_METADATA=1 \
+        "$REPO_DIR/scripts/release-gate.sh" >/dev/null 2>&1
+    ); then
+        fail "Expected release gate to reject missing trusted DMG hash"
+    fi
+}
+
+test_release_gate_writes_checksums_and_requires_signature() {
+    info "Checking release gate writes checksums and required signature"
+    local workspace="$TMP_DIR/release-gate-checksums"
+    local bin_dir="$workspace/bin"
+    local expected_hash
+
+    mkdir -p "$workspace/codex-app" "$workspace/dist" "$bin_dir"
+    printf 'dmg\n' > "$workspace/Codex.dmg"
+    expected_hash="$(sha256sum "$workspace/Codex.dmg" | awk '{print $1}')"
+    printf 'console.log("safe")\n' > "$workspace/codex-app/main.js"
+    printf 'package\n' > "$workspace/dist/codex-app_26.422.30944.2080_amd64.deb"
+    cat > "$bin_dir/gpg" <<'SCRIPT'
+#!/bin/bash
+output=""
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "--output" ]; then
+        output="$2"
+        shift 2
+        continue
+    fi
+    shift
+done
+[ -n "$output" ] || exit 2
+printf 'signature\n' > "$output"
+SCRIPT
+    chmod +x "$bin_dir/gpg"
+
+    (
+        cd "$workspace"
+        PATH="$bin_dir:$PATH" \
+        CODEX_DMG_SHA256="$expected_hash" \
+        CODEX_RELEASE_GATE_SKIP_PACKAGE_METADATA=1 \
+        REQUIRE_RELEASE_SIGNATURE=1 \
+        CODEX_RELEASE_GPG_KEY="test@example.invalid" \
+        "$REPO_DIR/scripts/release-gate.sh"
+    )
+
+    assert_file_exists "$workspace/dist/SHA256SUMS"
+    assert_file_exists "$workspace/dist/SHA256SUMS.asc"
+    assert_contains "$workspace/dist/SHA256SUMS" "codex-app_26.422.30944.2080_amd64.deb"
+}
+
 make_fake_extracted_asar() {
     local root="$1"
     local bundle_body="$2"
@@ -757,6 +818,8 @@ main() {
     test_hash_workflow_opens_review_pr
     test_updater_service_hardening
     test_electron_security_inspector_flags_insecure_generated_app
+    test_release_gate_requires_verified_dmg_hash
+    test_release_gate_writes_checksums_and_requires_signature
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
     test_linux_file_manager_patch_fails_soft
