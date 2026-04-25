@@ -256,7 +256,7 @@ upstream_build = str(info.get("CFBundleVersion", "")).strip()
 if not upstream_version:
     raise SystemExit(f"Missing CFBundleShortVersionString in {plist_path}")
 
-version_part = re.compile(r"^[A-Za-z0-9.+~]+$")
+version_part = re.compile(r"^[0-9]+(\.[0-9]+)*$")
 if not version_part.match(upstream_version):
     raise SystemExit(f"Unsupported CFBundleShortVersionString for package version: {upstream_version}")
 
@@ -271,6 +271,8 @@ with open(metadata_path, "w", encoding="utf-8") as handle:
     handle.write(f"CODEX_APP_UPSTREAM_BUILD={upstream_build}\n")
     handle.write(f"CODEX_APP_PACKAGE_VERSION={package_version}\n")
 PY
+    local metadata_status=$?
+    [ "$metadata_status" -eq 0 ] || return "$metadata_status"
 
     info "App version: $(read_app_package_version_metadata "$metadata_file")"
 }
