@@ -8,6 +8,12 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 
 ## Hard Rules
 
+- `main` is protected. Before starting work, create and switch to a task branch.
+- Commit completed work before handoff. For long tasks, also commit at staged,
+  functional cutoff points. Each commit must pass the normal checks for the
+  changed surface before it is created.
+- Use Conventional Commits. Commit messages must accurately describe the
+  committed change.
 - Do not hand-edit generated app output as the durable fix. Change `install.sh`, package templates, updater code, or shared helpers, then regenerate or inspect generated output as needed.
 - Treat `codex-app/`, `dist/`, `Codex.dmg`, and XDG updater config/state/cache paths as generated or runtime artifacts unless the task explicitly targets them.
 - Do not assume `codex-app/` is pristine. If it disagrees with source scripts, source scripts win.
@@ -45,6 +51,8 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 ## Generated And Runtime Artifacts
 
 - `codex-app/`: generated Linux app tree and launcher output.
+- `codex-app/codex-app-version.env`: generated package-version metadata read
+  from the upstream app bundle.
 - `dist/`: native package output.
 - `Codex.dmg`: cached upstream DMG.
 - `~/.config/codex-app-updater/config.toml`: updater runtime config.
