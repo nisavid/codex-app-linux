@@ -4,7 +4,7 @@ Date: 2026-04-25
 
 ## Executive Summary
 
-This repository's highest-risk exposure is supply-chain and local privilege flow, not a classic internet-facing web-app surface. The app downloads mutable upstream artifacts, converts and patches an Electron bundle, rebuilds native packages locally, and can install them through `pkexec` after the app exits. The strongest controls today are local-only operation, Rust/Cargo and Nix lockfiles, argument-based subprocess calls, numeric package-version validation, an unprivileged updater daemon boundary, PR-gated Nix hash refreshes, and loopback-only webview serving. The largest remaining gaps are missing authenticated artifact verification in the non-Nix/update path, globally disabled Electron sandboxing, fixed-port local webview spoofing, privileged install subcommands that are not bound tightly enough to updater-generated package artifacts, and public artifact signing/provenance.
+This repository's highest-risk exposure is supply-chain and local privilege flow, not a classic internet-facing web-app surface. The app downloads mutable upstream artifacts, converts and patches an Electron bundle, rebuilds native packages locally, and can install them through `pkexec` after the app exits. The strongest controls today are local-only operation, Rust/Cargo and Nix lockfiles, argument-based subprocess calls, numeric package-version validation, an unprivileged updater daemon boundary, PR-gated Nix hash refreshes, loopback-only webview serving, and sandboxed Electron launch by default. The largest remaining gaps are missing authenticated artifact verification in the non-Nix/update path, fixed-port local webview spoofing, privileged install subcommands that are not bound tightly enough to updater-generated package artifacts, and public artifact signing/provenance.
 
 Current Electron documentation was fetched through `ctx7` after resolving `/electron/electron`. The fetched guidance reinforces the Electron-related findings: enable renderer sandboxing, keep `webSecurity` enabled, avoid webview Node.js integration, validate `will-attach-webview` options, and rely on isolated preload patterns.
 
@@ -14,13 +14,13 @@ None identified in the tracked source review. The review did not include generat
 
 ## High Findings
 
-### H-1: Electron launches with Chromium sandbox disabled
+### H-1: Generated Electron app security settings remain unverified
 
 - Location: [install.sh](/home/nisavid/src/nisavid/codex-app-linux/install.sh:685)
-- Evidence: the generated launcher execs Electron with `--no-sandbox` and `--disable-gpu-sandbox`.
-- Impact: a renderer, webview, or malicious local-origin compromise has a much weaker containment boundary and runs with the user's account privileges.
-- Current controls: none visible in the launcher. Generated upstream `BrowserWindow` settings were not inspectable because `codex-app/` is absent.
-- Recommendation: make sandboxed launch the default; configure Electron's Linux sandbox support in packaged installs. If sandbox disablement is unavoidable for a subset of systems, gate it behind an explicit opt-out and document the reduced security model.
+- Evidence: the generated launcher now omits `--no-sandbox` and `--disable-gpu-sandbox` by default. It retains an explicit `CODEX_APP_DISABLE_ELECTRON_SANDBOX=1` compatibility fallback. Generated upstream `BrowserWindow` settings were not inspectable because `codex-app/` is absent.
+- Impact: renderer, webview, or malicious local-origin compromise now has a stronger Chromium process boundary by default, but generated app settings and the explicit opt-out still need release-gate review.
+- Current controls: sandboxed launch by default and an explicit documented lower-security fallback.
+- Recommendation: inspect generated app `webPreferences`, navigation, webview, IPC, and `openExternal` handling before public release; keep sandbox disablement opt-in only.
 
 ### H-2: Mutable upstream/update payloads are not authenticated before rebuild and install
 
@@ -159,7 +159,7 @@ None identified in the tracked source review. The review did not include generat
 
 ## Follow-Up Priority
 
-1. Restore Electron sandboxing or make disablement an explicit, documented fallback.
+1. Inspect generated Electron app security settings before public release.
 2. Require authenticated upstream artifact verification before rebuild/install.
 3. Bind privileged install subcommands to verified updater artifacts and add RPM metadata parity.
 4. Add upstream version/build metadata and signature/notarization verification to hash-update PRs.

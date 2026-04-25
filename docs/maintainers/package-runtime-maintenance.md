@@ -80,18 +80,19 @@ Important launcher behavior:
   systemd manager and enables or restarts `codex-app-updater.service` on a
   best-effort basis. It also disables the legacy `codex-update-manager.service`
   name when present.
-- It stops any matching `http.server 5175`, starts
-  `python3 -m http.server 5175` from `content/webview/`, waits for the port,
-  and verifies `http://127.0.0.1:5175/index.html` contains expected Codex
-  startup markers before Electron launches.
+- It starts `python3 -m http.server --bind 127.0.0.1 5175` from
+  `content/webview/`, waits for the port, and verifies
+  `http://127.0.0.1:5175/index.html` contains expected Codex startup markers
+  before Electron launches.
 - It discovers the Codex CLI through explicit `CODEX_CLI_PATH` or `PATH`.
 - If `codex-app-updater` is available, it runs a best-effort CLI preflight.
   The preflight checks the installed CLI version, uses a one-hour registry
   lookup cooldown, tries to upgrade outdated CLI installs, and can install a
   missing CLI when the launcher is running interactively and the user accepts.
 - It exports `CODEX_CLI_PATH` before Electron starts.
-- It launches Electron with `--no-sandbox`, Wayland decorations, GPU sandbox
-  disabled, and GPU compositing disabled by default.
+- It launches Electron with Chromium sandboxing enabled by default, Wayland
+  decorations, and GPU compositing disabled by default. Set
+  `CODEX_APP_DISABLE_ELECTRON_SANDBOX=1` only as a compatibility fallback.
 
 The ASAR patch step currently:
 

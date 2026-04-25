@@ -90,7 +90,7 @@ flowchart LR
 - Updater state/config/cache: prevent artifact substitution, malicious builder selection, and misleading recovery state.
 - Public packages: ensure recipients can verify origin, integrity, and provenance.
 - Upstream Codex app and CLI authenticity: ensure Linux conversion uses genuine, reviewed upstream inputs.
-- Electron renderer boundary: prevent XSS/webview compromise from becoming host compromise.
+- Electron renderer boundary: keep Chromium sandboxing and Electron isolation controls in place so XSS/webview compromise does not become host compromise.
 - Logs and state: avoid persisting secrets embedded in configured URLs or subprocess errors.
 
 ## Attacker Model
@@ -98,7 +98,7 @@ flowchart LR
 Capabilities:
 
 - Same-user local process can bind localhost ports, modify user cache/state/config, influence user PATH, and race user-owned files.
-- LAN attacker can connect to services bound on non-loopback interfaces.
+- LAN attacker can connect to any future local services that bind on non-loopback interfaces.
 - Network or supply-chain attacker can compromise or influence mutable upstream distribution, npm registry artifacts, Electron release artifacts, GitHub Actions dependencies, or public package release storage.
 - Public package consumer may verify artifacts only with metadata this project publishes.
 
@@ -133,16 +133,16 @@ Non-capabilities:
 - Gaps: caller-supplied path acceptance, weak RPM metadata validation, no root-trusted digest binding.
 - Recommendations: digest/identity binding to trusted updater state, canonical path checks under expected workspace, and RPM metadata parity.
 
-### T3: Renderer compromise escapes meaningful containment because sandbox is disabled
+### T3: Renderer compromise escapes meaningful containment if generated app settings are unsafe
 
 - Entry points: webview content, upstream app content, local fixed HTTP origin, possible IPC/openPath handlers.
-- Abuse path: attacker gets malicious content served to renderer or exploits upstream renderer bug -> Chromium sandbox is globally disabled -> attacker operates with user account privileges.
+- Abuse path: attacker gets malicious content served to renderer or exploits upstream renderer bug -> generated app has unsafe `webPreferences`, IPC, navigation, or explicit sandbox disablement -> attacker operates with user account privileges.
 - Likelihood: Medium. Requires renderer content compromise or local-origin spoofing, but local webview spoofing is plausible.
 - Impact: High. User files, tokens, CLI config, and local processes are exposed.
 - Priority: High.
-- Existing mitigations: none visible in launcher; upstream app settings unverified.
-- Gaps: `--no-sandbox`, `--disable-gpu-sandbox`, absent generated-app review.
-- Recommendations: restore sandbox, verify `contextIsolation`, `nodeIntegration`, navigation/window/openExternal policy, and inspect generated app bundle as a release gate.
+- Existing mitigations: launcher keeps Chromium sandboxing enabled by default and has no Node-related flags visible; upstream app settings remain unverified.
+- Gaps: absent generated-app review and explicit lower-security sandbox opt-out.
+- Recommendations: verify `contextIsolation`, `nodeIntegration`, sandbox, navigation/window/openExternal policy, and inspect generated app bundle as a release gate.
 
 ### T4: Local webview origin is spoofed
 
@@ -205,7 +205,7 @@ High-priority implementation targets:
 
 - Verify upstream artifacts before extraction: signed manifest or verified upstream signature/notarization, with explicit failure if verification cannot run.
 - Harden privileged installs further: package identity/digest validation, canonical workspace path, and RPM parity with Debian/pacman checks.
-- Restore Electron sandboxing and inspect generated app security settings before public release.
+- Inspect generated app security settings before public release.
 - Add upstream version/build metadata and signature/notarization verification to hash-update PRs.
 - Add public artifact signing, checksums, attestations, and verification docs.
 
