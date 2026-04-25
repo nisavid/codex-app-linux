@@ -233,12 +233,16 @@ fn copy_builder_bundle(
     developer_mode: bool,
 ) -> Result<()> {
     validate_builder_bundle_source(source_root, developer_mode)?;
+    let require_root_owner =
+        !developer_mode && source_root == Path::new(PACKAGED_BUILDER_BUNDLE_ROOT);
 
     for (source, destination) in REQUIRED_BUNDLE_FILES {
         copy_entry(
             &source_root.join(source),
             &destination_root.join(destination),
             false,
+            developer_mode,
+            require_root_owner,
         )?;
     }
 
@@ -247,6 +251,8 @@ fn copy_builder_bundle(
             &source_root.join(source),
             &destination_root.join(destination),
             true,
+            developer_mode,
+            require_root_owner,
         )?;
     }
 
@@ -270,7 +276,27 @@ fn validate_builder_bundle_source(source_root: &Path, developer_mode: bool) -> R
         "Builder bundle root must be a directory: {}",
         source_root.display()
     );
+    validate_builder_bundle_entry(
+        source_root,
+        &metadata,
+        developer_mode,
+        source_root == Path::new(PACKAGED_BUILDER_BUNDLE_ROOT),
+    )?;
 
+    Ok(())
+}
+
+fn validate_builder_bundle_entry(
+    path: &Path,
+    metadata: &fs::Metadata,
+    developer_mode: bool,
+    require_root_owner: bool,
+) -> Result<()> {
+    anyhow::ensure!(
+        !metadata.file_type().is_symlink(),
+        "Builder bundle path must not be a symlink: {}",
+        path.display()
+    );
     #[cfg(unix)]
     if !developer_mode {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -278,15 +304,15 @@ fn validate_builder_bundle_source(source_root: &Path, developer_mode: bool) -> R
         let mode = metadata.permissions().mode();
         anyhow::ensure!(
             mode & 0o022 == 0,
-            "Builder bundle root must not be group- or world-writable: {}",
-            source_root.display()
+            "Builder bundle path must not be group- or world-writable: {}",
+            path.display()
         );
 
-        if source_root == Path::new(PACKAGED_BUILDER_BUNDLE_ROOT) {
+        if require_root_owner {
             anyhow::ensure!(
                 metadata.uid() == 0,
-                "Packaged builder bundle root must be owned by root: {}",
-                source_root.display()
+                "Packaged builder bundle path must be owned by root: {}",
+                path.display()
             );
         }
     }
@@ -294,7 +320,13 @@ fn validate_builder_bundle_source(source_root: &Path, developer_mode: bool) -> R
     Ok(())
 }
 
-fn copy_entry(source: &Path, destination: &Path, optional: bool) -> Result<()> {
+fn copy_entry(
+    source: &Path,
+    destination: &Path,
+    optional: bool,
+    developer_mode: bool,
+    require_root_owner: bool,
+) -> Result<()> {
     let metadata = match fs::symlink_metadata(source) {
         Ok(metadata) => metadata,
         Err(error) if optional && error.kind() == std::io::ErrorKind::NotFound => {
@@ -311,29 +343,26 @@ fn copy_entry(source: &Path, destination: &Path, optional: bool) -> Result<()> {
         }
     };
 
-    anyhow::ensure!(
-        !metadata.file_type().is_symlink(),
-        "Builder bundle path must not be a symlink: {}",
-        source.display()
-    );
+    validate_builder_bundle_entry(source, &metadata, developer_mode, require_root_owner)?;
 
     if metadata.is_dir() {
-        copy_dir_recursive(source, destination)?;
+        copy_dir_recursive(source, destination, developer_mode, require_root_owner)?;
     } else {
-        copy_path(source, destination)?;
+        copy_path(source, destination, developer_mode, require_root_owner)?;
     }
 
     Ok(())
 }
 
-fn copy_path(source: &Path, destination: &Path) -> Result<()> {
+fn copy_path(
+    source: &Path,
+    destination: &Path,
+    developer_mode: bool,
+    require_root_owner: bool,
+) -> Result<()> {
     let metadata = fs::symlink_metadata(source)
         .with_context(|| format!("Failed to stat {}", source.display()))?;
-    anyhow::ensure!(
-        !metadata.file_type().is_symlink(),
-        "Builder bundle path must not be a symlink: {}",
-        source.display()
-    );
+    validate_builder_bundle_entry(source, &metadata, developer_mode, require_root_owner)?;
     anyhow::ensure!(
         metadata.is_file(),
         "Builder bundle path must be a regular file: {}",
@@ -356,7 +385,12 @@ fn copy_path(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
+fn copy_dir_recursive(
+    source: &Path,
+    destination: &Path,
+    developer_mode: bool,
+    require_root_owner: bool,
+) -> Result<()> {
     fs::create_dir_all(destination)
         .with_context(|| format!("Failed to create {}", destination.display()))?;
 
@@ -367,17 +401,25 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
         let entry_path = entry.path();
         let destination_path = destination.join(entry.file_name());
         let file_type = entry.file_type()?;
+        let metadata = fs::symlink_metadata(&entry_path)
+            .with_context(|| format!("Failed to stat {}", entry_path.display()))?;
 
-        anyhow::ensure!(
-            !file_type.is_symlink(),
-            "Builder bundle path must not be a symlink: {}",
-            entry_path.display()
-        );
+        validate_builder_bundle_entry(&entry_path, &metadata, developer_mode, require_root_owner)?;
 
         if file_type.is_dir() {
-            copy_dir_recursive(&entry_path, &destination_path)?;
+            copy_dir_recursive(
+                &entry_path,
+                &destination_path,
+                developer_mode,
+                require_root_owner,
+            )?;
         } else {
-            copy_path(&entry_path, &destination_path)?;
+            copy_path(
+                &entry_path,
+                &destination_path,
+                developer_mode,
+                require_root_owner,
+            )?;
         }
     }
 
@@ -455,6 +497,7 @@ mod tests {
     use super::*;
     use crate::config::RuntimePaths;
     use anyhow::Result;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
 
     enum FakePackageOutput {
@@ -496,6 +539,11 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
             fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
         }
         Ok(())
+    }
+
+    fn environment_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
     }
 
     #[tokio::test]
@@ -750,6 +798,9 @@ exit 88
 
     #[test]
     fn build_command_path_ignores_user_environment() {
+        let _guard = environment_lock()
+            .lock()
+            .expect("environment lock should not be poisoned");
         let original_path = std::env::var_os("PATH");
         let original_home = std::env::var_os("HOME");
         std::env::set_var("PATH", "/tmp/malicious:/home/user/bin");
@@ -842,6 +893,51 @@ exit 88
 
         let error = copy_builder_bundle(&source_root, &destination_root, false)
             .expect_err("production builder root should not be group/world writable");
+
+        assert!(error
+            .to_string()
+            .contains("must not be group- or world-writable"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bundle_copy_rejects_writable_production_entry() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir()?;
+        let source_root = temp.path().join("source");
+        let destination_root = temp.path().join("destination");
+
+        fs::create_dir_all(source_root.join("scripts/lib"))?;
+        fs::create_dir_all(source_root.join("packaging/linux"))?;
+        fs::create_dir_all(source_root.join("assets"))?;
+        fs::write(source_root.join("install.sh"), b"#!/bin/bash\n")?;
+        fs::write(source_root.join("scripts/build-deb.sh"), b"#!/bin/bash\n")?;
+        fs::write(
+            source_root.join("scripts/patch-linux-window-ui.js"),
+            b"console.log('patched');\n",
+        )?;
+        fs::write(
+            source_root.join("scripts/lib/package-common.sh"),
+            b"#!/bin/bash\n",
+        )?;
+        fs::write(
+            source_root.join("packaging/linux/control"),
+            b"Package: codex\n",
+        )?;
+        fs::write(
+            source_root.join("packaging/linux/codex-app-updater.service"),
+            b"[Unit]\nDescription=Codex App Updater\n",
+        )?;
+        fs::write(source_root.join("assets/codex.png"), b"png")?;
+        fs::set_permissions(
+            source_root.join("packaging/linux/control"),
+            fs::Permissions::from_mode(0o666),
+        )?;
+
+        let error = copy_builder_bundle(&source_root, &destination_root, false)
+            .expect_err("production builder entries should not be group/world writable");
 
         assert!(error
             .to_string()
