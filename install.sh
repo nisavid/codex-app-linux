@@ -212,6 +212,49 @@ extract_dmg() {
     echo "$app_dir"
 }
 
+write_app_version_metadata() {
+    local app_dir="$1"
+    local plist="$app_dir/Contents/Info.plist"
+    local metadata_file="$INSTALL_DIR/codex-app-version.env"
+
+    [ -f "$plist" ] || error "Could not find app version metadata: $plist"
+
+    mkdir -p "$INSTALL_DIR"
+    python3 - "$plist" "$metadata_file" <<'PY'
+import plistlib
+import re
+import sys
+
+plist_path, metadata_path = sys.argv[1], sys.argv[2]
+
+with open(plist_path, "rb") as handle:
+    info = plistlib.load(handle)
+
+upstream_version = str(info.get("CFBundleShortVersionString", "")).strip()
+upstream_build = str(info.get("CFBundleVersion", "")).strip()
+
+if not upstream_version:
+    raise SystemExit(f"Missing CFBundleShortVersionString in {plist_path}")
+
+version_part = re.compile(r"^[A-Za-z0-9.+~]+$")
+if not version_part.match(upstream_version):
+    raise SystemExit(f"Unsupported CFBundleShortVersionString for package version: {upstream_version}")
+
+package_version = upstream_version
+if upstream_build:
+    if not version_part.match(upstream_build):
+        raise SystemExit(f"Unsupported CFBundleVersion for package version: {upstream_build}")
+    package_version = f"{upstream_version}.{upstream_build}"
+
+with open(metadata_path, "w", encoding="utf-8") as handle:
+    handle.write(f"CODEX_APP_UPSTREAM_VERSION={upstream_version}\n")
+    handle.write(f"CODEX_APP_UPSTREAM_BUILD={upstream_build}\n")
+    handle.write(f"CODEX_APP_PACKAGE_VERSION={package_version}\n")
+PY
+
+    info "App version: $(. "$metadata_file"; printf '%s' "$CODEX_APP_PACKAGE_VERSION")"
+}
+
 # ---- Build native modules in a clean directory ----
 build_native_modules() {
     local app_extracted="$1"
@@ -649,6 +692,7 @@ main() {
     local app_dir
     app_dir=$(extract_dmg "$dmg_path")
 
+    write_app_version_metadata "$app_dir"
     patch_asar "$app_dir"
     download_electron
     extract_webview "$app_dir"
@@ -666,4 +710,6 @@ main() {
     echo "============================================" >&2
 }
 
-main "$@"
+if [ "${CODEX_INSTALLER_SKIP_MAIN:-0}" != "1" ]; then
+    main "$@"
+fi

@@ -15,7 +15,7 @@ ICON_SOURCE="$REPO_DIR/assets/codex.png"
 PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/packaged-runtime.sh"
 
 PACKAGE_NAME="${PACKAGE_NAME:-codex-app}"
-PACKAGE_VERSION="${PACKAGE_VERSION:-$(date -u +%Y.%m.%d.%H%M%S)}"
+PACKAGE_VERSION="$(resolve_package_version)"
 PACKAGE_PROVIDES="${PACKAGE_PROVIDES:-codex-desktop}"
 PACKAGE_CONFLICTS="${PACKAGE_CONFLICTS:-codex-desktop}"
 APP_INSTALL_NAME="${APP_INSTALL_NAME:-codex-app}"

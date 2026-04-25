@@ -262,8 +262,7 @@ async fn run_check_cycle(
         set_status(state, paths, UpdateStatus::DownloadingDmg)?;
 
         let downloads_dir = config.workspace_root.join("downloads");
-        let downloaded =
-            upstream::download_dmg(&client, &config.dmg_url, &downloads_dir, Utc::now()).await?;
+        let downloaded = upstream::download_dmg(&client, &config.dmg_url, &downloads_dir).await?;
 
         if state.dmg_sha256.as_deref() == Some(downloaded.sha256.as_str())
             && !retrying_failed_update
@@ -276,8 +275,8 @@ async fn run_check_cycle(
         }
 
         state.status = UpdateStatus::UpdateDetected;
-        state.candidate_version = Some(downloaded.candidate_version);
-        state.dmg_sha256 = Some(downloaded.sha256);
+        state.candidate_version = None;
+        state.dmg_sha256 = Some(downloaded.sha256.clone());
         state.artifact_paths.dmg_path = Some(downloaded.path.clone());
         state.notified_events.clear();
         state.save(&paths.state_file)?;
@@ -291,11 +290,7 @@ async fn run_check_cycle(
             "Preparing a local Linux package from the new upstream DMG.",
         )?;
 
-        let candidate_version = state
-            .candidate_version
-            .clone()
-            .expect("candidate version should be set before local build");
-        builder::build_update(config, state, paths, &candidate_version, &downloaded.path).await?;
+        builder::build_update(config, state, paths, &downloaded.sha256, &downloaded.path).await?;
         maybe_notify(
             state,
             paths,
@@ -420,20 +415,20 @@ fn installed_version_satisfies_candidate(installed: &str, candidate: &str) -> bo
         return false;
     }
 
-    match compare_generated_versions(installed, candidate) {
+    match compare_package_versions(installed, candidate) {
         Some(std::cmp::Ordering::Less) => false,
         Some(_) => true,
         None => installed == candidate,
     }
 }
 
-fn compare_generated_versions(left: &str, right: &str) -> Option<std::cmp::Ordering> {
-    let left = parse_generated_version(left)?;
-    let right = parse_generated_version(right)?;
+fn compare_package_versions(left: &str, right: &str) -> Option<std::cmp::Ordering> {
+    let left = parse_package_version(left)?;
+    let right = parse_package_version(right)?;
     Some(left.cmp(&right))
 }
 
-fn parse_generated_version(version: &str) -> Option<Vec<u32>> {
+fn parse_package_version(version: &str) -> Option<Vec<u32>> {
     let base = version
         .split_once('+')
         .map(|(prefix, _)| prefix)
@@ -650,7 +645,7 @@ mod tests {
 
         let mut state = PersistedState::new(false);
         state.status = UpdateStatus::Failed;
-        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.candidate_version = Some("26.422.30944.2080".to_string());
         state.error_message = Some("previous failure".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
@@ -721,7 +716,7 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::ReadyToInstall;
-        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.candidate_version = Some("26.422.30944.2080".to_string());
         state.artifact_paths.package_path = Some(temp.path().join("missing/codex.deb"));
 
         reconcile_pending_install(&config, &mut state, &paths).await?;
@@ -768,7 +763,7 @@ mod tests {
 
         let mut state = PersistedState::new(false);
         state.status = UpdateStatus::ReadyToInstall;
-        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.candidate_version = Some("26.422.30944.2080".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
         reconcile_pending_install(&config, &mut state, &paths).await?;
@@ -779,16 +774,16 @@ mod tests {
     }
 
     #[test]
-    fn generated_versions_compare_by_timestamp_segments() {
+    fn package_versions_compare_by_numeric_segments() {
         assert_eq!(
-            compare_generated_versions("2026.04.01.035152", "2026.03.27.025604+1086e799"),
+            compare_package_versions("26.422.30944.2080", "26.422.30944.2079"),
             Some(std::cmp::Ordering::Greater)
         );
     }
 
     #[test]
-    fn generated_version_comparison_rejects_non_generated_versions() {
-        assert_eq!(compare_generated_versions("0.34.1", "0.35.0"), None);
+    fn package_version_comparison_rejects_unrecognized_versions() {
+        assert_eq!(compare_package_versions("0.34.1", "0.35.0"), None);
     }
 
     #[tokio::test]
@@ -815,8 +810,8 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::Installing;
-        state.installed_version = "2026.04.01.035152".to_string();
-        state.candidate_version = Some("2026.03.27.025604+1086e799".to_string());
+        state.installed_version = "26.422.30944.2080".to_string();
+        state.candidate_version = Some("26.422.30944.2079".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
         recover_interrupted_install(&mut state, &paths)?;
@@ -850,8 +845,8 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::Installing;
-        state.installed_version = "2026.03.24.120000".to_string();
-        state.candidate_version = Some("2026.03.27.025604+1086e799".to_string());
+        state.installed_version = "26.422.30944.2079".to_string();
+        state.candidate_version = Some("26.422.30944.2080".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
         recover_interrupted_install(&mut state, &paths)?;
@@ -878,7 +873,7 @@ mod tests {
         paths.ensure_dirs()?;
 
         let mut state = PersistedState::new(true);
-        state.candidate_version = Some("2026.03.24+abcd1234".to_string());
+        state.candidate_version = Some("26.422.30944.2080".to_string());
         maybe_notify(
             &mut state,
             &paths,
@@ -916,7 +911,7 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::Installed;
-        state.installed_version = "2026.04.16.120000".to_string();
+        state.installed_version = "26.422.30944.2080".to_string();
 
         maybe_notify_installed(&mut state, &paths, false)?;
         let notified_count = state.notified_events.len();
@@ -925,7 +920,7 @@ mod tests {
         assert_eq!(state.notified_events.len(), notified_count);
         assert!(state
             .notified_events
-            .contains("installed:2026.04.16.120000"));
+            .contains("installed:26.422.30944.2080"));
         Ok(())
     }
 

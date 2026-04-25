@@ -55,6 +55,11 @@ make_fake_app() {
 exit 0
 SCRIPT
     chmod +x "$app_dir/start.sh"
+    cat > "$app_dir/codex-app-version.env" <<'EOF'
+CODEX_APP_UPSTREAM_VERSION=26.422.30944
+CODEX_APP_UPSTREAM_BUILD=2080
+CODEX_APP_PACKAGE_VERSION=26.422.30944.2080
+EOF
 }
 
 make_stub_bin_dir() {
@@ -113,10 +118,9 @@ SCRIPT
     PKG_ROOT_OVERRIDE="$pkg_root" \
     DIST_DIR_OVERRIDE="$dist_dir" \
     UPDATER_BINARY_SOURCE="$updater_bin" \
-    PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     "$REPO_DIR/scripts/build-deb.sh"
 
-    assert_file_exists "$dist_dir/codex-app_2026.03.24.120000+deadbeef_amd64.deb"
+    assert_file_exists "$dist_dir/codex-app_26.422.30944.2080_amd64.deb"
     assert_file_exists "$pkg_root/DEBIAN/prerm"
     assert_file_exists "$pkg_root/DEBIAN/postrm"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/package-common.sh"
@@ -152,7 +156,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$rpmdir" ] || exit 1
 mkdir -p "$rpmdir/x86_64"
-touch "$rpmdir/x86_64/codex-app-2026.03.24.120000-deadbeef.x86_64.rpm"
+touch "$rpmdir/x86_64/codex-app-26.422.30944.2080-1.x86_64.rpm"
 SCRIPT
     cat > "$bin_dir/cargo" <<'SCRIPT'
 #!/bin/bash
@@ -166,10 +170,9 @@ SCRIPT
     DIST_DIR_OVERRIDE="$dist_dir" \
     UPDATER_BINARY_SOURCE="$updater_bin" \
     TEST_RPM_STAGING="$workspace/staging" \
-    PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     "$REPO_DIR/scripts/build-rpm.sh"
 
-    assert_file_exists "$dist_dir/codex-app-2026.03.24.120000-deadbeef.x86_64.rpm"
+    assert_file_exists "$dist_dir/codex-app-26.422.30944.2080-1.x86_64.rpm"
     assert_file_exists "$workspace/staging/usr/lib/codex-app/update-builder/scripts/lib/package-common.sh"
     assert_file_exists "$workspace/staging/usr/lib/codex-app/update-builder/scripts/patch-linux-window-ui.js"
 }
@@ -199,7 +202,7 @@ grep -q "install=codex-app.install" PKGBUILD || exit 14
 test -x "$TEST_PACMAN_STAGING/usr/bin/codex-app" || exit 15
 test -d "$TEST_PACMAN_STAGING/opt/codex-app" || exit 16
 test -f "$TEST_PACMAN_STAGING/usr/lib/codex-app/packaged-runtime.sh" || exit 17
-touch "$PKGDEST/codex-app-2026.03.24.120000-1-x86_64.pkg.tar.zst"
+touch "$PKGDEST/codex-app-26.422.30944.2080-1-x86_64.pkg.tar.zst"
 SCRIPT
     cat > "$bin_dir/cargo" <<'SCRIPT'
 #!/bin/bash
@@ -214,10 +217,9 @@ SCRIPT
     UPDATER_BINARY_SOURCE="$updater_bin" \
     TEST_PACMAN_CAPTURE="$captured_pkgbuild" \
     TEST_PACMAN_STAGING="$workspace/staging" \
-    PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     "$REPO_DIR/scripts/build-pacman.sh"
 
-    assert_file_exists "$dist_dir/codex-app-2026.03.24.120000-1-x86_64.pkg.tar.zst"
+    assert_file_exists "$dist_dir/codex-app-26.422.30944.2080-1-x86_64.pkg.tar.zst"
     assert_contains "$captured_pkgbuild" "pkgname=codex-app"
     assert_contains "$captured_pkgbuild" "provides=('codex-desktop')"
     assert_contains "$captured_pkgbuild" "conflicts=('codex-desktop')"
@@ -272,6 +274,36 @@ SCRIPT
     second_line="$(sed -n '2p' "$install_log")"
     [ "$first_line" = "1" ] || fail "Expected make build-app to call install.sh with a single default argument slot, got: $(cat "$install_log")"
     [ -z "$second_line" ] || fail "Expected make build-app default DMG argument to be empty so install.sh falls back to reuse/download, got: $(cat "$install_log")"
+}
+
+test_installer_writes_app_version_metadata() {
+    info "Checking installer app version metadata extraction"
+    local workspace="$TMP_DIR/installer-version"
+    local app_bundle="$workspace/Codex.app"
+    local install_dir="$workspace/codex-app"
+
+    mkdir -p "$app_bundle/Contents"
+    python3 - "$app_bundle/Contents/Info.plist" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "wb") as handle:
+    plistlib.dump(
+        {
+            "CFBundleShortVersionString": "26.422.30944",
+            "CFBundleVersion": "2080",
+        },
+        handle,
+    )
+PY
+
+    CODEX_INSTALLER_SKIP_MAIN=1 CODEX_INSTALL_DIR="$install_dir" source "$REPO_DIR/install.sh"
+    write_app_version_metadata "$app_bundle"
+
+    assert_file_exists "$install_dir/codex-app-version.env"
+    assert_contains "$install_dir/codex-app-version.env" "CODEX_APP_UPSTREAM_VERSION=26.422.30944"
+    assert_contains "$install_dir/codex-app-version.env" "CODEX_APP_UPSTREAM_BUILD=2080"
+    assert_contains "$install_dir/codex-app-version.env" "CODEX_APP_PACKAGE_VERSION=26.422.30944.2080"
 }
 
 test_launcher_template_sanity() {
@@ -374,8 +406,9 @@ main() {
     test_rpm_builder_smoke
     test_pacman_builder_metadata_smoke
     test_missing_input_failure
-    test_make_build_app_uses_installer_download_flow_by_default
-    test_launcher_template_sanity
+test_make_build_app_uses_installer_download_flow_by_default
+test_installer_writes_app_version_metadata
+test_launcher_template_sanity
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
     test_linux_file_manager_patch_fails_soft

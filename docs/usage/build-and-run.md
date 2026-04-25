@@ -177,20 +177,26 @@ You can also run builders directly:
 ./scripts/build-pacman.sh
 ```
 
-Override the package version when needed:
+By default, `install.sh` reads `Codex.app/Contents/Info.plist` from the
+extracted DMG and writes `codex-app/codex-app-version.env`. Package builders use
+that metadata, so an upstream app version such as `26.422.30944 (2080)` becomes
+package version `26.422.30944.2080`.
+
+Override the package version only when you need to rebuild a known app tree with
+an explicit local version:
 
 ```bash
-PACKAGE_VERSION=2026.03.24.120000+deadbeef ./scripts/build-deb.sh
-PACKAGE_VERSION=2026.03.24.120000+deadbeef ./scripts/build-rpm.sh
-PACKAGE_VERSION=2026.03.24.120000+deadbeef ./scripts/build-pacman.sh
+PACKAGE_VERSION=26.422.30944.2080 ./scripts/build-deb.sh
+PACKAGE_VERSION=26.422.30944.2080 ./scripts/build-rpm.sh
+PACKAGE_VERSION=26.422.30944.2080 ./scripts/build-pacman.sh
 ```
 
 Expected outputs:
 
 ```text
-dist/codex-app_YYYY.MM.DD.HHMMSS_amd64.deb
-dist/codex-app-YYYY.MM.DD.HHMMSS-<release>.x86_64.rpm
-dist/codex-app-YYYY.MM.DD.HHMMSS-1-x86_64.pkg.tar.zst
+dist/codex-app_<upstream-version>_amd64.deb
+dist/codex-app-<upstream-version>-1.x86_64.rpm
+dist/codex-app-<upstream-version>-1-x86_64.pkg.tar.zst
 ```
 
 Native packages are named `codex-app`. They declare replacement metadata for

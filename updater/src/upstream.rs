@@ -1,7 +1,6 @@
 //! Upstream DMG metadata and download helpers.
 
-use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, Utc};
+use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use reqwest::{header, Client};
 use sha2::{Digest, Sha256};
@@ -22,7 +21,6 @@ pub struct RemoteMetadata {
 pub struct DownloadedDmg {
     pub path: PathBuf,
     pub sha256: String,
-    pub candidate_version: String,
 }
 
 /// Fetches the upstream DMG headers used to detect candidate updates.
@@ -69,12 +67,11 @@ pub async fn fetch_remote_metadata(client: &Client, dmg_url: &str) -> Result<Rem
     })
 }
 
-/// Downloads the upstream DMG and derives a package version from its hash.
+/// Downloads the upstream DMG and hashes its contents.
 pub async fn download_dmg(
     client: &Client,
     dmg_url: &str,
     destination_dir: &Path,
-    version_timestamp: DateTime<Utc>,
 ) -> Result<DownloadedDmg> {
     tokio::fs::create_dir_all(destination_dir)
         .await
@@ -113,32 +110,16 @@ pub async fn download_dmg(
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let candidate_version = derive_candidate_version(&sha256, version_timestamp)?;
-
     Ok(DownloadedDmg {
         path: destination,
         sha256,
-        candidate_version,
     })
-}
-
-/// Derives a local package version from the DMG hash and download timestamp.
-pub fn derive_candidate_version(sha256: &str, timestamp: DateTime<Utc>) -> Result<String> {
-    let short_hash = sha256
-        .get(0..8)
-        .ok_or_else(|| anyhow!("sha256 is too short to derive candidate version"))?;
-    Ok(format!(
-        "{}+{}",
-        timestamp.format("%Y.%m.%d.%H%M%S"),
-        short_hash
-    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::Result;
-    use chrono::TimeZone;
     use tempfile::tempdir;
     use wiremock::{
         matchers::{method, path},
@@ -184,26 +165,14 @@ mod tests {
 
         let client = Client::builder().build()?;
         let temp = tempdir()?;
-        let downloaded = download_dmg(
-            &client,
-            &format!("{}/Codex.dmg", server.uri()),
-            temp.path(),
-            Utc.with_ymd_and_hms(2026, 3, 24, 12, 0, 0).unwrap(),
-        )
-        .await?;
+        let downloaded =
+            download_dmg(&client, &format!("{}/Codex.dmg", server.uri()), temp.path()).await?;
 
         assert_eq!(downloaded.path, temp.path().join("Codex.dmg"));
         assert_eq!(
             downloaded.sha256,
             "678cd508ffe0071e217020a7a4eecbebe25362c022ac78c13a5ae87b7a3a0c92"
         );
-        assert_eq!(downloaded.candidate_version, "2026.03.24.120000+678cd508");
         Ok(())
-    }
-
-    #[test]
-    fn derive_candidate_version_rejects_short_hashes() {
-        let error = derive_candidate_version("short", Utc::now()).expect_err("hash should fail");
-        assert!(error.to_string().contains("sha256 is too short"));
     }
 }

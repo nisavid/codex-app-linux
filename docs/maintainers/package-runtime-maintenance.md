@@ -122,7 +122,10 @@ Default runtime configuration:
 
 The daemon checks upstream headers, downloads new DMGs, prepares a workspace,
 runs the bundled `install.sh`, builds the native package for the host package
-manager, and records the package path in `state.json`.
+manager, and records the package path in `state.json`. `install.sh` reads
+`Codex.app/Contents/Info.plist` and writes `codex-app/codex-app-version.env`;
+package builders use `CODEX_APP_PACKAGE_VERSION` from that file unless
+`PACKAGE_VERSION` is set explicitly.
 
 Privileged escalation belongs only to the install subcommands:
 
