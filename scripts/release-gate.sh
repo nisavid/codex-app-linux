@@ -185,11 +185,13 @@ sign_checksums() {
     fi
     require_file "$PUBLIC_KEY_FILE" "release signing public key"
 
-    verify_home="$(mktemp -d)"
-    chmod 0700 "$verify_home"
-    GNUPGHOME="$verify_home" gpg --batch --import "$PUBLIC_KEY_FILE" >/dev/null
-    GNUPGHOME="$verify_home" gpg --batch --verify "$signature" "$CHECKSUM_FILE" >/dev/null
-    rm -rf "$verify_home"
+    (
+        verify_home="$(mktemp -d)"
+        trap 'rm -rf "$verify_home"' EXIT
+        chmod 0700 "$verify_home"
+        GNUPGHOME="$verify_home" gpg --batch --import "$PUBLIC_KEY_FILE" >/dev/null
+        GNUPGHOME="$verify_home" gpg --batch --verify "$signature" "$CHECKSUM_FILE" >/dev/null
+    )
 
     info "Wrote $(realpath --relative-to="$PWD" "$signature" 2>/dev/null || printf '%s' "$signature")"
     info "Wrote $(realpath --relative-to="$PWD" "$PUBLIC_KEY_FILE" 2>/dev/null || printf '%s' "$PUBLIC_KEY_FILE")"
