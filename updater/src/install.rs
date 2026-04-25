@@ -310,9 +310,15 @@ fn stage_install_candidate(path: &Path, expected_kind: PackageKind) -> Result<St
     let file_name = path
         .file_name()
         .with_context(|| format!("Package path has no file name: {}", path.display()))?;
+    #[cfg(unix)]
     let dir = tempfile::Builder::new()
         .prefix("codex-app-updater-install.")
         .permissions(fs::Permissions::from_mode(0o700))
+        .tempdir()
+        .context("Failed to create private install staging directory")?;
+    #[cfg(not(unix))]
+    let dir = tempfile::Builder::new()
+        .prefix("codex-app-updater-install.")
         .tempdir()
         .context("Failed to create private install staging directory")?;
     #[cfg(unix)]

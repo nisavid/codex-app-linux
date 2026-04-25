@@ -35,17 +35,17 @@ validate_app_payload_source() {
 normalize_app_payload_modes() {
     local app_root="$1"
 
-    find "$app_root" -type d -exec chmod u+rwx,go+rx,go-w,a-s {} +
-    find "$app_root" -type f -perm /111 -exec chmod u+rwx,go+rx,go-w,a-s {} +
-    find "$app_root" -type f ! -perm /111 -exec chmod u+rw,go+r,go-w,a-s {} +
+    find "$app_root" -type d -exec chmod u+rwx,go+rx,go-w,a-s -- {} +
+    find "$app_root" -type f -perm /111 -exec chmod u+rwx,go+rx,go-w,a-s -- {} +
+    find "$app_root" -type f ! -perm /111 -exec chmod u+rw,go+r,go-w,a-s -- {} +
 }
 
 normalize_package_directory_modes() {
     local root="$1"
 
-    find "$root" -type d -exec chmod u+rwx,go+rx,go-w,a-s {} +
-    find "$root" -type f -perm /111 -exec chmod u+rwx,go+rx,go-w,a-s {} +
-    find "$root" -type f ! -perm /111 -exec chmod u+rw,go+r,go-w,a-s {} +
+    find "$root" -type d -exec chmod u+rwx,go+rx,go-w,a-s -- {} +
+    find "$root" -type f -perm /111 -exec chmod u+rwx,go+rx,go-w,a-s -- {} +
+    find "$root" -type f ! -perm /111 -exec chmod u+rw,go+r,go-w,a-s -- {} +
 }
 
 resolve_package_version() {
