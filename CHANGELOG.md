@@ -9,7 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Native package versions now default to the upstream Codex app bundle version
   from `Contents/Info.plist`, including `CFBundleVersion` as the final version
-  segment, instead of synthesizing a timestamp/hash version locally.
+  segment, instead of synthesizing a timestamp/hash version locally. Generated
+  package metadata is restricted to numeric dot-separated versions so updater
+  comparisons stay consistent across package formats.
 
 ## [0.4.2] - 2026-04-23
 

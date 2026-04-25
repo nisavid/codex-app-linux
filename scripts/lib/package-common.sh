@@ -45,7 +45,7 @@ resolve_package_version() {
 
     [ -n "$version" ] || error "Missing CODEX_APP_PACKAGE_VERSION in $metadata_file"
     case "$version" in
-        *[!A-Za-z0-9.+~]*)
+        *[!0-9.]*)
             error "Invalid package version in $metadata_file: $version"
             ;;
     esac

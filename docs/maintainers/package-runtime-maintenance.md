@@ -125,7 +125,9 @@ runs the bundled `install.sh`, builds the native package for the host package
 manager, and records the package path in `state.json`. `install.sh` reads
 `Codex.app/Contents/Info.plist` and writes `codex-app/codex-app-version.env`;
 package builders use `CODEX_APP_PACKAGE_VERSION` from that file unless
-`PACKAGE_VERSION` is set explicitly.
+`PACKAGE_VERSION` is set explicitly. Generated metadata must stay numeric and
+dot-separated because the updater's installed-version comparison depends on that
+shape.
 
 Privileged escalation belongs only to the install subcommands:
 

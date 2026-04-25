@@ -153,7 +153,7 @@ fn app_package_version(app_dir: &Path) -> Result<String> {
     anyhow::ensure!(
         version
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'~')),
+            .all(|byte| byte.is_ascii_digit() || byte == b'.'),
         "Invalid CODEX_APP_PACKAGE_VERSION in generated app metadata: {version}"
     );
 
