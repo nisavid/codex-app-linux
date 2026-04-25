@@ -8,6 +8,11 @@ Type=simple
 ExecStart=/usr/bin/codex-app-updater daemon
 Restart=on-failure
 RestartSec=10
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/bin
+NoNewPrivileges=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=077
 
 [Install]
 WantedBy=default.target

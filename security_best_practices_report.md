@@ -90,12 +90,12 @@ None identified in the tracked source review. The review did not include generat
 - Impact: local package builds are less reproducible and more exposed to registry, mirror, or CDN compromise.
 - Recommendation: pin Electron zip hashes, `asar`, `@electron/rebuild`, and native rebuild tooling through checked-in manifests/lockfiles; pin 7zz checksums by version and architecture; avoid piping remote shell where a distro package or verified installer is viable.
 
-### M-7: User service lacks systemd sandboxing
+### M-7: User service hardening is partially applied
 
 - Location: [packaging/linux/codex-app-updater.service](/home/nisavid/src/nisavid/codex-app-linux/packaging/linux/codex-app-updater.service:6)
-- Evidence: the service only defines `ExecStart`, restart policy, and network ordering.
-- Impact: an updater compromise gets the full ambient user-service environment and filesystem access.
-- Recommendation: add compatible hardening such as `NoNewPrivileges=yes`, `PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, a fixed `Environment=PATH=...`, and the narrowest feasible filesystem protections with explicit writable XDG paths.
+- Evidence: the service now sets a fixed `PATH`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, and `UMask=077`.
+- Impact: an updater compromise gets a narrower user-service environment, although broad home-directory access remains because the updater needs XDG config/state/cache and package workspaces.
+- Recommendation: evaluate narrower filesystem protections with explicit writable XDG paths once update/install behavior is tested under those restrictions.
 
 ### M-8: Native packages lack signing, attestations, and provenance for public distribution
 

@@ -215,7 +215,7 @@ Medium-priority implementation targets:
 - Validate packaged builder-root ownership and permissions.
 - Keep package payload symlink and mode checks covered by smoke tests.
 - Keep updater download timeout and maximum-size checks covered by regression tests.
-- Add service hardening directives compatible with `systemd --user`.
+- Evaluate narrower service filesystem protections with explicit writable XDG paths.
 
 Detection and monitoring:
 

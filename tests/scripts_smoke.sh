@@ -543,6 +543,17 @@ test_hash_workflow_opens_review_pr() {
     assert_not_contains "$workflow" "cachix/install-nix-action@v27"
 }
 
+test_updater_service_hardening() {
+    info "Checking updater service hardening"
+    local service="$REPO_DIR/packaging/linux/codex-app-updater.service"
+
+    assert_contains "$service" "NoNewPrivileges=yes"
+    assert_contains "$service" "PrivateTmp=yes"
+    assert_contains "$service" "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"
+    assert_contains "$service" "Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/bin"
+    assert_contains "$service" "UMask=077"
+}
+
 make_fake_extracted_asar() {
     local root="$1"
     local bundle_body="$2"
@@ -638,6 +649,7 @@ main() {
     test_installer_rejects_short_app_version_metadata
     test_launcher_template_sanity
     test_hash_workflow_opens_review_pr
+    test_updater_service_hardening
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
     test_linux_file_manager_patch_fails_soft
