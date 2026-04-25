@@ -67,56 +67,9 @@ main() {
     trap "rm -rf '$build_root'" EXIT
 
     local staging_root="${TEST_RPM_STAGING:-$build_root/STAGING}"
-    local update_builder_dir="$staging_root/usr/lib/$PACKAGE_NAME/update-builder"
-
-    mkdir -p \
-        "$staging_root/opt/$PACKAGE_NAME" \
-        "$staging_root/usr/bin" \
-        "$staging_root/usr/lib/$PACKAGE_NAME" \
-        "$staging_root/usr/lib/systemd/user" \
-        "$staging_root/usr/share/applications" \
-        "$staging_root/usr/share/icons/hicolor/256x256/apps"
-
-    cp -a "$APP_DIR/." "$staging_root/opt/$PACKAGE_NAME/"
-    cp "$DESKTOP_TEMPLATE" "$staging_root/usr/share/applications/$PACKAGE_NAME.desktop"
-    cp "$ICON_SOURCE" "$staging_root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"
-    cp "$UPDATER_BINARY_SOURCE" "$staging_root/usr/bin/codex-app-updater"
-    chmod 0755 "$staging_root/usr/bin/codex-app-updater"
-    cp "$UPDATER_SERVICE_SOURCE" "$staging_root/usr/lib/systemd/user/codex-app-updater.service"
-    chmod 0644 "$staging_root/usr/lib/systemd/user/codex-app-updater.service"
-    cp "$PACKAGED_RUNTIME_SOURCE" "$staging_root/usr/lib/$PACKAGE_NAME/packaged-runtime.sh"
-    chmod 0644 "$staging_root/usr/lib/$PACKAGE_NAME/packaged-runtime.sh"
-
-    mkdir -p \
-        "$update_builder_dir/scripts" \
-        "$update_builder_dir/scripts/lib" \
-        "$update_builder_dir/packaging/linux" \
-        "$update_builder_dir/assets"
-    cp "$REPO_DIR/install.sh" "$update_builder_dir/install.sh"
-    cp "$REPO_DIR/scripts/build-rpm.sh" "$update_builder_dir/scripts/build-rpm.sh"
-    cp "$REPO_DIR/scripts/build-deb.sh" "$update_builder_dir/scripts/build-deb.sh"
-    cp "$REPO_DIR/scripts/build-pacman.sh" "$update_builder_dir/scripts/build-pacman.sh"
-    cp "$REPO_DIR/scripts/patch-linux-window-ui.js" "$update_builder_dir/scripts/patch-linux-window-ui.js"
-    cp "$REPO_DIR/scripts/lib/package-common.sh" "$update_builder_dir/scripts/lib/package-common.sh"
-    cp "$REPO_DIR/packaging/linux/codex-app.spec" "$update_builder_dir/packaging/linux/codex-app.spec"
-    cp "$REPO_DIR/packaging/linux/control" "$update_builder_dir/packaging/linux/control"
-    cp "$REPO_DIR/packaging/linux/codex-app.desktop" "$update_builder_dir/packaging/linux/codex-app.desktop"
-    cp "$PACKAGED_RUNTIME_SOURCE" "$update_builder_dir/packaging/linux/packaged-runtime.sh"
-    cp "$USER_SERVICE_HELPER_TEMPLATE" \
-        "$update_builder_dir/packaging/linux/codex-app-updater-user-service.sh"
-    cp "$REPO_DIR/packaging/linux/PKGBUILD.template" "$update_builder_dir/packaging/linux/PKGBUILD.template"
-    cp "$REPO_DIR/packaging/linux/codex-app.install" "$update_builder_dir/packaging/linux/codex-app.install"
-    cp "$UPDATER_SERVICE_SOURCE" "$update_builder_dir/packaging/linux/codex-app-updater.service"
-    cp "$REPO_DIR/packaging/linux/codex-app-updater.postinst" "$update_builder_dir/packaging/linux/codex-app-updater.postinst"
-    cp "$REPO_DIR/packaging/linux/codex-app-updater.prerm" "$update_builder_dir/packaging/linux/codex-app-updater.prerm"
-    cp "$REPO_DIR/packaging/linux/codex-app-updater.postrm" "$update_builder_dir/packaging/linux/codex-app-updater.postrm"
-    cp "$REPO_DIR/assets/codex.png" "$update_builder_dir/assets/codex.png"
-
-    cat > "$staging_root/usr/bin/$PACKAGE_NAME" <<SCRIPT
-#!/bin/bash
-exec /opt/$PACKAGE_NAME/start.sh "\$@"
-SCRIPT
-    chmod 0755 "$staging_root/usr/bin/$PACKAGE_NAME"
+    stage_common_package_files "$staging_root"
+    stage_update_builder_bundle "$staging_root"
+    write_launcher_stub "$staging_root"
 
     local spec_file="$build_root/codex-app.spec"
     sed \

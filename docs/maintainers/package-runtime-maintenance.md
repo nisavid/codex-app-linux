@@ -60,10 +60,11 @@ destinations are:
 - `/usr/share/applications/codex-app.desktop`;
 - `/usr/share/icons/hicolor/256x256/apps/codex-app.png`.
 
-Debian and pacman package builders use `scripts/lib/package-common.sh` for the
-shared staging path. The RPM builder stages much of the same payload directly in
-`scripts/build-rpm.sh`. When package contents move, update every affected
-builder and template together.
+Debian, RPM, and pacman package builders use `scripts/lib/package-common.sh`
+for the shared staging path. App payload staging rejects absolute or upward
+symlinks and normalizes generated app directory/file modes before package
+creation. When package contents move, update every affected builder and template
+together.
 
 ## Current Runtime Behaviors
 

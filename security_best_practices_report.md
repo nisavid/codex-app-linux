@@ -76,12 +76,12 @@ None identified in the tracked source review. The review did not include generat
 - Impact: packaged production mode can be redirected to untrusted builders or payloads by user config, blurring the boundary between supported update behavior and developer override behavior.
 - Recommendation: lock packaged updater mode to root-owned `/usr/lib/codex-app/update-builder`; allow custom builder roots only under explicit developer mode; validate canonical paths, ownership, and permissions.
 
-### M-5: Package payload preserves generated app modes and symlinks without normalization
+### M-5: Package payload normalization does not authenticate generated contents
 
 - Location: [scripts/lib/package-common.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/lib/package-common.sh:104), [scripts/build-rpm.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-rpm.sh:80)
-- Evidence: packaging uses `cp -aT` or `cp -a` from generated app trees into package roots.
-- Impact: DMG/npm-derived content can carry unexpected symlinks, executable modes, setuid/setgid bits, or writable files into a root-owned package payload.
-- Recommendation: reject absolute/upward symlinks, strip setuid/setgid/world-writable bits, normalize file and directory modes, and fail package builds on unexpected metadata.
+- Evidence: Debian, RPM, and pacman packaging now share app payload staging. Staging rejects absolute or upward symlinks and normalizes generated app directory/file modes before package creation.
+- Impact: package metadata risk is reduced, but generated contents still originate from mutable upstream DMG/npm inputs and are not authenticated by this normalization.
+- Recommendation: keep symlink/mode checks covered by smoke tests, and pair them with upstream artifact verification before public release.
 
 ### M-6: Non-Nix installer and dependency bootstrap fetch executable inputs without pinned integrity
 
@@ -164,5 +164,5 @@ None identified in the tracked source review. The review did not include generat
 3. Bind privileged install subcommands to verified updater artifacts with trusted digest and canonical workspace checks.
 4. Add upstream version/build metadata and signature/notarization verification to hash-update PRs.
 5. Reduce fixed-port webview spoofing with a per-launch nonce or ephemeral loopback port.
-6. Sanitize updater build environment and package payload metadata.
+6. Sanitize updater build environment and keep package payload metadata checks covered by smoke tests.
 7. Add package signing/provenance for public distribution.

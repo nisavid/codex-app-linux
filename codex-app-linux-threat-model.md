@@ -173,9 +173,9 @@ Non-capabilities:
 - Likelihood: Medium for developer/local systems; lower for locked packaged systems if config is hardened.
 - Impact: Medium to High depending whether package is installed locally or published.
 - Priority: Medium.
-- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors.
-- Gaps: packaged mode accepts custom builder roots and inherited PATH; package payload metadata is not normalized.
-- Recommendations: fixed build PATH, root-owned builder root in packaged mode, developer-mode gate for custom builders, symlink/mode normalization.
+- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors; package staging rejects unsafe app symlinks and normalizes app payload modes.
+- Gaps: packaged mode accepts custom builder roots and inherited PATH.
+- Recommendations: fixed build PATH, root-owned builder root in packaged mode, and developer-mode gate for custom builders.
 
 ### T7: Logs and state expose sensitive configured URLs or command output
 
@@ -213,7 +213,7 @@ Medium-priority implementation targets:
 
 - Remove fixed-port webview spoofing where feasible.
 - Sanitize service/build PATH and lock packaged builder root.
-- Normalize package payload permissions and reject unsafe symlinks.
+- Keep package payload symlink and mode checks covered by smoke tests.
 - Keep updater download timeout and maximum-size checks covered by regression tests.
 - Add service hardening directives compatible with `systemd --user`.
 
@@ -239,7 +239,7 @@ Detection and monitoring:
 - `packaging/linux/codex-app-updater-user-service.sh`: maintainer-script user-manager operations.
 - `scripts/lib/package-common.sh`: package payload staging and metadata normalization.
 - `scripts/build-deb.sh`: Debian package generation and public signing/provenance hooks.
-- `scripts/build-rpm.sh`: RPM staging, direct payload copy, and signing hooks.
+- `scripts/build-rpm.sh`: RPM packaging, shared staging, and signing hooks.
 - `scripts/build-pacman.sh`: pacman staging, `--skipinteg`, and package signing hooks.
 - `.github/workflows/update-codex-hash.yml`: CI trust-root updates and action pinning.
 - `flake.nix`: Nix fixed-output hash trust and Nix-specific binary patching.
