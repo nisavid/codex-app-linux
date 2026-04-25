@@ -755,8 +755,10 @@ test_hash_workflow_opens_review_pr() {
     assert_contains "$workflow" "gh pr list --base main --head \"\$BRANCH\" --state open"
     assert_contains "$workflow" "gh pr edit \"\$PR_NUMBER\""
     assert_contains "$workflow" "gh pr create"
+    assert_contains "$workflow" "git fetch origin \"\$BRANCH:refs/remotes/origin/\$BRANCH\" || true"
     assert_not_contains "$workflow" "git push origin main"
     assert_not_contains "$workflow" "gh pr view \"\$BRANCH\" --base main"
+    assert_not_contains "$workflow" "grep -oP"
     assert_not_contains "$workflow" "actions/checkout@v4"
     assert_not_contains "$workflow" "cachix/install-nix-action@v27"
 }

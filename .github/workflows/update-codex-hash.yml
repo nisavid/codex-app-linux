@@ -34,7 +34,7 @@ jobs:
             exit 1
           fi
 
-          CURRENT_HASH=$(grep -oP 'hash = "\Ksha256-[^"]+' flake.nix)
+          CURRENT_HASH=$(sed -nE 's/.*hash = "(sha256-[^"]+)".*/\1/p' flake.nix | head -n 1)
           echo "Current hash:  $CURRENT_HASH"
 
           if [ "$NEW_HASH" = "$CURRENT_HASH" ]; then
@@ -47,6 +47,7 @@ jobs:
           git config user.name  "codex-dmg-hash-bot"
           git config user.email "actions@github.com"
           BRANCH="bot/update-codex-dmg-hash"
+          git fetch origin "$BRANCH:refs/remotes/origin/$BRANCH" || true
           git checkout -B "$BRANCH"
           git add flake.nix
           git commit -m "fix(nix): update Codex.dmg hash
