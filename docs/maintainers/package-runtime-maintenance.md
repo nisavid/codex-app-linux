@@ -118,10 +118,15 @@ Default runtime configuration:
 - check interval: 6 hours
 - auto-install after app exit: enabled
 - desktop notifications: enabled
+- developer mode: disabled
 - workspace root: `~/.cache/codex-app-updater/`
 - builder bundle root: `/usr/lib/codex-app/update-builder` when installed, or
   the repository root for checkout runs
 - app executable path: `/opt/codex-app/electron`
+
+When the packaged builder root exists, runtime config cannot redirect
+`builder_bundle_root` unless `developer_mode = true` is set explicitly in
+`~/.config/codex-app-updater/config.toml`.
 
 The daemon checks upstream headers, downloads new DMGs, prepares a workspace,
 runs the bundled `install.sh`, builds the native package for the host package

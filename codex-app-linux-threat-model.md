@@ -173,9 +173,9 @@ Non-capabilities:
 - Likelihood: Medium for developer/local systems; lower for locked packaged systems if config is hardened.
 - Impact: Medium to High depending whether package is installed locally or published.
 - Priority: Medium.
-- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors; updater rebuild commands use a fixed system PATH; package staging rejects unsafe app symlinks and normalizes app payload modes.
-- Gaps: packaged mode accepts custom builder roots.
-- Recommendations: root-owned builder root in packaged mode and developer-mode gate for custom builders.
+- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors; updater rebuild commands use a fixed system PATH; packaged builder-root redirects require explicit developer mode; package staging rejects unsafe app symlinks and normalizes app payload modes.
+- Gaps: packaged builder-root ownership and permissions are not checked before copy.
+- Recommendations: validate packaged builder-root ownership and permissions before copying builder scripts.
 
 ### T7: Logs and state expose sensitive configured URLs or command output
 
@@ -212,7 +212,7 @@ High-priority implementation targets:
 Medium-priority implementation targets:
 
 - Remove fixed-port webview spoofing where feasible.
-- Lock packaged builder root behind an explicit developer-mode override.
+- Validate packaged builder-root ownership and permissions.
 - Keep package payload symlink and mode checks covered by smoke tests.
 - Keep updater download timeout and maximum-size checks covered by regression tests.
 - Add service hardening directives compatible with `systemd --user`.

@@ -3,9 +3,13 @@
 use anyhow::{Context, Result};
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 const SERVICE_NAME: &str = "codex-app-updater";
+const PACKAGED_BUILDER_BUNDLE_ROOT: &str = "/usr/lib/codex-app/update-builder";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Runtime configuration values that control how the updater behaves on Linux.
@@ -15,6 +19,8 @@ pub struct RuntimeConfig {
     pub check_interval_hours: u64,
     pub auto_install_on_app_exit: bool,
     pub notifications: bool,
+    #[serde(default)]
+    pub developer_mode: bool,
     pub workspace_root: PathBuf,
     pub builder_bundle_root: PathBuf,
     pub app_executable_path: PathBuf,
@@ -72,7 +78,7 @@ impl RuntimePaths {
 impl RuntimeConfig {
     /// Builds the default runtime configuration for the resolved paths.
     pub fn default_with_paths(paths: &RuntimePaths) -> Self {
-        let packaged_bundle_root = PathBuf::from("/usr/lib/codex-app/update-builder");
+        let packaged_bundle_root = PathBuf::from(PACKAGED_BUILDER_BUNDLE_ROOT);
         let builder_bundle_root = if packaged_bundle_root.exists() {
             packaged_bundle_root
         } else {
@@ -88,6 +94,7 @@ impl RuntimeConfig {
             check_interval_hours: 6,
             auto_install_on_app_exit: true,
             notifications: true,
+            developer_mode: false,
             workspace_root: paths.cache_dir.clone(),
             builder_bundle_root,
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
@@ -102,9 +109,16 @@ impl RuntimeConfig {
 
         let content = fs::read_to_string(&paths.config_file)
             .with_context(|| format!("Failed to read {}", paths.config_file.display()))?;
-        let config = toml::from_str::<Self>(&content)
+        let mut config = toml::from_str::<Self>(&content)
             .with_context(|| format!("Failed to parse {}", paths.config_file.display()))?;
+        config.enforce_packaged_builder_root(Path::new(PACKAGED_BUILDER_BUNDLE_ROOT));
         Ok(config)
+    }
+
+    fn enforce_packaged_builder_root(&mut self, packaged_root: &Path) {
+        if packaged_root.exists() && !self.developer_mode {
+            self.builder_bundle_root = packaged_root.to_path_buf();
+        }
     }
 }
 
@@ -179,5 +193,51 @@ app_executable_path = "/opt/codex-app/electron"
             PathBuf::from("/opt/codex-app/electron")
         );
         Ok(())
+    }
+
+    #[test]
+    fn packaged_builder_root_overrides_configured_root_without_developer_mode() {
+        let temp = tempdir().expect("tempdir");
+        let packaged_root = temp.path().join("usr/lib/codex-app/update-builder");
+        fs::create_dir_all(&packaged_root).expect("packaged root");
+        let configured_root = temp.path().join("custom-builder");
+        let mut config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 5,
+            check_interval_hours: 12,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("workspace"),
+            builder_bundle_root: configured_root,
+            app_executable_path: PathBuf::from("/opt/codex-app/electron"),
+        };
+
+        config.enforce_packaged_builder_root(&packaged_root);
+
+        assert_eq!(config.builder_bundle_root, packaged_root);
+    }
+
+    #[test]
+    fn developer_mode_preserves_configured_builder_root() {
+        let temp = tempdir().expect("tempdir");
+        let packaged_root = temp.path().join("usr/lib/codex-app/update-builder");
+        fs::create_dir_all(&packaged_root).expect("packaged root");
+        let configured_root = temp.path().join("custom-builder");
+        let mut config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 5,
+            check_interval_hours: 12,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            workspace_root: temp.path().join("workspace"),
+            builder_bundle_root: configured_root.clone(),
+            developer_mode: true,
+            app_executable_path: PathBuf::from("/opt/codex-app/electron"),
+        };
+
+        config.enforce_packaged_builder_root(&packaged_root);
+
+        assert_eq!(config.builder_bundle_root, configured_root);
     }
 }
