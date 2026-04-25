@@ -149,6 +149,33 @@ test_package_version_metadata_rejects_too_few_segments() {
     fi
 }
 
+test_package_identifiers_reject_path_characters() {
+    info "Checking package identifier validation rejects path characters"
+    (
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        PACKAGE_NAME="codex-app" \
+        PACKAGE_PROVIDES="codex-desktop" \
+        PACKAGE_CONFLICTS="codex-desktop" \
+        APP_INSTALL_NAME="codex-app" \
+        APP_LAUNCHER_NAME="codex-app" \
+        validate_packaging_identifiers
+    )
+
+    if (
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        PACKAGE_NAME="../codex-app" \
+        PACKAGE_PROVIDES="codex-desktop" \
+        PACKAGE_CONFLICTS="codex-desktop" \
+        APP_INSTALL_NAME="codex-app" \
+        APP_LAUNCHER_NAME="codex-app" \
+        validate_packaging_identifiers >/dev/null 2>&1
+    ); then
+        fail "Expected package identifier validation to reject path characters"
+    fi
+}
+
 test_package_staging_rejects_unsafe_symlinks() {
     info "Checking package staging rejects unsafe symlinks"
     local workspace="$TMP_DIR/package-unsafe-symlink"
@@ -668,6 +695,7 @@ main() {
     test_package_version_metadata_trims_trailing_whitespace
     test_package_version_metadata_rejects_alphanumeric_segments
     test_package_version_metadata_rejects_too_few_segments
+    test_package_identifiers_reject_path_characters
     test_package_staging_rejects_unsafe_symlinks
     test_package_staging_normalizes_payload_modes
     test_deb_builder_smoke

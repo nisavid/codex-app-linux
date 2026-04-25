@@ -53,6 +53,7 @@ main() {
     [ -f "$PACKAGED_RUNTIME_SOURCE" ] || error "Missing packaged launcher runtime helper: $PACKAGED_RUNTIME_SOURCE"
     command -v rpmbuild >/dev/null 2>&1 || error "rpmbuild is required (install rpm-build)"
 
+    validate_packaging_identifiers
     ensure_updater_binary
 
     local arch

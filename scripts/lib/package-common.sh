@@ -70,6 +70,33 @@ resolve_package_version() {
     printf '%s\n' "$version"
 }
 
+validate_identifier() {
+    local label="$1"
+    local value="$2"
+    local pattern="$3"
+
+    [ -n "$value" ] || error "$label must not be empty"
+    if ! [[ "$value" =~ $pattern ]]; then
+        error "$label contains unsafe characters: $value"
+    fi
+}
+
+validate_packaging_identifiers() {
+    local app_install_name="${APP_INSTALL_NAME:-$PACKAGE_NAME}"
+    local launcher_name="${APP_LAUNCHER_NAME:-$app_install_name}"
+
+    validate_identifier "PACKAGE_NAME" "$PACKAGE_NAME" '^[a-z0-9][a-z0-9+._-]*$'
+    validate_identifier "APP_INSTALL_NAME" "$app_install_name" '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+    validate_identifier "APP_LAUNCHER_NAME" "$launcher_name" '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+
+    if [ -n "${PACKAGE_PROVIDES:-}" ]; then
+        validate_identifier "PACKAGE_PROVIDES" "$PACKAGE_PROVIDES" '^[a-z0-9][a-z0-9+._-]*$'
+    fi
+    if [ -n "${PACKAGE_CONFLICTS:-}" ]; then
+        validate_identifier "PACKAGE_CONFLICTS" "$PACKAGE_CONFLICTS" '^[a-z0-9][a-z0-9+._-]*$'
+    fi
+}
+
 updater_binary_is_stale() {
     local binary="$1"
 
@@ -111,6 +138,8 @@ stage_common_package_files() {
     local root="$1"
     local app_install_name="${APP_INSTALL_NAME:-$PACKAGE_NAME}"
     local app_root="$root/opt/$app_install_name"
+
+    validate_packaging_identifiers
 
     mkdir -p \
         "$root/opt" \
@@ -170,6 +199,8 @@ write_launcher_stub() {
     local root="$1"
     local app_install_name="${APP_INSTALL_NAME:-$PACKAGE_NAME}"
     local launcher_name="${APP_LAUNCHER_NAME:-$app_install_name}"
+
+    validate_packaging_identifiers
 
     cat > "$root/usr/bin/$launcher_name" <<SCRIPT
 #!/bin/bash

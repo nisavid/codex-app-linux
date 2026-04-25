@@ -48,6 +48,7 @@ main() {
     command -v dpkg-deb >/dev/null 2>&1 || error "dpkg-deb is required"
     command -v dpkg >/dev/null 2>&1 || error "dpkg is required"
 
+    validate_packaging_identifiers
     ensure_updater_binary
 
     local arch output_file

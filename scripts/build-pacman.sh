@@ -52,6 +52,7 @@ main() {
 		error "makepkg cannot run as root. Run this script as a regular user."
 	fi
 
+	validate_packaging_identifiers
 	ensure_updater_binary
 
 	local arch
