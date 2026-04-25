@@ -246,6 +246,8 @@ pub fn install_deb(path: &Path) -> Result<()> {
 /// Installs a rebuilt RPM package on the local machine.
 pub fn install_rpm(path: &Path) -> Result<()> {
     let staged = stage_install_candidate(path, PackageKind::Rpm)?;
+    let metadata = rpm_package_metadata(&staged.path)?;
+    ensure_rpm_package_identity(&metadata, &staged.path)?;
 
     if program_exists(DNF_CANDIDATES, "dnf") || program_exists(DNF_CANDIDATES, "dnf5") {
         let mut command = dnf_install_command(&staged.path)?;
@@ -488,6 +490,73 @@ fn rpm_install_command(path: &Path) -> Command {
     let mut command = Command::new(program_path(RPM_CANDIDATES, "rpm"));
     command.args(["-Uvh"]).arg(path.as_os_str());
     command
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RpmPackageMetadata {
+    name: String,
+    version_release: String,
+    arch: String,
+}
+
+fn rpm_package_metadata(path: &Path) -> Result<RpmPackageMetadata> {
+    let output = Command::new(program_path(RPM_CANDIDATES, "rpm"))
+        .args([
+            "-qp",
+            "--queryformat",
+            "%{NAME}\n%{VERSION}-%{RELEASE}\n%{ARCH}",
+        ])
+        .arg(path)
+        .output()
+        .context("Failed to inspect RPM package metadata")?;
+
+    anyhow::ensure!(
+        output.status.success(),
+        "rpm could not read package metadata from {}",
+        path.display()
+    );
+
+    parse_rpm_package_metadata(&output.stdout, path)
+}
+
+fn parse_rpm_package_metadata(output: &[u8], path: &Path) -> Result<RpmPackageMetadata> {
+    let text = String::from_utf8(output.to_vec()).context("rpm returned non-UTF8 metadata")?;
+    let mut lines = text.lines().map(str::trim);
+    let name = lines.next().unwrap_or("").to_string();
+    let version_release = lines.next().unwrap_or("").to_string();
+    let arch = lines.next().unwrap_or("").to_string();
+
+    anyhow::ensure!(
+        !name.is_empty(),
+        "rpm returned an empty package name for {}",
+        path.display()
+    );
+    anyhow::ensure!(
+        !version_release.is_empty() && version_release != "-",
+        "rpm returned an empty package version for {}",
+        path.display()
+    );
+    anyhow::ensure!(
+        !arch.is_empty(),
+        "rpm returned an empty package architecture for {}",
+        path.display()
+    );
+
+    Ok(RpmPackageMetadata {
+        name,
+        version_release,
+        arch,
+    })
+}
+
+fn ensure_rpm_package_identity(metadata: &RpmPackageMetadata, path: &Path) -> Result<()> {
+    anyhow::ensure!(
+        metadata.name == PACKAGE_NAME,
+        "RPM package {} has unexpected name {}; expected {PACKAGE_NAME}",
+        path.display(),
+        metadata.name
+    );
+    Ok(())
 }
 
 fn pacman_install_command(path: &Path) -> Command {
@@ -858,6 +927,34 @@ mod tests {
             .expect_err("RPM path should not be accepted for Debian install");
 
         assert!(error.to_string().contains("Debian package"));
+        Ok(())
+    }
+
+    #[test]
+    fn parses_rpm_package_metadata() -> Result<()> {
+        let metadata = parse_rpm_package_metadata(
+            b"codex-app\n26.422.30944.2080-1\nx86_64".as_slice(),
+            Path::new("/tmp/codex-app-26.422.30944.2080-1.x86_64.rpm"),
+        )?;
+
+        assert_eq!(metadata.name, "codex-app");
+        assert_eq!(metadata.version_release, "26.422.30944.2080-1");
+        assert_eq!(metadata.arch, "x86_64");
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_rpm_package_metadata_for_wrong_name() -> Result<()> {
+        let metadata = RpmPackageMetadata {
+            name: "other-app".to_string(),
+            version_release: "26.422.30944.2080-1".to_string(),
+            arch: "x86_64".to_string(),
+        };
+
+        let error = ensure_rpm_package_identity(&metadata, Path::new("/tmp/codex-app.rpm"))
+            .expect_err("wrong RPM package name should be rejected");
+
+        assert!(error.to_string().contains("codex-app"));
         Ok(())
     }
 

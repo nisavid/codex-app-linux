@@ -33,10 +33,10 @@ None identified in the tracked source review. The review did not include generat
 ### H-3: Privileged install subcommands accept caller-supplied package paths
 
 - Location: [updater/src/cli.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/cli.rs:31), [updater/src/app.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/app.rs:49), [updater/src/install.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/install.rs:227)
-- Evidence: `install-deb`, `install-rpm`, and `install-pacman` still accept caller-supplied `--path` values, but now reject symlink/non-file inputs, require expected `codex-app` package filename shapes, copy the candidate into a private temp directory, and install that staged copy. Debian and pacman paths get version checks; RPM still lacks package-metadata parity.
+- Evidence: `install-deb`, `install-rpm`, and `install-pacman` still accept caller-supplied `--path` values, but now reject symlink/non-file inputs, require expected `codex-app` package filename shapes, copy the candidate into a private temp directory, and install that staged copy. RPM metadata is queried with `rpm -qp` and the package name must be `codex-app`; Debian and pacman paths also get version checks.
 - Impact: a user who can satisfy `pkexec` for `codex-app-updater` can install an arbitrary package path through the updater binary rather than only the updater-generated artifact. If a future polkit policy narrows authorization by command instead of artifact, this becomes a stronger local privilege escalation primitive.
-- Current controls: `pkexec` prompts for privileged install, package manager arguments are passed without shell interpolation, staged-copy install reduces source replacement races, and Debian/pacman reject non-newer candidates.
-- Recommendation: bind privileged install to a verified updater artifact. Validate package identity, architecture, version, canonical path, and expected digest against root-trusted state; add RPM metadata parity.
+- Current controls: `pkexec` prompts for privileged install, package manager arguments are passed without shell interpolation, staged-copy install reduces source replacement races, RPM identity is checked from package metadata, and Debian/pacman reject non-newer candidates.
+- Recommendation: bind privileged install to a verified updater artifact. Validate package identity, architecture, version, canonical path, and expected digest against root-trusted state.
 
 ### H-4: CI hash refresh still needs stronger verification evidence
 
@@ -161,7 +161,7 @@ None identified in the tracked source review. The review did not include generat
 
 1. Inspect generated Electron app security settings before public release.
 2. Require authenticated upstream artifact verification before rebuild/install.
-3. Bind privileged install subcommands to verified updater artifacts and add RPM metadata parity.
+3. Bind privileged install subcommands to verified updater artifacts with trusted digest and canonical workspace checks.
 4. Add upstream version/build metadata and signature/notarization verification to hash-update PRs.
 5. Reduce fixed-port webview spoofing with a per-launch nonce or ephemeral loopback port.
 6. Sanitize updater build environment and package payload metadata.
