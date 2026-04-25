@@ -746,6 +746,29 @@ SCRIPT
     [ ! -e "$app_pid_file" ] || fail "Expected launcher cleanup to remove app pid"
 }
 
+test_launcher_help_preserves_existing_app_pid() {
+    info "Checking generated launcher preserves unrelated app pid on early exit"
+    local workspace="$TMP_DIR/generated-launcher-help-pid"
+    local app_dir="$workspace/codex-app"
+    local generated="$app_dir/start.sh"
+    local cache_dir="$workspace/cache"
+    local state_dir="$workspace/state"
+    local app_pid_file="$state_dir/codex-app/app.pid"
+
+    mkdir -p "$workspace" "$app_dir" "$(dirname "$app_pid_file")"
+    (
+        export CODEX_INSTALLER_SKIP_MAIN=1
+        export CODEX_INSTALL_DIR="$app_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        create_start_script
+    )
+
+    printf '123456\n' > "$app_pid_file"
+    XDG_CACHE_HOME="$cache_dir" XDG_STATE_HOME="$state_dir" "$generated" --help >/dev/null
+    [ "$(cat "$app_pid_file")" = "123456" ] || fail "Expected help path to preserve unrelated app pid"
+}
+
 test_hash_workflow_opens_review_pr() {
     info "Checking hash refresh workflow requires review"
     local workflow="$REPO_DIR/.github/workflows/update-codex-hash.yml"
@@ -1118,6 +1141,7 @@ main() {
     test_installer_rejects_short_app_version_metadata
     test_launcher_template_sanity
     test_launcher_lifecycle_cleans_child_processes
+    test_launcher_help_preserves_existing_app_pid
     test_hash_workflow_opens_review_pr
     test_apple_dmg_verifier_pins_upstream_trust_inputs
     test_apple_dmg_workflow_runs_on_macos

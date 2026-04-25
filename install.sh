@@ -440,7 +440,13 @@ cleanup_launcher() {
     if [ -n "${ELECTRON_PID:-}" ] && kill -0 "$ELECTRON_PID" 2>/dev/null; then
         kill "$ELECTRON_PID" 2>/dev/null || true
     fi
-    rm -f "$APP_PID_FILE"
+    if [ -n "${ELECTRON_PID:-}" ] && [ -f "$APP_PID_FILE" ]; then
+        local recorded_pid=""
+        recorded_pid="$(cat "$APP_PID_FILE" 2>/dev/null || true)"
+        if [ "$recorded_pid" = "$ELECTRON_PID" ]; then
+            rm -f "$APP_PID_FILE"
+        fi
+    fi
 }
 trap cleanup_launcher EXIT
 
