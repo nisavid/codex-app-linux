@@ -126,7 +126,8 @@ Default runtime configuration:
 
 When the packaged builder root exists, runtime config cannot redirect
 `builder_bundle_root` unless `developer_mode = true` is set explicitly in
-`~/.config/codex-app-updater/config.toml`.
+`~/.config/codex-app-updater/config.toml`. Production builder roots must not be
+symlinks or group/world-writable, and the packaged root must be owned by root.
 
 The daemon checks upstream headers, downloads new DMGs, prepares a workspace,
 runs the bundled `install.sh`, builds the native package for the host package

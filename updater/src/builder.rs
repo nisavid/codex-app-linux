@@ -1,7 +1,7 @@
 //! Rebuilds native Linux packages from a downloaded upstream DMG.
 
 use crate::{
-    config::{RuntimeConfig, RuntimePaths},
+    config::{RuntimeConfig, RuntimePaths, PACKAGED_BUILDER_BUNDLE_ROOT},
     install::PackageKind,
     package_version,
     state::{ArtifactPaths, PersistedState, UpdateStatus},
@@ -67,7 +67,11 @@ pub async fn build_update(
     state.artifact_paths.workspace_dir = Some(workspace.workspace_dir.clone());
     state.save(&paths.state_file)?;
 
-    copy_builder_bundle(&config.builder_bundle_root, &workspace.bundle_dir)?;
+    copy_builder_bundle(
+        &config.builder_bundle_root,
+        &workspace.bundle_dir,
+        config.developer_mode,
+    )?;
 
     state.status = UpdateStatus::PatchingApp;
     state.save(&paths.state_file)?;
@@ -223,7 +227,13 @@ fn package_build_script(bundle_dir: &Path) -> PathBuf {
     }
 }
 
-fn copy_builder_bundle(source_root: &Path, destination_root: &Path) -> Result<()> {
+fn copy_builder_bundle(
+    source_root: &Path,
+    destination_root: &Path,
+    developer_mode: bool,
+) -> Result<()> {
+    validate_builder_bundle_source(source_root, developer_mode)?;
+
     for (source, destination) in REQUIRED_BUNDLE_FILES {
         copy_entry(
             &source_root.join(source),
@@ -243,18 +253,71 @@ fn copy_builder_bundle(source_root: &Path, destination_root: &Path) -> Result<()
     Ok(())
 }
 
-fn copy_entry(source: &Path, destination: &Path, optional: bool) -> Result<()> {
-    if !source.exists() {
-        if optional {
-            return Ok(());
-        }
-        anyhow::bail!(
-            "Required builder bundle path is missing: {}",
-            source.display()
+fn validate_builder_bundle_source(source_root: &Path, developer_mode: bool) -> Result<()> {
+    let metadata = fs::symlink_metadata(source_root).with_context(|| {
+        format!(
+            "Failed to stat builder bundle root {}",
+            source_root.display()
+        )
+    })?;
+    anyhow::ensure!(
+        !metadata.file_type().is_symlink(),
+        "Builder bundle root must not be a symlink: {}",
+        source_root.display()
+    );
+    anyhow::ensure!(
+        metadata.is_dir(),
+        "Builder bundle root must be a directory: {}",
+        source_root.display()
+    );
+
+    #[cfg(unix)]
+    if !developer_mode {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        let mode = metadata.permissions().mode();
+        anyhow::ensure!(
+            mode & 0o022 == 0,
+            "Builder bundle root must not be group- or world-writable: {}",
+            source_root.display()
         );
+
+        if source_root == Path::new(PACKAGED_BUILDER_BUNDLE_ROOT) {
+            anyhow::ensure!(
+                metadata.uid() == 0,
+                "Packaged builder bundle root must be owned by root: {}",
+                source_root.display()
+            );
+        }
     }
 
-    if source.is_dir() {
+    Ok(())
+}
+
+fn copy_entry(source: &Path, destination: &Path, optional: bool) -> Result<()> {
+    let metadata = match fs::symlink_metadata(source) {
+        Ok(metadata) => metadata,
+        Err(error) if optional && error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(());
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            anyhow::bail!(
+                "Required builder bundle path is missing: {}",
+                source.display()
+            );
+        }
+        Err(error) => {
+            return Err(error).with_context(|| format!("Failed to stat {}", source.display()))
+        }
+    };
+
+    anyhow::ensure!(
+        !metadata.file_type().is_symlink(),
+        "Builder bundle path must not be a symlink: {}",
+        source.display()
+    );
+
+    if metadata.is_dir() {
         copy_dir_recursive(source, destination)?;
     } else {
         copy_path(source, destination)?;
@@ -264,6 +327,19 @@ fn copy_entry(source: &Path, destination: &Path, optional: bool) -> Result<()> {
 }
 
 fn copy_path(source: &Path, destination: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(source)
+        .with_context(|| format!("Failed to stat {}", source.display()))?;
+    anyhow::ensure!(
+        !metadata.file_type().is_symlink(),
+        "Builder bundle path must not be a symlink: {}",
+        source.display()
+    );
+    anyhow::ensure!(
+        metadata.is_file(),
+        "Builder bundle path must be a regular file: {}",
+        source.display()
+    );
+
     let parent = destination
         .parent()
         .context("Destination path has no parent directory")?;
@@ -275,8 +351,6 @@ fn copy_path(source: &Path, destination: &Path) -> Result<()> {
             destination.display()
         )
     })?;
-    let metadata =
-        fs::metadata(source).with_context(|| format!("Failed to stat {}", source.display()))?;
     fs::set_permissions(destination, metadata.permissions())
         .with_context(|| format!("Failed to set permissions on {}", destination.display()))?;
     Ok(())
@@ -292,8 +366,15 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
         let entry = entry?;
         let entry_path = entry.path();
         let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type()?;
 
-        if entry.file_type()?.is_dir() {
+        anyhow::ensure!(
+            !file_type.is_symlink(),
+            "Builder bundle path must not be a symlink: {}",
+            entry_path.display()
+        );
+
+        if file_type.is_dir() {
             copy_dir_recursive(&entry_path, &destination_path)?;
         } else {
             copy_path(&entry_path, &destination_path)?;
@@ -702,7 +783,7 @@ exit 88
         )?;
         fs::write(source_root.join("assets/codex.png"), b"png")?;
 
-        copy_builder_bundle(&source_root, &destination_root)?;
+        copy_builder_bundle(&source_root, &destination_root, false)?;
 
         assert!(destination_root.join("scripts/build-deb.sh").exists());
         assert!(destination_root
@@ -710,6 +791,68 @@ exit 88
             .exists());
         assert!(!destination_root.join("scripts/build-rpm.sh").exists());
         assert!(!destination_root.join("scripts/build-pacman.sh").exists());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bundle_copy_rejects_symlinked_builder_entries() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempdir()?;
+        let source_root = temp.path().join("source");
+        let destination_root = temp.path().join("destination");
+        let external_script = temp.path().join("external-install.sh");
+
+        fs::create_dir_all(&source_root)?;
+        fs::write(&external_script, b"#!/bin/bash\n")?;
+        symlink(&external_script, source_root.join("install.sh"))?;
+
+        let error = copy_builder_bundle(&source_root, &destination_root, false)
+            .expect_err("builder symlink should be rejected");
+
+        assert!(error.to_string().contains("must not be a symlink"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bundle_copy_rejects_writable_production_root() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir()?;
+        let source_root = temp.path().join("source");
+        let destination_root = temp.path().join("destination");
+        fs::create_dir_all(&source_root)?;
+        fs::set_permissions(&source_root, fs::Permissions::from_mode(0o777))?;
+
+        let error = copy_builder_bundle(&source_root, &destination_root, false)
+            .expect_err("production builder root should not be group/world writable");
+
+        assert!(error
+            .to_string()
+            .contains("must not be group- or world-writable"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bundle_copy_allows_writable_developer_root_to_reach_required_file_validation() -> Result<()>
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir()?;
+        let source_root = temp.path().join("source");
+        let destination_root = temp.path().join("destination");
+        fs::create_dir_all(&source_root)?;
+        fs::set_permissions(&source_root, fs::Permissions::from_mode(0o777))?;
+
+        let error = copy_builder_bundle(&source_root, &destination_root, true)
+            .expect_err("developer mode should continue to required-file validation");
+
+        assert!(error
+            .to_string()
+            .contains("Required builder bundle path is missing"));
         Ok(())
     }
 

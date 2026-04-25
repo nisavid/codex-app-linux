@@ -65,16 +65,16 @@ None identified in the tracked source review. The review did not include generat
 ### M-3: Updater rebuild environment is narrowed, with explicit developer override
 
 - Location: [packaging/linux/packaged-runtime.sh](/home/nisavid/src/nisavid/codex-app-linux/packaging/linux/packaged-runtime.sh:16), [updater/src/builder.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/builder.rs:73)
-- Evidence: the packaged launcher no longer imports `PATH` into the user systemd manager, updater rebuilds run `install.sh` plus package build scripts with `/usr/local/sbin:/usr/local/bin:/usr/bin:/bin`, and packaged installs force `builder_bundle_root` to `/usr/lib/codex-app/update-builder` unless `developer_mode = true`.
+- Evidence: the packaged launcher no longer imports `PATH` into the user systemd manager, updater rebuilds run `install.sh` plus package build scripts with `/usr/local/sbin:/usr/local/bin:/usr/bin:/bin`, and packaged installs force `builder_bundle_root` to `/usr/lib/codex-app/update-builder` unless `developer_mode = true`. Builder bundle copying now rejects symlinked entries, rejects group/world-writable production roots, and requires the packaged root path to be owned by root.
 - Impact: user-writable `PATH` entries no longer influence updater rebuild commands, and builder-root redirects are explicit developer-mode behavior.
-- Recommendation: validate packaged builder-root ownership and permissions before copying builder scripts.
+- Recommendation: keep builder-root validation covered by updater tests; if developer mode is used, treat the configured builder root as a trusted local development override.
 
 ### M-4: User-controlled runtime config can redirect the update supply chain
 
 - Location: [updater/src/config.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/config.rs:13), [updater/src/builder.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/builder.rs:69)
-- Evidence: config still supports arbitrary `dmg_url` and `workspace_root`; `builder_bundle_root` requires `developer_mode = true` when the packaged builder root exists.
+- Evidence: config still supports arbitrary `dmg_url` and `workspace_root`; `builder_bundle_root` requires `developer_mode = true` when the packaged builder root exists. Updater DMG URLs now reject userinfo before requests are made.
 - Impact: packaged production mode is less exposed to untrusted builders, but payload source and workspace redirects remain developer-visible supply-chain controls.
-- Recommendation: validate packaged builder-root ownership and permissions, and gate non-default `dmg_url` behind equivalent trusted-metadata verification.
+- Recommendation: gate non-default `dmg_url` behind equivalent trusted-metadata verification.
 
 ### M-5: Package payload normalization does not authenticate generated contents
 
@@ -130,9 +130,9 @@ None identified in the tracked source review. The review did not include generat
 ### L-2: Full URLs and subprocess stderr can persist to state/logs
 
 - Location: [updater/src/upstream.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/upstream.rs:32), [updater/src/app.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/app.rs:311), [updater/src/logging.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/logging.rs:9)
-- Evidence: upstream errors include full configured URLs; failures are stored in state and appended to service logs.
-- Impact: if a user configures URLs with credentials or sensitive query strings, those values can be persisted.
-- Recommendation: reject URL userinfo and redact query tokens before writing logs/state.
+- Evidence: updater DMG URLs now reject userinfo and redact query values in updater-generated request context. Failures are still stored in state and appended to service logs, and subprocess stderr can include arbitrary tool output.
+- Impact: credential-bearing DMG URLs are blocked, and query values are less likely to persist through updater request errors. Sensitive subprocess output can still persist if external tools print it.
+- Recommendation: keep URL userinfo rejection and query-redaction tests; redact credential-looking subprocess stderr before persisting build/package-manager failures.
 
 ### L-3: Package template identifiers are not validated before template insertion
 

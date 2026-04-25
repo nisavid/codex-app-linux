@@ -2,7 +2,7 @@
 
 use anyhow::{ensure, Context, Result};
 use futures_util::StreamExt;
-use reqwest::{header, Client};
+use reqwest::{header, Client, Url};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tokio::{
@@ -30,13 +30,15 @@ pub struct DownloadedDmg {
 
 /// Fetches the upstream DMG headers used to detect candidate updates.
 pub async fn fetch_remote_metadata(client: &Client, dmg_url: &str) -> Result<RemoteMetadata> {
+    let url = parse_dmg_url(dmg_url)?;
+    let safe_url = safe_url_for_log(url.as_str());
     let response = client
-        .head(dmg_url)
+        .head(url)
         .send()
         .await
-        .with_context(|| format!("Failed HEAD request for {dmg_url}"))?
+        .with_context(|| format!("Failed HEAD request for {safe_url}"))?
         .error_for_status()
-        .with_context(|| format!("HEAD request for {dmg_url} returned an error status"))?;
+        .with_context(|| format!("HEAD request for {safe_url} returned an error status"))?;
 
     let etag = response
         .headers()
@@ -87,6 +89,9 @@ async fn download_dmg_with_max_bytes(
     destination_dir: &Path,
     max_bytes: u64,
 ) -> Result<DownloadedDmg> {
+    let url = parse_dmg_url(dmg_url)?;
+    let safe_url = safe_url_for_log(url.as_str());
+
     tokio::fs::create_dir_all(destination_dir)
         .await
         .with_context(|| format!("Failed to create {}", destination_dir.display()))?;
@@ -96,12 +101,12 @@ async fn download_dmg_with_max_bytes(
     let _ = fs::remove_file(&temp_destination).await;
 
     let response = client
-        .get(dmg_url)
+        .get(url)
         .send()
         .await
-        .with_context(|| format!("Failed GET request for {dmg_url}"))?
+        .with_context(|| format!("Failed GET request for {safe_url}"))?
         .error_for_status()
-        .with_context(|| format!("GET request for {dmg_url} returned an error status"))?;
+        .with_context(|| format!("GET request for {safe_url} returned an error status"))?;
     if let Some(content_length) = response.content_length() {
         ensure!(
             content_length <= max_bytes,
@@ -117,7 +122,7 @@ async fn download_dmg_with_max_bytes(
     let mut downloaded_bytes = 0_u64;
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.with_context(|| format!("Failed downloading {dmg_url}"))?;
+        let chunk = chunk.with_context(|| format!("Failed downloading {safe_url}"))?;
         downloaded_bytes += chunk.len() as u64;
         if downloaded_bytes > max_bytes {
             let _ = fs::remove_file(&temp_destination).await;
@@ -159,6 +164,34 @@ async fn download_dmg_with_max_bytes(
     })
 }
 
+fn parse_dmg_url(dmg_url: &str) -> Result<Url> {
+    let url = Url::parse(dmg_url).context("Failed to parse DMG URL")?;
+    ensure!(
+        url.username().is_empty() && url.password().is_none(),
+        "DMG URL must not include userinfo"
+    );
+    Ok(url)
+}
+
+fn safe_url_for_log(dmg_url: &str) -> String {
+    let Ok(mut url) = Url::parse(dmg_url) else {
+        return "<invalid URL>".to_string();
+    };
+    if url.query().is_some() {
+        let fragment = url.fragment().map(str::to_string);
+        url.set_fragment(None);
+        url.set_query(None);
+        let mut safe_url = url.to_string();
+        safe_url.push_str("?<redacted>");
+        if let Some(fragment) = fragment {
+            safe_url.push('#');
+            safe_url.push_str(&fragment);
+        }
+        return safe_url;
+    }
+    url.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,6 +227,41 @@ mod tests {
         assert_eq!(metadata.content_length, Some(42));
         assert!(metadata.headers_fingerprint.contains("etag=\"abc\""));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_dmg_url_with_userinfo_before_request() -> Result<()> {
+        let server = MockServer::start().await;
+        Mock::given(method("HEAD"))
+            .and(path("/Codex.dmg"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let client = Client::builder().build()?;
+        let error = fetch_remote_metadata(
+            &client,
+            &server
+                .uri()
+                .replacen("://", "://user:secret@", 1)
+                .replace("127.0.0.1", "localhost"),
+        )
+        .await
+        .expect_err("URL userinfo should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("DMG URL must not include userinfo"));
+        assert!(!error.to_string().contains("secret"));
+        Ok(())
+    }
+
+    #[test]
+    fn redacts_query_values_for_url_logging() {
+        assert_eq!(
+            safe_url_for_log("https://example.com/Codex.dmg?token=secret&build=123"),
+            "https://example.com/Codex.dmg?<redacted>"
+        );
     }
 
     #[tokio::test]
