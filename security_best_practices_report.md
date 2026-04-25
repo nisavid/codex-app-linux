@@ -100,9 +100,9 @@ None identified in the tracked source review. The review did not include generat
 ### M-8: Native packages lack signing, attestations, and provenance for public distribution
 
 - Location: [scripts/build-deb.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-deb.sh:77), [scripts/build-rpm.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-rpm.sh:140), [scripts/build-pacman.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-pacman.sh:86)
-- Evidence: builders emit packages, and `make release-gate` now writes `dist/SHA256SUMS` and can require a detached GPG signature at `dist/SHA256SUMS.asc`. Pacman build uses `--skipinteg` because there are no remote sources in the local PKGBUILD.
+- Evidence: builders emit packages, and `make release-gate` now writes `dist/SHA256SUMS`, can require a detached GPG signature at `dist/SHA256SUMS.asc`, publishes `dist/release-signing-key.asc`, and verifies the signature against that public key. Pacman build uses `--skipinteg` because there are no remote sources in the local PKGBUILD.
 - Impact: public users can verify checksums and checksum signature when release maintainers run the gate with `REQUIRE_RELEASE_SIGNATURE=1`. Format-native package signing and hosted provenance remain open.
-- Recommendation: require the release gate for public artifacts, publish `SHA256SUMS` and `SHA256SUMS.asc`, then add format-native signing and GitHub artifact attestations for hosted release builds.
+- Recommendation: require the release gate for public artifacts, publish `SHA256SUMS`, `SHA256SUMS.asc`, and `release-signing-key.asc`, then add format-native signing and GitHub artifact attestations for hosted release builds.
 
 ### M-9: Runtime CLI auto-upgrade trusts latest npm state
 
