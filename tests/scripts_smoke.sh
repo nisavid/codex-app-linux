@@ -98,6 +98,23 @@ EOF
     [ ! -e "$marker" ] || fail "Package version metadata was executed as shell code"
 }
 
+test_package_version_metadata_trims_trailing_whitespace() {
+    info "Checking package version metadata trimming"
+    local workspace="$TMP_DIR/package-version-trim"
+    local app_dir="$workspace/app"
+    local version
+
+    mkdir -p "$app_dir"
+    printf '# comment\r\n\r\nCODEX_APP_PACKAGE_VERSION=26.422.30944.2080   \r\n' > "$app_dir/codex-app-version.env"
+
+    version="$(
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        APP_DIR="$app_dir" PACKAGE_VERSION="" resolve_package_version
+    )"
+    [ "$version" = "26.422.30944.2080" ] || fail "Expected trimmed package version, got: $version"
+}
+
 test_deb_builder_smoke() {
     info "Running Debian packaging smoke test"
     local workspace="$TMP_DIR/deb"
@@ -429,6 +446,7 @@ test_linux_file_manager_patch_fails_soft() {
 main() {
     test_common_helper_sourcing
     test_package_version_metadata_is_read_as_data
+    test_package_version_metadata_trims_trailing_whitespace
     test_deb_builder_smoke
     test_rpm_builder_smoke
     test_pacman_builder_metadata_smoke

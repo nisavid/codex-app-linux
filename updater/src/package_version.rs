@@ -92,4 +92,29 @@ mod tests {
             "26.422.30944.2080"
         ));
     }
+
+    #[test]
+    fn unknown_installed_version_never_satisfies_candidate() {
+        assert!(!installed_version_satisfies_candidate(
+            "unknown",
+            "26.422.30944.2080"
+        ));
+        assert!(!installed_version_satisfies_candidate("unknown", "unknown"));
+    }
+
+    #[test]
+    fn unparsable_versions_fall_back_to_exact_string_match() {
+        assert_eq!(
+            compare_package_versions("2026.04.01.035152", "2026.04.01.035152"),
+            None
+        );
+        assert!(installed_version_satisfies_candidate(
+            "2026.04.01.035152",
+            "2026.04.01.035152"
+        ));
+        assert!(!installed_version_satisfies_candidate(
+            "2026.04.01.035152",
+            "2026.04.01.035153"
+        ));
+    }
 }

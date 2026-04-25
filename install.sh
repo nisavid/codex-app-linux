@@ -23,6 +23,26 @@ info()  { echo -e "${GREEN}[INFO]${NC} $*" >&2; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*" >&2; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
+read_app_package_version_metadata() {
+    local metadata_file="$1"
+    local key value version=""
+
+    while IFS='=' read -r key value || [ -n "$key$value" ]; do
+        case "$key" in
+            ""|\#*)
+                continue
+                ;;
+            CODEX_APP_PACKAGE_VERSION)
+                version="$(printf '%s' "$value" | sed 's/[[:space:]]*$//')"
+                break
+                ;;
+        esac
+    done < "$metadata_file"
+
+    [ -n "$version" ] || error "Missing CODEX_APP_PACKAGE_VERSION in $metadata_file"
+    printf '%s\n' "$version"
+}
+
 dependency_help() {
     cat <<'EOF'
 Run the helper to install them automatically:
@@ -252,7 +272,7 @@ with open(metadata_path, "w", encoding="utf-8") as handle:
     handle.write(f"CODEX_APP_PACKAGE_VERSION={package_version}\n")
 PY
 
-    info "App version: $(. "$metadata_file"; printf '%s' "$CODEX_APP_PACKAGE_VERSION")"
+    info "App version: $(read_app_package_version_metadata "$metadata_file")"
 }
 
 # ---- Build native modules in a clean directory ----

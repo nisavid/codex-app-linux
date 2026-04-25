@@ -31,10 +31,13 @@ resolve_package_version() {
 
     local version=""
     local key value
-    while IFS='=' read -r key value; do
+    while IFS='=' read -r key value || [ -n "$key$value" ]; do
         case "$key" in
+            ""|\#*)
+                continue
+                ;;
             CODEX_APP_PACKAGE_VERSION)
-                version="$value"
+                version="$(printf '%s' "$value" | sed 's/[[:space:]]*$//')"
                 break
                 ;;
         esac

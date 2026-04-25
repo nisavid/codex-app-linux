@@ -42,6 +42,7 @@ const PACMAN_PACKAGE_SUFFIXES: &[&str] = &[
     ".pkg.tar.lz4",
     ".pkg.tar.lz5",
 ];
+const WORKSPACE_ID_PATH_LEN: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Paths to the temporary workspace and generated package produced by a rebuild.
@@ -171,7 +172,9 @@ struct BuilderWorkspace {
 
 impl BuilderWorkspace {
     fn prepare(workspace_root: &Path, workspace_id: &str) -> Result<Self> {
-        let workspace_dir = workspace_root.join("workspaces").join(workspace_id);
+        let workspace_dir = workspace_root
+            .join("workspaces")
+            .join(workspace_path_component(workspace_id)?);
         let bundle_dir = workspace_dir.join("builder");
         let dist_dir = workspace_dir.join("dist");
         let app_dir = workspace_dir.join("codex-app");
@@ -196,6 +199,16 @@ impl BuilderWorkspace {
             build_log,
         })
     }
+}
+
+fn workspace_path_component(workspace_id: &str) -> Result<&str> {
+    let workspace_id = workspace_id.trim();
+    anyhow::ensure!(!workspace_id.is_empty(), "Workspace id must not be empty");
+    anyhow::ensure!(
+        workspace_id.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "Workspace id must be a hex digest"
+    );
+    Ok(&workspace_id[..workspace_id.len().min(WORKSPACE_ID_PATH_LEN)])
 }
 
 /// Returns the path to the native-package build script appropriate for the running system.
@@ -623,6 +636,22 @@ exit 88
         assert_eq!(state.candidate_version, None);
         assert_eq!(state.artifact_paths.package_path, None);
         Ok(())
+    }
+
+    #[test]
+    fn workspace_path_component_shortens_full_sha256() -> Result<()> {
+        assert_eq!(
+            workspace_path_component(
+                "678cd508ffe0bdf1f462bcf4e5c8a1559131d6ff4e7f0627856b8d9416198e8f"
+            )?,
+            "678cd508ffe0bdf1"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn workspace_path_component_rejects_path_characters() {
+        assert!(workspace_path_component("../678cd508ffe0").is_err());
     }
 
     #[test]
