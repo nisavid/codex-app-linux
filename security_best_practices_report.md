@@ -134,12 +134,12 @@ None identified in the tracked source review. The review did not include generat
 - Impact: credential-bearing DMG URLs are blocked, and query values are less likely to persist through updater request errors. Sensitive subprocess output can still persist if external tools print it.
 - Recommendation: keep URL userinfo rejection and query-redaction tests; redact credential-looking subprocess stderr before persisting build/package-manager failures.
 
-### L-3: Package template identifiers are not validated before template insertion
+### L-3: Package template identifiers now fail closed before template insertion
 
-- Location: [scripts/build-pacman.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-pacman.sh:17), [scripts/build-rpm.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-rpm.sh:123), [scripts/lib/package-common.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/lib/package-common.sh:153)
-- Evidence: env-controlled package names and launcher names are inserted into paths, sed replacements, and generated launcher stubs.
-- Impact: mostly a local maintainer footgun today, but public packaging should reject unsafe names early.
-- Recommendation: validate package and launcher identifiers against distro-safe basename regexes and reject `/`, whitespace, shell metacharacters, and newlines.
+- Location: [scripts/lib/package-common.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/lib/package-common.sh:69), [scripts/build-pacman.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-pacman.sh:53), [scripts/build-rpm.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-rpm.sh:52), [scripts/build-deb.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-deb.sh:50)
+- Evidence: env-controlled package names, provides/conflicts values, app install names, and launcher names are validated against distro-safe or basename-safe regexes before staging, template rendering, and launcher stub creation.
+- Impact: unsafe `/`, whitespace, shell metacharacters, and newline-bearing identifiers now fail before they can influence paths or generated package templates.
+- Recommendation: keep identifier validation in the script smoke suite when adding new package metadata fields.
 
 ## Positive Controls
 
