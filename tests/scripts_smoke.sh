@@ -616,6 +616,44 @@ test_hash_workflow_opens_review_pr() {
     assert_not_contains "$workflow" "cachix/install-nix-action@v27"
 }
 
+test_apple_dmg_verifier_pins_upstream_trust_inputs() {
+    info "Checking Apple DMG verifier pins upstream trust inputs"
+    local script="$REPO_DIR/scripts/verify-apple-dmg.sh"
+
+    assert_contains "$script" "EXPECTED_BUNDLE_ID=\"com.openai.codex\""
+    assert_contains "$script" "EXPECTED_TEAM_ID=\"2DC432GLL2\""
+    assert_contains "$script" "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)"
+    assert_contains "$script" "EXPECTED_SPARKLE_KEY=\"rhcBvttuqDFriyNqwTQJR3L4UT1WjIK4QxtwtwusVic=\""
+    assert_contains "$script" "Set CODEX_DMG_SHA256 or CODEX_DMG_SRI before Apple DMG verification"
+    assert_contains "$script" "codesign --verify --deep --strict --verbose=4"
+    assert_contains "$script" "spctl -a -vvv -t exec"
+    assert_contains "$script" "spctl -a -t open --context context:primary-signature"
+    assert_contains "$script" "xcrun stapler validate"
+    assert_contains "$script" "hdiutil verify"
+    assert_contains "$script" "CODEX_REQUIRE_DMG_GATEKEEPER"
+    assert_contains "$script" "CODEX_REQUIRE_DMG_STAPLE"
+    assert_not_contains "$script" "CODEX_EXPECTED_BUNDLE_ID"
+    assert_not_contains "$script" "CODEX_EXPECTED_APPLE_TEAM_ID"
+    assert_not_contains "$script" "CODEX_EXPECTED_DEVELOPER_ID"
+    assert_not_contains "$script" "CODEX_EXPECTED_SPARKLE_PUBLIC_ED_KEY"
+    assert_not_contains "$script" "--app"
+}
+
+test_apple_dmg_workflow_runs_on_macos() {
+    info "Checking Apple DMG verification workflow"
+    local workflow="$REPO_DIR/.github/workflows/verify-apple-dmg.yml"
+
+    assert_contains "$workflow" "workflow_dispatch:"
+    assert_contains "$workflow" "runs-on: macos-15"
+    assert_contains "$workflow" "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+    assert_not_contains "$workflow" "actions/checkout@v"
+    assert_contains "$workflow" "curl -fL --retry 3 --output Codex.dmg"
+    assert_contains "$workflow" "./scripts/verify-apple-dmg.sh --dmg Codex.dmg"
+    assert_contains "$workflow" "CODEX_DMG_SHA256: \${{ inputs.dmg_sha256 }}"
+    assert_contains "$workflow" "CODEX_REQUIRE_DMG_GATEKEEPER"
+    assert_contains "$workflow" "CODEX_REQUIRE_DMG_STAPLE"
+}
+
 test_updater_service_hardening() {
     info "Checking updater service hardening"
     local service="$REPO_DIR/packaging/linux/codex-app-updater.service"
@@ -920,6 +958,8 @@ main() {
     test_installer_rejects_short_app_version_metadata
     test_launcher_template_sanity
     test_hash_workflow_opens_review_pr
+    test_apple_dmg_verifier_pins_upstream_trust_inputs
+    test_apple_dmg_workflow_runs_on_macos
     test_updater_service_hardening
     test_electron_security_inspector_flags_insecure_generated_app
     test_release_gate_requires_verified_dmg_hash

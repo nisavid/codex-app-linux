@@ -1,0 +1,46 @@
+name: Verify Apple DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      dmg_url:
+        description: Upstream Codex DMG URL
+        required: true
+        default: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg
+      dmg_sha256:
+        description: Expected DMG SHA-256 hex digest; leave empty to use flake.nix
+        required: false
+        default: ""
+      require_dmg_gatekeeper:
+        description: Fail if the DMG container primary-signature assessment fails
+        required: true
+        type: boolean
+        default: false
+      require_dmg_staple:
+        description: Fail if the DMG container has no stapled notarization ticket
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify DMG with Apple tooling
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Download upstream DMG
+        run: curl -fL --retry 3 --output Codex.dmg "$DMG_URL"
+        env:
+          DMG_URL: ${{ inputs.dmg_url }}
+
+      - name: Verify Apple trust state
+        run: ./scripts/verify-apple-dmg.sh --dmg Codex.dmg
+        env:
+          CODEX_DMG_SHA256: ${{ inputs.dmg_sha256 }}
+          CODEX_REQUIRE_DMG_GATEKEEPER: ${{ inputs.require_dmg_gatekeeper && '1' || '0' }}
+          CODEX_REQUIRE_DMG_STAPLE: ${{ inputs.require_dmg_staple && '1' || '0' }}
