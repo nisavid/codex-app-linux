@@ -150,10 +150,12 @@ fn app_package_version(app_dir: &Path) -> Result<String> {
         .filter(|value| !value.is_empty())
         .context("Missing CODEX_APP_PACKAGE_VERSION in generated app metadata")?;
 
+    let version_parts: Vec<_> = version.split('.').collect();
     anyhow::ensure!(
-        version
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'.'),
+        (3..=4).contains(&version_parts.len())
+            && version_parts
+                .iter()
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())),
         "Invalid CODEX_APP_PACKAGE_VERSION in generated app metadata: {version}"
     );
 

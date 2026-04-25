@@ -132,6 +132,23 @@ test_package_version_metadata_rejects_alphanumeric_segments() {
     fi
 }
 
+test_package_version_metadata_rejects_too_few_segments() {
+    info "Checking package version metadata rejects too few segments"
+    local workspace="$TMP_DIR/package-version-short"
+    local app_dir="$workspace/app"
+
+    mkdir -p "$app_dir"
+    printf 'CODEX_APP_PACKAGE_VERSION=26.422\n' > "$app_dir/codex-app-version.env"
+
+    if (
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        APP_DIR="$app_dir" PACKAGE_VERSION="" resolve_package_version >/dev/null 2>&1
+    ); then
+        fail "Expected short package version metadata to be rejected"
+    fi
+}
+
 test_deb_builder_smoke() {
     info "Running Debian packaging smoke test"
     local workspace="$TMP_DIR/deb"
@@ -398,6 +415,38 @@ PY
     fi
 }
 
+test_installer_rejects_short_app_version_metadata() {
+    info "Checking installer app version segment validation"
+    local workspace="$TMP_DIR/installer-short-version"
+    local app_bundle="$workspace/Codex.app"
+    local install_dir="$workspace/codex-app"
+
+    mkdir -p "$app_bundle/Contents"
+    python3 - "$app_bundle/Contents/Info.plist" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "wb") as handle:
+    plistlib.dump(
+        {
+            "CFBundleShortVersionString": "26",
+            "CFBundleVersion": "2080",
+        },
+        handle,
+    )
+PY
+
+    if (
+        CODEX_INSTALLER_SKIP_MAIN=1
+        CODEX_INSTALL_DIR="$install_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        write_app_version_metadata "$app_bundle"
+    ) >/dev/null 2>&1; then
+        fail "Expected installer to reject short app package versions"
+    fi
+}
+
 test_launcher_template_sanity() {
     info "Checking launcher template markers"
     assert_contains "$REPO_DIR/install.sh" "nohup python3 -m http.server 5175"
@@ -497,6 +546,7 @@ main() {
     test_package_version_metadata_is_read_as_data
     test_package_version_metadata_trims_trailing_whitespace
     test_package_version_metadata_rejects_alphanumeric_segments
+    test_package_version_metadata_rejects_too_few_segments
     test_deb_builder_smoke
     test_rpm_builder_smoke
     test_pacman_builder_metadata_smoke
@@ -504,6 +554,7 @@ main() {
     test_make_build_app_uses_installer_download_flow_by_default
     test_installer_writes_app_version_metadata
     test_installer_rejects_alphanumeric_app_version_metadata
+    test_installer_rejects_short_app_version_metadata
     test_launcher_template_sanity
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke

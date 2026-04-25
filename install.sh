@@ -240,7 +240,7 @@ write_app_version_metadata() {
     [ -f "$plist" ] || error "Could not find app version metadata: $plist"
 
     mkdir -p "$INSTALL_DIR"
-    python3 - "$plist" "$metadata_file" <<'PY'
+    if ! python3 - "$plist" "$metadata_file" <<'PY'
 import plistlib
 import re
 import sys
@@ -253,26 +253,32 @@ with open(plist_path, "rb") as handle:
 upstream_version = str(info.get("CFBundleShortVersionString", "")).strip()
 upstream_build = str(info.get("CFBundleVersion", "")).strip()
 
+numeric_version = re.compile(r"^[0-9]+(\.[0-9]+)*$")
+package_version_pattern = re.compile(r"^[0-9]+(\.[0-9]+){2,3}$")
+
 if not upstream_version:
     raise SystemExit(f"Missing CFBundleShortVersionString in {plist_path}")
 
-version_part = re.compile(r"^[0-9]+(\.[0-9]+)*$")
-if not version_part.match(upstream_version):
+if not numeric_version.match(upstream_version):
     raise SystemExit(f"Unsupported CFBundleShortVersionString for package version: {upstream_version}")
 
 package_version = upstream_version
 if upstream_build:
-    if not version_part.match(upstream_build):
+    if not numeric_version.match(upstream_build):
         raise SystemExit(f"Unsupported CFBundleVersion for package version: {upstream_build}")
     package_version = f"{upstream_version}.{upstream_build}"
+
+if not package_version_pattern.match(package_version):
+    raise SystemExit(f"Unsupported generated package version: {package_version}")
 
 with open(metadata_path, "w", encoding="utf-8") as handle:
     handle.write(f"CODEX_APP_UPSTREAM_VERSION={upstream_version}\n")
     handle.write(f"CODEX_APP_UPSTREAM_BUILD={upstream_build}\n")
     handle.write(f"CODEX_APP_PACKAGE_VERSION={package_version}\n")
 PY
-    local metadata_status=$?
-    [ "$metadata_status" -eq 0 ] || return "$metadata_status"
+    then
+        return 1
+    fi
 
     info "App version: $(read_app_package_version_metadata "$metadata_file")"
 }
