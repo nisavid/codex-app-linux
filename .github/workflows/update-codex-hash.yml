@@ -60,8 +60,9 @@ jobs:
 
           This scheduled workflow opens a PR for maintainer review instead of pushing directly to main."
 
-          if gh pr view "$BRANCH" --base main >/dev/null 2>&1; then
-            gh pr edit "$BRANCH" --base main \
+          PR_NUMBER="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit "$PR_NUMBER" \
               --title "fix(nix): update Codex.dmg hash" \
               --body "$PR_BODY"
           else

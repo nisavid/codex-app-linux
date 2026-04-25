@@ -138,9 +138,12 @@ package builders use `CODEX_APP_PACKAGE_VERSION` from that file unless
 numeric dot-separated segments because the updater's installed-version
 comparison depends on that shape.
 
-The packaged user service sets a fixed `PATH`, `NoNewPrivileges=yes`,
-`PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, and
-`UMask=077`.
+The packaged user service sets a fixed `PATH`, `PrivateTmp=yes`,
+`RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, and `UMask=077`.
+`NoNewPrivileges` is intentionally not set because the updater must invoke
+`pkexec` for the final privileged package install. Package staging normalizes
+system directory modes so packages built under the private service umask still
+install public system paths with readable/searchable directory permissions.
 
 Privileged escalation belongs only to the install subcommands:
 
@@ -153,6 +156,13 @@ and Electron is not running. Debian installs use `apt install` when available,
 then `dpkg -i` as fallback. RPM installs use `dnf` or `dnf5` when available,
 then `rpm -Uvh` as fallback. Pacman installs use
 `pacman -U --noconfirm`.
+
+Privileged install subcommands reject symlink/non-file candidates, require
+expected package filename shapes, copy the package into a private temporary
+staging directory, validate package identity from format-specific metadata, and
+then install that staged copy. This reduces source replacement races, but the
+updater still needs a trusted digest/artifact binding before the privileged
+install.
 
 State handling matters:
 

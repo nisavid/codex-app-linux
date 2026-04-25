@@ -231,7 +231,9 @@ fn installed_pacman_version() -> String {
 /// Installs a rebuilt Debian package on the local machine.
 pub fn install_deb(path: &Path) -> Result<()> {
     let staged = stage_install_candidate(path, PackageKind::Deb)?;
-    ensure_upgrade_path(&staged.path)?;
+    let metadata = deb_package_metadata(&staged.path)?;
+    ensure_deb_package_identity(&metadata, &staged.path)?;
+    ensure_upgrade_path(&metadata.version)?;
 
     if program_exists(APT_CANDIDATES, "apt") {
         let mut command = apt_install_command(&staged.path)?;
@@ -262,7 +264,9 @@ pub fn install_rpm(path: &Path) -> Result<()> {
 /// Installs a rebuilt pacman package on the local machine.
 pub fn install_pacman(path: &Path) -> Result<()> {
     let staged = stage_install_candidate(path, PackageKind::Pacman)?;
-    ensure_upgrade_path_pacman(&staged.path)?;
+    let metadata = pacman_package_metadata(&staged.path)?;
+    ensure_pacman_package_identity(&metadata, &staged.path)?;
+    ensure_upgrade_path_pacman(&metadata.version)?;
 
     let mut command = pacman_install_command(&staged.path);
     run_install(&mut command).context("pacman -U failed")
@@ -421,29 +425,27 @@ fn parse_pacman_installed_version(stdout: Vec<u8>) -> String {
     }
 }
 
-fn ensure_upgrade_path(path: &Path) -> Result<()> {
+fn ensure_upgrade_path(candidate: &str) -> Result<()> {
     let installed = installed_package_version();
     if installed == "unknown" {
         return Ok(());
     }
 
-    let candidate = deb_package_version(path)?;
     anyhow::ensure!(
-        is_version_newer(&candidate, &installed)?,
+        is_version_newer(candidate, &installed)?,
         "Refusing to install non-newer package version {candidate} over installed version {installed}"
     );
     Ok(())
 }
 
-fn ensure_upgrade_path_pacman(path: &Path) -> Result<()> {
+fn ensure_upgrade_path_pacman(candidate: &str) -> Result<()> {
     let installed = installed_pacman_version();
     if installed == "unknown" {
         return Ok(());
     }
 
-    let candidate = pacman_package_version(path)?;
     anyhow::ensure!(
-        is_version_newer_pacman(&candidate, &installed)?,
+        is_version_newer_pacman(candidate, &installed)?,
         "Refusing to install non-newer package version {candidate} over installed version {installed}"
     );
     Ok(())
@@ -559,6 +561,113 @@ fn ensure_rpm_package_identity(metadata: &RpmPackageMetadata, path: &Path) -> Re
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DebPackageMetadata {
+    name: String,
+    version: String,
+    arch: String,
+}
+
+fn deb_package_metadata(path: &Path) -> Result<DebPackageMetadata> {
+    let name = deb_package_field(path, "Package")?;
+    let version = deb_package_field(path, "Version")?;
+    let arch = deb_package_field(path, "Architecture")?;
+
+    Ok(DebPackageMetadata {
+        name,
+        version,
+        arch,
+    })
+}
+
+fn deb_package_field(path: &Path, field: &str) -> Result<String> {
+    let output = Command::new(program_path(DPKG_DEB_CANDIDATES, "dpkg-deb"))
+        .arg("-f")
+        .arg(path)
+        .arg(field)
+        .output()
+        .with_context(|| format!("Failed to inspect Debian package {field} metadata"))?;
+
+    anyhow::ensure!(
+        output.status.success(),
+        "dpkg-deb could not read package {field} metadata from {}",
+        path.display()
+    );
+
+    let value = String::from_utf8(output.stdout)
+        .with_context(|| format!("dpkg-deb returned non-UTF8 package {field} metadata"))?
+        .trim()
+        .to_string();
+    anyhow::ensure!(
+        !value.is_empty(),
+        "dpkg-deb returned empty package {field} metadata for {}",
+        path.display()
+    );
+    Ok(value)
+}
+
+fn ensure_deb_package_identity(metadata: &DebPackageMetadata, path: &Path) -> Result<()> {
+    anyhow::ensure!(
+        metadata.name == PACKAGE_NAME,
+        "Debian package {} has unexpected name {}; expected {PACKAGE_NAME}",
+        path.display(),
+        metadata.name
+    );
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PacmanPackageMetadata {
+    name: String,
+    version: String,
+}
+
+fn pacman_package_metadata(path: &Path) -> Result<PacmanPackageMetadata> {
+    let output = Command::new(program_path(PACMAN_CANDIDATES, "pacman"))
+        .args(["-Qp"])
+        .arg(path)
+        .output()
+        .context("Failed to inspect pacman package metadata")?;
+
+    anyhow::ensure!(
+        output.status.success(),
+        "pacman could not read package metadata from {}",
+        path.display()
+    );
+
+    parse_pacman_package_metadata(&output.stdout, path)
+}
+
+fn parse_pacman_package_metadata(output: &[u8], path: &Path) -> Result<PacmanPackageMetadata> {
+    let text = String::from_utf8(output.to_vec()).context("pacman returned non-UTF8 metadata")?;
+    let mut parts = text.split_whitespace();
+    let name = parts.next().unwrap_or("").to_string();
+    let version = parts.next().unwrap_or("").to_string();
+
+    anyhow::ensure!(
+        !name.is_empty(),
+        "pacman returned an empty package name for {}",
+        path.display()
+    );
+    anyhow::ensure!(
+        !version.is_empty(),
+        "pacman returned an empty package version for {}",
+        path.display()
+    );
+
+    Ok(PacmanPackageMetadata { name, version })
+}
+
+fn ensure_pacman_package_identity(metadata: &PacmanPackageMetadata, path: &Path) -> Result<()> {
+    anyhow::ensure!(
+        metadata.name == PACKAGE_NAME,
+        "Pacman package {} has unexpected name {}; expected {PACKAGE_NAME}",
+        path.display(),
+        metadata.name
+    );
+    Ok(())
+}
+
 fn pacman_install_command(path: &Path) -> Command {
     let mut command = Command::new(program_path(PACMAN_CANDIDATES, "pacman"));
     command.args(["-U", "--noconfirm"]).arg(path.as_os_str());
@@ -572,32 +681,6 @@ fn updater_binary_for_privileged_install(current_exe: &Path) -> PathBuf {
     } else {
         current_exe.to_path_buf()
     }
-}
-
-fn deb_package_version(path: &Path) -> Result<String> {
-    let output = Command::new(program_path(DPKG_DEB_CANDIDATES, "dpkg-deb"))
-        .arg("-f")
-        .arg(path)
-        .arg("Version")
-        .output()
-        .context("Failed to inspect Debian package metadata")?;
-
-    anyhow::ensure!(
-        output.status.success(),
-        "dpkg-deb could not read the package version from {}",
-        path.display()
-    );
-
-    let version = String::from_utf8(output.stdout)
-        .context("dpkg-deb returned a non-UTF8 package version")?
-        .trim()
-        .to_string();
-    anyhow::ensure!(
-        !version.is_empty(),
-        "dpkg-deb returned an empty package version for {}",
-        path.display()
-    );
-    Ok(version)
 }
 
 fn is_version_newer(candidate: &str, installed: &str) -> Result<bool> {
@@ -956,6 +1039,48 @@ mod tests {
 
         assert!(error.to_string().contains("codex-app"));
         Ok(())
+    }
+
+    #[test]
+    fn rejects_deb_package_metadata_for_wrong_name() {
+        let metadata = DebPackageMetadata {
+            name: "other-app".to_string(),
+            version: "26.422.30944.2080".to_string(),
+            arch: "amd64".to_string(),
+        };
+
+        let error = ensure_deb_package_identity(&metadata, Path::new("/tmp/codex-app.deb"))
+            .expect_err("wrong Debian package name should be rejected");
+
+        assert!(error.to_string().contains("codex-app"));
+    }
+
+    #[test]
+    fn parses_pacman_package_metadata() -> Result<()> {
+        let metadata = parse_pacman_package_metadata(
+            b"codex-app 26.422.30944.2080-1\n".as_slice(),
+            Path::new("/tmp/codex-app-26.422.30944.2080-1-x86_64.pkg.tar.zst"),
+        )?;
+
+        assert_eq!(metadata.name, "codex-app");
+        assert_eq!(metadata.version, "26.422.30944.2080-1");
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_pacman_package_metadata_for_wrong_name() {
+        let metadata = PacmanPackageMetadata {
+            name: "other-app".to_string(),
+            version: "26.422.30944.2080-1".to_string(),
+        };
+
+        let error = ensure_pacman_package_identity(
+            &metadata,
+            Path::new("/tmp/codex-app-26.422.30944.2080-1-x86_64.pkg.tar.zst"),
+        )
+        .expect_err("wrong pacman package name should be rejected");
+
+        assert!(error.to_string().contains("codex-app"));
     }
 
     #[test]

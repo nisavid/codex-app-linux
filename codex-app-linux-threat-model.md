@@ -129,7 +129,7 @@ Non-capabilities:
 - Likelihood: Medium. Requires same-user access and polkit authorization timing, but same-user local processes are in scope.
 - Impact: High. Successful abuse writes root-owned package payloads and package scripts.
 - Priority: High.
-- Existing mitigations: `pkexec` authorization; argument-based subprocess calls; symlink/non-file rejection; expected `codex-app` filename shapes; private staged-copy install; RPM package-name metadata validation; Debian/pacman version checks.
+- Existing mitigations: `pkexec` authorization; argument-based subprocess calls; symlink/non-file rejection; expected `codex-app` filename shapes; private staged-copy install; Debian, RPM, and pacman package-name metadata validation; Debian/pacman version checks.
 - Gaps: caller-supplied path acceptance and no root-trusted digest binding.
 - Recommendations: digest/identity binding to trusted updater state and canonical path checks under expected workspace.
 
@@ -173,7 +173,7 @@ Non-capabilities:
 - Likelihood: Medium for developer/local systems; lower for locked packaged systems if config is hardened.
 - Impact: Medium to High depending whether package is installed locally or published.
 - Priority: Medium.
-- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors; updater rebuild commands use a fixed system PATH; packaged builder-root redirects require explicit developer mode; package staging rejects unsafe app symlinks and normalizes app payload modes; builder bundle copying rejects symlinked entries, rejects group/world-writable production roots, and requires the packaged root path to be owned by root.
+- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors; updater rebuild commands use a fixed system PATH; packaged builder-root redirects require explicit developer mode; package staging rejects unsafe app symlinks and normalizes app payload and package directory modes; builder bundle copying rejects symlinked entries, rejects group/world-writable production roots, and requires the packaged root path to be owned by root.
 - Gaps: developer mode intentionally trusts the configured local builder root, and generated package contents still depend on unauthenticated upstream inputs.
 - Recommendations: keep builder-root validation covered by updater tests, and pair it with upstream artifact verification before public distribution.
 
