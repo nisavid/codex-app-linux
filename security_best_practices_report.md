@@ -62,12 +62,12 @@ None identified in the tracked source review. The review did not include generat
 - Impact: source replacement between validation and package-manager consumption is reduced, but a caller who can satisfy `pkexec` can still present a different valid-looking `codex-app` package path.
 - Recommendation: persist a trusted expected digest/identity for updater-generated artifacts and re-check it against the staged copy immediately before install.
 
-### M-3: Updater rebuild inherits user-controlled build environment
+### M-3: Updater rebuild still allows configurable builder roots
 
 - Location: [packaging/linux/packaged-runtime.sh](/home/nisavid/src/nisavid/codex-app-linux/packaging/linux/packaged-runtime.sh:16), [updater/src/builder.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/builder.rs:73)
-- Evidence: the packaged launcher imports `PATH` into the user systemd manager, and the updater passes inherited `PATH` to `install.sh` and package build scripts.
-- Impact: user-writable PATH entries can influence `npm`, `npx`, `curl`, `unzip`, package builders, or other tools used to create a package later offered to `pkexec`.
-- Recommendation: set a fixed build PATH such as `/usr/local/sbin:/usr/local/bin:/usr/bin:/bin` or distro-appropriate equivalent for updater rebuilds; avoid importing `PATH` into the service environment, or separate GUI/session env from build env.
+- Evidence: the packaged launcher no longer imports `PATH` into the user systemd manager, and updater rebuilds run `install.sh` plus package build scripts with `/usr/local/sbin:/usr/local/bin:/usr/bin:/bin`. The configured `builder_bundle_root` can still select which builder scripts are copied.
+- Impact: user-writable `PATH` entries no longer influence updater rebuild commands, but custom builder roots can still redirect the rebuild pipeline.
+- Recommendation: lock packaged updater mode to root-owned `/usr/lib/codex-app/update-builder`; allow custom builder roots only under explicit developer mode; validate canonical paths, ownership, and permissions.
 
 ### M-4: User-controlled runtime config can redirect the update supply chain
 

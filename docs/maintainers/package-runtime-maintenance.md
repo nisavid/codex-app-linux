@@ -77,10 +77,11 @@ Important launcher behavior:
 - It clears stale app PID files under `~/.local/state/codex-app/app.pid`.
 - It loads `/usr/lib/codex-app/packaged-runtime.sh` only when that helper is
   present.
-- The packaged runtime helper imports desktop/session environment into the user
-  systemd manager and enables or restarts `codex-app-updater.service` on a
-  best-effort basis. It also disables the legacy `codex-update-manager.service`
-  name when present.
+- The packaged runtime helper imports only desktop/session display environment
+  into the user systemd manager and enables or restarts
+  `codex-app-updater.service` on a best-effort basis. It does not import the
+  user session `PATH`. It also disables the legacy
+  `codex-update-manager.service` name when present.
 - It starts `python3 -m http.server --bind 127.0.0.1 5175` from
   `content/webview/`, waits for the port, and verifies
   `http://127.0.0.1:5175/index.html` contains expected Codex startup markers

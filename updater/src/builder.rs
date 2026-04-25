@@ -43,6 +43,7 @@ const PACMAN_PACKAGE_SUFFIXES: &[&str] = &[
     ".pkg.tar.lz5",
 ];
 const WORKSPACE_ID_PATH_LEN: usize = 16;
+const BUILD_COMMAND_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/bin:/bin";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Paths to the temporary workspace and generated package produced by a rebuild.
@@ -334,7 +335,7 @@ fn is_native_package_file(path: &Path) -> bool {
 }
 
 fn build_command_path() -> OsString {
-    std::env::var_os("PATH").unwrap_or_default()
+    OsString::from(BUILD_COMMAND_PATH)
 }
 
 async fn run_and_log(command: &mut Command, log_path: &Path) -> Result<()> {
@@ -654,6 +655,20 @@ exit 88
     #[test]
     fn workspace_path_component_rejects_path_characters() {
         assert!(workspace_path_component("../678cd508ffe0").is_err());
+    }
+
+    #[test]
+    fn build_command_path_ignores_user_environment() {
+        let original_path = std::env::var_os("PATH");
+        std::env::set_var("PATH", "/tmp/malicious:/home/user/bin");
+        assert_eq!(
+            build_command_path(),
+            OsString::from("/usr/local/sbin:/usr/local/bin:/usr/bin:/bin")
+        );
+        match original_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
     }
 
     #[test]

@@ -527,6 +527,7 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/install.sh" "Install it now? \\[Y/n\\]"
     assert_contains "$REPO_DIR/install.sh" "is_interactive_terminal"
     assert_contains "$REPO_DIR/packaging/linux/packaged-runtime.sh" "CHROME_DESKTOP"
+    assert_not_contains "$REPO_DIR/packaging/linux/packaged-runtime.sh" "        PATH \\\\"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
 }
 
