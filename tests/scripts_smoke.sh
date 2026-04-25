@@ -449,7 +449,8 @@ PY
 
 test_launcher_template_sanity() {
     info "Checking launcher template markers"
-    assert_contains "$REPO_DIR/install.sh" "nohup python3 -m http.server 5175"
+    assert_contains "$REPO_DIR/install.sh" "nohup python3 -m http.server --bind 127.0.0.1 5175"
+    assert_not_contains "$REPO_DIR/install.sh" "pkill -f \"http.server 5175\""
     assert_contains "$REPO_DIR/install.sh" "wait_for_webview_server"
     assert_contains "$REPO_DIR/install.sh" "verify_webview_origin"
     assert_contains "$REPO_DIR/install.sh" "Webview origin verified."
@@ -462,6 +463,18 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/install.sh" "is_interactive_terminal"
     assert_contains "$REPO_DIR/packaging/linux/packaged-runtime.sh" "CHROME_DESKTOP"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
+}
+
+test_hash_workflow_opens_review_pr() {
+    info "Checking hash refresh workflow requires review"
+    local workflow="$REPO_DIR/.github/workflows/update-codex-hash.yml"
+
+    assert_contains "$workflow" "pull-requests: write"
+    assert_contains "$workflow" "GH_TOKEN: \${{ github.token }}"
+    assert_contains "$workflow" "gh pr create"
+    assert_not_contains "$workflow" "git push origin main"
+    assert_not_contains "$workflow" "actions/checkout@v4"
+    assert_not_contains "$workflow" "cachix/install-nix-action@v27"
 }
 
 make_fake_extracted_asar() {
@@ -556,6 +569,7 @@ main() {
     test_installer_rejects_alphanumeric_app_version_metadata
     test_installer_rejects_short_app_version_metadata
     test_launcher_template_sanity
+    test_hash_workflow_opens_review_pr
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
     test_linux_file_manager_patch_fails_soft

@@ -1,11 +1,16 @@
 //! Upstream DMG metadata and download helpers.
 
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use futures_util::StreamExt;
 use reqwest::{header, Client};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use tokio::{fs::File, io::AsyncWriteExt};
+use tokio::{
+    fs::{self, File},
+    io::AsyncWriteExt,
+};
+
+const MAX_DMG_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Selected HTTP metadata used to detect upstream DMG changes.
@@ -73,14 +78,22 @@ pub async fn download_dmg(
     dmg_url: &str,
     destination_dir: &Path,
 ) -> Result<DownloadedDmg> {
+    download_dmg_with_max_bytes(client, dmg_url, destination_dir, MAX_DMG_BYTES).await
+}
+
+async fn download_dmg_with_max_bytes(
+    client: &Client,
+    dmg_url: &str,
+    destination_dir: &Path,
+    max_bytes: u64,
+) -> Result<DownloadedDmg> {
     tokio::fs::create_dir_all(destination_dir)
         .await
         .with_context(|| format!("Failed to create {}", destination_dir.display()))?;
 
     let destination = destination_dir.join("Codex.dmg");
-    let mut file = File::create(&destination)
-        .await
-        .with_context(|| format!("Failed to create {}", destination.display()))?;
+    let temp_destination = destination_dir.join(".Codex.dmg.tmp");
+    let _ = fs::remove_file(&temp_destination).await;
 
     let response = client
         .get(dmg_url)
@@ -89,27 +102,57 @@ pub async fn download_dmg(
         .with_context(|| format!("Failed GET request for {dmg_url}"))?
         .error_for_status()
         .with_context(|| format!("GET request for {dmg_url} returned an error status"))?;
+    if let Some(content_length) = response.content_length() {
+        ensure!(
+            content_length <= max_bytes,
+            "DMG download size {content_length} exceeds maximum {max_bytes} bytes"
+        );
+    }
 
+    let mut file = File::create(&temp_destination)
+        .await
+        .with_context(|| format!("Failed to create {}", temp_destination.display()))?;
     let mut hasher = Sha256::new();
     let mut stream = response.bytes_stream();
+    let mut downloaded_bytes = 0_u64;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.with_context(|| format!("Failed downloading {dmg_url}"))?;
+        downloaded_bytes += chunk.len() as u64;
+        if downloaded_bytes > max_bytes {
+            let _ = fs::remove_file(&temp_destination).await;
+            ensure!(
+                downloaded_bytes <= max_bytes,
+                "DMG download size exceeds maximum {max_bytes} bytes"
+            );
+        }
         file.write_all(&chunk)
             .await
-            .with_context(|| format!("Failed writing {}", destination.display()))?;
+            .with_context(|| format!("Failed writing {}", temp_destination.display()))?;
         hasher.update(&chunk);
     }
 
     file.flush()
         .await
-        .with_context(|| format!("Failed flushing {}", destination.display()))?;
+        .with_context(|| format!("Failed flushing {}", temp_destination.display()))?;
+    drop(file);
 
     let sha256 = hasher
         .finalize()
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
+
+    fs::rename(&temp_destination, &destination)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed moving {} to {}",
+                temp_destination.display(),
+                destination.display()
+            )
+        })?;
+
     Ok(DownloadedDmg {
         path: destination,
         sha256,
@@ -173,6 +216,35 @@ mod tests {
             downloaded.sha256,
             "678cd508ffe0071e217020a7a4eecbebe25362c022ac78c13a5ae87b7a3a0c92"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_dmg_when_content_length_exceeds_limit() -> Result<()> {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/Codex.dmg"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("Content-Length", "9")
+                    .set_body_bytes(b"too large".to_vec()),
+            )
+            .mount(&server)
+            .await;
+
+        let client = Client::builder().build()?;
+        let temp = tempdir()?;
+        let error = download_dmg_with_max_bytes(
+            &client,
+            &format!("{}/Codex.dmg", server.uri()),
+            temp.path(),
+            8,
+        )
+        .await
+        .expect_err("oversized Content-Length should be rejected");
+
+        assert!(error.to_string().contains("exceeds maximum"));
+        assert!(!temp.path().join("Codex.dmg").exists());
         Ok(())
     }
 }
