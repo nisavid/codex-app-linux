@@ -691,28 +691,6 @@ fn is_version_newer(candidate: &str, installed: &str) -> Result<bool> {
     Ok(status.success())
 }
 
-fn pacman_package_version(path: &Path) -> Result<String> {
-    let file_name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .context("Package path has no file name")?;
-
-    let stripped = strip_pacman_package_suffix(file_name)
-        .with_context(|| format!("Not a valid pacman package filename: {file_name}"))?;
-    let prefix = format!("{PACKAGE_NAME}-");
-    let without_name = stripped
-        .strip_prefix(&prefix)
-        .with_context(|| format!("Pacman package filename does not start with {prefix}"))?;
-    let (version_release, _arch) = without_name
-        .rsplit_once('-')
-        .context("Pacman package filename is missing an architecture suffix")?;
-    anyhow::ensure!(
-        !version_release.is_empty(),
-        "Could not parse package version from {file_name}"
-    );
-    Ok(version_release.to_string())
-}
-
 fn is_version_newer_pacman(candidate: &str, installed: &str) -> Result<bool> {
     let output = Command::new(program_path(VERCMP_CANDIDATES, "vercmp"))
         .args([candidate, installed])
@@ -1135,16 +1113,5 @@ mod tests {
             parse_pacman_installed_version(b"codex-app 2026.04.02.120000-1\n".to_vec()),
             "2026.04.02.120000-1"
         );
-    }
-
-    #[test]
-    fn parses_pacman_package_version_from_filename() -> Result<()> {
-        assert_eq!(
-            pacman_package_version(Path::new(
-                "/tmp/codex-app-2026.04.02.120000-1-x86_64.pkg.tar.zst"
-            ))?,
-            "2026.04.02.120000-1"
-        );
-        Ok(())
     }
 }
