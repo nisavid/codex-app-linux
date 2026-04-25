@@ -625,12 +625,10 @@ clear_stale_pid_file() {
 load_packaged_runtime_helper
 clear_stale_pid_file
 run_packaged_runtime_prelaunch
-pkill -f "http.server 5175" 2>/dev/null || true
-sleep 0.5
 
 if [ -d "$WEBVIEW_DIR" ] && [ "$(ls -A "$WEBVIEW_DIR" 2>/dev/null)" ]; then
     cd "$WEBVIEW_DIR"
-    nohup python3 -m http.server 5175 &
+    nohup python3 -m http.server --bind 127.0.0.1 5175 &
     HTTP_PID=$!
     trap "kill $HTTP_PID 2>/dev/null" EXIT
 

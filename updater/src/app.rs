@@ -18,6 +18,7 @@ use tracing::{error, info, warn};
 
 const RECONCILE_INTERVAL_SECONDS: u64 = 15;
 const CLI_MISSING_NOTIFICATION_EVENT: &str = "cli_missing";
+const UPSTREAM_REQUEST_TIMEOUT_SECONDS: u64 = 600;
 
 /// Runs the updater command-line entrypoint.
 pub async fn run(cli: Cli) -> Result<()> {
@@ -236,7 +237,9 @@ async fn run_check_cycle(
         return Ok(());
     }
 
-    let client = Client::builder().build()?;
+    let client = Client::builder()
+        .timeout(Duration::from_secs(UPSTREAM_REQUEST_TIMEOUT_SECONDS))
+        .build()?;
 
     sync_runtime_state(config, state);
     state.status = UpdateStatus::CheckingUpstream;

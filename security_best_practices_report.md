@@ -4,7 +4,7 @@ Date: 2026-04-25
 
 ## Executive Summary
 
-This repository's highest-risk exposure is supply-chain and local privilege flow, not a classic internet-facing web-app surface. The app downloads mutable upstream artifacts, converts and patches an Electron bundle, rebuilds native packages locally, and can install them through `pkexec` after the app exits. The strongest controls today are local-only operation, Rust/Cargo and Nix lockfiles, argument-based subprocess calls, numeric package-version validation, and an unprivileged updater daemon boundary. The largest gaps are missing authenticated artifact verification in the non-Nix/update path, globally disabled Electron sandboxing, a fixed and spoofable local webview origin, and privileged install subcommands that are not bound tightly enough to updater-generated package artifacts.
+This repository's highest-risk exposure is supply-chain and local privilege flow, not a classic internet-facing web-app surface. The app downloads mutable upstream artifacts, converts and patches an Electron bundle, rebuilds native packages locally, and can install them through `pkexec` after the app exits. The strongest controls today are local-only operation, Rust/Cargo and Nix lockfiles, argument-based subprocess calls, numeric package-version validation, an unprivileged updater daemon boundary, PR-gated Nix hash refreshes, and loopback-only webview serving. The largest remaining gaps are missing authenticated artifact verification in the non-Nix/update path, globally disabled Electron sandboxing, fixed-port local webview spoofing, privileged install subcommands that are not bound tightly enough to updater-generated package artifacts, and public artifact signing/provenance.
 
 Current Electron documentation was fetched through `ctx7` after resolving `/electron/electron`. The fetched guidance reinforces the Electron-related findings: enable renderer sandboxing, keep `webSecurity` enabled, avoid webview Node.js integration, validate `will-attach-webview` options, and rely on isolated preload patterns.
 
@@ -38,22 +38,22 @@ None identified in the tracked source review. The review did not include generat
 - Current controls: `pkexec` prompts for privileged install, package manager arguments are passed without shell interpolation, Debian/pacman reject non-newer candidates.
 - Recommendation: bind privileged install to a verified updater artifact. Validate package identity, architecture, version, canonical path, and expected digest against root-trusted state; reject symlinks; copy the candidate to a root-owned temp location after privilege escalation and install that immutable copy.
 
-### H-4: CI is configured to auto-advance the Nix trust root from a mutable binary
+### H-4: CI hash refresh still needs stronger verification evidence
 
 - Location: [.github/workflows/update-codex-hash.yml](/home/nisavid/src/nisavid/codex-app-linux/.github/workflows/update-codex-hash.yml:8)
-- Evidence: the workflow has `contents: write`, downloads the mutable DMG, computes a new SRI hash, edits `flake.nix`, commits, and pushes directly to `main`.
-- Impact: if repository branch protection permits the workflow push, compromise of the upstream URL/CDN or workflow context can cause `main` to trust a malicious DMG without human review. This is especially important now that packages are intended for public distribution.
-- Current controls: computed SRI syntax validation and Nix fixed-output hash after commit.
-- Recommendation: have CI open a PR instead of pushing to `main`; require maintainer review; include upstream version/build metadata and code-signing/notarization verification output; pin GitHub Actions to full commit SHAs.
+- Evidence: the workflow downloads the mutable DMG, computes a new SRI hash, edits `flake.nix`, commits on a bot branch, and opens or updates a PR. Workflow actions are pinned to full commit SHAs.
+- Impact: maintainer review now gates Nix trust-root changes, but reviewers still lack automated upstream version/build metadata and code-signing/notarization verification output.
+- Current controls: computed SRI syntax validation, Nix fixed-output hash after merge, PR review gate, and commit-pinned workflow actions.
+- Recommendation: include upstream version/build metadata and code-signing/notarization verification output in the PR body before accepting public distribution hash changes.
 
 ## Medium Findings
 
-### M-1: Fixed local webview server can bind beyond loopback and be spoofed locally
+### M-1: Fixed local webview server can still be spoofed locally
 
 - Location: [install.sh](/home/nisavid/src/nisavid/codex-app-linux/install.sh:577), [install.sh](/home/nisavid/src/nisavid/codex-app-linux/install.sh:628), [install.sh](/home/nisavid/src/nisavid/codex-app-linux/install.sh:633), [install.sh](/home/nisavid/src/nisavid/codex-app-linux/install.sh:649)
-- Evidence: the launcher starts `python3 -m http.server 5175` from `content/webview`, kills matching processes with `pkill -f`, checks only TCP readiness, and validates two marker strings from `http://127.0.0.1:5175/index.html`.
-- Impact: the Python default server may expose static webview assets beyond loopback, and a local process can race/occupy port `5175` with marker-matching malicious content. Combined with H-1, the impact rises.
-- Recommendation: bind explicitly to `127.0.0.1`; avoid broad `pkill -f`; use an ephemeral loopback port plus per-launch nonce if the upstream app can accept it; validate a generated manifest/hash for critical assets.
+- Evidence: the launcher now starts `python3 -m http.server --bind 127.0.0.1 5175` from `content/webview` and no longer kills matching processes with `pkill -f`. It still checks TCP readiness and validates two marker strings from `http://127.0.0.1:5175/index.html`.
+- Impact: LAN exposure and broad process-kill risk are reduced, but a local process can still race/occupy port `5175` with marker-matching malicious content. Combined with H-1, the impact rises.
+- Recommendation: use an ephemeral loopback port plus per-launch nonce if the upstream app can accept it; validate a generated manifest/hash for critical assets.
 
 ### M-2: Package install validation has a TOCTOU window
 
@@ -111,12 +111,12 @@ None identified in the tracked source review. The review did not include generat
 - Impact: npm account/registry compromise or unexpected upstream release is pulled into user runtime without a repo-reviewed allowlist.
 - Recommendation: keep missing-CLI install interactive, require consent for upgrades, or verify npm package provenance/signatures and allowlist approved versions.
 
-### M-10: Updater downloads have no explicit timeout or size cap
+### M-10: Updater download DoS controls are partially addressed
 
 - Location: [updater/src/app.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/app.rs:239), [updater/src/upstream.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/upstream.rs:85), [updater/src/upstream.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/upstream.rs:96)
-- Evidence: the updater builds a default reqwest client and streams the response until EOF without checking `Content-Length` or enforcing a maximum byte count.
-- Impact: a compromised or malfunctioning endpoint can keep the updater busy or fill user cache storage.
-- Recommendation: configure connect/request/read timeouts, enforce a maximum DMG size, verify `Content-Length` when present, stream into a temp file, and rename only after size/hash/signature validation.
+- Evidence: the updater now configures a 10-minute request timeout, rejects oversized `Content-Length`, enforces a maximum streamed byte count, writes to a temp file, and renames only after size and hash completion.
+- Impact: a compromised or malfunctioning endpoint has less ability to keep the updater busy or fill user cache storage. This does not authenticate the downloaded artifact.
+- Recommendation: keep the timeout and size cap under test, and add signature or trusted-manifest validation before using the downloaded DMG for rebuild/install.
 
 ## Low Findings
 
@@ -162,7 +162,7 @@ None identified in the tracked source review. The review did not include generat
 1. Restore Electron sandboxing or make disablement an explicit, documented fallback.
 2. Require authenticated upstream artifact verification before rebuild/install.
 3. Bind privileged install subcommands to verified updater artifacts and close the TOCTOU window.
-4. Change hash-update CI to PR-based review and commit-pin actions.
-5. Bind the webview server to loopback and reduce fixed-port spoofing.
+4. Add upstream version/build metadata and signature/notarization verification to hash-update PRs.
+5. Reduce fixed-port webview spoofing with a per-launch nonce or ephemeral loopback port.
 6. Sanitize updater build environment and package payload metadata.
 7. Add package signing/provenance for public distribution.

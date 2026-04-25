@@ -30,7 +30,7 @@ Assumptions validated with the maintainer:
 - Native package artifacts will be made available for public distribution.
 - Mutable upstream payload trust is a supply-chain risk, even if the upstream DMG may be signed; the Linux pipeline must verify the relevant signature or trusted metadata itself.
 - Local same-user processes are realistic attackers for localhost, cache/state, and PATH abuse paths.
-- LAN attackers are relevant where the local webview server binds beyond loopback.
+- LAN attackers are relevant if future local services bind beyond loopback.
 
 Open questions that would materially change risk ranking:
 
@@ -45,7 +45,7 @@ Open questions that would materially change risk ranking:
 - Upstream artifact source: `https://persistent.oaistatic.com/codex-app-prod/Codex.dmg`, referenced by `install.sh`, updater config, and Nix.
 - Local installer: `install.sh` downloads/extracts the DMG, patches ASAR content, rebuilds native modules, downloads Electron for Linux, extracts the webview, and writes `codex-app/start.sh`.
 - Generated launcher: `codex-app/start.sh` starts the webview server, performs CLI preflight, and launches Electron.
-- Local webview server: Python `http.server` on port `5175`, serving `content/webview`.
+- Local webview server: Python `http.server` bound to `127.0.0.1` on port `5175`, serving `content/webview`.
 - Updater daemon: `codex-app-updater daemon` runs as a `systemd --user` service, checks upstream metadata, downloads DMGs, rebuilds packages, and coordinates install state.
 - Privileged install boundary: updater invokes `pkexec codex-app-updater install-* --path <package>` for final package manager installation.
 - Package builders: shell scripts build Debian, RPM, and pacman artifacts from generated app trees.
@@ -61,7 +61,7 @@ Open questions that would materially change risk ranking:
 - User config/state/cache -> Updater daemon: TOML config and JSON state cross from user-writable XDG paths into update decisions. Current validation is schema parsing and some path/version shape checks.
 - Updater daemon -> Package builder scripts: user-service environment and downloaded DMG cross into shell scripts. Current subprocess calls avoid shell interpolation in Rust, but PATH is inherited.
 - Updater daemon -> `pkexec` -> system package manager: package path crosses from unprivileged user context into privileged install. Current controls are polkit authorization and limited metadata checks; artifact path/digest are not strongly bound.
-- CI runner -> `main`: workflow downloads a mutable DMG, computes a hash, edits `flake.nix`, and pushes. Current control is GitHub workflow permission; no human review gate.
+- CI runner -> maintainer review -> `main`: workflow downloads a mutable DMG, computes a hash, edits `flake.nix`, and opens or updates a PR. Current controls are GitHub workflow permission, pinned workflow actions, and maintainer review before merge.
 - Maintainer build host -> Public users: `.deb`, `.rpm`, and pacman artifacts cross from local build output into public distribution. Current repo lacks signing/provenance workflow.
 
 #### Diagram
@@ -144,27 +144,27 @@ Non-capabilities:
 - Gaps: `--no-sandbox`, `--disable-gpu-sandbox`, absent generated-app review.
 - Recommendations: restore sandbox, verify `contextIsolation`, `nodeIntegration`, navigation/window/openExternal policy, and inspect generated app bundle as a release gate.
 
-### T4: Local webview origin is spoofed or exposed
+### T4: Local webview origin is spoofed
 
-- Entry points: fixed port `5175`, Python `http.server`, `pkill -f`.
-- Abuse path: local process occupies or races port -> marker-matching malicious HTML is served -> Electron loads attacker page as expected local origin. Separately, server binds beyond loopback and exposes assets to LAN.
-- Likelihood: Medium for local spoofing; Low to Medium for LAN impact depending host firewall/network.
+- Entry points: fixed port `5175`, Python `http.server`, marker-based origin validation.
+- Abuse path: local process occupies or races port -> marker-matching malicious HTML is served -> Electron loads attacker page as expected local origin.
+- Likelihood: Medium for local spoofing.
 - Impact: Medium, High when combined with T3.
 - Priority: Medium.
-- Existing mitigations: marker check for expected `index.html` strings.
-- Gaps: fixed port, weak validation, no nonce, no explicit loopback bind.
-- Recommendations: bind `127.0.0.1`, use random port/nonce where possible, avoid broad process killing, validate asset manifest hashes.
+- Existing mitigations: explicit `127.0.0.1` bind, no broad process killing, and marker checks for expected `index.html` strings.
+- Gaps: fixed port, weak validation, no nonce.
+- Recommendations: use random port/nonce where possible and validate asset manifest hashes.
 
 ### T5: CI or public artifact channel distributes unreviewed trusted payloads
 
-- Entry points: scheduled hash workflow, public package release artifacts, mutable GitHub Action tags.
-- Abuse path: workflow or action dependency is compromised -> hash or artifacts are updated/published -> public users consume artifacts without signatures/provenance.
+- Entry points: scheduled hash workflow and public package release artifacts.
+- Abuse path: workflow or upstream payload is compromised -> hash PR or artifacts are updated/published -> public users consume artifacts without signatures/provenance.
 - Likelihood: Medium for supply-chain exposure over time.
 - Impact: High because public users rely on repo-published trust decisions.
 - Priority: High.
-- Existing mitigations: GitHub branch protection may exist but is not visible here; Nix hash syntax validation.
-- Gaps: direct push from workflow, mutable action tags, no package signing/attestation.
-- Recommendations: PR-based hash refresh, commit-pinned actions, release checksums/signatures, artifact attestations, documented verification instructions.
+- Existing mitigations: Nix hash syntax validation, PR-based hash refresh, and commit-pinned workflow actions.
+- Gaps: no package signing/attestation and no automated upstream signature/notarization evidence in hash PRs.
+- Recommendations: release checksums/signatures, artifact attestations, upstream signature/notarization verification output, and documented verification instructions.
 
 ### T6: Build environment influences package contents
 
@@ -206,15 +206,15 @@ High-priority implementation targets:
 - Verify upstream artifacts before extraction: signed manifest or verified upstream signature/notarization, with explicit failure if verification cannot run.
 - Harden privileged installs: package identity/digest validation, root-owned immutable copy, canonical workspace path, no symlinks, and RPM parity with Debian/pacman checks.
 - Restore Electron sandboxing and inspect generated app security settings before public release.
-- Convert hash-update workflow to PR-based review and pin GitHub Actions to commit SHAs.
+- Add upstream version/build metadata and signature/notarization verification to hash-update PRs.
 - Add public artifact signing, checksums, attestations, and verification docs.
 
 Medium-priority implementation targets:
 
-- Bind webview server to loopback and remove fixed-port spoofing where feasible.
+- Remove fixed-port webview spoofing where feasible.
 - Sanitize service/build PATH and lock packaged builder root.
 - Normalize package payload permissions and reject unsafe symlinks.
-- Add updater download timeouts and maximum size checks.
+- Keep updater download timeout and maximum-size checks covered by regression tests.
 - Add service hardening directives compatible with `systemd --user`.
 
 Detection and monitoring:
