@@ -137,6 +137,10 @@ package builders use `CODEX_APP_PACKAGE_VERSION` from that file unless
 numeric dot-separated segments because the updater's installed-version
 comparison depends on that shape.
 
+The packaged user service sets a fixed `PATH`, `NoNewPrivileges=yes`,
+`PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, and
+`UMask=077`.
+
 Privileged escalation belongs only to the install subcommands:
 
 - `codex-app-updater install-deb --path <package>`
