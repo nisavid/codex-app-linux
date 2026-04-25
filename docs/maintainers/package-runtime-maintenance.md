@@ -257,6 +257,19 @@ and stapled app notarization ticket. The pinned upstream trust inputs are:
 - Developer ID authority: `Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)`
 - Sparkle public EdDSA key: `rhcBvttuqDFriyNqwTQJR3L4UT1WjIK4QxtwtwusVic=`
 
+Latest checked upstream artifact evidence, from GitHub Actions run
+`24940121632` on 2026-04-25:
+
+- DMG URL: `https://persistent.oaistatic.com/codex-app-prod/Codex.dmg`
+- DMG SHA-256: `90dd7716f260135b76f3f123f8b7057ebe7b67bdb432d009832ce90d005cc753`
+- macOS verification result: contained `Codex.app` accepted by Gatekeeper as
+  `source=Notarized Developer ID`; Developer ID, Team ID, bundle ID, Sparkle
+  public key, strict code signature, app notarization staple, DMG hash, and DMG
+  container integrity all passed.
+- DMG container primary-signature assessment reported `source=no usable signature`;
+  the verifier treats the contained app checks as authoritative unless
+  `CODEX_REQUIRE_DMG_GATEKEEPER=1` is set.
+
 DMG Gatekeeper and DMG stapler checks run and are reported by default. Set
 `CODEX_REQUIRE_DMG_GATEKEEPER=1` or `CODEX_REQUIRE_DMG_STAPLE=1` when the public
 release policy requires the DMG container itself to pass those checks, not only
