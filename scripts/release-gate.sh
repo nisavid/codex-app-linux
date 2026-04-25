@@ -180,9 +180,13 @@ sign_checksums() {
     require_file "$signature" "release checksum signature"
 
     mkdir -p "$(dirname "$PUBLIC_KEY_FILE")"
-    if [ ! -f "$PUBLIC_KEY_FILE" ]; then
-        gpg --batch --yes --armor --export "$CODEX_RELEASE_GPG_KEY" > "$PUBLIC_KEY_FILE"
+    local public_key_tmp
+    public_key_tmp="$(mktemp "${PUBLIC_KEY_FILE}.tmp.XXXXXX")"
+    if ! gpg --batch --yes --armor --export "$CODEX_RELEASE_GPG_KEY" > "$public_key_tmp"; then
+        rm -f "$public_key_tmp"
+        return 1
     fi
+    mv -f "$public_key_tmp" "$PUBLIC_KEY_FILE"
     require_file "$PUBLIC_KEY_FILE" "release signing public key"
 
     (
