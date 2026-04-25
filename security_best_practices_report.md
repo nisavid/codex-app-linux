@@ -33,10 +33,10 @@ None identified in the tracked source review. The review did not include generat
 ### H-3: Privileged install subcommands accept caller-supplied package paths
 
 - Location: [updater/src/cli.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/cli.rs:31), [updater/src/app.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/app.rs:49), [updater/src/install.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/install.rs:227)
-- Evidence: `install-deb`, `install-rpm`, and `install-pacman` still accept caller-supplied `--path` values, but now reject symlink/non-file inputs, require expected `codex-app` package filename shapes, copy the candidate into a private temp directory, and install that staged copy. RPM metadata is queried with `rpm -qp` and the package name must be `codex-app`; Debian and pacman paths also get version checks.
+- Evidence: `install-deb`, `install-rpm`, and `install-pacman` still accept caller-supplied `--path` values, but now reject symlink/non-file inputs, require expected `codex-app` package filename shapes, copy the candidate into a private temp directory, and install that staged copy. RPM metadata is queried with `rpm -qp`, Debian metadata with `dpkg-deb -f`, and pacman metadata with `pacman -Qp`; all three package names must be `codex-app`.
 - Impact: a user who can satisfy `pkexec` for `codex-app-updater` can install an arbitrary package path through the updater binary rather than only the updater-generated artifact. If a future polkit policy narrows authorization by command instead of artifact, this becomes a stronger local privilege escalation primitive.
-- Current controls: `pkexec` prompts for privileged install, package manager arguments are passed without shell interpolation, staged-copy install reduces source replacement races, RPM identity is checked from package metadata, and Debian/pacman reject non-newer candidates.
-- Recommendation: bind privileged install to a verified updater artifact. Validate package identity, architecture, version, canonical path, and expected digest against root-trusted state.
+- Current controls: `pkexec` prompts for privileged install, package manager arguments are passed without shell interpolation, staged-copy install reduces source replacement races, package identity is checked from metadata, and Debian/pacman reject non-newer candidates.
+- Recommendation: bind privileged install to a verified updater artifact. Validate canonical path and expected digest against root-trusted state.
 
 ### H-4: CI hash refresh still needs stronger verification evidence
 
@@ -79,7 +79,7 @@ None identified in the tracked source review. The review did not include generat
 ### M-5: Package payload normalization does not authenticate generated contents
 
 - Location: [scripts/lib/package-common.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/lib/package-common.sh:104), [scripts/build-rpm.sh](/home/nisavid/src/nisavid/codex-app-linux/scripts/build-rpm.sh:80)
-- Evidence: Debian, RPM, and pacman packaging now share app payload staging. Staging rejects absolute or upward symlinks and normalizes generated app directory/file modes before package creation.
+- Evidence: Debian, RPM, and pacman packaging now share app payload staging. Staging rejects absolute or upward symlinks, normalizes generated app directory/file modes, and normalizes package directory modes before package creation, including under the updater service's private `UMask=077`.
 - Impact: package metadata risk is reduced, but generated contents still originate from mutable upstream DMG/npm inputs and are not authenticated by this normalization.
 - Recommendation: keep symlink/mode checks covered by smoke tests, and pair them with upstream artifact verification before public release.
 
@@ -93,8 +93,8 @@ None identified in the tracked source review. The review did not include generat
 ### M-7: User service hardening is partially applied
 
 - Location: [packaging/linux/codex-app-updater.service](/home/nisavid/src/nisavid/codex-app-linux/packaging/linux/codex-app-updater.service:6)
-- Evidence: the service now sets a fixed `PATH`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, and `UMask=077`.
-- Impact: an updater compromise gets a narrower user-service environment, although broad home-directory access remains because the updater needs XDG config/state/cache and package workspaces.
+- Evidence: the service now sets a fixed `PATH`, `PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, and `UMask=077`. `NoNewPrivileges` is intentionally not set because the daemon must invoke `pkexec` for the final install step.
+- Impact: an updater compromise gets a narrower user-service environment without blocking privileged install. Broad home-directory access remains because the updater needs XDG config/state/cache and package workspaces.
 - Recommendation: evaluate narrower filesystem protections with explicit writable XDG paths once update/install behavior is tested under those restrictions.
 
 ### M-8: Native packages lack signing, attestations, and provenance for public distribution

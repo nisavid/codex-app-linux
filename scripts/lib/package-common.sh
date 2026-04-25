@@ -39,6 +39,12 @@ normalize_app_payload_modes() {
     find "$app_root" -type f -exec chmod u+rw,go+r,go-w,a-s {} +
 }
 
+normalize_package_directory_modes() {
+    local root="$1"
+
+    find "$root" -type d -exec chmod u+rwx,go+rx,go-w,a-s {} +
+}
+
 resolve_package_version() {
     if [ -n "${PACKAGE_VERSION:-}" ]; then
         printf '%s\n' "$PACKAGE_VERSION"
@@ -161,6 +167,7 @@ stage_common_package_files() {
     chmod 0644 "$root/usr/lib/systemd/user/codex-app-updater.service"
     cp "$PACKAGED_RUNTIME_SOURCE" "$root/usr/lib/$app_install_name/packaged-runtime.sh"
     chmod 0644 "$root/usr/lib/$app_install_name/packaged-runtime.sh"
+    normalize_package_directory_modes "$root"
 }
 
 stage_update_builder_bundle() {
@@ -193,6 +200,7 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/packaging/linux/codex-app-updater.prerm" "$update_builder_root/packaging/linux/codex-app-updater.prerm"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postrm" "$update_builder_root/packaging/linux/codex-app-updater.postrm"
     cp "$REPO_DIR/assets/codex.png" "$update_builder_root/assets/codex.png"
+    normalize_package_directory_modes "$root"
 }
 
 write_launcher_stub() {

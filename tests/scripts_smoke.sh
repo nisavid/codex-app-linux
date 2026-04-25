@@ -238,6 +238,49 @@ test_package_staging_normalizes_payload_modes() {
     [ "$(stat -c '%a' "$staged_exec")" = "755" ] || fail "Expected staged executable mode 755"
 }
 
+test_package_staging_normalizes_system_directory_modes_under_private_umask() {
+    info "Checking package staging normalizes system directory modes under private umask"
+    local workspace="$TMP_DIR/package-system-dir-modes"
+    local app_dir="$workspace/app"
+    local root="$workspace/root"
+    local updater_bin="$workspace/codex-app-updater"
+
+    make_fake_app "$app_dir"
+    printf '#!/bin/bash\nexit 0\n' > "$updater_bin"
+    chmod +x "$updater_bin"
+
+    (
+        umask 077
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        PACKAGE_NAME=codex-app \
+        APP_DIR="$app_dir" \
+        DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.desktop" \
+        ICON_SOURCE="$REPO_DIR/assets/codex.png" \
+        UPDATER_BINARY_SOURCE="$updater_bin" \
+        UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service" \
+        PACKAGED_RUNTIME_SOURCE="$REPO_DIR/packaging/linux/packaged-runtime.sh" \
+        stage_common_package_files "$root"
+        PACKAGE_NAME=codex-app \
+        UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service" \
+        stage_update_builder_bundle "$root"
+        PACKAGE_NAME=codex-app write_launcher_stub "$root"
+    )
+
+    for dir in \
+        "$root/opt" \
+        "$root/opt/codex-app" \
+        "$root/usr" \
+        "$root/usr/bin" \
+        "$root/usr/lib" \
+        "$root/usr/lib/codex-app" \
+        "$root/usr/lib/codex-app/update-builder" \
+        "$root/usr/share" \
+        "$root/usr/share/applications"; do
+        [ "$(stat -c '%a' "$dir")" = "755" ] || fail "Expected directory mode 755 for $dir"
+    done
+}
+
 test_deb_builder_smoke() {
     info "Running Debian packaging smoke test"
     local workspace="$TMP_DIR/deb"
@@ -564,8 +607,11 @@ test_hash_workflow_opens_review_pr() {
 
     assert_contains "$workflow" "pull-requests: write"
     assert_contains "$workflow" "GH_TOKEN: \${{ github.token }}"
+    assert_contains "$workflow" "gh pr list --base main --head \"\$BRANCH\" --state open"
+    assert_contains "$workflow" "gh pr edit \"\$PR_NUMBER\""
     assert_contains "$workflow" "gh pr create"
     assert_not_contains "$workflow" "git push origin main"
+    assert_not_contains "$workflow" "gh pr view \"\$BRANCH\" --base main"
     assert_not_contains "$workflow" "actions/checkout@v4"
     assert_not_contains "$workflow" "cachix/install-nix-action@v27"
 }
@@ -574,7 +620,7 @@ test_updater_service_hardening() {
     info "Checking updater service hardening"
     local service="$REPO_DIR/packaging/linux/codex-app-updater.service"
 
-    assert_contains "$service" "NoNewPrivileges=yes"
+    assert_not_contains "$service" "NoNewPrivileges=yes"
     assert_contains "$service" "PrivateTmp=yes"
     assert_contains "$service" "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"
     assert_contains "$service" "Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/bin"
@@ -698,6 +744,7 @@ main() {
     test_package_identifiers_reject_path_characters
     test_package_staging_rejects_unsafe_symlinks
     test_package_staging_normalizes_payload_modes
+    test_package_staging_normalizes_system_directory_modes_under_private_umask
     test_deb_builder_smoke
     test_rpm_builder_smoke
     test_pacman_builder_metadata_smoke
