@@ -20,6 +20,12 @@ pub fn compare_package_versions(left: &str, right: &str) -> Option<Ordering> {
     Some(left.cmp(&right))
 }
 
+/// Parses upstream app package versions for updater state comparisons.
+///
+/// Accepts three or four numeric segments such as `26.422.30944` or
+/// `26.422.30944.2080`, strips package/build suffixes (`+...` and `-...`),
+/// normalizes three-segment versions, and rejects timestamp-style legacy
+/// majors (`>= 1000`).
 fn parse_package_version(version: &str) -> Option<Vec<u32>> {
     let without_build_metadata = version
         .split_once('+')
