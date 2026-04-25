@@ -82,9 +82,12 @@ Package outputs land in `dist/`:
 
 | Target | Output |
 | --- | --- |
-| Debian | `dist/codex-app_YYYY.MM.DD.HHMMSS_amd64.deb` |
-| RPM | `dist/codex-app-YYYY.MM.DD.HHMMSS-<release>.x86_64.rpm` |
-| Arch Linux | `dist/codex-app-YYYY.MM.DD.HHMMSS-1-x86_64.pkg.tar.zst` |
+| Debian | `dist/codex-app_<upstream-version>_amd64.deb` |
+| RPM | `dist/codex-app-<upstream-version>-1.x86_64.rpm` |
+| Arch Linux | `dist/codex-app-<upstream-version>-1-x86_64.pkg.tar.zst` |
+
+The package version comes from the upstream Codex app bundle. For example,
+`26.422.30944 (2080)` becomes `26.422.30944.2080`.
 
 Native packages are named `codex-app`. They declare replacement metadata for
 the older `codex-desktop` package name where the package format supports it.

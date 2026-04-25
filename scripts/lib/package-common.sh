@@ -20,6 +20,29 @@ ensure_app_layout() {
     [ -x "$APP_DIR/start.sh" ] || error "Missing launcher: $APP_DIR/start.sh"
 }
 
+resolve_package_version() {
+    if [ -n "${PACKAGE_VERSION:-}" ]; then
+        printf '%s\n' "$PACKAGE_VERSION"
+        return
+    fi
+
+    local metadata_file="$APP_DIR/codex-app-version.env"
+    [ -f "$metadata_file" ] || error "Missing app version metadata: $metadata_file. Run ./install.sh first or set PACKAGE_VERSION."
+
+    # shellcheck disable=SC1090
+    . "$metadata_file"
+
+    local version="${CODEX_APP_PACKAGE_VERSION:-}"
+    [ -n "$version" ] || error "Missing CODEX_APP_PACKAGE_VERSION in $metadata_file"
+    case "$version" in
+        *[!A-Za-z0-9.+~]*)
+            error "Invalid package version in $metadata_file: $version"
+            ;;
+    esac
+
+    printf '%s\n' "$version"
+}
+
 updater_binary_is_stale() {
     local binary="$1"
 

@@ -54,10 +54,10 @@ pub async fn build_update(
     config: &RuntimeConfig,
     state: &mut PersistedState,
     paths: &RuntimePaths,
-    candidate_version: &str,
+    workspace_id: &str,
     dmg_path: &Path,
 ) -> Result<BuildArtifacts> {
-    let workspace = BuilderWorkspace::prepare(&config.workspace_root, candidate_version)?;
+    let workspace = BuilderWorkspace::prepare(&config.workspace_root, workspace_id)?;
     let build_path = build_command_path();
 
     state.status = UpdateStatus::PreparingWorkspace;
@@ -79,13 +79,16 @@ pub async fn build_update(
     .await
     .context("install.sh failed during local rebuild")?;
 
+    let package_version = app_package_version(&workspace.app_dir)?;
+    state.candidate_version = Some(package_version.clone());
+
     state.status = UpdateStatus::BuildingPackage;
     state.save(&paths.state_file)?;
 
     let build_script = package_build_script(&workspace.bundle_dir);
     run_and_log(
         Command::new(&build_script)
-            .env("PACKAGE_VERSION", candidate_version)
+            .env("PACKAGE_VERSION", &package_version)
             .env("APP_DIR_OVERRIDE", &workspace.app_dir)
             .env("DIST_DIR_OVERRIDE", &workspace.dist_dir)
             .env("UPDATER_BINARY_SOURCE", std::env::current_exe()?)
@@ -110,12 +113,34 @@ pub async fn build_update(
         package_path: Some(package_path.clone()),
     };
     state.save(&paths.state_file)?;
-    info!(candidate_version, package = %package_path.display(), "local update build ready");
+    info!(candidate_version = %package_version, package = %package_path.display(), "local update build ready");
 
     Ok(BuildArtifacts {
         workspace_dir: workspace.workspace_dir,
         package_path,
     })
+}
+
+fn app_package_version(app_dir: &Path) -> Result<String> {
+    let metadata_path = app_dir.join("codex-app-version.env");
+    let metadata = fs::read_to_string(&metadata_path)
+        .with_context(|| format!("Failed to read {}", metadata_path.display()))?;
+
+    let version = metadata
+        .lines()
+        .find_map(|line| line.strip_prefix("CODEX_APP_PACKAGE_VERSION="))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .context("Missing CODEX_APP_PACKAGE_VERSION in generated app metadata")?;
+
+    anyhow::ensure!(
+        version
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'~')),
+        "Invalid CODEX_APP_PACKAGE_VERSION in generated app metadata: {version}"
+    );
+
+    Ok(version.to_string())
 }
 
 #[derive(Debug, Clone)]
@@ -129,8 +154,8 @@ struct BuilderWorkspace {
 }
 
 impl BuilderWorkspace {
-    fn prepare(workspace_root: &Path, candidate_version: &str) -> Result<Self> {
-        let workspace_dir = workspace_root.join("workspaces").join(candidate_version);
+    fn prepare(workspace_root: &Path, workspace_id: &str) -> Result<Self> {
+        let workspace_dir = workspace_root.join("workspaces").join(workspace_id);
         let bundle_dir = workspace_dir.join("builder");
         let dist_dir = workspace_dir.join("dist");
         let app_dir = workspace_dir.join("codex-app");
@@ -385,6 +410,11 @@ set -euo pipefail
 mkdir -p "${CODEX_INSTALL_DIR}"
 echo launcher > "${CODEX_INSTALL_DIR}/start.sh"
 chmod +x "${CODEX_INSTALL_DIR}/start.sh"
+cat > "${CODEX_INSTALL_DIR}/codex-app-version.env" <<'EOF'
+CODEX_APP_UPSTREAM_VERSION=26.422.30944
+CODEX_APP_UPSTREAM_BUILD=2080
+CODEX_APP_PACKAGE_VERSION=26.422.30944.2080
+EOF
 "#,
         )?;
         #[cfg(unix)]
@@ -441,17 +471,24 @@ chmod +x "${CODEX_INSTALL_DIR}/start.sh"
         fs::write(&dmg_path, b"dmg")?;
 
         let mut state = PersistedState::new(true);
-        let artifacts = build_update(
-            &config,
-            &mut state,
-            &paths,
-            "2026.03.24+abcd1234",
-            &dmg_path,
-        )
-        .await?;
+        let artifacts =
+            build_update(&config, &mut state, &paths, "678cd508ffe0", &dmg_path).await?;
         assert_eq!(state.status, UpdateStatus::ReadyToInstall);
+        assert_eq!(
+            state.candidate_version.as_deref(),
+            Some("26.422.30944.2080")
+        );
         assert!(artifacts.workspace_dir.exists());
         assert!(artifacts.package_path.exists());
+        assert!(
+            artifacts
+                .package_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.contains("26.422.30944.2080")),
+            "expected upstream app version in package filename, got {}",
+            artifacts.package_path.display()
+        );
         assert!(
             is_native_package_file(&artifacts.package_path),
             "expected a native package (.deb, .rpm, or .pkg.tar.zst), got {}",

@@ -208,18 +208,18 @@ mod tests {
         let temp = tempdir()?;
         let path = temp.path().join("state.json");
         let mut state = PersistedState::new(false);
-        state.installed_version = "2026.03.24+deadbeef".to_string();
+        state.installed_version = "26.422.30944.2079".to_string();
         state.status = UpdateStatus::WaitingForAppExit;
-        state.candidate_version = Some("2026.03.25+feedface".to_string());
+        state.candidate_version = Some("26.422.30944.2080".to_string());
         state.notified_events.insert("ready_to_install".to_string());
         state.save(&path)?;
 
         let loaded = PersistedState::load_or_default(&path, true)?;
-        assert_eq!(loaded.installed_version, "2026.03.24+deadbeef");
+        assert_eq!(loaded.installed_version, "26.422.30944.2079");
         assert_eq!(loaded.status, UpdateStatus::WaitingForAppExit);
         assert_eq!(
             loaded.candidate_version.as_deref(),
-            Some("2026.03.25+feedface")
+            Some("26.422.30944.2080")
         );
         assert!(loaded.notified_events.contains("ready_to_install"));
         assert!(!loaded.auto_install_on_app_exit);
@@ -233,7 +233,7 @@ mod tests {
         fs::write(
             &path,
             r#"{
-  "installed_version": "2026.03.24+deadbeef",
+  "installed_version": "26.422.30944.2079",
   "candidate_version": null,
   "status": "idle",
   "last_check_at": null,
@@ -291,12 +291,12 @@ mod tests {
         let temp = tempdir()?;
         let path = temp.path().join("state.json");
         let mut state = PersistedState::new(true);
-        state.installed_version = "2026.04.20.120000".to_string();
+        state.installed_version = "26.422.30944.2080".to_string();
 
         state.save(&path)?;
 
         let content = fs::read_to_string(&path)?;
-        assert!(content.contains("\"installed_version\": \"2026.04.20.120000\""));
+        assert!(content.contains("\"installed_version\": \"26.422.30944.2080\""));
 
         let leftover_temp_files = fs::read_dir(temp.path())?
             .filter_map(|entry| entry.ok())
