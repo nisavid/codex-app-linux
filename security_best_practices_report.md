@@ -62,19 +62,19 @@ None identified in the tracked source review. The review did not include generat
 - Impact: source replacement between validation and package-manager consumption is reduced, but a caller who can satisfy `pkexec` can still present a different valid-looking `codex-app` package path.
 - Recommendation: persist a trusted expected digest/identity for updater-generated artifacts and re-check it against the staged copy immediately before install.
 
-### M-3: Updater rebuild still allows configurable builder roots
+### M-3: Updater rebuild environment is narrowed, with explicit developer override
 
 - Location: [packaging/linux/packaged-runtime.sh](/home/nisavid/src/nisavid/codex-app-linux/packaging/linux/packaged-runtime.sh:16), [updater/src/builder.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/builder.rs:73)
-- Evidence: the packaged launcher no longer imports `PATH` into the user systemd manager, and updater rebuilds run `install.sh` plus package build scripts with `/usr/local/sbin:/usr/local/bin:/usr/bin:/bin`. The configured `builder_bundle_root` can still select which builder scripts are copied.
-- Impact: user-writable `PATH` entries no longer influence updater rebuild commands, but custom builder roots can still redirect the rebuild pipeline.
-- Recommendation: lock packaged updater mode to root-owned `/usr/lib/codex-app/update-builder`; allow custom builder roots only under explicit developer mode; validate canonical paths, ownership, and permissions.
+- Evidence: the packaged launcher no longer imports `PATH` into the user systemd manager, updater rebuilds run `install.sh` plus package build scripts with `/usr/local/sbin:/usr/local/bin:/usr/bin:/bin`, and packaged installs force `builder_bundle_root` to `/usr/lib/codex-app/update-builder` unless `developer_mode = true`.
+- Impact: user-writable `PATH` entries no longer influence updater rebuild commands, and builder-root redirects are explicit developer-mode behavior.
+- Recommendation: validate packaged builder-root ownership and permissions before copying builder scripts.
 
 ### M-4: User-controlled runtime config can redirect the update supply chain
 
 - Location: [updater/src/config.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/config.rs:13), [updater/src/builder.rs](/home/nisavid/src/nisavid/codex-app-linux/updater/src/builder.rs:69)
-- Evidence: config supports arbitrary `dmg_url`, `workspace_root`, and `builder_bundle_root`; builder scripts are copied and executed from `builder_bundle_root`.
-- Impact: packaged production mode can be redirected to untrusted builders or payloads by user config, blurring the boundary between supported update behavior and developer override behavior.
-- Recommendation: lock packaged updater mode to root-owned `/usr/lib/codex-app/update-builder`; allow custom builder roots only under explicit developer mode; validate canonical paths, ownership, and permissions.
+- Evidence: config still supports arbitrary `dmg_url` and `workspace_root`; `builder_bundle_root` requires `developer_mode = true` when the packaged builder root exists.
+- Impact: packaged production mode is less exposed to untrusted builders, but payload source and workspace redirects remain developer-visible supply-chain controls.
+- Recommendation: validate packaged builder-root ownership and permissions, and gate non-default `dmg_url` behind equivalent trusted-metadata verification.
 
 ### M-5: Package payload normalization does not authenticate generated contents
 
