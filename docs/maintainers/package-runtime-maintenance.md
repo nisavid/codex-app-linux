@@ -239,6 +239,28 @@ pacman -Qlp dist/codex-app-*.pkg.tar.* | sed -n '1,80p'
 
 Public release gate:
 
+First verify the upstream macOS artifact with Apple tooling on macOS:
+
+```bash
+CODEX_DMG_SHA256=<reviewed-dmg-sha256> \
+make apple-dmg-verify DMG=/path/to/Codex.dmg
+```
+
+`scripts/verify-apple-dmg.sh` verifies the DMG hash, DMG container integrity,
+the contained `Codex.app` bundle ID, Sparkle `SUPublicEDKey`, Developer ID
+authority, Apple Team ID, strict code signature validity, Gatekeeper assessment,
+and stapled app notarization ticket. The pinned upstream trust inputs are:
+
+- bundle ID: `com.openai.codex`
+- Apple Team ID: `2DC432GLL2`
+- Developer ID authority: `Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)`
+- Sparkle public EdDSA key: `rhcBvttuqDFriyNqwTQJR3L4UT1WjIK4QxtwtwusVic=`
+
+DMG Gatekeeper and DMG stapler checks run and are reported by default. Set
+`CODEX_REQUIRE_DMG_GATEKEEPER=1` or `CODEX_REQUIRE_DMG_STAPLE=1` when the public
+release policy requires the DMG container itself to pass those checks, not only
+the contained app.
+
 ```bash
 CODEX_DMG_SHA256=<reviewed-dmg-sha256> \
 REQUIRE_RELEASE_SIGNATURE=1 \
@@ -255,6 +277,10 @@ signature against that public key in a temporary keyring. Set
 `CODEX_RELEASE_GPG_PUBLIC_KEY=/path/to/public-key.asc` to supply a pre-exported
 public key; otherwise the gate exports the public key from
 `CODEX_RELEASE_GPG_KEY`.
+
+For CI-backed upstream verification, run the manual `Verify Apple DMG` GitHub
+Actions workflow. It downloads the upstream DMG on a macOS runner and runs the
+same `scripts/verify-apple-dmg.sh` checks before Linux release packaging.
 
 Launcher or webview changes:
 
