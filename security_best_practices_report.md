@@ -19,7 +19,7 @@ None identified in the tracked source review. The review did not include generat
 - Location: [install.sh](/home/nisavid/src/nisavid/codex-app-linux/install.sh:685)
 - Evidence: the generated launcher now omits `--no-sandbox` and `--disable-gpu-sandbox` by default. It retains an explicit `CODEX_APP_DISABLE_ELECTRON_SANDBOX=1` compatibility fallback. Generated upstream `BrowserWindow` settings were not inspectable because `codex-app/` is absent. `scripts/inspect-electron-security.js` flags high-confidence static anti-patterns such as `nodeIntegration: true`, `contextIsolation: false`, `sandbox: false`, insecure `<webview>` attributes, and `shell.openExternal` review points.
 - Impact: renderer, webview, or malicious local-origin compromise now has a stronger Chromium process boundary by default, but generated app settings and the explicit opt-out still need release-gate review.
-- Current controls: sandboxed launch by default, an explicit documented lower-security fallback, and `make release-gate` runs the generated-app inspector before public artifact publication.
+- Current controls: sandboxed launch by default, an explicit documented lower-security fallback, and `make release-gate` extracts `resources/app.asar` and runs the generated-app inspector before public artifact publication.
 - Recommendation: after building the current generated app, run `make release-gate` plus manual inspection of generated app `webPreferences`, navigation, webview, IPC, CSP, and `openExternal` handling before public release; keep sandbox disablement opt-in only.
 
 ### H-2: Mutable upstream/update payloads are not authenticated before rebuild and install

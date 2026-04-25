@@ -246,9 +246,9 @@ CODEX_RELEASE_GPG_KEY=<key-id-or-email> \
 make release-gate
 ```
 
-The gate verifies the upstream DMG hash, runs the generated-app Electron
-security inspector, requires matching native package metadata tools for package
-identity checks, writes `dist/SHA256SUMS`, and writes a detached
+The gate verifies the upstream DMG hash, extracts and inspects
+`codex-app/resources/app.asar`, requires matching native package metadata tools
+for package identity checks, writes `dist/SHA256SUMS`, and writes a detached
 `dist/SHA256SUMS.asc` signature when signing is required.
 
 Launcher or webview changes:

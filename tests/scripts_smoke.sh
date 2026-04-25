@@ -683,11 +683,13 @@ test_release_gate_writes_checksums_and_requires_signature() {
     local bin_dir="$workspace/bin"
     local expected_hash
 
-    mkdir -p "$workspace/codex-app" "$workspace/dist" "$bin_dir"
+    mkdir -p "$workspace/codex-app/resources" "$workspace/asar-extracted" "$workspace/dist" "$bin_dir"
     printf 'dmg\n' > "$workspace/Codex.dmg"
     expected_hash="$(sha256sum "$workspace/Codex.dmg" | awk '{print $1}')"
-    printf 'console.log("safe")\n' > "$workspace/codex-app/main.js"
+    printf 'asar\n' > "$workspace/codex-app/resources/app.asar"
+    printf 'console.log("safe")\n' > "$workspace/asar-extracted/main.js"
     printf 'package\n' > "$workspace/dist/codex-app_26.422.30944.2080_amd64.deb"
+    printf 'signature\n' > "$workspace/dist/codex-app-26.422.30944.2080-1-x86_64.pkg.tar.zst.sig"
     cat > "$bin_dir/gpg" <<'SCRIPT'
 #!/bin/bash
 output=""
@@ -702,7 +704,16 @@ done
 [ -n "$output" ] || exit 2
 printf 'signature\n' > "$output"
 SCRIPT
+    cat > "$bin_dir/asar" <<'SCRIPT'
+#!/bin/bash
+if [ "$1" != "extract" ]; then
+    exit 2
+fi
+mkdir -p "$3"
+cp -a "$TEST_ASAR_EXTRACT_SOURCE/." "$3/"
+SCRIPT
     chmod +x "$bin_dir/gpg"
+    chmod +x "$bin_dir/asar"
 
     (
         cd "$workspace"
@@ -711,12 +722,83 @@ SCRIPT
         CODEX_RELEASE_GATE_SKIP_PACKAGE_METADATA=1 \
         REQUIRE_RELEASE_SIGNATURE=1 \
         CODEX_RELEASE_GPG_KEY="test@example.invalid" \
+        TEST_ASAR_EXTRACT_SOURCE="$workspace/asar-extracted" \
         "$REPO_DIR/scripts/release-gate.sh"
     )
 
     assert_file_exists "$workspace/dist/SHA256SUMS"
     assert_file_exists "$workspace/dist/SHA256SUMS.asc"
     assert_contains "$workspace/dist/SHA256SUMS" "codex-app_26.422.30944.2080_amd64.deb"
+    assert_not_contains "$workspace/dist/SHA256SUMS" ".pkg.tar.zst.sig"
+}
+
+test_release_gate_removes_stale_signature_when_unsigned() {
+    info "Checking release gate removes stale checksum signature for unsigned runs"
+    local workspace="$TMP_DIR/release-gate-stale-signature"
+    local bin_dir="$workspace/bin"
+    local expected_hash
+
+    mkdir -p "$workspace/codex-app/resources" "$workspace/asar-extracted" "$workspace/dist" "$bin_dir"
+    printf 'dmg\n' > "$workspace/Codex.dmg"
+    expected_hash="$(sha256sum "$workspace/Codex.dmg" | awk '{print $1}')"
+    printf 'asar\n' > "$workspace/codex-app/resources/app.asar"
+    printf 'console.log("safe")\n' > "$workspace/asar-extracted/main.js"
+    printf 'package\n' > "$workspace/dist/codex-app_26.422.30944.2080_amd64.deb"
+    printf 'stale-signature\n' > "$workspace/dist/SHA256SUMS.asc"
+    cat > "$bin_dir/asar" <<'SCRIPT'
+#!/bin/bash
+if [ "$1" != "extract" ]; then
+    exit 2
+fi
+mkdir -p "$3"
+cp -a "$TEST_ASAR_EXTRACT_SOURCE/." "$3/"
+SCRIPT
+    chmod +x "$bin_dir/asar"
+
+    (
+        cd "$workspace"
+        PATH="$bin_dir:$PATH" \
+        CODEX_DMG_SHA256="$expected_hash" \
+        CODEX_RELEASE_GATE_SKIP_PACKAGE_METADATA=1 \
+        TEST_ASAR_EXTRACT_SOURCE="$workspace/asar-extracted" \
+        "$REPO_DIR/scripts/release-gate.sh"
+    )
+
+    [ ! -e "$workspace/dist/SHA256SUMS.asc" ] || fail "Expected unsigned release gate to remove stale signature"
+}
+
+test_release_gate_fails_on_insecure_asar_contents() {
+    info "Checking release gate scans extracted app.asar contents"
+    local workspace="$TMP_DIR/release-gate-insecure-asar"
+    local bin_dir="$workspace/bin"
+    local expected_hash
+
+    mkdir -p "$workspace/codex-app/resources" "$workspace/asar-extracted" "$workspace/dist" "$bin_dir"
+    printf 'dmg\n' > "$workspace/Codex.dmg"
+    expected_hash="$(sha256sum "$workspace/Codex.dmg" | awk '{print $1}')"
+    printf 'asar\n' > "$workspace/codex-app/resources/app.asar"
+    printf 'new BrowserWindow({webPreferences:{nodeIntegration:true}})\n' > "$workspace/asar-extracted/main.js"
+    printf 'package\n' > "$workspace/dist/codex-app_26.422.30944.2080_amd64.deb"
+    cat > "$bin_dir/asar" <<'SCRIPT'
+#!/bin/bash
+if [ "$1" != "extract" ]; then
+    exit 2
+fi
+mkdir -p "$3"
+cp -a "$TEST_ASAR_EXTRACT_SOURCE/." "$3/"
+SCRIPT
+    chmod +x "$bin_dir/asar"
+
+    if (
+        cd "$workspace"
+        PATH="$bin_dir:$PATH" \
+        CODEX_DMG_SHA256="$expected_hash" \
+        CODEX_RELEASE_GATE_SKIP_PACKAGE_METADATA=1 \
+        TEST_ASAR_EXTRACT_SOURCE="$workspace/asar-extracted" \
+        "$REPO_DIR/scripts/release-gate.sh" >/dev/null 2>&1
+    ); then
+        fail "Expected release gate to fail on insecure app.asar contents"
+    fi
 }
 
 make_fake_extracted_asar() {
@@ -820,6 +902,8 @@ main() {
     test_electron_security_inspector_flags_insecure_generated_app
     test_release_gate_requires_verified_dmg_hash
     test_release_gate_writes_checksums_and_requires_signature
+    test_release_gate_removes_stale_signature_when_unsigned
+    test_release_gate_fails_on_insecure_asar_contents
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
     test_linux_file_manager_patch_fails_soft

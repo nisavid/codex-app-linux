@@ -10,6 +10,7 @@ DMG_PATH="${DMG:-$PWD/Codex.dmg}"
 CHECKSUM_FILE="${CHECKSUM_FILE:-$DIST_DIR/SHA256SUMS}"
 REQUIRE_RELEASE_SIGNATURE="${REQUIRE_RELEASE_SIGNATURE:-0}"
 CODEX_RELEASE_GATE_SKIP_PACKAGE_METADATA="${CODEX_RELEASE_GATE_SKIP_PACKAGE_METADATA:-0}"
+RELEASE_GATE_TMP_DIR=""
 
 info() {
     echo "[release-gate] $*" >&2
@@ -31,6 +32,13 @@ require_dir() {
     local label="$2"
     [ -d "$path" ] || error "Missing $label: $path"
 }
+
+cleanup() {
+    if [ -n "$RELEASE_GATE_TMP_DIR" ]; then
+        rm -rf "$RELEASE_GATE_TMP_DIR"
+    fi
+}
+trap cleanup EXIT
 
 sri_to_hex() {
     local sri="$1"
@@ -68,6 +76,20 @@ verify_dmg_hash() {
 inspect_generated_app() {
     require_dir "$APP_DIR" "generated app"
     node "$REPO_DIR/scripts/inspect-electron-security.js" "$APP_DIR"
+
+    local asar_path="$APP_DIR/resources/app.asar"
+    require_file "$asar_path" "generated app.asar"
+
+    RELEASE_GATE_TMP_DIR="$(mktemp -d)"
+    local extracted="$RELEASE_GATE_TMP_DIR/app-asar"
+    if command -v asar >/dev/null 2>&1; then
+        asar extract "$asar_path" "$extracted"
+    elif command -v npx >/dev/null 2>&1; then
+        npx --yes asar extract "$asar_path" "$extracted"
+    else
+        error "asar or npx is required to inspect $asar_path"
+    fi
+    node "$REPO_DIR/scripts/inspect-electron-security.js" "$extracted"
 }
 
 collect_packages() {
@@ -75,7 +97,13 @@ collect_packages() {
     PACKAGES=(
         "$DIST_DIR"/codex-app_*.deb
         "$DIST_DIR"/codex-app-*.rpm
-        "$DIST_DIR"/codex-app-*.pkg.tar.*
+        "$DIST_DIR"/codex-app-*.pkg.tar.zst
+        "$DIST_DIR"/codex-app-*.pkg.tar.xz
+        "$DIST_DIR"/codex-app-*.pkg.tar.gz
+        "$DIST_DIR"/codex-app-*.pkg.tar.bz2
+        "$DIST_DIR"/codex-app-*.pkg.tar.lz
+        "$DIST_DIR"/codex-app-*.pkg.tar.lz4
+        "$DIST_DIR"/codex-app-*.pkg.tar.lz5
     )
     shopt -u nullglob
     [ "${#PACKAGES[@]}" -gt 0 ] || error "No native packages found in $DIST_DIR"
@@ -110,6 +138,7 @@ verify_package_metadata() {
 
 write_checksums() {
     mkdir -p "$DIST_DIR"
+    rm -f "${CHECKSUM_FILE}.asc"
     : > "$CHECKSUM_FILE"
 
     local package
