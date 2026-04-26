@@ -3,6 +3,10 @@
 This reference is for maintainers changing the Linux packaging, generated
 launcher, packaged runtime helper, or `codex-app-updater`.
 
+For security-specific follow-up, use [Security Backlog](security-backlog.md).
+For trust boundaries and attacker assumptions, use
+[Threat Model](threat-model.md).
+
 ## Source Of Truth
 
 | Area | Durable source | Generated or runtime output |
