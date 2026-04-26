@@ -2,6 +2,10 @@
 
 Date: 2026-04-25
 
+This is a point-in-time maintainer threat model for the Linux conversion,
+packaging, updater, and release flow. Track unresolved implementation work in
+[Security Backlog](security-backlog.md).
+
 ## Executive Summary
 
 The highest-risk themes are supply-chain integrity, local privilege transition, and renderer containment. The system is a local desktop packaging/conversion pipeline, but it publicly distributes native package artifacts and ships an intended auto-update path that downloads a mutable upstream DMG, rebuilds a Linux package, and installs it through `pkexec`. The most important review focus is therefore the path from upstream artifact trust to root-owned package install, followed by the Electron sandbox/webview local-origin boundary.
