@@ -46,5 +46,5 @@ source=()
 sha256sums=()
 
 package() {
-    cp -a "__STAGING_DIR__/." "${pkgdir}/"
+    cp -a --no-preserve=ownership "__STAGING_DIR__/." "${pkgdir}/"
 }

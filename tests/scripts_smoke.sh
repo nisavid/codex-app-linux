@@ -436,9 +436,10 @@ grep -q 'pkgname=codex-app' PKGBUILD || exit 11
 grep -q "provides=('codex-desktop')" PKGBUILD || exit 12
 grep -q "conflicts=('codex-desktop')" PKGBUILD || exit 13
 grep -q "install=codex-app.install" PKGBUILD || exit 14
-test -x "$TEST_PACMAN_STAGING/usr/bin/codex-app" || exit 15
-test -d "$TEST_PACMAN_STAGING/opt/codex-app" || exit 16
-test -f "$TEST_PACMAN_STAGING/usr/lib/codex-app/packaged-runtime.sh" || exit 17
+grep -q 'cp -a --no-preserve=ownership' PKGBUILD || exit 15
+test -x "$TEST_PACMAN_STAGING/usr/bin/codex-app" || exit 16
+test -d "$TEST_PACMAN_STAGING/opt/codex-app" || exit 17
+test -f "$TEST_PACMAN_STAGING/usr/lib/codex-app/packaged-runtime.sh" || exit 18
 touch "$PKGDEST/codex-app-26.422.30944.2080-1-x86_64.pkg.tar.zst"
 SCRIPT
     cat > "$bin_dir/cargo" <<'SCRIPT'
@@ -461,6 +462,7 @@ SCRIPT
     assert_contains "$captured_pkgbuild" "provides=('codex-desktop')"
     assert_contains "$captured_pkgbuild" "conflicts=('codex-desktop')"
     assert_contains "$captured_pkgbuild" "install=codex-app.install"
+    assert_contains "$captured_pkgbuild" 'cp -a --no-preserve=ownership'
     assert_file_exists "$workspace/staging/usr/bin/codex-app"
     assert_file_exists "$workspace/staging/usr/lib/codex-app/packaged-runtime.sh"
 }
