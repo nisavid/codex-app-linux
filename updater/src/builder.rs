@@ -640,6 +640,7 @@ EOF
             workspace_root: cache_root,
             builder_bundle_root: bundle_root,
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
+            cli_path: None,
         };
         let dmg_path = temp.path().join("Codex.dmg");
         fs::write(&dmg_path, b"dmg")?;
@@ -768,6 +769,7 @@ exit 88
             workspace_root: cache_root,
             builder_bundle_root: bundle_root,
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
+            cli_path: None,
         };
         let dmg_path = temp.path().join("Codex.dmg");
         fs::write(&dmg_path, b"dmg")?;

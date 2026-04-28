@@ -649,6 +649,7 @@ test_launcher_template_sanity() {
     assert_contains "$generated" "prompt_install_missing_cli"
     assert_contains "$generated" "Install it now? \\[Y/n\\]"
     assert_contains "$generated" "is_interactive_terminal"
+    assert_not_contains "$generated" "--cli-path \"\$CODEX_CLI_PATH\""
     assert_contains "$REPO_DIR/packaging/linux/packaged-runtime.sh" "CHROME_DESKTOP"
     assert_not_contains "$REPO_DIR/packaging/linux/packaged-runtime.sh" "        PATH \\\\"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
@@ -746,6 +747,427 @@ SCRIPT
         fail "Expected Electron fixture to exit"
     fi
     [ ! -e "$app_pid_file" ] || fail "Expected launcher cleanup to remove app pid"
+}
+
+test_launcher_uses_updater_discovered_cli_without_path_codex() {
+    info "Checking launcher accepts updater CLI discovery before direct PATH fallback"
+    local workspace="$TMP_DIR/generated-launcher-updater-cli"
+    local app_dir="$workspace/codex-app"
+    local generated="$app_dir/start.sh"
+    local bin_dir="$workspace/bin"
+    local xdg_cache="$workspace/cache"
+    local xdg_state="$workspace/state"
+    local electron_env_file="$workspace/electron.env"
+    local updater_args_file="$workspace/updater.args"
+    local discovered_cli="$workspace/fallback/codex"
+    local launcher_log="$xdg_cache/codex-app/launcher.log"
+
+    mkdir -p "$workspace" "$bin_dir" "$app_dir" "$xdg_cache" "$xdg_state" "$(dirname "$discovered_cli")"
+    (
+        export CODEX_INSTALLER_SKIP_MAIN=1
+        export CODEX_INSTALL_DIR="$app_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        create_start_script
+    )
+
+    cat > "$app_dir/electron" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$CODEX_CLI_PATH" > "$TEST_ELECTRON_ENV_FILE"
+SCRIPT
+    cat > "$bin_dir/codex-app-updater" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" > "$TEST_UPDATER_ARGS_FILE"
+printf 'updater warning on stderr\n' >&2
+printf '%s\n' "$TEST_DISCOVERED_CODEX"
+SCRIPT
+    cat > "$discovered_cli" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf 'codex-cli v0.42.0\n'
+SCRIPT
+    chmod +x "$app_dir/electron" "$bin_dir/codex-app-updater" "$discovered_cli" "$generated"
+
+    set +e
+    TEST_ELECTRON_ENV_FILE="$electron_env_file" \
+        TEST_UPDATER_ARGS_FILE="$updater_args_file" \
+        TEST_DISCOVERED_CODEX="$discovered_cli" \
+        PATH="$bin_dir:/usr/bin" \
+        XDG_CACHE_HOME="$xdg_cache" \
+        XDG_STATE_HOME="$xdg_state" \
+        CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 \
+        "$generated" >/dev/null 2>&1
+    local launcher_status=$?
+    set -e
+    if [ "$launcher_status" -ne 0 ]; then
+        [ ! -f "$launcher_log" ] || sed 's/^/[launcher-log] /' "$launcher_log" >&2
+        fail "Expected launcher to continue with updater-discovered Codex CLI path"
+    fi
+
+    [ "$(cat "$electron_env_file")" = "$discovered_cli" ] || fail "Expected updater-discovered Codex CLI path to reach Electron"
+    assert_contains "$updater_args_file" "cli-preflight"
+    assert_contains "$updater_args_file" "--print-path"
+    assert_not_contains "$updater_args_file" "--cli-path"
+    assert_contains "$launcher_log" "updater warning on stderr"
+    assert_not_contains "$launcher_log" "Codex CLI not found"
+}
+
+test_launcher_falls_back_to_path_codex_when_updater_preflight_fails() {
+    info "Checking launcher falls back to PATH codex after updater preflight failure"
+    local workspace="$TMP_DIR/generated-launcher-updater-fallback"
+    local app_dir="$workspace/codex-app"
+    local generated="$app_dir/start.sh"
+    local bin_dir="$workspace/bin"
+    local xdg_cache="$workspace/cache"
+    local xdg_state="$workspace/state"
+    local electron_env_file="$workspace/electron.env"
+    local updater_args_file="$workspace/updater.args"
+    local path_cli="$bin_dir/codex"
+    local launcher_log="$xdg_cache/codex-app/launcher.log"
+
+    mkdir -p "$workspace" "$bin_dir" "$app_dir" "$xdg_cache" "$xdg_state"
+    (
+        export CODEX_INSTALLER_SKIP_MAIN=1
+        export CODEX_INSTALL_DIR="$app_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        create_start_script
+    )
+
+    cat > "$app_dir/electron" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$CODEX_CLI_PATH" > "$TEST_ELECTRON_ENV_FILE"
+SCRIPT
+    cat > "$bin_dir/codex-app-updater" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" > "$TEST_UPDATER_ARGS_FILE"
+exit 1
+SCRIPT
+    cat > "$path_cli" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf 'codex-cli v0.42.0\n'
+SCRIPT
+    chmod +x "$app_dir/electron" "$bin_dir/codex-app-updater" "$path_cli" "$generated"
+
+    TEST_ELECTRON_ENV_FILE="$electron_env_file" \
+    TEST_UPDATER_ARGS_FILE="$updater_args_file" \
+    PATH="$bin_dir:/usr/bin" \
+    XDG_CACHE_HOME="$xdg_cache" \
+    XDG_STATE_HOME="$xdg_state" \
+    CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 \
+    "$generated" >/dev/null 2>&1
+
+    [ "$(cat "$electron_env_file")" = "$path_cli" ] || fail "Expected PATH Codex CLI fallback to reach Electron"
+    assert_contains "$updater_args_file" "cli-preflight"
+    assert_contains "$updater_args_file" "--print-path"
+    assert_contains "$launcher_log" "Codex CLI prelaunch check failed"
+    assert_not_contains "$launcher_log" "unbound variable"
+    assert_not_contains "$launcher_log" "Codex CLI not found"
+}
+
+test_launcher_skips_relative_path_codex_and_uses_later_absolute_path() {
+    info "Checking launcher skips relative PATH Codex CLI entries"
+    local workspace="$TMP_DIR/generated-launcher-relative-path-skip"
+    local app_dir="$workspace/codex-app"
+    local generated="$app_dir/start.sh"
+    local rel_bin="$workspace/relbin"
+    local tool_bin="$workspace/bin"
+    local home_dir="$workspace/home"
+    local xdg_cache="$workspace/cache"
+    local xdg_state="$workspace/state"
+    local electron_env_file="$workspace/electron.env"
+    local path_cli="$tool_bin/codex"
+    local launcher_log="$xdg_cache/codex-app/launcher.log"
+
+    mkdir -p "$workspace" "$rel_bin" "$tool_bin" "$home_dir" "$app_dir" "$xdg_cache" "$xdg_state"
+    local tool
+    for tool in date dirname id mkdir tee uname; do
+        ln -s "/usr/bin/$tool" "$tool_bin/$tool"
+    done
+    (
+        export CODEX_INSTALLER_SKIP_MAIN=1
+        export CODEX_INSTALL_DIR="$app_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        create_start_script
+    )
+
+    cat > "$app_dir/electron" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$CODEX_CLI_PATH" > "$TEST_ELECTRON_ENV_FILE"
+SCRIPT
+    cat > "$rel_bin/codex" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf 'codex-cli v0.13.0\n'
+SCRIPT
+    cat > "$path_cli" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf 'codex-cli v0.42.0\n'
+SCRIPT
+    chmod +x "$app_dir/electron" "$rel_bin/codex" "$path_cli" "$generated"
+
+    (
+        cd "$workspace"
+        TEST_ELECTRON_ENV_FILE="$electron_env_file" \
+        HOME="$home_dir" \
+        PNPM_HOME="" \
+        BUN_INSTALL="" \
+        VOLTA_HOME="" \
+        ASDF_DATA_DIR="" \
+        MISE_DATA_DIR="" \
+        PATH="relbin:$tool_bin" \
+        XDG_CACHE_HOME="$xdg_cache" \
+        XDG_STATE_HOME="$xdg_state" \
+        CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 \
+        "$generated" >/dev/null 2>&1
+    )
+
+    [ "$(cat "$electron_env_file")" = "$path_cli" ] || fail "Expected launcher to skip relative PATH Codex CLI entry"
+    assert_not_contains "$launcher_log" "Codex CLI not found"
+}
+
+test_launcher_falls_back_to_known_cli_without_updater() {
+    info "Checking launcher fallback finds known Codex CLI paths without updater"
+    local workspace="$TMP_DIR/generated-launcher-known-cli-fallback"
+    local app_dir="$workspace/codex-app"
+    local generated="$app_dir/start.sh"
+    local bin_dir="$workspace/bin"
+    local home_dir="$workspace/home"
+    local xdg_cache="$workspace/cache"
+    local xdg_state="$workspace/state"
+    local electron_env_file="$workspace/electron.env"
+    local known_cli="$home_dir/.local/bin/codex"
+    local launcher_log="$xdg_cache/codex-app/launcher.log"
+
+    mkdir -p "$workspace" "$bin_dir" "$app_dir" "$xdg_cache" "$xdg_state" "$(dirname "$known_cli")"
+    local tool
+    for tool in date dirname id mkdir tee uname; do
+        ln -s "/usr/bin/$tool" "$bin_dir/$tool"
+    done
+    (
+        export CODEX_INSTALLER_SKIP_MAIN=1
+        export CODEX_INSTALL_DIR="$app_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        create_start_script
+    )
+
+    cat > "$app_dir/electron" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$CODEX_CLI_PATH" > "$TEST_ELECTRON_ENV_FILE"
+SCRIPT
+    cat > "$known_cli" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf 'codex-cli v0.42.0\n'
+SCRIPT
+    chmod +x "$app_dir/electron" "$known_cli" "$generated"
+
+    TEST_ELECTRON_ENV_FILE="$electron_env_file" \
+    HOME="$home_dir" \
+    PNPM_HOME="" \
+    BUN_INSTALL="" \
+    VOLTA_HOME="" \
+    ASDF_DATA_DIR="" \
+    MISE_DATA_DIR="" \
+    PATH="$bin_dir" \
+    XDG_CACHE_HOME="$xdg_cache" \
+    XDG_STATE_HOME="$xdg_state" \
+    CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 \
+    "$generated" >/dev/null 2>&1
+
+    [ "$(cat "$electron_env_file")" = "$known_cli" ] || fail "Expected known fallback Codex CLI path to reach Electron"
+    assert_not_contains "$launcher_log" "Codex CLI not found"
+}
+
+test_launcher_retains_updater_printed_cli_after_preflight_failure() {
+    info "Checking launcher keeps updater-discovered CLI after non-fatal preflight failure"
+    local workspace="$TMP_DIR/generated-launcher-updater-failed-with-path"
+    local app_dir="$workspace/codex-app"
+    local generated="$app_dir/start.sh"
+    local bin_dir="$workspace/bin"
+    local xdg_cache="$workspace/cache"
+    local xdg_state="$workspace/state"
+    local electron_env_file="$workspace/electron.env"
+    local updater_args_file="$workspace/updater.args"
+    local discovered_cli="$workspace/configured/codex"
+    local launcher_log="$xdg_cache/codex-app/launcher.log"
+
+    mkdir -p "$workspace" "$bin_dir" "$app_dir" "$xdg_cache" "$xdg_state" "$(dirname "$discovered_cli")"
+    (
+        export CODEX_INSTALLER_SKIP_MAIN=1
+        export CODEX_INSTALL_DIR="$app_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        create_start_script
+    )
+
+    cat > "$app_dir/electron" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$CODEX_CLI_PATH" > "$TEST_ELECTRON_ENV_FILE"
+SCRIPT
+    cat > "$bin_dir/codex-app-updater" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" > "$TEST_UPDATER_ARGS_FILE"
+printf 'registry lookup failed\n' >&2
+printf '%s\n' "$TEST_DISCOVERED_CODEX"
+exit 1
+SCRIPT
+    cat > "$discovered_cli" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf 'codex-cli v0.42.0\n'
+SCRIPT
+    chmod +x "$app_dir/electron" "$bin_dir/codex-app-updater" "$discovered_cli" "$generated"
+
+    set +e
+    TEST_ELECTRON_ENV_FILE="$electron_env_file" \
+        TEST_UPDATER_ARGS_FILE="$updater_args_file" \
+        TEST_DISCOVERED_CODEX="$discovered_cli" \
+        PATH="$bin_dir:/usr/bin" \
+        XDG_CACHE_HOME="$xdg_cache" \
+        XDG_STATE_HOME="$xdg_state" \
+        CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 \
+        "$generated" >/dev/null 2>&1
+    local launcher_status=$?
+    set -e
+    if [ "$launcher_status" -ne 0 ]; then
+        [ ! -f "$launcher_log" ] || sed 's/^/[launcher-log] /' "$launcher_log" >&2
+        fail "Expected launcher to continue with updater-printed Codex CLI path after preflight failure"
+    fi
+
+    [ "$(cat "$electron_env_file")" = "$discovered_cli" ] || fail "Expected updater-printed Codex CLI path to reach Electron after preflight failure"
+    assert_contains "$updater_args_file" "cli-preflight"
+    assert_contains "$updater_args_file" "--print-path"
+    assert_contains "$launcher_log" "Codex CLI prelaunch check failed"
+    assert_not_contains "$launcher_log" "Codex CLI not found"
+}
+
+test_launcher_rejects_invalid_configured_cli_before_path_fallback() {
+    info "Checking launcher rejects invalid configured CLI before PATH fallback"
+    local workspace="$TMP_DIR/generated-launcher-invalid-configured-cli"
+    local app_dir="$workspace/codex-app"
+    local generated="$app_dir/start.sh"
+    local bin_dir="$workspace/bin"
+    local xdg_cache="$workspace/cache"
+    local xdg_state="$workspace/state"
+    local electron_env_file="$workspace/electron.env"
+    local updater_args_file="$workspace/updater.args"
+    local path_cli="$bin_dir/codex"
+    local launcher_log="$xdg_cache/codex-app/launcher.log"
+
+    mkdir -p "$workspace" "$bin_dir" "$app_dir" "$xdg_cache" "$xdg_state"
+    (
+        export CODEX_INSTALLER_SKIP_MAIN=1
+        export CODEX_INSTALL_DIR="$app_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        create_start_script
+    )
+
+    cat > "$app_dir/electron" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$CODEX_CLI_PATH" > "$TEST_ELECTRON_ENV_FILE"
+SCRIPT
+    cat > "$bin_dir/codex-app-updater" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" > "$TEST_UPDATER_ARGS_FILE"
+printf 'Invalid config Codex CLI path /tmp/not-codex: expected an executable regular file\n' >&2
+exit 78
+SCRIPT
+    cat > "$path_cli" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf 'codex-cli v0.42.0\n'
+SCRIPT
+    chmod +x "$app_dir/electron" "$bin_dir/codex-app-updater" "$path_cli" "$generated"
+
+    set +e
+    TEST_ELECTRON_ENV_FILE="$electron_env_file" \
+        TEST_UPDATER_ARGS_FILE="$updater_args_file" \
+        PATH="$bin_dir:/usr/bin" \
+        XDG_CACHE_HOME="$xdg_cache" \
+        XDG_STATE_HOME="$xdg_state" \
+        CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 \
+        "$generated" >/dev/null 2>&1
+    local launcher_status=$?
+    set -e
+    [ "$launcher_status" -eq 78 ] || fail "Expected invalid configured Codex CLI path to exit 78, got $launcher_status"
+
+    [ ! -e "$electron_env_file" ] || fail "Expected Electron not to launch after invalid configured CLI path"
+    assert_contains "$updater_args_file" "cli-preflight"
+    assert_contains "$updater_args_file" "--print-path"
+    assert_contains "$launcher_log" "Invalid config Codex CLI path"
+    assert_not_contains "$launcher_log" "Using CODEX_CLI_PATH=$path_cli"
+}
+
+test_launcher_rejects_invalid_env_cli_with_updater_before_path_fallback() {
+    info "Checking launcher rejects invalid env CLI with updater before PATH fallback"
+    local workspace="$TMP_DIR/generated-launcher-invalid-env-cli"
+    local app_dir="$workspace/codex-app"
+    local generated="$app_dir/start.sh"
+    local bin_dir="$workspace/bin"
+    local xdg_cache="$workspace/cache"
+    local xdg_state="$workspace/state"
+    local electron_env_file="$workspace/electron.env"
+    local path_cli="$bin_dir/codex"
+    local invalid_cli="$workspace/missing/codex"
+    local launcher_log="$xdg_cache/codex-app/launcher.log"
+
+    mkdir -p "$workspace" "$bin_dir" "$app_dir" "$xdg_cache" "$xdg_state"
+    (
+        export CODEX_INSTALLER_SKIP_MAIN=1
+        export CODEX_INSTALL_DIR="$app_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/install.sh"
+        create_start_script
+    )
+
+    cat > "$app_dir/electron" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$CODEX_CLI_PATH" > "$TEST_ELECTRON_ENV_FILE"
+SCRIPT
+    cat > "$path_cli" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+printf 'codex-cli v0.42.0\n'
+SCRIPT
+    cat > "$bin_dir/codex-app-updater" <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+exit 1
+SCRIPT
+    chmod +x "$app_dir/electron" "$bin_dir/codex-app-updater" "$path_cli" "$generated"
+
+    set +e
+    TEST_ELECTRON_ENV_FILE="$electron_env_file" \
+        PATH="$bin_dir:/usr/bin" \
+        XDG_CACHE_HOME="$xdg_cache" \
+        XDG_STATE_HOME="$xdg_state" \
+        CODEX_CLI_PATH="$invalid_cli" \
+        CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 \
+        "$generated" >/dev/null 2>&1
+    local launcher_status=$?
+    set -e
+    [ "$launcher_status" -eq 78 ] || fail "Expected invalid CODEX_CLI_PATH to exit 78, got $launcher_status"
+
+    [ ! -e "$electron_env_file" ] || fail "Expected Electron not to launch after invalid CODEX_CLI_PATH"
+    assert_contains "$launcher_log" "Invalid environment Codex CLI path $invalid_cli"
+    assert_not_contains "$launcher_log" "Using CODEX_CLI_PATH=$path_cli"
 }
 
 test_launcher_help_preserves_existing_app_pid() {
@@ -1146,6 +1568,13 @@ main() {
     test_installer_rejects_short_app_version_metadata
     test_launcher_template_sanity
     test_launcher_lifecycle_cleans_child_processes
+    test_launcher_uses_updater_discovered_cli_without_path_codex
+    test_launcher_falls_back_to_path_codex_when_updater_preflight_fails
+    test_launcher_skips_relative_path_codex_and_uses_later_absolute_path
+    test_launcher_falls_back_to_known_cli_without_updater
+    test_launcher_retains_updater_printed_cli_after_preflight_failure
+    test_launcher_rejects_invalid_configured_cli_before_path_fallback
+    test_launcher_rejects_invalid_env_cli_with_updater_before_path_fallback
     test_launcher_help_preserves_existing_app_pid
     test_hash_workflow_opens_review_pr
     test_apple_dmg_verifier_pins_upstream_trust_inputs

@@ -495,8 +495,11 @@ export_packaged_runtime_env() {
 
 run_cli_preflight() {
     local allow_install_missing="${1:-0}"
+    CODEX_CLI_PREFLIGHT_ERROR=""
+    CODEX_CLI_PREFLIGHT_STATUS=0
     if ! command -v codex-app-updater >/dev/null 2>&1; then
         if [ "$allow_install_missing" = "1" ]; then
+            CODEX_CLI_PREFLIGHT_STATUS=127
             return 1
         fi
         return 0
@@ -504,26 +507,60 @@ run_cli_preflight() {
 
     local -a preflight_args=(
         cli-preflight
-        --cli-path "$CODEX_CLI_PATH"
         --print-path
     )
     if [ "$allow_install_missing" = "1" ]; then
         preflight_args+=(--allow-install-missing)
     fi
 
+    local preflight_stderr=""
+    preflight_stderr="$(mktemp -t codex-cli-preflight-stderr.XXXXXX)" || {
+        CODEX_CLI_PREFLIGHT_ERROR="Could not create temporary file for CLI preflight diagnostics"
+        return 1
+    }
+
     local refreshed_path=""
-    if ! refreshed_path="$(codex-app-updater "${preflight_args[@]}")"; then
+    local preflight_status=0
+    refreshed_path="$(codex-app-updater "${preflight_args[@]}" 2>"$preflight_stderr")" || preflight_status=$?
+    if [ "$preflight_status" -ne 0 ]; then
+        CODEX_CLI_PREFLIGHT_STATUS="$preflight_status"
+        CODEX_CLI_PREFLIGHT_ERROR="$(cat "$preflight_stderr")"
+        if [ -z "$CODEX_CLI_PREFLIGHT_ERROR" ]; then
+            CODEX_CLI_PREFLIGHT_ERROR="$refreshed_path"
+        fi
+        if [ -n "$refreshed_path" ] && is_valid_cli_path "$refreshed_path"; then
+            CODEX_CLI_PATH="$refreshed_path"
+            export CODEX_CLI_PATH
+        fi
+        if [ -s "$preflight_stderr" ]; then
+            cat "$preflight_stderr" >&2
+        fi
+        rm -f "$preflight_stderr"
         if [ "$allow_install_missing" = "1" ]; then
             return 1
         fi
-        notify_error "Codex CLI prelaunch check failed. Continuing with the current CLI state. Check the launcher and updater logs if Codex misbehaves."
-        return 0
+        return 1
     fi
+
+    if [ -s "$preflight_stderr" ]; then
+        cat "$preflight_stderr" >&2
+    fi
+    rm -f "$preflight_stderr"
 
     if [ -n "$refreshed_path" ]; then
         CODEX_CLI_PATH="$refreshed_path"
         export CODEX_CLI_PATH
     fi
+
+    return 0
+}
+
+is_configured_cli_preflight_failure() {
+    [ "${CODEX_CLI_PREFLIGHT_STATUS:-0}" = "78" ]
+}
+
+is_valid_cli_path() {
+    [ -n "${1:-}" ] && [[ "$1" = /* ]] && [ -f "$1" ] && [ -x "$1" ]
 }
 
 is_interactive_terminal() {
@@ -571,10 +608,61 @@ resolve_notification_icon() {
 }
 
 find_codex_cli() {
-    if command -v codex >/dev/null 2>&1; then
-        command -v codex
-        return 0
+    local path_entry=""
+    local candidate=""
+    local old_ifs="$IFS"
+    IFS=:
+    for path_entry in ${PATH:-}; do
+        if [ -z "$path_entry" ] || [[ "$path_entry" != /* ]]; then
+            continue
+        fi
+        candidate="$path_entry/codex"
+        if is_valid_cli_path "$candidate"; then
+            printf '%s\n' "$candidate"
+            IFS="$old_ifs"
+            return 0
+        fi
+    done
+    IFS="$old_ifs"
+
+    local -a candidates=()
+    if [ -n "${PNPM_HOME:-}" ] && [[ "$PNPM_HOME" = /* ]]; then
+        candidates+=("$PNPM_HOME/codex")
     fi
+    if [ -n "${BUN_INSTALL:-}" ] && [[ "$BUN_INSTALL" = /* ]]; then
+        candidates+=("$BUN_INSTALL/bin/codex")
+    fi
+    if [ -n "${VOLTA_HOME:-}" ] && [[ "$VOLTA_HOME" = /* ]]; then
+        candidates+=("$VOLTA_HOME/bin/codex")
+    fi
+    if [ -n "${ASDF_DATA_DIR:-}" ] && [[ "$ASDF_DATA_DIR" = /* ]]; then
+        candidates+=("$ASDF_DATA_DIR/shims/codex")
+    fi
+    if [ -n "${MISE_DATA_DIR:-}" ] && [[ "$MISE_DATA_DIR" = /* ]]; then
+        candidates+=("$MISE_DATA_DIR/shims/codex")
+    fi
+    if [ -n "${HOME:-}" ] && [[ "$HOME" = /* ]]; then
+        candidates+=(
+            "$HOME/.local/bin/codex"
+            "$HOME/.local/share/pnpm/codex"
+            "$HOME/.bun/bin/codex"
+            "$HOME/.volta/bin/codex"
+            "$HOME/.asdf/shims/codex"
+            "$HOME/.local/share/mise/shims/codex"
+            "$HOME/.nix-profile/bin/codex"
+            "$HOME/.local/state/nix/profile/bin/codex"
+            "$HOME/.yarn/bin/codex"
+        )
+    fi
+    candidates+=("/home/linuxbrew/.linuxbrew/bin/codex")
+
+    local candidate
+    for candidate in "${candidates[@]}"; do
+        if is_valid_cli_path "$candidate"; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
 
     return 1
 }
@@ -585,12 +673,17 @@ notify_error() {
     icon="$(resolve_notification_icon)"
     echo "$message"
     if command -v notify-send >/dev/null 2>&1; then
-        notify-send \
+        local notify_output=""
+        if ! notify_output="$(notify-send \
             -a "Codex" \
             -i "$icon" \
             -h "string:desktop-entry:codex-app" \
             "Codex" \
-            "$message"
+            "$message" 2>&1)"; then
+            if [ -n "$notify_output" ]; then
+                echo "Failed to show notification: $notify_output"
+            fi
+        fi
     fi
 }
 
@@ -671,13 +764,32 @@ if [ -d "$WEBVIEW_DIR" ] && [ "$(ls -A "$WEBVIEW_DIR" 2>/dev/null)" ]; then
     echo "Webview origin verified."
 fi
 
+export CHROME_DESKTOP="${CHROME_DESKTOP:-codex-app.desktop}"
+
+CODEX_CLI_PREFLIGHT_ERROR=""
+if ! run_cli_preflight 0; then
+    if is_configured_cli_preflight_failure; then
+        notify_error "$CODEX_CLI_PREFLIGHT_ERROR"
+        exit 78
+    fi
+    notify_error "Codex CLI prelaunch check failed. Continuing with the current CLI state. Check the launcher and updater logs if Codex misbehaves."
+fi
+
+if [ -n "${CODEX_CLI_PATH:-}" ] && ! is_valid_cli_path "$CODEX_CLI_PATH"; then
+    if [[ "$CODEX_CLI_PATH" != /* ]]; then
+        notify_error "Invalid environment Codex CLI path $CODEX_CLI_PATH: path must be absolute"
+    else
+        notify_error "Invalid environment Codex CLI path $CODEX_CLI_PATH: expected an executable regular file"
+    fi
+    exit 78
+fi
+
 if [ -z "${CODEX_CLI_PATH:-}" ]; then
     CODEX_CLI_PATH="$(find_codex_cli || true)"
     export CODEX_CLI_PATH
 fi
-export CHROME_DESKTOP="${CHROME_DESKTOP:-codex-app.desktop}"
 
-if [ -z "$CODEX_CLI_PATH" ]; then
+if [ -z "${CODEX_CLI_PATH:-}" ]; then
     if prompt_install_missing_cli; then
         if ! run_cli_preflight 1; then
             notify_error "Codex CLI automatic installation failed. Install with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
@@ -686,12 +798,10 @@ if [ -z "$CODEX_CLI_PATH" ]; then
     fi
 fi
 
-if [ -z "$CODEX_CLI_PATH" ]; then
+if [ -z "${CODEX_CLI_PATH:-}" ]; then
     notify_error "Codex CLI not found. Install with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
     exit 1
 fi
-
-run_cli_preflight 0
 
 export_packaged_runtime_env
 
