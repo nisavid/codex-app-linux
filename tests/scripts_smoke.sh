@@ -630,11 +630,19 @@ test_launcher_template_sanity() {
     )
 
     assert_file_exists "$generated"
-    assert_contains "$generated" "nohup python3 -m http.server --bind 127.0.0.1 5175"
+    assert_contains "$generated" "nohup python3 -m http.server 5175 --bind 127.0.0.1"
+    assert_contains "$generated" "saw_http_server=1"
+    assert_contains "$generated" "saw_webview_port=1"
     assert_not_contains "$generated" "pkill -f \"http.server 5175\""
     assert_contains "$generated" "cleanup_launcher"
-    assert_contains "$generated" "HTTP_PID"
+    assert_contains "$generated" 'kill "$ELECTRON_PID"'
+    assert_contains "$generated" "STARTED_WEBVIEW_PID"
+    assert_contains "$generated" "WEBVIEW_STARTED_BY_LAUNCHER"
+    assert_contains "$generated" "WEBVIEW_PID_FILE"
     assert_contains "$generated" "ELECTRON_PID"
+    assert_contains "$generated" "pid_is_main_electron_process"
+    assert_contains "$generated" '[[ "$cmdline" != *"--type="* ]]'
+    assert_contains "$generated" "detect_warm_start"
     assert_contains "$generated" "wait_for_webview_server"
     assert_contains "$generated" "verify_webview_origin"
     assert_contains "$generated" "Webview origin verified."
@@ -649,7 +657,7 @@ test_launcher_template_sanity() {
     assert_contains "$generated" "prompt_install_missing_cli"
     assert_contains "$generated" "Install it now? \\[Y/n\\]"
     assert_contains "$generated" "is_interactive_terminal"
-    assert_not_contains "$generated" "--cli-path \"\$CODEX_CLI_PATH\""
+    assert_contains "$generated" "--cli-path \"\$CODEX_CLI_PATH\""
     assert_contains "$REPO_DIR/packaging/linux/packaged-runtime.sh" "CHROME_DESKTOP"
     assert_not_contains "$REPO_DIR/packaging/linux/packaged-runtime.sh" "        PATH \\\\"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
@@ -692,7 +700,7 @@ case "${1:-} ${2:-}" in
         ;;
     "- "*)
         cat >/dev/null
-        exit 0
+        [ -s "$TEST_HTTP_PID_FILE" ]
         ;;
     *)
         exit 2
@@ -1534,6 +1542,26 @@ test_linux_translucent_sidebar_default_patch_smoke() {
     assert_occurrence_count "$extracted/webview/assets/use-resolved-theme-variant-test.js" 'toLowerCase().includes(`linux`)' '1'
 }
 
+test_linux_tray_startup_patch_smoke() {
+    info "Checking Linux tray startup patch behavior"
+    local workspace="$TMP_DIR/tray-startup-patch"
+    local extracted="$workspace/extracted"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$workspace"
+    make_fake_extracted_asar "$extracted" 'process.platform!==`win32`&&process.platform!==`darwin`?null:new n.Tray(icon);async function icons(){for(let e of o){let t=n.nativeImage.createFromPath(e);if(!t.isEmpty())return{defaultIcon:t,chronicleRunningIcon:null}}return{defaultIcon:await n.app.getFileIcon(process.execPath,{size:process.platform===`win32`?`small`:`normal`}),chronicleRunningIcon:null}}if(process.platform===`win32`&&f===`local`&&!this.isAppQuitting&&this.options.canHideLastLocalWindowToTray?.()===!0&&!t){e.preventDefault(),k.hide();return}class TrayController{trayMenuThreads={runningThreads:[],unreadThreads:[],pinnedThreads:[],recentThreads:[],usageLimits:[]};constructor(){}init(){this.tray.on(`click`,()=>{this.onTrayButtonClick()}),this.tray.on(`right-click`,()=>{this.openNativeTrayMenu()})}openNativeTrayMenu(){this.updateChronicleTrayIcon();let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems());e.once(`menu-will-show`,()=>{this.isNativeTrayMenuOpen=!0}),e.once(`menu-will-close`,()=>{this.isNativeTrayMenuOpen=!1,this.handleNativeTrayMenuClosed()}),this.tray.popUpContextMenu(e)}update(e){switch(e.type){case`tray-menu-threads-changed`:this.trayMenuThreads=e.trayMenuThreads;return}E&&oe();}}'
+
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
+    assert_not_contains "$output_log" 'skipping Linux tray patch'
+    assert_contains "$extracted/.vite/build/main-test.js" '(E||process.platform===`linux`)&&oe();'
+    assert_contains "$extracted/.vite/build/main-test.js" 'this.trayMenuThreads=e.trayMenuThreads,process.platform===`linux`&&this.setLinuxTrayContextMenu?.();return'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" '(E||process.platform===`linux`)&&oe();' '1'
+
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
+    assert_not_contains "$output_log" 'skipping Linux tray patch'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" '(E||process.platform===`linux`)&&oe();' '1'
+}
+
 test_linux_file_manager_patch_fails_soft() {
     info "Checking Linux file manager patch fallback"
     local workspace="$TMP_DIR/file-manager-patch-fallback"
@@ -1588,6 +1616,7 @@ main() {
     test_release_gate_fails_on_insecure_asar_contents
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
+    test_linux_tray_startup_patch_smoke
     test_linux_file_manager_patch_fails_soft
     info "All script smoke tests passed"
 }

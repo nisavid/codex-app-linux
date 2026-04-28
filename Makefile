@@ -20,7 +20,7 @@ help:
 	@printf '  %-18s %s\n' "make build-app" "Run install.sh and regenerate codex-app/"
 	@printf '  %-18s %s\n' "make run-app" "Launch the local generated Electron app from codex-app/"
 	@printf '  %-18s %s\n' "make deb" "Build the Debian package into dist/"
-	@printf '  %-18s %s\n' "make rpm" "Build the RPM package into dist/ (Fedora)"
+	@printf '  %-18s %s\n' "make rpm" "Build the RPM package into dist/ (Fedora/openSUSE)"
 	@printf '  %-18s %s\n' "make pacman" "Build the pacman package into dist/ (Arch)"
 	@printf '  %-18s %s\n' "make package" "Build native package (auto-detects deb, rpm, or pacman)"
 	@printf '  %-18s %s\n' "make apple-dmg-verify" "Run macOS Apple trust checks for the upstream DMG"
@@ -118,6 +118,21 @@ install:
 		fi; \
 		echo "[make] Installing $$deb"; \
 		sudo dpkg -i "$$deb"; \
+	elif command -v zypper >/dev/null 2>&1; then \
+		rpm="$${RPM:-$$(ls -1 $(RPM_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
+		if [ -z "$$rpm" ]; then \
+			echo "[make] No RPM package found. Run 'make rpm' first." >&2; exit 1; \
+		fi; \
+		if [ ! -f "$$rpm" ]; then \
+			echo "[make] RPM must point to a local .rpm file when using zypper." >&2; exit 1; \
+		fi; \
+		case "$$rpm" in *.rpm) ;; *) echo "[make] RPM must point to a local .rpm file when using zypper." >&2; exit 1 ;; esac; \
+		rpm="$$(readlink -f "$$rpm")"; \
+		dist_dir="$$(readlink -f dist)"; \
+		set -- --non-interactive; \
+		case "$$rpm" in "$$dist_dir"/*.rpm) set -- "$$@" --allow-unsigned-rpm ;; esac; \
+		echo "[make] Installing $$rpm"; \
+		sudo zypper "$$@" install -y "$$rpm"; \
 	elif command -v rpm >/dev/null 2>&1; then \
 		rpm="$${RPM:-$$(ls -1 $(RPM_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
 		if [ -z "$$rpm" ]; then \
@@ -126,7 +141,7 @@ install:
 		echo "[make] Installing $$rpm"; \
 		sudo rpm -Uvh "$$rpm"; \
 	else \
-		echo "[make] No supported package manager found (dpkg, rpm, or pacman)." >&2; exit 1; \
+		echo "[make] No supported package manager found (dpkg, rpm, zypper, or pacman)." >&2; exit 1; \
 	fi
 
 service-enable:
