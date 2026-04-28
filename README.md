@@ -35,6 +35,11 @@ make build-app
 make run-app
 ```
 
+`scripts/install-deps.sh` supports Debian/Ubuntu, Fedora, openSUSE, and Arch
+Linux hosts. On openSUSE it uses non-interactive `zypper` to install
+`nodejs-default`, `npm-default`, `python3`, `p7zip-full`, `curl`, `unzip`, and
+the `devel_basis` pattern.
+
 `make build-app` downloads or reuses `Codex.dmg`, extracts the app, patches the
 macOS bundle for Linux, rebuilds native modules, downloads a Linux Electron
 runtime, and writes `codex-app/start.sh`.
@@ -83,7 +88,7 @@ Package outputs land in `dist/`:
 | Target | Output |
 | --- | --- |
 | Debian | `dist/codex-app_<upstream-version>_amd64.deb` |
-| RPM | `dist/codex-app-<upstream-version>-1.x86_64.rpm` |
+| RPM / Fedora / openSUSE | `dist/codex-app-<upstream-version>-1.x86_64.rpm` |
 | Arch Linux | `dist/codex-app-<upstream-version>-1-x86_64.pkg.tar.zst` |
 
 The package version comes from the upstream Codex app bundle. For example,

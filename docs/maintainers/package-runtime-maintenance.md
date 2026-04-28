@@ -85,21 +85,27 @@ Important launcher behavior:
   into the user systemd manager and enables or restarts
   `codex-app-updater.service` on a best-effort basis. It does not import the
   user session `PATH`. It also disables the legacy
-  `codex-update-manager.service` name when present.
-- It starts `python3 -m http.server --bind 127.0.0.1 5175` from
-  `content/webview/`, waits for the port, and verifies
+  `codex-update-manager.service` name when present. On package launches it also
+  triggers `codex-app-updater check-now --if-stale` in the background.
+- It starts `python3 -m http.server 5175 --bind 127.0.0.1` from
+  `content/webview/`, writes the owned webview PID under
+  `~/.local/state/codex-app/webview.pid`, waits for the port, and verifies
   `http://127.0.0.1:5175/index.html` contains expected Codex startup markers
-  before Electron launches.
+  before Electron launches. Warm starts can reuse an existing verified webview
+  server from the same app directory.
 - It discovers the Codex CLI in this order: `CODEX_CLI_PATH`, updater config
   `cli_path`, valid persisted updater state, launch `PATH`, then known user
   package-manager fallback paths. Invalid environment or config paths fail
   loudly; stale persisted paths are ignored and replaced by the next valid
   candidate. The updater tool also accepts an explicit `--cli-path` for
   `codex-app-updater cli-preflight`; invalid explicit paths fail loudly there.
-- If `codex-app-updater` is available, it runs a best-effort CLI preflight.
-  The preflight checks the installed CLI version, uses a one-hour registry
-  lookup cooldown, tries to upgrade outdated CLI installs, and can install a
-  missing CLI when the launcher is running interactively and the user accepts.
+- If `codex-app-updater` is available, the launcher first gives preflight a
+  chance to return a configured or persisted CLI path before falling back to
+  direct local discovery. The preflight checks the installed CLI version, uses a
+  one-hour registry lookup cooldown, tries to upgrade outdated CLI installs,
+  and can install a missing CLI when the launcher is running interactively and
+  the user accepts. Later preflight work runs in the background unless
+  `CODEX_SYNC_CLI_PREFLIGHT=1` is set.
 - It exports `CODEX_CLI_PATH` before Electron starts.
 - It launches Electron with Chromium sandboxing enabled by default, Wayland
   decorations, and GPU compositing disabled by default. Set
@@ -141,7 +147,8 @@ symlinks or group/world-writable, and the packaged root must be owned by root.
 The config file is an overlay, so users can set only
 `cli_path = "/path/to/codex"` without copying the full default configuration.
 
-The daemon checks upstream headers, downloads new DMGs, prepares a workspace,
+The daemon uses a kernel-backed `check.lock` to avoid overlapping upstream
+checks. It checks upstream headers, downloads new DMGs, prepares a workspace,
 runs the bundled `install.sh`, builds the native package for the host package
 manager, and records the package path in `state.json`. `install.sh` reads
 `Codex.app/Contents/Info.plist` and writes `codex-app/codex-app-version.env`;
@@ -167,15 +174,16 @@ Privileged escalation belongs only to the install subcommands:
 The daemon invokes those subcommands through `pkexec` when an update is ready
 and Electron is not running. Debian installs use `apt install` when available,
 then `dpkg -i` as fallback. RPM installs use `dnf` or `dnf5` when available,
-then `rpm -Uvh` as fallback. Pacman installs use
+then `zypper`, then `rpm -Uvh` as fallback. Pacman installs use
 `pacman -U --noconfirm`.
 
 Privileged install subcommands reject symlink/non-file candidates, require
 expected package filename shapes, copy the package into a private temporary
 staging directory, validate package identity from format-specific metadata, and
-then install that staged copy. This reduces source replacement races, but the
-updater still needs a trusted digest/artifact binding before the privileged
-install.
+then install that staged copy. Debian installs use `apt` or `dpkg`; RPM installs
+use `dnf`/`dnf5`, then `zypper`, then `rpm -Uvh`; pacman installs use
+`pacman -U --noconfirm`. This reduces source replacement races, but the updater
+still needs a trusted digest/artifact binding before the privileged install.
 
 State handling matters:
 
