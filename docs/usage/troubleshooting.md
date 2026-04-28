@@ -51,7 +51,7 @@ pending package.
 | Blank window | Check whether port `5175` is already in use: `ss -tlnp \| grep 5175`. |
 | `ERR_CONNECTION_REFUSED` on `:5175` | Confirm `python3` works and port `5175` is free. The launcher serves the extracted webview bundle locally before Electron starts. |
 | Stuck on the Codex logo splash | Check `~/.cache/codex-app/launcher.log`. Another process may be serving port `5175`, or `content/webview/` may be incomplete. |
-| `CODEX_CLI_PATH` error | Install the CLI with `npm i -g @openai/codex` or `npm i -g --prefix ~/.local @openai/codex`. |
+| `CODEX_CLI_PATH` error | Install the CLI with `npm i -g @openai/codex` or `npm i -g --prefix ~/.local @openai/codex`. If you intentionally use another install, set `CODEX_CLI_PATH=/path/to/codex` for one launch or add `cli_path = "/path/to/codex"` to `~/.config/codex-app-updater/config.toml`. |
 | Electron hangs while the CLI is outdated | Re-run the launcher, then inspect `~/.cache/codex-app/launcher.log` and `~/.local/state/codex-app-updater/service.log`. The CLI preflight is best-effort, uses a 1-hour registry lookup cooldown, falls back to `npm install -g --prefix ~/.local` when global install fails, and warns instead of blocking when automatic refresh fails. |
 | GPU, Vulkan, or Wayland errors | The launcher sets `--ozone-platform-hint=auto`, `--disable-gpu-compositing`, and `--enable-features=WaylandWindowDecorations` by default. To force X11, try `./codex-app/start.sh --ozone-platform=x11`. |
 | Window flickering | GPU compositing is disabled by default. If flickering persists, try `./codex-app/start.sh --disable-gpu`. |
@@ -81,6 +81,14 @@ Port collisions and incomplete extracted assets should now fail fast in the
 launcher log instead of hanging silently.
 
 ## Updater Recovery Notes
+
+`codex-app-updater status` reports `cli_path` and `cli_path_source`. The source
+shows whether the selected CLI came from `CODEX_CLI_PATH`, updater config,
+persisted updater state, launch `PATH`, or a known package-manager fallback
+path. An explicit `--cli-path` can also be used with `codex-app-updater
+cli-preflight`; later `status` output reports the current resolver source as
+`env`, `config`, `persisted`, `path`, `known_path`, or `unknown` when no CLI was
+found.
 
 `codex-app-updater` stays unprivileged until it installs the rebuilt package.
 The final installation uses:

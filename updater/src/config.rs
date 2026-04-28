@@ -24,6 +24,23 @@ pub struct RuntimeConfig {
     pub workspace_root: PathBuf,
     pub builder_bundle_root: PathBuf,
     pub app_executable_path: PathBuf,
+    #[serde(default)]
+    pub cli_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RuntimeConfigOverlay {
+    dmg_url: Option<String>,
+    initial_check_delay_seconds: Option<u64>,
+    check_interval_hours: Option<u64>,
+    auto_install_on_app_exit: Option<bool>,
+    notifications: Option<bool>,
+    developer_mode: Option<bool>,
+    workspace_root: Option<PathBuf>,
+    builder_bundle_root: Option<PathBuf>,
+    app_executable_path: Option<PathBuf>,
+    cli_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +115,7 @@ impl RuntimeConfig {
             workspace_root: paths.cache_dir.clone(),
             builder_bundle_root,
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
+            cli_path: None,
         }
     }
 
@@ -109,10 +127,45 @@ impl RuntimeConfig {
 
         let content = fs::read_to_string(&paths.config_file)
             .with_context(|| format!("Failed to read {}", paths.config_file.display()))?;
-        let mut config = toml::from_str::<Self>(&content)
+        let overlay = toml::from_str::<RuntimeConfigOverlay>(&content)
             .with_context(|| format!("Failed to parse {}", paths.config_file.display()))?;
+        let mut config = Self::default_with_paths(paths);
+        config.apply_overlay(overlay);
         config.enforce_packaged_builder_root(Path::new(PACKAGED_BUILDER_BUNDLE_ROOT));
         Ok(config)
+    }
+
+    fn apply_overlay(&mut self, overlay: RuntimeConfigOverlay) {
+        if let Some(value) = overlay.dmg_url {
+            self.dmg_url = value;
+        }
+        if let Some(value) = overlay.initial_check_delay_seconds {
+            self.initial_check_delay_seconds = value;
+        }
+        if let Some(value) = overlay.check_interval_hours {
+            self.check_interval_hours = value;
+        }
+        if let Some(value) = overlay.auto_install_on_app_exit {
+            self.auto_install_on_app_exit = value;
+        }
+        if let Some(value) = overlay.notifications {
+            self.notifications = value;
+        }
+        if let Some(value) = overlay.developer_mode {
+            self.developer_mode = value;
+        }
+        if let Some(value) = overlay.workspace_root {
+            self.workspace_root = value;
+        }
+        if let Some(value) = overlay.builder_bundle_root {
+            self.builder_bundle_root = value;
+        }
+        if let Some(value) = overlay.app_executable_path {
+            self.app_executable_path = value;
+        }
+        if let Some(value) = overlay.cli_path {
+            self.cli_path = Some(value);
+        }
     }
 
     fn enforce_packaged_builder_root(&mut self, packaged_root: &Path) {
@@ -197,6 +250,47 @@ app_executable_path = "/opt/codex-app/electron"
     }
 
     #[test]
+    fn loads_cli_path_only_config_as_default_overlay() -> Result<()> {
+        let temp = tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        fs::create_dir_all(&paths.config_dir)?;
+        fs::write(&paths.config_file, r#"cli_path = "/opt/codex/bin/codex""#)?;
+
+        let config = RuntimeConfig::load_or_default(&paths)?;
+        assert_eq!(config.initial_check_delay_seconds, 30);
+        assert!(config.auto_install_on_app_exit);
+        assert_eq!(config.workspace_root, paths.cache_dir);
+        assert_eq!(config.cli_path, Some(PathBuf::from("/opt/codex/bin/codex")));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_unknown_config_keys() -> Result<()> {
+        let temp = tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        fs::create_dir_all(&paths.config_dir)?;
+        fs::write(&paths.config_file, r#"cli_pth = "/opt/codex/bin/codex""#)?;
+
+        let error = RuntimeConfig::load_or_default(&paths).expect_err("unknown key should fail");
+        assert!(error.to_string().contains("Failed to parse"));
+        Ok(())
+    }
+
+    #[test]
     fn packaged_builder_root_overrides_configured_root_without_developer_mode() {
         let temp = tempdir().expect("tempdir");
         let packaged_root = temp.path().join("usr/lib/codex-app/update-builder");
@@ -212,6 +306,7 @@ app_executable_path = "/opt/codex-app/electron"
             workspace_root: temp.path().join("workspace"),
             builder_bundle_root: configured_root,
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
+            cli_path: None,
         };
 
         config.enforce_packaged_builder_root(&packaged_root);
@@ -235,6 +330,7 @@ app_executable_path = "/opt/codex-app/electron"
             builder_bundle_root: configured_root.clone(),
             developer_mode: true,
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
+            cli_path: None,
         };
 
         config.enforce_packaged_builder_root(&packaged_root);

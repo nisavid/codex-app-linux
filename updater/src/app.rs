@@ -6,7 +6,7 @@ use crate::{
     codex_cli,
     config::{RuntimeConfig, RuntimePaths},
     install, liveness, logging, notify, package_version,
-    state::{PersistedState, UpdateStatus},
+    state::{CliStatus, PersistedState, UpdateStatus},
     upstream,
 };
 use anyhow::{Context, Result};
@@ -40,13 +40,14 @@ pub async fn run(cli: Cli) -> Result<()> {
             print_path,
             allow_install_missing,
         } => run_cli_preflight(
+            &config,
             &mut state,
             &paths,
             cli_path,
             print_path,
             allow_install_missing,
         ),
-        Commands::Status { json } => run_status(&mut state, &paths, json),
+        Commands::Status { json } => run_status(&config, &mut state, &paths, json),
         Commands::InstallDeb { path } => install::install_deb(&path),
         Commands::InstallRpm { path } => install::install_rpm(&path),
         Commands::InstallPacman { path } => install::install_pacman(&path),
@@ -114,13 +115,13 @@ async fn run_daemon(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(state, paths)?;
-    codex_cli::refresh_status(state, paths)?;
-    maybe_notify_cli_missing(state, paths, config.notifications)?;
-    maybe_notify_installed(state, paths, config.notifications)?;
     if packaged_runtime_removed(config) {
         info!("packaged app files are gone; stopping updater daemon");
         return Ok(());
     }
+    codex_cli::refresh_status(config, state, paths)?;
+    maybe_notify_cli_missing(state, paths, config.notifications)?;
+    maybe_notify_installed(state, paths, config.notifications)?;
     info!("daemon initialized");
 
     time::sleep(Duration::from_secs(config.initial_check_delay_seconds)).await;
@@ -171,55 +172,99 @@ async fn run_check_now(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(state, paths)?;
-    codex_cli::refresh_status(state, paths)?;
+    codex_cli::refresh_status(config, state, paths)?;
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
     run_check_cycle(config, state, paths).await?;
     reconcile_pending_install(config, state, paths).await
 }
 
-fn run_status(state: &mut PersistedState, paths: &RuntimePaths, json: bool) -> Result<()> {
-    codex_cli::refresh_status(state, paths)?;
+fn run_status(
+    config: &RuntimeConfig,
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    json: bool,
+) -> Result<()> {
+    codex_cli::refresh_status(config, state, paths)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(state)?);
     } else {
-        println!("status: {:?}", state.status);
-        println!("installed_version: {}", state.installed_version);
-        println!(
-            "candidate_version: {}",
-            state.candidate_version.as_deref().unwrap_or("none")
-        );
-        println!("cli_status: {:?}", state.cli_status);
-        println!(
-            "cli_installed_version: {}",
-            state.cli_installed_version.as_deref().unwrap_or("unknown")
-        );
-        println!(
-            "cli_latest_version: {}",
-            state.cli_latest_version.as_deref().unwrap_or("unknown")
-        );
-        println!(
-            "cli_error: {}",
-            state.cli_error_message.as_deref().unwrap_or("none")
-        );
+        print!("{}", status_text(state));
     }
 
     Ok(())
 }
 
+fn status_text(state: &PersistedState) -> String {
+    format!(
+        "\
+status: {}
+installed_version: {}
+candidate_version: {}
+cli_status: {}
+cli_path: {}
+cli_path_source: {}
+cli_installed_version: {}
+cli_latest_version: {}
+cli_error: {}
+",
+        state.status,
+        state.installed_version,
+        state.candidate_version.as_deref().unwrap_or("none"),
+        state.cli_status,
+        state
+            .cli_path
+            .as_deref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        state.cli_path_source,
+        state.cli_installed_version.as_deref().unwrap_or("unknown"),
+        state.cli_latest_version.as_deref().unwrap_or("unknown"),
+        state.cli_error_message.as_deref().unwrap_or("none")
+    )
+}
+
 fn run_cli_preflight(
+    config: &RuntimeConfig,
     state: &mut PersistedState,
     paths: &RuntimePaths,
     cli_path: Option<std::path::PathBuf>,
     print_path: bool,
     allow_install_missing: bool,
 ) -> Result<()> {
-    let outcome = codex_cli::preflight(state, paths, cli_path, allow_install_missing)?;
-    if print_path {
-        println!("{}", outcome.cli_path.display());
+    match codex_cli::preflight(config, state, paths, cli_path, allow_install_missing) {
+        Ok(outcome) => {
+            if print_path {
+                println!("{}", outcome.cli_path.display());
+            }
+            Ok(())
+        }
+        Err(error) => {
+            if print_path {
+                if let Some(path) = printable_cli_path_after_preflight_error(&error, state) {
+                    println!("{}", path.display());
+                }
+            }
+            Err(error)
+        }
     }
-    Ok(())
+}
+
+fn printable_cli_path_after_preflight_error<'a>(
+    error: &anyhow::Error,
+    state: &'a PersistedState,
+) -> Option<&'a Path> {
+    if codex_cli::is_invalid_configured_cli_path_error(error) {
+        return None;
+    }
+    if state.cli_status != CliStatus::Failed {
+        return None;
+    }
+    state
+        .cli_path
+        .as_deref()
+        .filter(|path| codex_cli::is_usable_cli_path(path))
 }
 
 async fn run_check_cycle(
@@ -584,6 +629,7 @@ fn notify_failure(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::CliPathSource;
 
     #[tokio::test]
     async fn failed_state_with_existing_deb_stays_failed() -> Result<()> {
@@ -616,6 +662,7 @@ mod tests {
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
         };
 
         let mut state = PersistedState::new(false);
@@ -628,6 +675,85 @@ mod tests {
 
         assert_eq!(state.status, UpdateStatus::Failed);
         assert_eq!(state.error_message.as_deref(), Some("previous failure"));
+        Ok(())
+    }
+
+    #[test]
+    fn status_text_includes_cli_path_and_source() {
+        let mut state = PersistedState::new(true);
+        state.cli_status = CliStatus::UpToDate;
+        state.cli_path = Some(Path::new("/home/user/.local/bin/codex").to_path_buf());
+        state.cli_path_source = CliPathSource::KnownPath;
+        state.cli_installed_version = Some("0.42.0".to_string());
+        state.cli_latest_version = Some("0.42.0".to_string());
+
+        let output = status_text(&state);
+
+        assert!(output.contains("cli_path: /home/user/.local/bin/codex"));
+        assert!(output.contains("cli_status: up_to_date"));
+        assert!(output.contains("cli_path_source: known_path"));
+    }
+
+    #[test]
+    fn failed_preflight_can_print_persisted_cli_path_for_nonconfigured_errors() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let cli_path = temp.path().join("codex");
+        write_executable_script(&cli_path, "#!/bin/sh\necho 'codex-cli v0.42.0'\n")?;
+
+        let mut state = PersistedState::new(true);
+        state.cli_path = Some(cli_path.clone());
+        state.cli_status = CliStatus::Failed;
+        state.cli_error_message = Some("Codex CLI upgrade failed".to_string());
+        let error = anyhow::anyhow!("Codex CLI upgrade failed: npm install failed");
+
+        assert_eq!(
+            printable_cli_path_after_preflight_error(&error, &state),
+            Some(cli_path.as_path())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn failed_preflight_does_not_print_path_for_invalid_configured_errors() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let cli_path = temp.path().join("codex");
+        write_executable_script(&cli_path, "#!/bin/sh\necho 'codex-cli v0.42.0'\n")?;
+        let mut state = PersistedState::new(true);
+        state.cli_path = Some(cli_path);
+
+        let mut config = RuntimeConfig::default_with_paths(&paths);
+        config.cli_path = Some(temp.path().join("missing-codex"));
+
+        let error = codex_cli::preflight(&config, &mut state, &paths, None, false)
+            .expect_err("invalid configured path should fail loudly");
+
+        assert!(codex_cli::is_invalid_configured_cli_path_error(&error));
+        assert_eq!(
+            printable_cli_path_after_preflight_error(&error, &state),
+            None
+        );
+        Ok(())
+    }
+
+    fn write_executable_script(path: &Path, contents: &str) -> Result<()> {
+        std::fs::write(path, contents)?;
+        let mut permissions = std::fs::metadata(path)?.permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            permissions.set_mode(0o755);
+        }
+        std::fs::set_permissions(path, permissions)?;
         Ok(())
     }
 
@@ -654,6 +780,7 @@ mod tests {
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
         };
 
         let mut state = PersistedState::new(true);
@@ -689,6 +816,7 @@ mod tests {
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
         };
 
         let mut state = PersistedState::new(true);
@@ -737,6 +865,7 @@ mod tests {
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
         };
 
         let mut state = PersistedState::new(false);
@@ -905,7 +1034,7 @@ mod tests {
         let mut state = PersistedState::new(true);
         state.cli_path = None;
         state.cli_installed_version = None;
-        state.cli_error_message = Some("Codex CLI not found in CODEX_CLI_PATH or PATH".to_string());
+        state.cli_error_message = Some("Codex CLI not found in configured paths".to_string());
 
         maybe_notify_cli_missing(&mut state, &paths, false)?;
         let notified_count = state.notified_events.len();

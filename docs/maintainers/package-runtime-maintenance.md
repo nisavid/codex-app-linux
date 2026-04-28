@@ -90,7 +90,12 @@ Important launcher behavior:
   `content/webview/`, waits for the port, and verifies
   `http://127.0.0.1:5175/index.html` contains expected Codex startup markers
   before Electron launches.
-- It discovers the Codex CLI through explicit `CODEX_CLI_PATH` or `PATH`.
+- It discovers the Codex CLI in this order: `CODEX_CLI_PATH`, updater config
+  `cli_path`, valid persisted updater state, launch `PATH`, then known user
+  package-manager fallback paths. Invalid environment or config paths fail
+  loudly; stale persisted paths are ignored and replaced by the next valid
+  candidate. The updater tool also accepts an explicit `--cli-path` for
+  `codex-app-updater cli-preflight`; invalid explicit paths fail loudly there.
 - If `codex-app-updater` is available, it runs a best-effort CLI preflight.
   The preflight checks the installed CLI version, uses a one-hour registry
   lookup cooldown, tries to upgrade outdated CLI installs, and can install a
@@ -123,6 +128,7 @@ Default runtime configuration:
 - auto-install after app exit: enabled
 - desktop notifications: enabled
 - developer mode: disabled
+- CLI path override: unset
 - workspace root: `~/.cache/codex-app-updater/`
 - builder bundle root: `/usr/lib/codex-app/update-builder` when installed, or
   the repository root for checkout runs
@@ -132,6 +138,8 @@ When the packaged builder root exists, runtime config cannot redirect
 `builder_bundle_root` unless `developer_mode = true` is set explicitly in
 `~/.config/codex-app-updater/config.toml`. Production builder roots must not be
 symlinks or group/world-writable, and the packaged root must be owned by root.
+The config file is an overlay, so users can set only
+`cli_path = "/path/to/codex"` without copying the full default configuration.
 
 The daemon checks upstream headers, downloads new DMGs, prepares a workspace,
 runs the bundled `install.sh`, builds the native package for the host package
