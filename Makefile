@@ -10,7 +10,7 @@ PACMAN_GLOB := $(CURDIR)/dist/$(PACMAN_PACKAGE_NAME)-[0-9]*.pkg.tar.*
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check test build-updater build-app run-app deb rpm pacman package apple-dmg-verify release-gate install service-enable service-status clean-dist clean-state
+.PHONY: help check test build-updater build-app run-app deb rpm pacman package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
 
 help:
 	@printf '\nCodex App Linux Make Targets\n\n'
@@ -28,6 +28,7 @@ help:
 	@printf '  %-18s %s\n' "make install" "Install the latest generated native package"
 	@printf '  %-18s %s\n' "make service-enable" "Enable and start codex-app-updater.service for the current user"
 	@printf '  %-18s %s\n' "make service-status" "Show codex-app-updater.service status for the current user"
+	@printf '  %-18s %s\n' "make clean" "Remove generated app, cached DMG, and dist/ artifacts"
 	@printf '  %-18s %s\n' "make clean-dist" "Remove generated dist/ artifacts"
 	@printf '  %-18s %s\n' "make clean-state" "Remove updater runtime state from XDG directories"
 	@printf '\nVariables:\n\n'
@@ -152,6 +153,10 @@ service-enable:
 service-status:
 	@echo "[make] Showing codex-app-updater.service status"
 	systemctl --user status codex-app-updater.service --no-pager
+
+clean:
+	@echo "[make] Removing generated app, cached DMG, and dist/"
+	rm -rf "$(CURDIR)/codex-app" "$(CURDIR)/Codex.dmg" "$(CURDIR)/dist"
 
 clean-dist:
 	@echo "[make] Removing dist/"
