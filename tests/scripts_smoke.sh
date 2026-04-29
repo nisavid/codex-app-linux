@@ -4,6 +4,9 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
+export CODEX_PACKAGED_RUNTIME_HELPER="$TMP_DIR/missing-packaged-runtime-helper.sh"
+unset CODEX_CLI_PATH
+unset CODEX_SYNC_CLI_PREFLIGHT
 
 cleanup() {
     rm -rf "$TMP_DIR"

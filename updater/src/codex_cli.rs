@@ -1049,7 +1049,7 @@ mod tests {
     fn preflight_persists_resolved_path_before_version_probe_failure() -> Result<()> {
         let temp = tempdir()?;
         let paths = test_runtime_paths(temp.path());
-        let mut config = test_runtime_config(&paths);
+        let config = test_runtime_config(&paths);
         paths.ensure_dirs()?;
 
         let stale_cli = temp.path().join("stale/codex");
@@ -1061,18 +1061,16 @@ mod tests {
             &broken_cli,
             "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  exit 19\nfi\nexit 1\n",
         )?;
-        config.cli_path = Some(broken_cli.clone());
-
         let mut state = PersistedState::new(true);
         state.cli_path = Some(stale_cli.clone());
         state.cli_path_source = CliPathSource::Persisted;
         state.cli_installed_version = Some("0.41.0".to_string());
 
-        let result = preflight(&config, &mut state, &paths, None, false);
+        let result = preflight(&config, &mut state, &paths, Some(broken_cli.clone()), false);
 
         result.expect_err("broken resolved CLI should fail version probe");
         assert_eq!(state.cli_path.as_deref(), Some(broken_cli.as_path()));
-        assert_eq!(state.cli_path_source, CliPathSource::Config);
+        assert_eq!(state.cli_path_source, CliPathSource::Explicit);
         assert_eq!(state.cli_installed_version, None);
         assert_eq!(state.cli_status, CliStatus::Failed);
         assert!(state
