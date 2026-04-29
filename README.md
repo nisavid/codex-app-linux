@@ -83,6 +83,17 @@ make rpm
 make pacman
 ```
 
+For a fresh package build, start by removing the generated app tree, cached DMG,
+and old package outputs:
+
+```bash
+make clean build-app package
+```
+
+That rebuilds `codex-app/` from the current upstream DMG source, then builds the
+native package format for your host. To choose a package format explicitly,
+replace `package` with `deb`, `rpm`, or `pacman`.
+
 Package outputs land in `dist/`:
 
 | Target | Output |
