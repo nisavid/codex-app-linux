@@ -834,7 +834,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_preflight_does_not_print_path_for_invalid_configured_errors() -> Result<()> {
+    fn failed_preflight_does_not_print_path_for_invalid_cli_path_errors() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let paths = RuntimePaths {
             config_file: temp.path().join("config/config.toml"),
@@ -851,11 +851,11 @@ mod tests {
         let mut state = PersistedState::new(true);
         state.cli_path = Some(cli_path);
 
-        let mut config = RuntimeConfig::default_with_paths(&paths);
-        config.cli_path = Some(temp.path().join("missing-codex"));
+        let config = RuntimeConfig::default_with_paths(&paths);
+        let missing_cli = temp.path().join("missing-codex");
 
-        let error = codex_cli::preflight(&config, &mut state, &paths, None, false)
-            .expect_err("invalid configured path should fail loudly");
+        let error = codex_cli::preflight(&config, &mut state, &paths, Some(missing_cli), false)
+            .expect_err("invalid CLI path should fail loudly");
 
         assert!(codex_cli::is_invalid_configured_cli_path_error(&error));
         assert_eq!(
