@@ -82,8 +82,10 @@ Important launcher behavior:
 - It loads `/usr/lib/codex-app/packaged-runtime.sh` only when that helper is
   present.
 - The packaged runtime helper imports only desktop/session display environment
-  into the user systemd manager and enables or restarts
-  `codex-app-updater.service` on a best-effort basis. It does not import the
+  into the user systemd manager and enables or starts
+  `codex-app-updater.service` on a best-effort basis. It leaves an already
+  active updater service running so pending install state is not raced by an app
+  launch. It does not import the
   user session `PATH`. It also disables the legacy
   `codex-update-manager.service` name when present. On package launches it also
   triggers `codex-app-updater check-now --if-stale` in the background.
