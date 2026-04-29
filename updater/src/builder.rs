@@ -1,7 +1,7 @@
 //! Rebuilds native Linux packages from a downloaded upstream DMG.
 
 use crate::{
-    config::{RuntimeConfig, RuntimePaths, PACKAGED_BUILDER_BUNDLE_ROOT},
+    config::{PACKAGED_BUILDER_BUNDLE_ROOT, RuntimeConfig, RuntimePaths},
     install::PackageKind,
     package_version,
     state::{ArtifactPaths, PersistedState, UpdateStatus},
@@ -309,15 +309,28 @@ fn validate_builder_bundle_entry(
         );
 
         if require_root_owner {
+            let uid = metadata.uid();
             anyhow::ensure!(
-                metadata.uid() == 0,
-                "Packaged builder bundle path must be owned by root: {}",
+                is_trusted_packaged_builder_owner(uid),
+                "Packaged builder bundle path must be owned by root or the kernel overflow UID: {}",
                 path.display()
             );
         }
     }
 
     Ok(())
+}
+
+#[cfg(unix)]
+fn is_trusted_packaged_builder_owner(uid: u32) -> bool {
+    uid == 0 || kernel_overflow_uid().is_some_and(|overflow_uid| uid == overflow_uid)
+}
+
+#[cfg(unix)]
+fn kernel_overflow_uid() -> Option<u32> {
+    fs::read_to_string("/proc/sys/kernel/overflowuid")
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
 }
 
 fn copy_entry(
@@ -339,7 +352,7 @@ fn copy_entry(
             );
         }
         Err(error) => {
-            return Err(error).with_context(|| format!("Failed to stat {}", source.display()))
+            return Err(error).with_context(|| format!("Failed to stat {}", source.display()));
         }
     };
 
@@ -879,9 +892,11 @@ exit 88
         copy_builder_bundle(&source_root, &destination_root, false)?;
 
         assert!(destination_root.join("scripts/build-deb.sh").exists());
-        assert!(destination_root
-            .join("scripts/patch-linux-window-ui.js")
-            .exists());
+        assert!(
+            destination_root
+                .join("scripts/patch-linux-window-ui.js")
+                .exists()
+        );
         assert!(!destination_root.join("scripts/build-rpm.sh").exists());
         assert!(!destination_root.join("scripts/build-pacman.sh").exists());
         Ok(())
@@ -922,9 +937,11 @@ exit 88
         let error = copy_builder_bundle(&source_root, &destination_root, false)
             .expect_err("production builder root should not be group/world writable");
 
-        assert!(error
-            .to_string()
-            .contains("must not be group- or world-writable"));
+        assert!(
+            error
+                .to_string()
+                .contains("must not be group- or world-writable")
+        );
         Ok(())
     }
 
@@ -967,10 +984,27 @@ exit 88
         let error = copy_builder_bundle(&source_root, &destination_root, false)
             .expect_err("production builder entries should not be group/world writable");
 
-        assert!(error
-            .to_string()
-            .contains("must not be group- or world-writable"));
+        assert!(
+            error
+                .to_string()
+                .contains("must not be group- or world-writable")
+        );
         Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn packaged_builder_owner_allows_root_and_kernel_overflow_uid() {
+        assert!(is_trusted_packaged_builder_owner(0));
+
+        if let Some(overflow_uid) = kernel_overflow_uid() {
+            assert!(is_trusted_packaged_builder_owner(overflow_uid));
+        }
+
+        let untrusted_uid = (1..=u32::MAX)
+            .find(|uid| *uid != 0 && Some(*uid) != kernel_overflow_uid())
+            .expect("there should be an untrusted uid value");
+        assert!(!is_trusted_packaged_builder_owner(untrusted_uid));
     }
 
     #[cfg(unix)]
@@ -988,9 +1022,11 @@ exit 88
         let error = copy_builder_bundle(&source_root, &destination_root, true)
             .expect_err("developer mode should continue to required-file validation");
 
-        assert!(error
-            .to_string()
-            .contains("Required builder bundle path is missing"));
+        assert!(
+            error
+                .to_string()
+                .contains("Required builder bundle path is missing")
+        );
         Ok(())
     }
 
@@ -1000,9 +1036,11 @@ exit 88
         fs::write(temp.path().join("README.txt"), b"no packages here")?;
 
         let error = find_package_in(temp.path()).expect_err("package discovery should fail");
-        assert!(error
-            .to_string()
-            .contains("No native package (.deb, .rpm, or .pkg.tar.*)"));
+        assert!(
+            error
+                .to_string()
+                .contains("No native package (.deb, .rpm, or .pkg.tar.*)")
+        );
         Ok(())
     }
 
