@@ -349,7 +349,12 @@ fn is_trusted_packaged_builder_owner(uid: u32, kernel_overflow_uid: Option<u32>)
 fn kernel_overflow_uid() -> Option<u32> {
     fs::read_to_string("/proc/sys/kernel/overflowuid")
         .ok()
-        .and_then(|value| value.trim().parse().ok())
+        .and_then(|value| parse_kernel_overflow_uid(&value))
+}
+
+#[cfg(target_os = "linux")]
+fn parse_kernel_overflow_uid(value: &str) -> Option<u32> {
+    value.trim().parse().ok()
 }
 
 #[cfg(all(unix, not(target_os = "linux")))]
@@ -996,23 +1001,25 @@ exit 88
     #[cfg(unix)]
     #[test]
     fn packaged_builder_owner_allows_root_and_kernel_overflow_uid() {
-        let overflow_uid = kernel_overflow_uid();
-        assert!(is_trusted_packaged_builder_owner(0, overflow_uid));
+        let overflow_uid = 65_534;
+        assert!(is_trusted_packaged_builder_owner(0, Some(overflow_uid)));
+        assert!(is_trusted_packaged_builder_owner(
+            overflow_uid,
+            Some(overflow_uid)
+        ));
 
-        if let Some(overflow_uid) = overflow_uid {
-            assert!(is_trusted_packaged_builder_owner(
-                overflow_uid,
-                Some(overflow_uid)
-            ));
-        }
-
-        let untrusted_uid = (1..=u32::MAX)
-            .find(|uid| *uid != 0 && Some(*uid) != overflow_uid)
-            .expect("there should be an untrusted uid value");
+        let untrusted_uid = 1;
         assert!(!is_trusted_packaged_builder_owner(
             untrusted_uid,
-            overflow_uid
+            Some(overflow_uid)
         ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn kernel_overflow_uid_parser_trims_proc_value() {
+        assert_eq!(parse_kernel_overflow_uid("65534\n"), Some(65_534));
+        assert_eq!(parse_kernel_overflow_uid("not-a-uid\n"), None);
     }
 
     #[cfg(unix)]
