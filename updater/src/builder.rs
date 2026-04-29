@@ -1,7 +1,7 @@
 //! Rebuilds native Linux packages from a downloaded upstream DMG.
 
 use crate::{
-    config::{PACKAGED_BUILDER_BUNDLE_ROOT, RuntimeConfig, RuntimePaths},
+    config::{RuntimeConfig, RuntimePaths, PACKAGED_BUILDER_BUNDLE_ROOT},
     install::PackageKind,
     package_version,
     state::{ArtifactPaths, PersistedState, UpdateStatus},
@@ -232,17 +232,15 @@ fn copy_builder_bundle(
     destination_root: &Path,
     developer_mode: bool,
 ) -> Result<()> {
-    validate_builder_bundle_source(source_root, developer_mode)?;
-    let require_root_owner =
-        !developer_mode && source_root == Path::new(PACKAGED_BUILDER_BUNDLE_ROOT);
+    let validation = BuilderBundleValidation::new(source_root, developer_mode);
+    validate_builder_bundle_source(source_root, validation)?;
 
     for (source, destination) in REQUIRED_BUNDLE_FILES {
         copy_entry(
             &source_root.join(source),
             &destination_root.join(destination),
             false,
-            developer_mode,
-            require_root_owner,
+            validation,
         )?;
     }
 
@@ -251,15 +249,38 @@ fn copy_builder_bundle(
             &source_root.join(source),
             &destination_root.join(destination),
             true,
-            developer_mode,
-            require_root_owner,
+            validation,
         )?;
     }
 
     Ok(())
 }
 
-fn validate_builder_bundle_source(source_root: &Path, developer_mode: bool) -> Result<()> {
+#[derive(Clone, Copy)]
+struct BuilderBundleValidation {
+    developer_mode: bool,
+    require_root_owner: bool,
+    kernel_overflow_uid: Option<u32>,
+}
+
+impl BuilderBundleValidation {
+    fn new(source_root: &Path, developer_mode: bool) -> Self {
+        let require_root_owner =
+            !developer_mode && source_root == Path::new(PACKAGED_BUILDER_BUNDLE_ROOT);
+        let kernel_overflow_uid = require_root_owner.then(kernel_overflow_uid).flatten();
+
+        Self {
+            developer_mode,
+            require_root_owner,
+            kernel_overflow_uid,
+        }
+    }
+}
+
+fn validate_builder_bundle_source(
+    source_root: &Path,
+    validation: BuilderBundleValidation,
+) -> Result<()> {
     let metadata = fs::symlink_metadata(source_root).with_context(|| {
         format!(
             "Failed to stat builder bundle root {}",
@@ -276,12 +297,7 @@ fn validate_builder_bundle_source(source_root: &Path, developer_mode: bool) -> R
         "Builder bundle root must be a directory: {}",
         source_root.display()
     );
-    validate_builder_bundle_entry(
-        source_root,
-        &metadata,
-        developer_mode,
-        source_root == Path::new(PACKAGED_BUILDER_BUNDLE_ROOT),
-    )?;
+    validate_builder_bundle_entry(source_root, &metadata, validation)?;
 
     Ok(())
 }
@@ -289,8 +305,7 @@ fn validate_builder_bundle_source(source_root: &Path, developer_mode: bool) -> R
 fn validate_builder_bundle_entry(
     path: &Path,
     metadata: &fs::Metadata,
-    developer_mode: bool,
-    require_root_owner: bool,
+    validation: BuilderBundleValidation,
 ) -> Result<()> {
     anyhow::ensure!(
         !metadata.file_type().is_symlink(),
@@ -298,7 +313,7 @@ fn validate_builder_bundle_entry(
         path.display()
     );
     #[cfg(unix)]
-    if !developer_mode {
+    if !validation.developer_mode {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
         let mode = metadata.permissions().mode();
@@ -308,12 +323,16 @@ fn validate_builder_bundle_entry(
             path.display()
         );
 
-        if require_root_owner {
+        if validation.require_root_owner {
             let uid = metadata.uid();
             anyhow::ensure!(
-                is_trusted_packaged_builder_owner(uid),
-                "Packaged builder bundle path must be owned by root or the kernel overflow UID: {}",
-                path.display()
+                is_trusted_packaged_builder_owner(uid, validation.kernel_overflow_uid),
+                "Packaged builder bundle path must be owned by root or the kernel overflow UID: {} (uid: {}, kernel overflow UID: {})",
+                path.display(),
+                uid,
+                validation
+                    .kernel_overflow_uid
+                    .map_or_else(|| "unreadable".to_string(), |overflow_uid| overflow_uid.to_string())
             );
         }
     }
@@ -322,23 +341,27 @@ fn validate_builder_bundle_entry(
 }
 
 #[cfg(unix)]
-fn is_trusted_packaged_builder_owner(uid: u32) -> bool {
-    uid == 0 || kernel_overflow_uid().is_some_and(|overflow_uid| uid == overflow_uid)
+fn is_trusted_packaged_builder_owner(uid: u32, kernel_overflow_uid: Option<u32>) -> bool {
+    uid == 0 || kernel_overflow_uid.is_some_and(|overflow_uid| uid == overflow_uid)
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn kernel_overflow_uid() -> Option<u32> {
     fs::read_to_string("/proc/sys/kernel/overflowuid")
         .ok()
         .and_then(|value| value.trim().parse().ok())
 }
 
+#[cfg(all(unix, not(target_os = "linux")))]
+fn kernel_overflow_uid() -> Option<u32> {
+    None
+}
+
 fn copy_entry(
     source: &Path,
     destination: &Path,
     optional: bool,
-    developer_mode: bool,
-    require_root_owner: bool,
+    validation: BuilderBundleValidation,
 ) -> Result<()> {
     let metadata = match fs::symlink_metadata(source) {
         Ok(metadata) => metadata,
@@ -356,26 +379,21 @@ fn copy_entry(
         }
     };
 
-    validate_builder_bundle_entry(source, &metadata, developer_mode, require_root_owner)?;
+    validate_builder_bundle_entry(source, &metadata, validation)?;
 
     if metadata.is_dir() {
-        copy_dir_recursive(source, destination, developer_mode, require_root_owner)?;
+        copy_dir_recursive(source, destination, validation)?;
     } else {
-        copy_path(source, destination, developer_mode, require_root_owner)?;
+        copy_path(source, destination, validation)?;
     }
 
     Ok(())
 }
 
-fn copy_path(
-    source: &Path,
-    destination: &Path,
-    developer_mode: bool,
-    require_root_owner: bool,
-) -> Result<()> {
+fn copy_path(source: &Path, destination: &Path, validation: BuilderBundleValidation) -> Result<()> {
     let metadata = fs::symlink_metadata(source)
         .with_context(|| format!("Failed to stat {}", source.display()))?;
-    validate_builder_bundle_entry(source, &metadata, developer_mode, require_root_owner)?;
+    validate_builder_bundle_entry(source, &metadata, validation)?;
     anyhow::ensure!(
         metadata.is_file(),
         "Builder bundle path must be a regular file: {}",
@@ -401,8 +419,7 @@ fn copy_path(
 fn copy_dir_recursive(
     source: &Path,
     destination: &Path,
-    developer_mode: bool,
-    require_root_owner: bool,
+    validation: BuilderBundleValidation,
 ) -> Result<()> {
     fs::create_dir_all(destination)
         .with_context(|| format!("Failed to create {}", destination.display()))?;
@@ -417,22 +434,12 @@ fn copy_dir_recursive(
         let metadata = fs::symlink_metadata(&entry_path)
             .with_context(|| format!("Failed to stat {}", entry_path.display()))?;
 
-        validate_builder_bundle_entry(&entry_path, &metadata, developer_mode, require_root_owner)?;
+        validate_builder_bundle_entry(&entry_path, &metadata, validation)?;
 
         if file_type.is_dir() {
-            copy_dir_recursive(
-                &entry_path,
-                &destination_path,
-                developer_mode,
-                require_root_owner,
-            )?;
+            copy_dir_recursive(&entry_path, &destination_path, validation)?;
         } else {
-            copy_path(
-                &entry_path,
-                &destination_path,
-                developer_mode,
-                require_root_owner,
-            )?;
+            copy_path(&entry_path, &destination_path, validation)?;
         }
     }
 
@@ -892,11 +899,9 @@ exit 88
         copy_builder_bundle(&source_root, &destination_root, false)?;
 
         assert!(destination_root.join("scripts/build-deb.sh").exists());
-        assert!(
-            destination_root
-                .join("scripts/patch-linux-window-ui.js")
-                .exists()
-        );
+        assert!(destination_root
+            .join("scripts/patch-linux-window-ui.js")
+            .exists());
         assert!(!destination_root.join("scripts/build-rpm.sh").exists());
         assert!(!destination_root.join("scripts/build-pacman.sh").exists());
         Ok(())
@@ -937,11 +942,9 @@ exit 88
         let error = copy_builder_bundle(&source_root, &destination_root, false)
             .expect_err("production builder root should not be group/world writable");
 
-        assert!(
-            error
-                .to_string()
-                .contains("must not be group- or world-writable")
-        );
+        assert!(error
+            .to_string()
+            .contains("must not be group- or world-writable"));
         Ok(())
     }
 
@@ -984,27 +987,32 @@ exit 88
         let error = copy_builder_bundle(&source_root, &destination_root, false)
             .expect_err("production builder entries should not be group/world writable");
 
-        assert!(
-            error
-                .to_string()
-                .contains("must not be group- or world-writable")
-        );
+        assert!(error
+            .to_string()
+            .contains("must not be group- or world-writable"));
         Ok(())
     }
 
     #[cfg(unix)]
     #[test]
     fn packaged_builder_owner_allows_root_and_kernel_overflow_uid() {
-        assert!(is_trusted_packaged_builder_owner(0));
+        let overflow_uid = kernel_overflow_uid();
+        assert!(is_trusted_packaged_builder_owner(0, overflow_uid));
 
-        if let Some(overflow_uid) = kernel_overflow_uid() {
-            assert!(is_trusted_packaged_builder_owner(overflow_uid));
+        if let Some(overflow_uid) = overflow_uid {
+            assert!(is_trusted_packaged_builder_owner(
+                overflow_uid,
+                Some(overflow_uid)
+            ));
         }
 
         let untrusted_uid = (1..=u32::MAX)
-            .find(|uid| *uid != 0 && Some(*uid) != kernel_overflow_uid())
+            .find(|uid| *uid != 0 && Some(*uid) != overflow_uid)
             .expect("there should be an untrusted uid value");
-        assert!(!is_trusted_packaged_builder_owner(untrusted_uid));
+        assert!(!is_trusted_packaged_builder_owner(
+            untrusted_uid,
+            overflow_uid
+        ));
     }
 
     #[cfg(unix)]
@@ -1022,11 +1030,9 @@ exit 88
         let error = copy_builder_bundle(&source_root, &destination_root, true)
             .expect_err("developer mode should continue to required-file validation");
 
-        assert!(
-            error
-                .to_string()
-                .contains("Required builder bundle path is missing")
-        );
+        assert!(error
+            .to_string()
+            .contains("Required builder bundle path is missing"));
         Ok(())
     }
 
@@ -1036,11 +1042,9 @@ exit 88
         fs::write(temp.path().join("README.txt"), b"no packages here")?;
 
         let error = find_package_in(temp.path()).expect_err("package discovery should fail");
-        assert!(
-            error
-                .to_string()
-                .contains("No native package (.deb, .rpm, or .pkg.tar.*)")
-        );
+        assert!(error
+            .to_string()
+            .contains("No native package (.deb, .rpm, or .pkg.tar.*)"));
         Ok(())
     }
 
