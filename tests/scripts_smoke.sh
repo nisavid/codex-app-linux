@@ -1272,6 +1272,15 @@ test_updater_service_hardening() {
     assert_contains "$service" "UMask=077"
 }
 
+test_packaged_runtime_preserves_active_updater_service() {
+    info "Checking packaged runtime does not restart active updater service"
+    local runtime="$REPO_DIR/packaging/linux/packaged-runtime.sh"
+
+    assert_contains "$runtime" "systemctl --user is-active codex-app-updater.service"
+    assert_contains "$runtime" "systemctl --user start codex-app-updater.service"
+    assert_not_contains "$runtime" "systemctl --user restart codex-app-updater.service"
+}
+
 test_electron_security_inspector_flags_insecure_generated_app() {
     info "Checking Electron security inspector flags insecure generated app settings"
     local workspace="$TMP_DIR/electron-security"
@@ -1608,6 +1617,7 @@ main() {
     test_apple_dmg_verifier_pins_upstream_trust_inputs
     test_apple_dmg_workflow_runs_on_macos
     test_updater_service_hardening
+    test_packaged_runtime_preserves_active_updater_service
     test_electron_security_inspector_flags_insecure_generated_app
     test_release_gate_requires_verified_dmg_hash
     test_release_gate_does_not_fetch_asar_with_npx
