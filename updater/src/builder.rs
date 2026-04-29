@@ -362,6 +362,11 @@ fn kernel_overflow_uid() -> Option<u32> {
     None
 }
 
+#[cfg(not(unix))]
+fn kernel_overflow_uid() -> Option<u32> {
+    None
+}
+
 fn copy_entry(
     source: &Path,
     destination: &Path,
