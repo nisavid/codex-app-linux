@@ -1242,5 +1242,4 @@ mod tests {
         assert!(!state.notified_events.contains("cli_missing"));
         Ok(())
     }
-
 }

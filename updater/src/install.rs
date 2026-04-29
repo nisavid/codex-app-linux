@@ -1138,7 +1138,9 @@ mod tests {
 
         assert!(deb_error.to_string().contains("apt package path has no"));
         assert!(rpm_error.to_string().contains("dnf package path has no"));
-        assert!(zypper_error.to_string().contains("zypper package path has no"));
+        assert!(zypper_error
+            .to_string()
+            .contains("zypper package path has no"));
     }
 
     #[test]
