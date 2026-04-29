@@ -258,6 +258,7 @@ make release-gate
 make install
 make service-enable
 make service-status
+make clean
 make clean-dist
 make clean-state
 ```
@@ -270,6 +271,8 @@ hash, scans the generated app, validates package metadata, writes
 fail when that key is missing, which is the public-release mode. Signed gates
 also publish `dist/release-signing-key.asc` and verify the signature against
 that public key. `make install` installs the newest built native package.
+`make clean` removes generated build artifacts: `codex-app/`, `Codex.dmg`, and
+`dist/`. `make clean-state` removes updater runtime state under XDG directories.
 
 ## How The Build Works
 
