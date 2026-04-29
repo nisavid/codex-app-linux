@@ -143,7 +143,9 @@ Default runtime configuration:
 When the packaged builder root exists, runtime config cannot redirect
 `builder_bundle_root` unless `developer_mode = true` is set explicitly in
 `~/.config/codex-app-updater/config.toml`. Production builder roots must not be
-symlinks or group/world-writable, and the packaged root must be owned by root.
+symlinks or group/world-writable. The packaged root must be owned by root, or by
+the kernel overflow UID on systems where root-owned package files are exposed to
+the unprivileged updater through an overflow-ID user-namespace view.
 The config file is an overlay, so users can set only
 `cli_path = "/path/to/codex"` without copying the full default configuration.
 
