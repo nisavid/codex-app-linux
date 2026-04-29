@@ -495,6 +495,12 @@ run_packaged_runtime_prelaunch() {
     fi
 }
 
+run_packaged_runtime_launch_check() {
+    if declare -F codex_packaged_runtime_launch_check >/dev/null 2>&1; then
+        codex_packaged_runtime_launch_check
+    fi
+}
+
 export_packaged_runtime_env() {
     if declare -F codex_packaged_runtime_export_env >/dev/null 2>&1; then
         codex_packaged_runtime_export_env
@@ -1019,6 +1025,7 @@ launch_electron() {
     "$SCRIPT_DIR/electron" "${electron_args[@]}" "$@" &
     ELECTRON_PID=$!
     echo "$ELECTRON_PID" > "$APP_PID_FILE"
+    run_packaged_runtime_launch_check
     log_phase "electron_spawned"
 
     set +e
