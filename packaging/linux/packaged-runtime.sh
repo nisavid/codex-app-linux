@@ -4,6 +4,10 @@ codex_packaged_runtime_prelaunch() {
     codex_packaged_runtime_prelaunch_background >/dev/null 2>&1 &
 }
 
+codex_packaged_runtime_launch_check() {
+    codex_packaged_runtime_trigger_update_check >/dev/null 2>&1 &
+}
+
 codex_packaged_runtime_prelaunch_background() {
     if command -v systemctl >/dev/null 2>&1 \
         && [ -n "${XDG_RUNTIME_DIR:-}" ] \
@@ -35,8 +39,6 @@ codex_packaged_runtime_prelaunch_background() {
             systemctl --user enable --now codex-app-updater.service >/dev/null 2>&1 || true
         fi
     fi
-
-    codex_packaged_runtime_trigger_update_check
 }
 
 codex_packaged_runtime_trigger_update_check() {

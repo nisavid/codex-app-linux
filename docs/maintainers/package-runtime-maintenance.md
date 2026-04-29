@@ -87,8 +87,9 @@ Important launcher behavior:
   active updater service running so pending install state is not raced by an app
   launch. It does not import the
   user session `PATH`. It also disables the legacy
-  `codex-update-manager.service` name when present. On package launches it also
-  triggers `codex-app-updater check-now --if-stale` in the background.
+  `codex-update-manager.service` name when present. On package launches it
+  triggers `codex-app-updater check-now --if-stale` in the background only after
+  the launcher records the Electron PID.
 - It starts `python3 -m http.server 5175 --bind 127.0.0.1` from
   `content/webview/`, writes the owned webview PID under
   `~/.local/state/codex-app/webview.pid`, waits for the port, and verifies

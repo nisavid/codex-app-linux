@@ -646,6 +646,12 @@ test_launcher_template_sanity() {
     assert_contains "$generated" "wait_for_webview_server"
     assert_contains "$generated" "verify_webview_origin"
     assert_contains "$generated" "Webview origin verified."
+    assert_contains "$generated" 'echo "$ELECTRON_PID" > "$APP_PID_FILE"'
+    assert_contains "$generated" "run_packaged_runtime_launch_check"
+    local pid_write_line launch_check_line
+    pid_write_line="$(grep -n 'echo "$ELECTRON_PID" > "$APP_PID_FILE"' "$generated" | head -n 1 | cut -d: -f1)"
+    launch_check_line="$(grep -n 'run_packaged_runtime_launch_check' "$generated" | tail -n 1 | cut -d: -f1)"
+    [ "$pid_write_line" -lt "$launch_check_line" ] || fail "Expected launch update check after app pid write"
     assert_contains "$generated" "--app-id=codex-app"
     assert_contains "$generated" "--ozone-platform-hint=auto"
     assert_contains "$generated" "CODEX_APP_DISABLE_ELECTRON_SANDBOX"
@@ -1276,6 +1282,7 @@ test_packaged_runtime_preserves_active_updater_service() {
     info "Checking packaged runtime does not restart active updater service"
     local runtime="$REPO_DIR/packaging/linux/packaged-runtime.sh"
 
+    assert_contains "$runtime" "codex_packaged_runtime_launch_check"
     assert_contains "$runtime" "systemctl --user is-active codex-app-updater.service"
     assert_contains "$runtime" "systemctl --user start codex-app-updater.service"
     assert_not_contains "$runtime" "systemctl --user restart codex-app-updater.service"
