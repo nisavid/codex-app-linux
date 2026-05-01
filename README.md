@@ -87,7 +87,9 @@ For a fresh package build, start by removing the generated app tree, cached DMG,
 and old package outputs:
 
 ```bash
-make clean build-app package
+make clean-dist
+rm -rf codex-app/ Codex.dmg
+make build-app package
 ```
 
 That rebuilds `codex-app/` from the current upstream DMG source, then builds the
@@ -102,8 +104,9 @@ Package outputs land in `dist/`:
 | RPM / Fedora / openSUSE | `dist/codex-app-<upstream-version>-1.x86_64.rpm` |
 | Arch Linux | `dist/codex-app-<upstream-version>-1-x86_64.pkg.tar.zst` |
 
-The package version comes from the upstream Codex app bundle. For example,
-`26.422.30944 (2080)` becomes `26.422.30944.2080`.
+The package version comes from the upstream Codex app bundle's
+`CFBundleShortVersionString`. For example, `26.422.30944 (2080)` becomes
+`26.422.30944`.
 
 Native packages are named `codex-app`. They declare replacement metadata for
 the older `codex-desktop` package name where the package format supports it.

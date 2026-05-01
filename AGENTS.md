@@ -23,7 +23,7 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 - Use Conventional Commits. Commit messages must accurately describe the
   committed change.
 - Do not hand-edit generated app output as the durable fix. Change `install.sh`, launcher templates, package templates, updater code, or shared helpers, then regenerate or inspect generated output as needed.
-- Treat `codex-app/`, `dist/`, `Codex.dmg`, and XDG updater config/state/cache paths as generated or runtime artifacts unless the task explicitly targets them.
+- Treat `codex-app/`, `codex-*-app/`, `dist/`, `Codex.dmg`, and XDG updater config/state/cache paths as generated or runtime artifacts unless the task explicitly targets them.
 - Do not assume `codex-app/` is pristine. If it disagrees with source scripts, source scripts win.
 - Keep Linux package behavior in `packaging/linux/`, `scripts/build-deb.sh`, `scripts/build-rpm.sh`, `scripts/build-pacman.sh`, and `scripts/lib/package-common.sh`.
 - Preserve this fork's intentional names when syncing upstream: the app,
@@ -47,7 +47,7 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 - Keep native-package-only launcher behavior in `packaging/linux/codex-packaged-runtime.sh`; `install.sh` should stay generic and load that helper only when packaging requires it.
 - Keep package builders and `scripts/lib/package-common.sh` aligned when adding, removing, or moving packaged files.
 - Preserve the unprivileged updater boundary. Escalation belongs only at install time through the updater's privileged install subcommands.
-- If the updater crate version changes, update `updater/Cargo.toml`, user-facing version references, and maintainer versioning docs in the same change.
+- If the updater crate version changes, update `updater/Cargo.toml`, `README.md`, `AGENTS.md`, and maintainer versioning docs in the same change.
 
 ## Source Pointers
 
@@ -80,7 +80,7 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 
 ## Generated And Runtime Artifacts
 
-- `codex-app/`: generated Linux app tree and launcher output.
+- `codex-app/` and `codex-*-app/`: generated Linux app trees and launcher output.
 - `codex-app/codex-app-version.env`: generated package-version metadata read
   from the upstream app bundle.
 - `dist/`: native package output.
