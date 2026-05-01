@@ -20,90 +20,35 @@ ensure_app_layout() {
     [ -x "$APP_DIR/start.sh" ] || error "Missing launcher: $APP_DIR/start.sh"
 }
 
-validate_app_payload_source() {
-    local link target
-    while IFS= read -r -d '' link; do
-        target="$(readlink "$link")" || error "Failed to inspect symlink: $link"
-        case "$target" in
-            /*|../*|*/../*|*/..|..)
-                error "Unsafe symlink in app payload: $link -> $target"
-                ;;
-        esac
-    done < <(find "$APP_DIR" -type l -print0)
+sed_escape_replacement() {
+    printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
 }
 
-normalize_app_payload_modes() {
-    local app_root="$1"
+render_desktop_entry() {
+    local target="$1"
+    local package_name
+    local display_name
+    local comment
 
-    find "$app_root" -type d -exec chmod u+rwx,go+rx,go-w,a-s -- {} +
-    find "$app_root" -type f -perm /111 -exec chmod u+rwx,go+rx,go-w,a-s -- {} +
-    find "$app_root" -type f ! -perm /111 -exec chmod u+rw,go+r,go-w,a-s -- {} +
+    package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
+    display_name="$(sed_escape_replacement "${PACKAGE_DISPLAY_NAME:-Codex App}")"
+    comment="$(sed_escape_replacement "${PACKAGE_COMMENT:-Run Codex App on Linux}")"
+
+    sed \
+        -e "s/codex-app/$package_name/g" \
+        -e "s/^Name=.*/Name=$display_name/g" \
+        -e "s/^Comment=.*/Comment=$comment/g" \
+        "$DESKTOP_TEMPLATE" > "$target"
+    chmod 0644 "$target"
 }
 
-normalize_package_directory_modes() {
-    local root="$1"
+render_packaged_runtime_helper() {
+    local target="$1"
+    local package_name
 
-    find "$root" -type d -exec chmod u+rwx,go+rx,go-w,a-s -- {} +
-    find "$root" -type f -perm /111 -exec chmod u+rwx,go+rx,go-w,a-s -- {} +
-    find "$root" -type f ! -perm /111 -exec chmod u+rw,go+r,go-w,a-s -- {} +
-}
-
-resolve_package_version() {
-    if [ -n "${PACKAGE_VERSION:-}" ]; then
-        printf '%s\n' "$PACKAGE_VERSION"
-        return
-    fi
-
-    local metadata_file="$APP_DIR/codex-app-version.env"
-    [ -f "$metadata_file" ] || error "Missing app version metadata: $metadata_file. Run ./install.sh first or set PACKAGE_VERSION."
-
-    local version=""
-    local key value
-    while IFS='=' read -r key value || [ -n "$key$value" ]; do
-        case "$key" in
-            ""|\#*)
-                continue
-                ;;
-            CODEX_APP_PACKAGE_VERSION)
-                version="$(printf '%s' "$value" | sed 's/[[:space:]]*$//')"
-                break
-                ;;
-        esac
-    done < "$metadata_file"
-
-    [ -n "$version" ] || error "Missing CODEX_APP_PACKAGE_VERSION in $metadata_file"
-    if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+){2,3}$ ]]; then
-        error "Invalid package version in $metadata_file: $version"
-    fi
-
-    printf '%s\n' "$version"
-}
-
-validate_identifier() {
-    local label="$1"
-    local value="$2"
-    local pattern="$3"
-
-    [ -n "$value" ] || error "$label must not be empty"
-    if ! [[ "$value" =~ $pattern ]]; then
-        error "$label contains unsafe characters: $value"
-    fi
-}
-
-validate_packaging_identifiers() {
-    local app_install_name="${APP_INSTALL_NAME:-$PACKAGE_NAME}"
-    local launcher_name="${APP_LAUNCHER_NAME:-$app_install_name}"
-
-    validate_identifier "PACKAGE_NAME" "$PACKAGE_NAME" '^[a-z0-9][a-z0-9+._-]*$'
-    validate_identifier "APP_INSTALL_NAME" "$app_install_name" '^[A-Za-z0-9][A-Za-z0-9._-]*$'
-    validate_identifier "APP_LAUNCHER_NAME" "$launcher_name" '^[A-Za-z0-9][A-Za-z0-9._-]*$'
-
-    if [ -n "${PACKAGE_PROVIDES:-}" ]; then
-        validate_identifier "PACKAGE_PROVIDES" "$PACKAGE_PROVIDES" '^[a-z0-9][a-z0-9+._-]*$'
-    fi
-    if [ -n "${PACKAGE_CONFLICTS:-}" ]; then
-        validate_identifier "PACKAGE_CONFLICTS" "$PACKAGE_CONFLICTS" '^[a-z0-9][a-z0-9+._-]*$'
-    fi
+    package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
+    sed -e "s/codex-app/$package_name/g" "$PACKAGED_RUNTIME_SOURCE" > "$target"
+    chmod 0644 "$target"
 }
 
 updater_binary_is_stale() {
@@ -145,55 +90,72 @@ Install the Rust toolchain:
 
 stage_common_package_files() {
     local root="$1"
-    local app_install_name="${APP_INSTALL_NAME:-$PACKAGE_NAME}"
-    local app_root="$root/opt/$app_install_name"
+    local app_root="$root/opt/$PACKAGE_NAME"
+    local polkit_policy="$REPO_DIR/packaging/linux/com.github.nisavid.codex-app.update.policy"
 
-    validate_packaging_identifiers
+    ensure_file_exists "$polkit_policy" "polkit policy"
 
     mkdir -p \
         "$root/opt" \
         "$root/usr/bin" \
-        "$root/usr/lib/$app_install_name" \
         "$root/usr/lib/systemd/user" \
         "$root/usr/share/applications" \
-        "$root/usr/share/icons/hicolor/256x256/apps"
+        "$root/usr/share/icons/hicolor/256x256/apps" \
+        "$root/usr/share/polkit-1/actions"
 
-    validate_app_payload_source
     rm -rf "$app_root"
     cp -aT "$APP_DIR" "$app_root"
-    normalize_app_payload_modes "$app_root"
-    cp "$DESKTOP_TEMPLATE" "$root/usr/share/applications/$app_install_name.desktop"
-    cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$app_install_name.png"
+    mkdir -p "$app_root/.codex-linux"
+    cp "$ICON_SOURCE" "$app_root/.codex-linux/$PACKAGE_NAME.png"
+    render_desktop_entry "$root/usr/share/applications/$PACKAGE_NAME.desktop"
+    cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"
     cp "$UPDATER_BINARY_SOURCE" "$root/usr/bin/codex-app-updater"
     chmod 0755 "$root/usr/bin/codex-app-updater"
     cp "$UPDATER_SERVICE_SOURCE" "$root/usr/lib/systemd/user/codex-app-updater.service"
     chmod 0644 "$root/usr/lib/systemd/user/codex-app-updater.service"
-    cp "$PACKAGED_RUNTIME_SOURCE" "$root/usr/lib/$app_install_name/packaged-runtime.sh"
-    chmod 0644 "$root/usr/lib/$app_install_name/packaged-runtime.sh"
-    normalize_package_directory_modes "$root"
+    cp "$polkit_policy" "$root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
+    chmod 0644 "$root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
+    render_packaged_runtime_helper "$app_root/.codex-linux/codex-packaged-runtime.sh"
 }
 
 stage_update_builder_bundle() {
     local root="$1"
-    local app_install_name="${APP_INSTALL_NAME:-$PACKAGE_NAME}"
-    local update_builder_root="$root/usr/lib/$app_install_name/update-builder"
+    local update_builder_root="$root/opt/$PACKAGE_NAME/update-builder"
 
     mkdir -p \
         "$update_builder_root/scripts" \
         "$update_builder_root/scripts/lib" \
+        "$update_builder_root/launcher" \
         "$update_builder_root/packaging/linux" \
         "$update_builder_root/assets"
 
     cp "$REPO_DIR/install.sh" "$update_builder_root/install.sh"
+    cp "$REPO_DIR/launcher/start.sh.template" "$update_builder_root/launcher/start.sh.template"
+    cp "$REPO_DIR/Cargo.toml" "$update_builder_root/Cargo.toml"
+    cp "$REPO_DIR/Cargo.lock" "$update_builder_root/Cargo.lock"
+    cp -r "$REPO_DIR/computer-use-linux" "$update_builder_root/computer-use-linux"
+    cp -r "$REPO_DIR/updater" "$update_builder_root/updater"
+    mkdir -p "$update_builder_root/plugins/openai-bundled/plugins"
+    cp -r "$REPO_DIR/plugins/openai-bundled/plugins/computer-use" \
+        "$update_builder_root/plugins/openai-bundled/plugins/computer-use"
     cp "$REPO_DIR/scripts/build-deb.sh" "$update_builder_root/scripts/build-deb.sh"
     cp "$REPO_DIR/scripts/build-rpm.sh" "$update_builder_root/scripts/build-rpm.sh"
     cp "$REPO_DIR/scripts/build-pacman.sh" "$update_builder_root/scripts/build-pacman.sh"
     cp "$REPO_DIR/scripts/patch-linux-window-ui.js" "$update_builder_root/scripts/patch-linux-window-ui.js"
     cp "$REPO_DIR/scripts/lib/package-common.sh" "$update_builder_root/scripts/lib/package-common.sh"
+    cp "$REPO_DIR/scripts/lib/install-helpers.sh" "$update_builder_root/scripts/lib/install-helpers.sh"
+    cp "$REPO_DIR/scripts/lib/process-detection.sh" "$update_builder_root/scripts/lib/process-detection.sh"
+    cp "$REPO_DIR/scripts/lib/dmg.sh" "$update_builder_root/scripts/lib/dmg.sh"
+    cp "$REPO_DIR/scripts/lib/native-modules.sh" "$update_builder_root/scripts/lib/native-modules.sh"
+    cp "$REPO_DIR/scripts/lib/asar-patch.sh" "$update_builder_root/scripts/lib/asar-patch.sh"
+    cp "$REPO_DIR/scripts/lib/webview-install.sh" "$update_builder_root/scripts/lib/webview-install.sh"
+    cp "$REPO_DIR/scripts/lib/bundled-plugins.sh" "$update_builder_root/scripts/lib/bundled-plugins.sh"
     cp "$REPO_DIR/packaging/linux/control" "$update_builder_root/packaging/linux/control"
     cp "$REPO_DIR/packaging/linux/codex-app.spec" "$update_builder_root/packaging/linux/codex-app.spec"
     cp "$REPO_DIR/packaging/linux/codex-app.desktop" "$update_builder_root/packaging/linux/codex-app.desktop"
-    cp "$REPO_DIR/packaging/linux/packaged-runtime.sh" "$update_builder_root/packaging/linux/packaged-runtime.sh"
+    cp "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "$update_builder_root/packaging/linux/codex-packaged-runtime.sh"
+    cp "$REPO_DIR/packaging/linux/com.github.nisavid.codex-app.update.policy" \
+        "$update_builder_root/packaging/linux/com.github.nisavid.codex-app.update.policy"
     cp "$REPO_DIR/packaging/linux/codex-app-updater-user-service.sh" \
         "$update_builder_root/packaging/linux/codex-app-updater-user-service.sh"
     cp "$REPO_DIR/packaging/linux/PKGBUILD.template" "$update_builder_root/packaging/linux/PKGBUILD.template"
@@ -203,19 +165,14 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/packaging/linux/codex-app-updater.prerm" "$update_builder_root/packaging/linux/codex-app-updater.prerm"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postrm" "$update_builder_root/packaging/linux/codex-app-updater.postrm"
     cp "$REPO_DIR/assets/codex.png" "$update_builder_root/assets/codex.png"
-    normalize_package_directory_modes "$root"
 }
 
 write_launcher_stub() {
     local root="$1"
-    local app_install_name="${APP_INSTALL_NAME:-$PACKAGE_NAME}"
-    local launcher_name="${APP_LAUNCHER_NAME:-$app_install_name}"
 
-    validate_packaging_identifiers
-
-    cat > "$root/usr/bin/$launcher_name" <<SCRIPT
+    cat > "$root/usr/bin/$PACKAGE_NAME" <<SCRIPT
 #!/bin/bash
-exec /opt/$app_install_name/start.sh "\$@"
+exec /opt/$PACKAGE_NAME/start.sh "\$@"
 SCRIPT
-    chmod 0755 "$root/usr/bin/$launcher_name"
+    chmod 0755 "$root/usr/bin/$PACKAGE_NAME"
 }

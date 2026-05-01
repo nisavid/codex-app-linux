@@ -1,6 +1,6 @@
-SERVICE_HELPER="/usr/lib/codex-app/update-builder/packaging/linux/codex-app-updater-user-service.sh"
+SERVICE_HELPER="/opt/codex-app/update-builder/packaging/linux/codex-app-updater-user-service.sh"
 if [ -f "$SERVICE_HELPER" ]; then
-    # shellcheck source=/usr/lib/codex-app/update-builder/packaging/linux/codex-app-updater-user-service.sh
+    # shellcheck source=/opt/codex-app/update-builder/packaging/linux/codex-app-updater-user-service.sh
     . "$SERVICE_HELPER"
 fi
 

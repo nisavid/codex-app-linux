@@ -9,24 +9,17 @@ mod install;
 mod liveness;
 mod logging;
 mod notify;
-mod package_version;
 mod state;
 mod upstream;
 
+use anyhow::Result;
 use clap::Parser;
 
-#[tokio::main]
-async fn main() {
-    let cli = cli::Cli::parse();
-    if let Err(error) = app::run(cli).await {
-        eprintln!("Error: {error:?}");
-        if is_configured_cli_path_error(&error) {
-            std::process::exit(78);
-        }
-        std::process::exit(1);
-    }
-}
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn is_configured_cli_path_error(error: &anyhow::Error) -> bool {
-    crate::codex_cli::is_invalid_configured_cli_path_error(error)
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cli = cli::Cli::parse();
+    app::run(cli).await
 }

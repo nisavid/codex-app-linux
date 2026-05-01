@@ -1,15 +1,60 @@
 //! Desktop notification helpers used by the updater daemon.
 
 use anyhow::Result;
-use notify_rust::Hint;
+use notify_rust::{Hint, Timeout};
 use std::path::{Path, PathBuf};
 
-const APP_NAME: &str = "Codex";
+const APP_NAME: &str = "Codex App";
 const DESKTOP_ENTRY: &str = "codex-app";
+const PACKAGED_BUNDLE_ICON_PATH: &str = "/opt/codex-app/.codex-linux/codex-app.png";
 const SYSTEM_ICON_PATH: &str = "/usr/share/icons/hicolor/256x256/apps/codex-app.png";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionResponse {
+    Invoked(String),
+    Closed,
+}
 
 /// Sends a desktop notification through the host notification service.
 pub fn send(summary: &str, body: &str) -> Result<()> {
+    let notification = base_notification(summary, body);
+    notification.show()?;
+    Ok(())
+}
+
+pub fn send_actionable(
+    summary: &str,
+    body: &str,
+    actions: &[(&str, &str)],
+) -> Result<ActionResponse> {
+    let mut notification = base_notification(summary, body);
+    notification
+        .hint(Hint::Resident(true))
+        .timeout(Timeout::Milliseconds(20000));
+    for (action_id, label) in actions {
+        notification.action(action_id, label);
+    }
+
+    let selected_action = std::sync::Arc::new(std::sync::Mutex::new(ActionResponse::Closed));
+    let selected_action_clone = selected_action.clone();
+    notification.show()?.wait_for_action(move |action| {
+        let next_action = if action == "__closed" {
+            ActionResponse::Closed
+        } else {
+            ActionResponse::Invoked(action.to_string())
+        };
+        if let Ok(mut selected_action) = selected_action_clone.lock() {
+            *selected_action = next_action;
+        }
+    });
+
+    Ok(selected_action
+        .lock()
+        .map(|action| action.clone())
+        .unwrap_or(ActionResponse::Closed))
+}
+
+fn base_notification(summary: &str, body: &str) -> notify_rust::Notification {
     let icon_path = resolve_icon_path();
 
     let mut notification = notify_rust::Notification::new();
@@ -27,8 +72,7 @@ pub fn send(summary: &str, body: &str) -> Result<()> {
         notification.icon(DESKTOP_ENTRY);
     }
 
-    notification.show()?;
-    Ok(())
+    notification
 }
 
 fn resolve_icon_path() -> Option<PathBuf> {
@@ -36,7 +80,10 @@ fn resolve_icon_path() -> Option<PathBuf> {
 }
 
 fn bundled_icon_candidates() -> Vec<PathBuf> {
-    let mut candidates = vec![PathBuf::from(SYSTEM_ICON_PATH)];
+    let mut candidates = vec![
+        PathBuf::from(PACKAGED_BUNDLE_ICON_PATH),
+        PathBuf::from(SYSTEM_ICON_PATH),
+    ];
 
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(repo_icon) = repo_icon_from_exe(&current_exe) {

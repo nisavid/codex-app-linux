@@ -239,7 +239,7 @@ Detection and monitoring:
 - `updater/src/codex_cli.rs`: npm latest checks and automatic CLI install/upgrade.
 - `updater/src/state.rs`: artifact path persistence and state-file trust.
 - `packaging/linux/codex-app-updater.service`: user-service sandboxing and environment.
-- `packaging/linux/packaged-runtime.sh`: imported environment and updater service startup.
+- `packaging/linux/codex-packaged-runtime.sh`: imported environment and updater service startup.
 - `packaging/linux/codex-app-updater-user-service.sh`: maintainer-script user-manager operations.
 - `scripts/lib/package-common.sh`: package payload staging and metadata normalization.
 - `scripts/build-deb.sh`: Debian package generation and public signing/provenance hooks.

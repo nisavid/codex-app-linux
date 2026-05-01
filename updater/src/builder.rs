@@ -1,9 +1,8 @@
 //! Rebuilds native Linux packages from a downloaded upstream DMG.
 
 use crate::{
-    config::{RuntimeConfig, RuntimePaths, PACKAGED_BUILDER_BUNDLE_ROOT},
+    config::{RuntimeConfig, RuntimePaths},
     install::PackageKind,
-    package_version,
     state::{ArtifactPaths, PersistedState, UpdateStatus},
 };
 use anyhow::{Context, Result};
@@ -15,17 +14,23 @@ use std::{
 use tokio::process::Command;
 use tracing::info;
 
-const REQUIRED_BUNDLE_FILES: [(&str, &str); 6] = [
+const REQUIRED_BUNDLE_FILES: [(&str, &str); 12] = [
+    ("Cargo.toml", "Cargo.toml"),
+    ("Cargo.lock", "Cargo.lock"),
+    ("computer-use-linux", "computer-use-linux"),
+    ("updater", "updater"),
+    (
+        "plugins/openai-bundled/plugins/computer-use",
+        "plugins/openai-bundled/plugins/computer-use",
+    ),
     ("install.sh", "install.sh"),
+    ("launcher/start.sh.template", "launcher/start.sh.template"),
     ("scripts/build-deb.sh", "scripts/build-deb.sh"),
     (
         "scripts/patch-linux-window-ui.js",
         "scripts/patch-linux-window-ui.js",
     ),
-    (
-        "scripts/lib/package-common.sh",
-        "scripts/lib/package-common.sh",
-    ),
+    ("scripts/lib", "scripts/lib"),
     ("packaging/linux", "packaging/linux"),
     ("assets/codex.png", "assets/codex.png"),
 ];
@@ -42,8 +47,6 @@ const PACMAN_PACKAGE_SUFFIXES: &[&str] = &[
     ".pkg.tar.lz4",
     ".pkg.tar.lz5",
 ];
-const WORKSPACE_ID_PATH_LEN: usize = 16;
-const BUILD_COMMAND_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/bin:/bin";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Paths to the temporary workspace and generated package produced by a rebuild.
@@ -57,21 +60,17 @@ pub async fn build_update(
     config: &RuntimeConfig,
     state: &mut PersistedState,
     paths: &RuntimePaths,
-    workspace_id: &str,
+    candidate_version: &str,
     dmg_path: &Path,
-) -> Result<Option<BuildArtifacts>> {
-    let workspace = BuilderWorkspace::prepare(&config.workspace_root, workspace_id)?;
+) -> Result<BuildArtifacts> {
+    let workspace = BuilderWorkspace::prepare(&config.workspace_root, candidate_version)?;
     let build_path = build_command_path();
 
     state.status = UpdateStatus::PreparingWorkspace;
     state.artifact_paths.workspace_dir = Some(workspace.workspace_dir.clone());
     state.save(&paths.state_file)?;
 
-    copy_builder_bundle(
-        &config.builder_bundle_root,
-        &workspace.bundle_dir,
-        config.developer_mode,
-    )?;
+    copy_builder_bundle(&config.builder_bundle_root, &workspace.bundle_dir)?;
 
     state.status = UpdateStatus::PatchingApp;
     state.save(&paths.state_file)?;
@@ -86,31 +85,13 @@ pub async fn build_update(
     .await
     .context("install.sh failed during local rebuild")?;
 
-    let package_version = app_package_version(&workspace.app_dir)?;
-    if package_version::installed_version_satisfies_candidate(
-        &state.installed_version,
-        &package_version,
-    ) {
-        state.status = UpdateStatus::Idle;
-        state.candidate_version = None;
-        state.artifact_paths = ArtifactPaths {
-            dmg_path: Some(dmg_path.to_path_buf()),
-            workspace_dir: Some(workspace.workspace_dir.clone()),
-            package_path: None,
-        };
-        state.save(&paths.state_file)?;
-        info!(candidate_version = %package_version, installed_version = %state.installed_version, "upstream app version is already installed; skipping package rebuild");
-        return Ok(None);
-    }
-    state.candidate_version = Some(package_version.clone());
-
     state.status = UpdateStatus::BuildingPackage;
     state.save(&paths.state_file)?;
 
     let build_script = package_build_script(&workspace.bundle_dir);
     run_and_log(
         Command::new(&build_script)
-            .env("PACKAGE_VERSION", &package_version)
+            .env("PACKAGE_VERSION", candidate_version)
             .env("APP_DIR_OVERRIDE", &workspace.app_dir)
             .env("DIST_DIR_OVERRIDE", &workspace.dist_dir)
             .env("UPDATER_BINARY_SOURCE", std::env::current_exe()?)
@@ -135,36 +116,12 @@ pub async fn build_update(
         package_path: Some(package_path.clone()),
     };
     state.save(&paths.state_file)?;
-    info!(candidate_version = %package_version, package = %package_path.display(), "local update build ready");
+    info!(candidate_version, package = %package_path.display(), "local update build ready");
 
-    Ok(Some(BuildArtifacts {
+    Ok(BuildArtifacts {
         workspace_dir: workspace.workspace_dir,
         package_path,
-    }))
-}
-
-fn app_package_version(app_dir: &Path) -> Result<String> {
-    let metadata_path = app_dir.join("codex-app-version.env");
-    let metadata = fs::read_to_string(&metadata_path)
-        .with_context(|| format!("Failed to read {}", metadata_path.display()))?;
-
-    let version = metadata
-        .lines()
-        .find_map(|line| line.strip_prefix("CODEX_APP_PACKAGE_VERSION="))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .context("Missing CODEX_APP_PACKAGE_VERSION in generated app metadata")?;
-
-    let version_parts: Vec<_> = version.split('.').collect();
-    anyhow::ensure!(
-        (3..=4).contains(&version_parts.len())
-            && version_parts
-                .iter()
-                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())),
-        "Invalid CODEX_APP_PACKAGE_VERSION in generated app metadata: {version}"
-    );
-
-    Ok(version.to_string())
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -178,10 +135,8 @@ struct BuilderWorkspace {
 }
 
 impl BuilderWorkspace {
-    fn prepare(workspace_root: &Path, workspace_id: &str) -> Result<Self> {
-        let workspace_dir = workspace_root
-            .join("workspaces")
-            .join(workspace_path_component(workspace_id)?);
+    fn prepare(workspace_root: &Path, candidate_version: &str) -> Result<Self> {
+        let workspace_dir = workspace_root.join("workspaces").join(candidate_version);
         let bundle_dir = workspace_dir.join("builder");
         let dist_dir = workspace_dir.join("dist");
         let app_dir = workspace_dir.join("codex-app");
@@ -208,16 +163,6 @@ impl BuilderWorkspace {
     }
 }
 
-fn workspace_path_component(workspace_id: &str) -> Result<&str> {
-    let workspace_id = workspace_id.trim();
-    anyhow::ensure!(!workspace_id.is_empty(), "Workspace id must not be empty");
-    anyhow::ensure!(
-        workspace_id.bytes().all(|byte| byte.is_ascii_hexdigit()),
-        "Workspace id must be a hex digest"
-    );
-    Ok(&workspace_id[..workspace_id.len().min(WORKSPACE_ID_PATH_LEN)])
-}
-
 /// Returns the path to the native-package build script appropriate for the running system.
 fn package_build_script(bundle_dir: &Path) -> PathBuf {
     match PackageKind::detect() {
@@ -227,20 +172,12 @@ fn package_build_script(bundle_dir: &Path) -> PathBuf {
     }
 }
 
-fn copy_builder_bundle(
-    source_root: &Path,
-    destination_root: &Path,
-    developer_mode: bool,
-) -> Result<()> {
-    let validation = BuilderBundleValidation::new(source_root, developer_mode);
-    validate_builder_bundle_source(source_root, validation)?;
-
+fn copy_builder_bundle(source_root: &Path, destination_root: &Path) -> Result<()> {
     for (source, destination) in REQUIRED_BUNDLE_FILES {
         copy_entry(
             &source_root.join(source),
             &destination_root.join(destination),
             false,
-            validation,
         )?;
     }
 
@@ -249,167 +186,33 @@ fn copy_builder_bundle(
             &source_root.join(source),
             &destination_root.join(destination),
             true,
-            validation,
         )?;
     }
 
     Ok(())
 }
 
-#[derive(Clone, Copy)]
-struct BuilderBundleValidation {
-    developer_mode: bool,
-    require_root_owner: bool,
-    kernel_overflow_uid: Option<u32>,
-}
-
-impl BuilderBundleValidation {
-    fn new(source_root: &Path, developer_mode: bool) -> Self {
-        let require_root_owner =
-            !developer_mode && source_root == Path::new(PACKAGED_BUILDER_BUNDLE_ROOT);
-        let kernel_overflow_uid = require_root_owner.then(kernel_overflow_uid).flatten();
-
-        Self {
-            developer_mode,
-            require_root_owner,
-            kernel_overflow_uid,
-        }
-    }
-}
-
-fn validate_builder_bundle_source(
-    source_root: &Path,
-    validation: BuilderBundleValidation,
-) -> Result<()> {
-    let metadata = fs::symlink_metadata(source_root).with_context(|| {
-        format!(
-            "Failed to stat builder bundle root {}",
-            source_root.display()
-        )
-    })?;
-    anyhow::ensure!(
-        !metadata.file_type().is_symlink(),
-        "Builder bundle root must not be a symlink: {}",
-        source_root.display()
-    );
-    anyhow::ensure!(
-        metadata.is_dir(),
-        "Builder bundle root must be a directory: {}",
-        source_root.display()
-    );
-    validate_builder_bundle_entry(source_root, &metadata, validation)?;
-
-    Ok(())
-}
-
-fn validate_builder_bundle_entry(
-    path: &Path,
-    metadata: &fs::Metadata,
-    validation: BuilderBundleValidation,
-) -> Result<()> {
-    anyhow::ensure!(
-        !metadata.file_type().is_symlink(),
-        "Builder bundle path must not be a symlink: {}",
-        path.display()
-    );
-    #[cfg(unix)]
-    if !validation.developer_mode {
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
-
-        let mode = metadata.permissions().mode();
-        anyhow::ensure!(
-            mode & 0o022 == 0,
-            "Builder bundle path must not be group- or world-writable: {}",
-            path.display()
-        );
-
-        if validation.require_root_owner {
-            let uid = metadata.uid();
-            anyhow::ensure!(
-                is_trusted_packaged_builder_owner(uid, validation.kernel_overflow_uid),
-                "Packaged builder bundle path must be owned by root or the kernel overflow UID: {} (uid: {}, kernel overflow UID: {})",
-                path.display(),
-                uid,
-                validation
-                    .kernel_overflow_uid
-                    .map_or_else(|| "unreadable".to_string(), |overflow_uid| overflow_uid.to_string())
-            );
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(unix)]
-fn is_trusted_packaged_builder_owner(uid: u32, kernel_overflow_uid: Option<u32>) -> bool {
-    uid == 0 || kernel_overflow_uid.is_some_and(|overflow_uid| uid == overflow_uid)
-}
-
-#[cfg(target_os = "linux")]
-fn kernel_overflow_uid() -> Option<u32> {
-    fs::read_to_string("/proc/sys/kernel/overflowuid")
-        .ok()
-        .and_then(|value| parse_kernel_overflow_uid(&value))
-}
-
-#[cfg(target_os = "linux")]
-fn parse_kernel_overflow_uid(value: &str) -> Option<u32> {
-    value.trim().parse().ok()
-}
-
-#[cfg(all(unix, not(target_os = "linux")))]
-fn kernel_overflow_uid() -> Option<u32> {
-    None
-}
-
-#[cfg(not(unix))]
-fn kernel_overflow_uid() -> Option<u32> {
-    None
-}
-
-fn copy_entry(
-    source: &Path,
-    destination: &Path,
-    optional: bool,
-    validation: BuilderBundleValidation,
-) -> Result<()> {
-    let metadata = match fs::symlink_metadata(source) {
-        Ok(metadata) => metadata,
-        Err(error) if optional && error.kind() == std::io::ErrorKind::NotFound => {
+fn copy_entry(source: &Path, destination: &Path, optional: bool) -> Result<()> {
+    if !source.exists() {
+        if optional {
             return Ok(());
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            anyhow::bail!(
-                "Required builder bundle path is missing: {}",
-                source.display()
-            );
-        }
-        Err(error) => {
-            return Err(error).with_context(|| format!("Failed to stat {}", source.display()));
-        }
-    };
+        anyhow::bail!(
+            "Required builder bundle path is missing: {}",
+            source.display()
+        );
+    }
 
-    validate_builder_bundle_entry(source, &metadata, validation)?;
-
-    if metadata.is_dir() {
-        copy_dir_recursive(source, destination, validation)?;
+    if source.is_dir() {
+        copy_dir_recursive(source, destination)?;
     } else {
-        copy_path(source, destination, validation)?;
+        copy_path(source, destination)?;
     }
 
     Ok(())
 }
 
-fn copy_path(source: &Path, destination: &Path, validation: BuilderBundleValidation) -> Result<()> {
-    let metadata = fs::symlink_metadata(source)
-        .with_context(|| format!("Failed to stat {}", source.display()))?;
-    validate_builder_bundle_entry(source, &metadata, validation)?;
-    anyhow::ensure!(
-        metadata.is_file(),
-        "Builder bundle path must be a regular file: {}",
-        source.display()
-    );
-
+fn copy_path(source: &Path, destination: &Path) -> Result<()> {
     let parent = destination
         .parent()
         .context("Destination path has no parent directory")?;
@@ -421,16 +224,14 @@ fn copy_path(source: &Path, destination: &Path, validation: BuilderBundleValidat
             destination.display()
         )
     })?;
+    let metadata =
+        fs::metadata(source).with_context(|| format!("Failed to stat {}", source.display()))?;
     fs::set_permissions(destination, metadata.permissions())
         .with_context(|| format!("Failed to set permissions on {}", destination.display()))?;
     Ok(())
 }
 
-fn copy_dir_recursive(
-    source: &Path,
-    destination: &Path,
-    validation: BuilderBundleValidation,
-) -> Result<()> {
+fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
     fs::create_dir_all(destination)
         .with_context(|| format!("Failed to create {}", destination.display()))?;
 
@@ -440,16 +241,11 @@ fn copy_dir_recursive(
         let entry = entry?;
         let entry_path = entry.path();
         let destination_path = destination.join(entry.file_name());
-        let file_type = entry.file_type()?;
-        let metadata = fs::symlink_metadata(&entry_path)
-            .with_context(|| format!("Failed to stat {}", entry_path.display()))?;
 
-        validate_builder_bundle_entry(&entry_path, &metadata, validation)?;
-
-        if file_type.is_dir() {
-            copy_dir_recursive(&entry_path, &destination_path, validation)?;
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry_path, &destination_path)?;
         } else {
-            copy_path(&entry_path, &destination_path, validation)?;
+            copy_path(&entry_path, &destination_path)?;
         }
     }
 
@@ -488,19 +284,73 @@ fn is_native_package_file(path: &Path) -> bool {
 }
 
 fn build_command_path() -> OsString {
-    match std::env::var_os("HOME") {
-        Some(home)
-            if !home.is_empty()
-                && Path::new(&home).is_absolute()
-                && !home.to_string_lossy().contains(':') =>
-        {
-            let mut path = OsString::from(BUILD_COMMAND_PATH);
-            path.push(":");
-            path.push(Path::new(&home).join(".local/bin"));
-            path
-        }
-        _ => OsString::from(BUILD_COMMAND_PATH),
+    let mut entries = preferred_node_bin_dirs();
+    entries.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    entries.extend(system_bin_dirs());
+    std::env::join_paths(entries).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+}
+
+fn system_bin_dirs() -> Vec<PathBuf> {
+    [
+        "/usr/local/sbin",
+        "/usr/local/bin",
+        "/usr/sbin",
+        "/usr/bin",
+        "/sbin",
+        "/bin",
+    ]
+    .into_iter()
+    .map(PathBuf::from)
+    .collect()
+}
+
+fn preferred_node_bin_dirs() -> Vec<PathBuf> {
+    let nvm_root = std::env::var_os("NVM_DIR")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".nvm")));
+
+    let Some(nvm_root) = nvm_root else {
+        return Vec::new();
+    };
+
+    collect_nvm_bin_dirs(&nvm_root)
+}
+
+fn collect_nvm_bin_dirs(nvm_root: &Path) -> Vec<PathBuf> {
+    let mut directories = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+
+    let current_bin = nvm_root.join("versions/node/current/bin");
+    if is_node_toolchain_dir(&current_bin) {
+        seen.insert(current_bin.clone());
+        directories.push(current_bin);
     }
+
+    let versions_root = nvm_root.join("versions/node");
+    if let Ok(entries) = fs::read_dir(&versions_root) {
+        let mut version_bins = entries
+            .filter_map(|entry| entry.ok().map(|item| item.path().join("bin")))
+            .filter(|path| is_node_toolchain_dir(path))
+            .collect::<Vec<_>>();
+        version_bins.sort();
+        version_bins.reverse();
+
+        for path in version_bins {
+            if seen.insert(path.clone()) {
+                directories.push(path);
+            }
+        }
+    }
+
+    directories
+}
+
+fn is_node_toolchain_dir(path: &Path) -> bool {
+    ["node", "npm", "npx"]
+        .into_iter()
+        .all(|binary| path.join(binary).is_file())
 }
 
 async fn run_and_log(command: &mut Command, log_path: &Path) -> Result<()> {
@@ -531,7 +381,6 @@ mod tests {
     use super::*;
     use crate::config::RuntimePaths;
     use anyhow::Result;
-    use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
 
     enum FakePackageOutput {
@@ -575,9 +424,37 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         Ok(())
     }
 
-    fn environment_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+    fn write_fake_computer_use_bundle(root: &Path) -> Result<()> {
+        fs::write(
+            root.join("Cargo.toml"),
+            b"[workspace]\nmembers = [\"computer-use-linux\", \"updater\"]\n",
+        )?;
+        fs::write(root.join("Cargo.lock"), b"# fake lock\n")?;
+        fs::create_dir_all(root.join("computer-use-linux/src"))?;
+        fs::write(
+            root.join("computer-use-linux/Cargo.toml"),
+            b"[package]\nname = \"codex-computer-use-linux\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )?;
+        fs::write(
+            root.join("computer-use-linux/src/main.rs"),
+            b"fn main() {}\n",
+        )?;
+        fs::create_dir_all(root.join("updater/src"))?;
+        fs::write(
+            root.join("updater/Cargo.toml"),
+            b"[package]\nname = \"codex-app-updater\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )?;
+        fs::write(root.join("updater/src/main.rs"), b"fn main() {}\n")?;
+        fs::create_dir_all(root.join("plugins/openai-bundled/plugins/computer-use/.codex-plugin"))?;
+        fs::write(
+            root.join("plugins/openai-bundled/plugins/computer-use/.codex-plugin/plugin.json"),
+            b"{\"name\":\"computer-use\",\"version\":\"0.1.0\"}\n",
+        )?;
+        fs::write(
+            root.join("plugins/openai-bundled/plugins/computer-use/.mcp.json"),
+            b"{\"mcpServers\":{}}\n",
+        )?;
+        Ok(())
     }
 
     #[tokio::test]
@@ -587,8 +464,14 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         let state_root = temp.path().join("state");
         let cache_root = temp.path().join("cache");
         fs::create_dir_all(bundle_root.join("scripts/lib"))?;
+        fs::create_dir_all(bundle_root.join("launcher"))?;
         fs::create_dir_all(bundle_root.join("packaging/linux"))?;
         fs::create_dir_all(bundle_root.join("assets"))?;
+        write_fake_computer_use_bundle(&bundle_root)?;
+        fs::write(
+            bundle_root.join("launcher/start.sh.template"),
+            b"# fake launcher template\n",
+        )?;
         fs::write(bundle_root.join("assets/codex.png"), b"png")?;
         fs::write(
             bundle_root.join("packaging/linux/control"),
@@ -604,7 +487,35 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         )?;
         fs::write(
             bundle_root.join("packaging/linux/codex-app-updater.service"),
-            "[Unit]\nDescription=Codex App Updater\n",
+            "[Unit]\nDescription=Codex Update Manager\n",
+        )?;
+        fs::write(
+            bundle_root.join("packaging/linux/codex-app-updater-user-service.sh"),
+            "#!/bin/bash\n",
+        )?;
+        fs::write(
+            bundle_root.join("packaging/linux/codex-app-updater.postinst"),
+            "#!/bin/sh\nexit 0\n",
+        )?;
+        fs::write(
+            bundle_root.join("packaging/linux/codex-app-updater.prerm"),
+            "#!/bin/sh\nexit 0\n",
+        )?;
+        fs::write(
+            bundle_root.join("packaging/linux/codex-app-updater.postrm"),
+            "#!/bin/sh\nexit 0\n",
+        )?;
+        fs::write(
+            bundle_root.join("packaging/linux/codex-packaged-runtime.sh"),
+            "#!/bin/bash\n",
+        )?;
+        fs::write(
+            bundle_root.join("packaging/linux/PKGBUILD.template"),
+            "pkgname=codex\n",
+        )?;
+        fs::write(
+            bundle_root.join("packaging/linux/codex-app.install"),
+            "post_install() { :; }\n",
         )?;
         fs::write(
             bundle_root.join("install.sh"),
@@ -613,11 +524,6 @@ set -euo pipefail
 mkdir -p "${CODEX_INSTALL_DIR}"
 echo launcher > "${CODEX_INSTALL_DIR}/start.sh"
 chmod +x "${CODEX_INSTALL_DIR}/start.sh"
-cat > "${CODEX_INSTALL_DIR}/codex-app-version.env" <<'EOF'
-CODEX_APP_UPSTREAM_VERSION=26.422.30944
-CODEX_APP_UPSTREAM_BUILD=2080
-CODEX_APP_PACKAGE_VERSION=26.422.30944.2080
-EOF
 "#,
         )?;
         #[cfg(unix)]
@@ -666,215 +572,31 @@ EOF
             check_interval_hours: 6,
             auto_install_on_app_exit: true,
             notifications: true,
-            developer_mode: false,
             workspace_root: cache_root,
             builder_bundle_root: bundle_root,
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
-            cli_path: None,
         };
         let dmg_path = temp.path().join("Codex.dmg");
         fs::write(&dmg_path, b"dmg")?;
 
         let mut state = PersistedState::new(true);
-        let artifacts = build_update(&config, &mut state, &paths, "678cd508ffe0", &dmg_path)
-            .await?
-            .expect("new package version should produce build artifacts");
+        let artifacts = build_update(
+            &config,
+            &mut state,
+            &paths,
+            "2026.03.24+abcd1234",
+            &dmg_path,
+        )
+        .await?;
         assert_eq!(state.status, UpdateStatus::ReadyToInstall);
-        assert_eq!(
-            state.candidate_version.as_deref(),
-            Some("26.422.30944.2080")
-        );
         assert!(artifacts.workspace_dir.exists());
         assert!(artifacts.package_path.exists());
-        assert!(
-            artifacts
-                .package_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.contains("26.422.30944.2080")),
-            "expected upstream app version in package filename, got {}",
-            artifacts.package_path.display()
-        );
         assert!(
             is_native_package_file(&artifacts.package_path),
             "expected a native package (.deb, .rpm, or .pkg.tar.zst), got {}",
             artifacts.package_path.display()
         );
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn skips_package_rebuild_when_installed_version_already_satisfies_candidate() -> Result<()>
-    {
-        let temp = tempdir()?;
-        let bundle_root = temp.path().join("bundle");
-        let state_root = temp.path().join("state");
-        let cache_root = temp.path().join("cache");
-        fs::create_dir_all(bundle_root.join("scripts/lib"))?;
-        fs::create_dir_all(bundle_root.join("packaging/linux"))?;
-        fs::create_dir_all(bundle_root.join("assets"))?;
-        fs::write(bundle_root.join("assets/codex.png"), b"png")?;
-        fs::write(
-            bundle_root.join("packaging/linux/control"),
-            "Package: codex",
-        )?;
-        fs::write(
-            bundle_root.join("packaging/linux/codex-app.spec"),
-            "Name: codex",
-        )?;
-        fs::write(
-            bundle_root.join("packaging/linux/codex-app.desktop"),
-            "[Desktop Entry]",
-        )?;
-        fs::write(
-            bundle_root.join("packaging/linux/codex-app-updater.service"),
-            "[Unit]\nDescription=Codex App Updater\n",
-        )?;
-        fs::write(
-            bundle_root.join("install.sh"),
-            r#"#!/bin/bash
-set -euo pipefail
-mkdir -p "${CODEX_INSTALL_DIR}"
-echo launcher > "${CODEX_INSTALL_DIR}/start.sh"
-chmod +x "${CODEX_INSTALL_DIR}/start.sh"
-cat > "${CODEX_INSTALL_DIR}/codex-app-version.env" <<'EOF'
-CODEX_APP_UPSTREAM_VERSION=26.422.30944
-CODEX_APP_UPSTREAM_BUILD=2080
-CODEX_APP_PACKAGE_VERSION=26.422.30944.2080
-EOF
-"#,
-        )?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(
-                bundle_root.join("install.sh"),
-                fs::Permissions::from_mode(0o755),
-            )?;
-        }
-
-        let failing_build_script = r#"#!/bin/bash
-echo "build script should not run for an already-installed version" >&2
-exit 88
-"#;
-        for script in [
-            "scripts/build-deb.sh",
-            "scripts/build-rpm.sh",
-            "scripts/build-pacman.sh",
-        ] {
-            let path = bundle_root.join(script);
-            fs::write(&path, failing_build_script)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
-            }
-        }
-        fs::write(
-            bundle_root.join("scripts/patch-linux-window-ui.js"),
-            b"console.log('patched');\n",
-        )?;
-        fs::write(
-            bundle_root.join("scripts/lib/package-common.sh"),
-            b"#!/bin/bash\n",
-        )?;
-
-        let paths = RuntimePaths {
-            config_file: temp.path().join("config/config.toml"),
-            state_file: state_root.join("state.json"),
-            log_file: state_root.join("service.log"),
-            cache_dir: cache_root.clone(),
-            state_dir: state_root.clone(),
-            config_dir: temp.path().join("config"),
-        };
-        paths.ensure_dirs()?;
-
-        let config = RuntimeConfig {
-            dmg_url: "https://example.com/Codex.dmg".to_string(),
-            initial_check_delay_seconds: 30,
-            check_interval_hours: 6,
-            auto_install_on_app_exit: true,
-            notifications: true,
-            developer_mode: false,
-            workspace_root: cache_root,
-            builder_bundle_root: bundle_root,
-            app_executable_path: PathBuf::from("/opt/codex-app/electron"),
-            cli_path: None,
-        };
-        let dmg_path = temp.path().join("Codex.dmg");
-        fs::write(&dmg_path, b"dmg")?;
-
-        let mut state = PersistedState::new(true);
-        state.installed_version = "26.422.30944.2080-1".to_string();
-        let artifacts =
-            build_update(&config, &mut state, &paths, "678cd508ffe0", &dmg_path).await?;
-
-        assert_eq!(artifacts, None);
-        assert_eq!(state.status, UpdateStatus::Idle);
-        assert_eq!(state.candidate_version, None);
-        assert_eq!(state.artifact_paths.package_path, None);
-        Ok(())
-    }
-
-    #[test]
-    fn workspace_path_component_shortens_full_sha256() -> Result<()> {
-        assert_eq!(
-            workspace_path_component(
-                "678cd508ffe0bdf1f462bcf4e5c8a1559131d6ff4e7f0627856b8d9416198e8f"
-            )?,
-            "678cd508ffe0bdf1"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn workspace_path_component_rejects_path_characters() {
-        assert!(workspace_path_component("../678cd508ffe0").is_err());
-    }
-
-    #[test]
-    fn build_command_path_ignores_user_environment() {
-        let _guard = environment_lock()
-            .lock()
-            .expect("environment lock should not be poisoned");
-        let original_path = std::env::var_os("PATH");
-        let original_home = std::env::var_os("HOME");
-        std::env::set_var("PATH", "/tmp/malicious:/home/user/bin");
-        std::env::set_var("HOME", "/home/user");
-        assert_eq!(
-            build_command_path(),
-            OsString::from("/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/home/user/.local/bin")
-        );
-        match original_path {
-            Some(path) => std::env::set_var("PATH", path),
-            None => std::env::remove_var("PATH"),
-        }
-        match original_home {
-            Some(path) => std::env::set_var("HOME", path),
-            None => std::env::remove_var("HOME"),
-        }
-    }
-
-    #[test]
-    fn build_command_path_rejects_home_path_injection() {
-        let _guard = environment_lock()
-            .lock()
-            .expect("environment lock should not be poisoned");
-        let original_path = std::env::var_os("PATH");
-        let original_home = std::env::var_os("HOME");
-        std::env::set_var("PATH", "/tmp/malicious");
-        std::env::set_var("HOME", "/home/user:/tmp/malicious");
-        assert_eq!(build_command_path(), OsString::from(BUILD_COMMAND_PATH));
-        std::env::set_var("HOME", "relative-home");
-        assert_eq!(build_command_path(), OsString::from(BUILD_COMMAND_PATH));
-        match original_path {
-            Some(path) => std::env::set_var("PATH", path),
-            None => std::env::remove_var("PATH"),
-        }
-        match original_home {
-            Some(path) => std::env::set_var("HOME", path),
-            None => std::env::remove_var("HOME"),
-        }
     }
 
     #[test]
@@ -884,9 +606,15 @@ exit 88
         let destination_root = temp.path().join("destination");
 
         fs::create_dir_all(source_root.join("scripts/lib"))?;
+        fs::create_dir_all(source_root.join("launcher"))?;
         fs::create_dir_all(source_root.join("packaging/linux"))?;
         fs::create_dir_all(source_root.join("assets"))?;
+        write_fake_computer_use_bundle(&source_root)?;
         fs::write(source_root.join("install.sh"), b"#!/bin/bash\n")?;
+        fs::write(
+            source_root.join("launcher/start.sh.template"),
+            b"# fake launcher template\n",
+        )?;
         fs::write(source_root.join("scripts/build-deb.sh"), b"#!/bin/bash\n")?;
         fs::write(
             source_root.join("scripts/patch-linux-window-ui.js"),
@@ -902,149 +630,23 @@ exit 88
         )?;
         fs::write(
             source_root.join("packaging/linux/codex-app-updater.service"),
-            b"[Unit]\nDescription=Codex App Updater\n",
+            b"[Unit]\nDescription=Codex Update Manager\n",
         )?;
         fs::write(source_root.join("assets/codex.png"), b"png")?;
 
-        copy_builder_bundle(&source_root, &destination_root, false)?;
+        copy_builder_bundle(&source_root, &destination_root)?;
 
         assert!(destination_root.join("scripts/build-deb.sh").exists());
         assert!(destination_root
             .join("scripts/patch-linux-window-ui.js")
             .exists());
+        assert!(destination_root.join("computer-use-linux").exists());
+        assert!(destination_root.join("updater").exists());
+        assert!(destination_root
+            .join("plugins/openai-bundled/plugins/computer-use/.mcp.json")
+            .exists());
         assert!(!destination_root.join("scripts/build-rpm.sh").exists());
         assert!(!destination_root.join("scripts/build-pacman.sh").exists());
-        Ok(())
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bundle_copy_rejects_symlinked_builder_entries() -> Result<()> {
-        use std::os::unix::fs::symlink;
-
-        let temp = tempdir()?;
-        let source_root = temp.path().join("source");
-        let destination_root = temp.path().join("destination");
-        let external_script = temp.path().join("external-install.sh");
-
-        fs::create_dir_all(&source_root)?;
-        fs::write(&external_script, b"#!/bin/bash\n")?;
-        symlink(&external_script, source_root.join("install.sh"))?;
-
-        let error = copy_builder_bundle(&source_root, &destination_root, false)
-            .expect_err("builder symlink should be rejected");
-
-        assert!(error.to_string().contains("must not be a symlink"));
-        Ok(())
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bundle_copy_rejects_writable_production_root() -> Result<()> {
-        use std::os::unix::fs::PermissionsExt;
-
-        let temp = tempdir()?;
-        let source_root = temp.path().join("source");
-        let destination_root = temp.path().join("destination");
-        fs::create_dir_all(&source_root)?;
-        fs::set_permissions(&source_root, fs::Permissions::from_mode(0o777))?;
-
-        let error = copy_builder_bundle(&source_root, &destination_root, false)
-            .expect_err("production builder root should not be group/world writable");
-
-        assert!(error
-            .to_string()
-            .contains("must not be group- or world-writable"));
-        Ok(())
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bundle_copy_rejects_writable_production_entry() -> Result<()> {
-        use std::os::unix::fs::PermissionsExt;
-
-        let temp = tempdir()?;
-        let source_root = temp.path().join("source");
-        let destination_root = temp.path().join("destination");
-
-        fs::create_dir_all(source_root.join("scripts/lib"))?;
-        fs::create_dir_all(source_root.join("packaging/linux"))?;
-        fs::create_dir_all(source_root.join("assets"))?;
-        fs::write(source_root.join("install.sh"), b"#!/bin/bash\n")?;
-        fs::write(source_root.join("scripts/build-deb.sh"), b"#!/bin/bash\n")?;
-        fs::write(
-            source_root.join("scripts/patch-linux-window-ui.js"),
-            b"console.log('patched');\n",
-        )?;
-        fs::write(
-            source_root.join("scripts/lib/package-common.sh"),
-            b"#!/bin/bash\n",
-        )?;
-        fs::write(
-            source_root.join("packaging/linux/control"),
-            b"Package: codex\n",
-        )?;
-        fs::write(
-            source_root.join("packaging/linux/codex-app-updater.service"),
-            b"[Unit]\nDescription=Codex App Updater\n",
-        )?;
-        fs::write(source_root.join("assets/codex.png"), b"png")?;
-        fs::set_permissions(
-            source_root.join("packaging/linux/control"),
-            fs::Permissions::from_mode(0o666),
-        )?;
-
-        let error = copy_builder_bundle(&source_root, &destination_root, false)
-            .expect_err("production builder entries should not be group/world writable");
-
-        assert!(error
-            .to_string()
-            .contains("must not be group- or world-writable"));
-        Ok(())
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn packaged_builder_owner_allows_root_and_kernel_overflow_uid() {
-        let overflow_uid = 65_534;
-        assert!(is_trusted_packaged_builder_owner(0, Some(overflow_uid)));
-        assert!(is_trusted_packaged_builder_owner(
-            overflow_uid,
-            Some(overflow_uid)
-        ));
-
-        let untrusted_uid = 1;
-        assert!(!is_trusted_packaged_builder_owner(
-            untrusted_uid,
-            Some(overflow_uid)
-        ));
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn kernel_overflow_uid_parser_trims_proc_value() {
-        assert_eq!(parse_kernel_overflow_uid("65534\n"), Some(65_534));
-        assert_eq!(parse_kernel_overflow_uid("not-a-uid\n"), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bundle_copy_allows_writable_developer_root_to_reach_required_file_validation() -> Result<()>
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let temp = tempdir()?;
-        let source_root = temp.path().join("source");
-        let destination_root = temp.path().join("destination");
-        fs::create_dir_all(&source_root)?;
-        fs::set_permissions(&source_root, fs::Permissions::from_mode(0o777))?;
-
-        let error = copy_builder_bundle(&source_root, &destination_root, true)
-            .expect_err("developer mode should continue to required-file validation");
-
-        assert!(error
-            .to_string()
-            .contains("Required builder bundle path is missing"));
         Ok(())
     }
 
@@ -1071,5 +673,35 @@ exit 88
         let found = find_package_in(temp.path())?;
         assert_eq!(found, pkg_path);
         Ok(())
+    }
+
+    #[test]
+    fn collects_nvm_toolchain_bins_with_current_first() -> Result<()> {
+        let temp = tempdir()?;
+        let nvm_root = temp.path().join(".nvm");
+        let current_bin = nvm_root.join("versions/node/current/bin");
+        let version_bin = nvm_root.join("versions/node/v24.2.0/bin");
+
+        fs::create_dir_all(&current_bin)?;
+        fs::create_dir_all(&version_bin)?;
+        for dir in [&current_bin, &version_bin] {
+            for binary in ["node", "npm", "npx"] {
+                fs::write(dir.join(binary), b"bin")?;
+            }
+        }
+
+        let directories = collect_nvm_bin_dirs(&nvm_root);
+        assert_eq!(directories.first(), Some(&current_bin));
+        assert!(directories.contains(&version_bin));
+        Ok(())
+    }
+
+    #[test]
+    fn build_command_path_includes_system_dirs() {
+        let path = build_command_path();
+        let directories = std::env::split_paths(&path).collect::<Vec<_>>();
+
+        assert!(directories.iter().any(|dir| dir == Path::new("/usr/bin")));
+        assert!(directories.iter().any(|dir| dir == Path::new("/bin")));
     }
 }

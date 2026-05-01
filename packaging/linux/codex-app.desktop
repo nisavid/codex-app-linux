@@ -1,11 +1,12 @@
 [Desktop Entry]
-Name=Codex
-Comment=Run Codex on Linux
-Exec=env BAMF_DESKTOP_FILE_HINT=/usr/share/applications/codex-app.desktop CHROME_DESKTOP=codex-app.desktop /usr/bin/codex-app
+Name=Codex App
+Comment=Run Codex App on Linux
+Exec=env BAMF_DESKTOP_FILE_HINT=/usr/share/applications/codex-app.desktop CHROME_DESKTOP=codex-app.desktop /usr/bin/codex-app %u
 Icon=codex-app
 Terminal=false
 Type=Application
 Categories=Development;
+MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;
 StartupNotify=true
 StartupWMClass=codex-app
 X-GNOME-WMClass=codex-app

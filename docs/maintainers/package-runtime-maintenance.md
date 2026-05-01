@@ -16,12 +16,25 @@ For trust boundaries and attacker assumptions, use
 | RPM package | `scripts/build-rpm.sh`, `packaging/linux/codex-app.spec` | `dist/*.rpm`, temporary `rpmbuild` roots |
 | pacman package | `scripts/build-pacman.sh`, `packaging/linux/PKGBUILD.template`, `packaging/linux/codex-app.install` | `dist/codex-app-*.pkg.tar.*`, temporary `makepkg` roots |
 | Shared staged package files | `scripts/lib/package-common.sh` | `/opt/codex-app`, `/usr/bin/codex-app`, `/usr/bin/codex-app-updater` |
-| Packaged-only launcher behavior | `packaging/linux/packaged-runtime.sh` | `/usr/lib/codex-app/packaged-runtime.sh` |
+| Packaged-only launcher behavior | `packaging/linux/codex-packaged-runtime.sh` | `/usr/lib/codex-app/packaged-runtime.sh` |
 | User service lifecycle | `packaging/linux/codex-app-updater.service`, maintainer scripts, `packaging/linux/codex-app-updater-user-service.sh` | `systemd --user` service state |
 | Updater service and CLI | `updater/`, `updater/Cargo.toml` | XDG updater config, state, cache, and logs |
 
 Do not make `codex-app/`, `dist/`, or XDG runtime files the only durable fix.
 Inspect them to confirm behavior, then change the source files above.
+
+## Naming Contracts
+
+This fork's Linux names are intentional package and runtime contracts. Keep
+upstream behavior aligned to these names when merging upstream changes:
+
+- app, install roots, launchers, package names, desktop files, and XDG app state
+  use `codex-app`;
+- the updater crate, binary, service, config, state, cache, and logs use
+  `codex-app-updater`;
+- upstream `codex-desktop` and `codex-update-manager` names should not appear in
+  durable package/runtime surfaces unless they are compatibility metadata such
+  as `provides` or `conflicts`.
 
 ## Generated And Runtime Artifacts
 
@@ -47,10 +60,9 @@ Native packages install the generated app under `/opt/codex-app` and expose
 `/usr/bin/codex-app` as a launcher stub that execs
 `/opt/codex-app/start.sh`.
 
-The Arch package name is `codex-app`. It provides and conflicts with
-`codex-desktop` so pacman can replace older local packages. Debian and RPM
-packages also use `codex-app` and declare replacement metadata for older
-`codex-desktop` packages.
+The Arch package name is `codex-app`. It may provide or conflict with older
+upstream-derived names only as compatibility metadata. Debian and RPM packages
+also use `codex-app`.
 
 Package payload should stay aligned across formats. The top-level install
 destinations are:
@@ -87,7 +99,7 @@ Important launcher behavior:
   active updater service running so pending install state is not raced by an app
   launch. It does not import the
   user session `PATH`. It also disables the legacy
-  `codex-update-manager.service` name when present. On package launches it
+  `codex-app-updater.service` name when present. On package launches it
   triggers `codex-app-updater check-now --if-stale` in the background only after
   the launcher records the Electron PID.
 - It starts `python3 -m http.server 5175 --bind 127.0.0.1` from

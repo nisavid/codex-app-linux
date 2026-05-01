@@ -5,25 +5,30 @@ use crate::{
     cli::{Cli, Commands},
     codex_cli,
     config::{RuntimeConfig, RuntimePaths},
-    install, liveness, logging, notify, package_version,
-    state::{CliStatus, PersistedState, UpdateStatus},
+    install, liveness, logging, notify,
+    state::{PersistedState, UpdateStatus},
     upstream,
 };
 use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, Utc};
-use fs4::{FileExt, TryLockError};
+use fs4::fs_std::FileExt;
 use reqwest::Client;
 use std::{
+    ffi::OsString,
     fs::{self, OpenOptions},
     io::{Seek, SeekFrom, Write},
-    path::Path,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::Command,
 };
 use tokio::time::{self, Duration};
 use tracing::{error, info, warn};
 
 const RECONCILE_INTERVAL_SECONDS: u64 = 15;
 const CLI_MISSING_NOTIFICATION_EVENT: &str = "cli_missing";
-const UPSTREAM_REQUEST_TIMEOUT_SECONDS: u64 = 600;
+const CLI_MISSING_PROMPT_DISMISS_TTL: ChronoDuration = ChronoDuration::minutes(10);
+const PROMPT_INSTALL_CLI_CANCELLED_EXIT_CODE: i32 = 10;
+const PROMPT_INSTALL_CLI_NO_BACKEND_EXIT_CODE: i32 = 11;
 
 /// Runs the updater command-line entrypoint.
 pub async fn run(cli: Cli) -> Result<()> {
@@ -34,8 +39,9 @@ pub async fn run(cli: Cli) -> Result<()> {
     let config = RuntimeConfig::load_or_default(&paths)?;
     let mut state =
         PersistedState::load_or_default(&paths.state_file, config.auto_install_on_app_exit)?;
+    let original_state = state.clone();
     state.installed_version = install::installed_package_version();
-    state.save(&paths.state_file)?;
+    persist_if_changed(&paths, &state, &original_state)?;
 
     match cli.command {
         Commands::Daemon => run_daemon(&config, &mut state, &paths).await,
@@ -47,14 +53,17 @@ pub async fn run(cli: Cli) -> Result<()> {
             print_path,
             allow_install_missing,
         } => run_cli_preflight(
-            &config,
             &mut state,
             &paths,
             cli_path,
             print_path,
             allow_install_missing,
         ),
-        Commands::Status { json } => run_status(&config, &mut state, &paths, json),
+        Commands::PromptInstallCli {
+            cli_path,
+            print_path,
+        } => run_prompt_install_cli(&mut state, &paths, cli_path, print_path),
+        Commands::Status { json } => run_status(&mut state, &paths, json),
         Commands::InstallDeb { path } => install::install_deb(&path),
         Commands::InstallRpm { path } => install::install_rpm(&path),
         Commands::InstallPacman { path } => install::install_pacman(&path),
@@ -63,6 +72,18 @@ pub async fn run(cli: Cli) -> Result<()> {
 
 fn persist_state(paths: &RuntimePaths, state: &PersistedState) -> Result<()> {
     state.save(&paths.state_file)
+}
+
+fn persist_if_changed(
+    paths: &RuntimePaths,
+    state: &PersistedState,
+    original_state: &PersistedState,
+) -> Result<()> {
+    if state != original_state {
+        persist_state(paths, state)?;
+    }
+
+    Ok(())
 }
 
 fn sync_runtime_state(config: &RuntimeConfig, state: &mut PersistedState) {
@@ -75,8 +96,9 @@ fn sync_and_persist(
     state: &mut PersistedState,
     paths: &RuntimePaths,
 ) -> Result<()> {
+    let original_state = state.clone();
     sync_runtime_state(config, state);
-    persist_state(paths, state)
+    persist_if_changed(paths, state, &original_state)
 }
 
 fn set_status(
@@ -98,7 +120,7 @@ fn mark_failed_and_persist(
 }
 
 fn packaged_runtime_removed(config: &RuntimeConfig) -> bool {
-    config.builder_bundle_root == Path::new("/usr/lib/codex-app/update-builder")
+    config.builder_bundle_root == Path::new("/opt/codex-app/update-builder")
         && !config.app_executable_path.exists()
         && !install::is_primary_package_installed()
 }
@@ -129,13 +151,13 @@ fn try_acquire_check_lock(paths: &RuntimePaths) -> Result<Option<CheckLock>> {
         .open(&lock_path)
         .with_context(|| format!("Failed to open {}", lock_path.display()))?;
 
-    match FileExt::try_lock(&file) {
-        Ok(()) => {}
-        Err(TryLockError::WouldBlock) => {
+    match file.try_lock_exclusive() {
+        Ok(true) => {}
+        Ok(false) => {
             info!("skipping upstream check because another check is already active");
             return Ok(None);
         }
-        Err(TryLockError::Error(error)) => {
+        Err(error) => {
             return Err(error).with_context(|| format!("Failed to lock {}", lock_path.display()));
         }
     }
@@ -164,13 +186,13 @@ async fn run_daemon(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(state, paths)?;
+    codex_cli::refresh_cached_status(state, paths)?;
+    maybe_notify_cli_missing(state, paths, config.notifications)?;
+    maybe_notify_installed(state, paths, config.notifications)?;
     if packaged_runtime_removed(config) {
         info!("packaged app files are gone; stopping updater daemon");
         return Ok(());
     }
-    codex_cli::refresh_status(config, state, paths)?;
-    maybe_notify_cli_missing(state, paths, config.notifications)?;
-    maybe_notify_installed(state, paths, config.notifications)?;
     info!("daemon initialized");
 
     time::sleep(Duration::from_secs(config.initial_check_delay_seconds)).await;
@@ -222,10 +244,10 @@ async fn run_check_now(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(state, paths)?;
-    codex_cli::refresh_status(config, state, paths)?;
+    codex_cli::refresh_cached_status(state, paths)?;
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
-    if if_stale && state.status != UpdateStatus::Failed && upstream_check_is_fresh(config, state) {
+    if if_stale && upstream_check_is_fresh(config, state) {
         info!("skipping check-now because the last successful upstream check is still fresh");
         return reconcile_pending_install(config, state, paths).await;
     }
@@ -233,109 +255,231 @@ async fn run_check_now(
     reconcile_pending_install(config, state, paths).await
 }
 
-fn run_status(
-    config: &RuntimeConfig,
-    state: &mut PersistedState,
-    paths: &RuntimePaths,
-    json: bool,
-) -> Result<()> {
-    codex_cli::refresh_status(config, state, paths)?;
-
-    if json {
-        println!("{}", serde_json::to_string_pretty(state)?);
-    } else {
-        print!("{}", status_text(state));
-    }
-
-    Ok(())
-}
-
 fn upstream_check_is_fresh(config: &RuntimeConfig, state: &PersistedState) -> bool {
     let Some(last_successful_check_at) = state.last_successful_check_at else {
         return false;
     };
 
-    let elapsed = Utc::now().signed_duration_since(last_successful_check_at);
-    if elapsed < ChronoDuration::zero() {
-        return false;
-    }
-
-    let Ok(check_interval_hours) = i64::try_from(config.check_interval_hours) else {
-        return false;
-    };
-    let freshness_window = ChronoDuration::hours(check_interval_hours);
-    elapsed < freshness_window
+    let freshness_window = ChronoDuration::hours(config.check_interval_hours as i64);
+    Utc::now().signed_duration_since(last_successful_check_at) < freshness_window
 }
 
-fn status_text(state: &PersistedState) -> String {
-    format!(
-        "\
-status: {}
-installed_version: {}
-candidate_version: {}
-cli_status: {}
-cli_path: {}
-cli_path_source: {}
-cli_installed_version: {}
-cli_latest_version: {}
-cli_error: {}
-",
-        state.status,
-        state.installed_version,
-        state.candidate_version.as_deref().unwrap_or("none"),
-        state.cli_status,
-        state
-            .cli_path
-            .as_deref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "unknown".to_string()),
-        state.cli_path_source,
-        state.cli_installed_version.as_deref().unwrap_or("unknown"),
-        state.cli_latest_version.as_deref().unwrap_or("unknown"),
-        state.cli_error_message.as_deref().unwrap_or("none")
-    )
+fn run_status(state: &mut PersistedState, paths: &RuntimePaths, json: bool) -> Result<()> {
+    codex_cli::refresh_status(state, paths)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(state)?);
+    } else {
+        println!("status: {:?}", state.status);
+        println!("installed_version: {}", state.installed_version);
+        println!(
+            "candidate_version: {}",
+            state.candidate_version.as_deref().unwrap_or("none")
+        );
+        println!("cli_status: {:?}", state.cli_status);
+        println!(
+            "cli_installed_version: {}",
+            state.cli_installed_version.as_deref().unwrap_or("unknown")
+        );
+        println!(
+            "cli_latest_version: {}",
+            state.cli_latest_version.as_deref().unwrap_or("unknown")
+        );
+        println!(
+            "cli_error: {}",
+            state.cli_error_message.as_deref().unwrap_or("none")
+        );
+    }
+
+    Ok(())
+}
+
+fn run_prompt_install_cli(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    cli_path: Option<PathBuf>,
+    print_path: bool,
+) -> Result<()> {
+    let outcome = prompt_install_cli(state, paths, cli_path)?;
+    match outcome {
+        PromptInstallCliOutcome::Installed(path) => {
+            if print_path {
+                println!("{}", path.display());
+            }
+            std::process::exit(0);
+        }
+        PromptInstallCliOutcome::Cancelled => {
+            std::process::exit(PROMPT_INSTALL_CLI_CANCELLED_EXIT_CODE);
+        }
+        PromptInstallCliOutcome::NoBackend => {
+            std::process::exit(PROMPT_INSTALL_CLI_NO_BACKEND_EXIT_CODE);
+        }
+    }
 }
 
 fn run_cli_preflight(
-    config: &RuntimeConfig,
     state: &mut PersistedState,
     paths: &RuntimePaths,
     cli_path: Option<std::path::PathBuf>,
     print_path: bool,
     allow_install_missing: bool,
 ) -> Result<()> {
-    match codex_cli::preflight(config, state, paths, cli_path, allow_install_missing) {
-        Ok(outcome) => {
-            if print_path {
-                println!("{}", outcome.cli_path.display());
-            }
-            Ok(())
-        }
-        Err(error) => {
-            if print_path {
-                if let Some(path) = printable_cli_path_after_preflight_error(&error, state) {
-                    println!("{}", path.display());
-                }
-            }
-            Err(error)
-        }
+    let outcome = codex_cli::preflight(state, paths, cli_path, allow_install_missing)?;
+    if print_path {
+        println!("{}", outcome.cli_path.display());
     }
+    Ok(())
 }
 
-fn printable_cli_path_after_preflight_error<'a>(
-    error: &anyhow::Error,
-    state: &'a PersistedState,
-) -> Option<&'a Path> {
-    if codex_cli::is_invalid_configured_cli_path_error(error) {
-        return None;
-    }
-    if state.cli_status != CliStatus::Failed {
-        return None;
-    }
-    state
-        .cli_path
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PromptInstallCliOutcome {
+    Installed(PathBuf),
+    Cancelled,
+    NoBackend,
+}
+
+fn prompt_install_cli(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    cli_path: Option<PathBuf>,
+) -> Result<PromptInstallCliOutcome> {
+    if let Some(path) = cli_path
         .as_deref()
-        .filter(|path| codex_cli::is_usable_cli_path(path))
+        .and_then(|path| codex_cli::resolve_cli_path(Some(path)))
+        .or_else(|| {
+            state
+                .cli_path
+                .as_deref()
+                .and_then(|path| codex_cli::resolve_cli_path(Some(path)))
+        })
+        .or_else(|| codex_cli::resolve_cli_path(None))
+    {
+        return Ok(PromptInstallCliOutcome::Installed(path));
+    }
+
+    if recently_dismissed_cli_prompt(state) {
+        return Ok(PromptInstallCliOutcome::Cancelled);
+    }
+
+    if !has_graphical_session() {
+        return Ok(PromptInstallCliOutcome::NoBackend);
+    }
+
+    let consent = if prefers_kdialog() && command_in_path("kdialog").is_some() {
+        run_kdialog_prompt()?
+    } else if command_in_path("zenity").is_some() {
+        run_zenity_prompt()?
+    } else if command_in_path("kdialog").is_some() {
+        run_kdialog_prompt()?
+    } else {
+        run_actionable_notification_prompt()?
+    };
+
+    if !consent {
+        state.cli_prompt_dismissed_at = Some(Utc::now());
+        persist_state(paths, state)?;
+        return Ok(PromptInstallCliOutcome::Cancelled);
+    }
+
+    state.cli_prompt_dismissed_at = None;
+    let outcome = codex_cli::preflight(state, paths, cli_path, true)?;
+    Ok(PromptInstallCliOutcome::Installed(outcome.cli_path))
+}
+
+fn recently_dismissed_cli_prompt(state: &PersistedState) -> bool {
+    state.cli_prompt_dismissed_at.is_some_and(|dismissed_at| {
+        Utc::now().signed_duration_since(dismissed_at) < CLI_MISSING_PROMPT_DISMISS_TTL
+    })
+}
+
+fn has_graphical_session() -> bool {
+    let has_display =
+        std::env::var_os("DISPLAY").is_some() || std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let has_dbus = std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some()
+        || std::env::var_os("XDG_RUNTIME_DIR").is_some();
+    has_display && has_dbus
+}
+
+fn prefers_kdialog() -> bool {
+    desktop_tokens().iter().any(|token| {
+        matches!(
+            token.as_str(),
+            "kde" | "plasma" | "plasmawayland" | "plasmax11"
+        )
+    })
+}
+
+fn desktop_tokens() -> Vec<String> {
+    [
+        std::env::var("XDG_CURRENT_DESKTOP").ok(),
+        std::env::var("DESKTOP_SESSION").ok(),
+    ]
+    .into_iter()
+    .flatten()
+    .flat_map(|value| {
+        value
+            .split(':')
+            .map(|segment| segment.trim().to_ascii_lowercase())
+            .collect::<Vec<_>>()
+    })
+    .filter(|token| !token.is_empty())
+    .collect()
+}
+
+fn command_in_path(name: &str) -> Option<PathBuf> {
+    let path_env = std::env::var_os("PATH").unwrap_or_else(|| OsString::from(""));
+    std::env::split_paths(&path_env).find_map(|entry| {
+        let candidate = entry.join(name);
+        if is_executable_file(&candidate) {
+            Some(candidate)
+        } else {
+            None
+        }
+    })
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .metadata()
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+}
+
+fn run_kdialog_prompt() -> Result<bool> {
+    let status = Command::new("kdialog")
+        .args([
+            "--title",
+            "Codex App",
+            "--yesno",
+            "Codex CLI is not installed. Install it now?",
+        ])
+        .status()
+        .context("Failed to launch kdialog")?;
+    Ok(status.success())
+}
+
+fn run_zenity_prompt() -> Result<bool> {
+    let status = Command::new("zenity")
+        .args([
+            "--question",
+            "--title=Codex App",
+            "--text=Codex CLI is not installed. Install it now?",
+        ])
+        .status()
+        .context("Failed to launch zenity")?;
+    Ok(status.success())
+}
+
+fn run_actionable_notification_prompt() -> Result<bool> {
+    match notify::send_actionable(
+        "Codex CLI not installed",
+        "Codex App needs the Codex CLI. Choose Install now to let Codex App install it.",
+        &[("install", "Install now"), ("dismiss", "Dismiss")],
+    )? {
+        notify::ActionResponse::Invoked(action) if action == "install" => Ok(true),
+        _ => Ok(false),
+    }
 }
 
 async fn run_check_cycle(
@@ -354,9 +498,7 @@ async fn run_check_cycle(
         return Ok(());
     };
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(UPSTREAM_REQUEST_TIMEOUT_SECONDS))
-        .build()?;
+    let client = Client::builder().build()?;
 
     sync_runtime_state(config, state);
     state.status = UpdateStatus::CheckingUpstream;
@@ -382,7 +524,8 @@ async fn run_check_cycle(
         set_status(state, paths, UpdateStatus::DownloadingDmg)?;
 
         let downloads_dir = config.workspace_root.join("downloads");
-        let downloaded = upstream::download_dmg(&client, &config.dmg_url, &downloads_dir).await?;
+        let downloaded =
+            upstream::download_dmg(&client, &config.dmg_url, &downloads_dir, Utc::now()).await?;
 
         if state.dmg_sha256.as_deref() == Some(downloaded.sha256.as_str())
             && !retrying_failed_update
@@ -395,8 +538,8 @@ async fn run_check_cycle(
         }
 
         state.status = UpdateStatus::UpdateDetected;
-        state.candidate_version = None;
-        state.dmg_sha256 = Some(downloaded.sha256.clone());
+        state.candidate_version = Some(downloaded.candidate_version);
+        state.dmg_sha256 = Some(downloaded.sha256);
         state.artifact_paths.dmg_path = Some(downloaded.path.clone());
         state.notified_events.clear();
         state.save(&paths.state_file)?;
@@ -406,23 +549,23 @@ async fn run_check_cycle(
             paths,
             config.notifications,
             "update_detected",
-            "New Codex update detected",
+            "New Codex App update detected",
             "Preparing a local Linux package from the new upstream DMG.",
         )?;
 
-        if builder::build_update(config, state, paths, &downloaded.sha256, &downloaded.path)
-            .await?
-            .is_some()
-        {
-            maybe_notify(
-                state,
-                paths,
-                config.notifications,
-                "ready_to_install",
-                "Codex update ready",
-                "A rebuilt Linux package is ready to install.",
-            )?;
-        }
+        let candidate_version = state
+            .candidate_version
+            .clone()
+            .expect("candidate version should be set before local build");
+        builder::build_update(config, state, paths, &candidate_version, &downloaded.path).await?;
+        maybe_notify(
+            state,
+            paths,
+            config.notifications,
+            "ready_to_install",
+            "Codex App update ready",
+            "A rebuilt Linux package is ready to install.",
+        )?;
         Ok(())
     }
     .await;
@@ -443,6 +586,10 @@ async fn reconcile_pending_install(
 ) -> Result<()> {
     sync_runtime_state(config, state);
     recover_interrupted_install(state, paths)?;
+    if complete_pending_install_if_already_installed(state, paths)? {
+        let _ = maybe_notify_installed(state, paths, config.notifications);
+        return Ok(());
+    }
 
     match state.status {
         UpdateStatus::ReadyToInstall | UpdateStatus::WaitingForAppExit => {
@@ -463,15 +610,20 @@ async fn reconcile_pending_install(
             }
 
             if liveness::is_app_running(config)? {
+                clear_install_auth_required_event(state, paths)?;
                 set_status(state, paths, UpdateStatus::WaitingForAppExit)?;
                 maybe_notify(
                     state,
                     paths,
                     config.notifications,
                     "waiting_for_app_exit",
-                    "Codex update ready",
-                    "An update is ready and will install after you close Codex.",
+                    "Codex App update ready",
+                    "An update is ready and will install after you close Codex App.",
                 )?;
+                return Ok(());
+            }
+
+            if install_auth_retry_is_blocked(state) {
                 return Ok(());
             }
 
@@ -488,13 +640,39 @@ async fn reconcile_pending_install(
     Ok(())
 }
 
+fn complete_pending_install_if_already_installed(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+) -> Result<bool> {
+    if !matches!(
+        state.status,
+        UpdateStatus::ReadyToInstall | UpdateStatus::WaitingForAppExit
+    ) {
+        return Ok(false);
+    }
+
+    if !state.candidate_version.as_deref().is_some_and(|candidate| {
+        installed_version_matches_candidate(&state.installed_version, candidate)
+    }) {
+        return Ok(false);
+    }
+
+    state.status = UpdateStatus::Installed;
+    state.candidate_version = None;
+    state.error_message = None;
+    state.notified_events.clear();
+    persist_state(paths, state)?;
+    info!("recovered pending install state because the candidate version is already installed");
+    Ok(true)
+}
+
 fn recover_interrupted_install(state: &mut PersistedState, paths: &RuntimePaths) -> Result<()> {
     if state.status != UpdateStatus::Installing {
         return Ok(());
     }
 
     if state.candidate_version.as_deref().is_some_and(|candidate| {
-        package_version::installed_version_satisfies_candidate(&state.installed_version, candidate)
+        installed_version_satisfies_candidate(&state.installed_version, candidate)
     }) {
         state.status = UpdateStatus::Installed;
         state.candidate_version = None;
@@ -532,6 +710,55 @@ fn recover_interrupted_install(state: &mut PersistedState, paths: &RuntimePaths)
     persist_state(paths, state)?;
     info!(package = %package_path.display(), "recovered interrupted install state back to ready_to_install");
     Ok(())
+}
+
+fn installed_version_satisfies_candidate(installed: &str, candidate: &str) -> bool {
+    if installed == "unknown" {
+        return false;
+    }
+
+    match compare_generated_versions(installed, candidate) {
+        Some(std::cmp::Ordering::Less) => false,
+        Some(_) => true,
+        None => installed == candidate,
+    }
+}
+
+fn installed_version_matches_candidate(installed: &str, candidate: &str) -> bool {
+    if installed == "unknown" {
+        return false;
+    }
+
+    match compare_generated_versions(installed, candidate) {
+        Some(std::cmp::Ordering::Equal) => true,
+        Some(_) => false,
+        None => installed == candidate,
+    }
+}
+
+fn compare_generated_versions(left: &str, right: &str) -> Option<std::cmp::Ordering> {
+    let left = parse_generated_version(left)?;
+    let right = parse_generated_version(right)?;
+    Some(left.cmp(&right))
+}
+
+fn parse_generated_version(version: &str) -> Option<Vec<u32>> {
+    let without_metadata = version
+        .split_once('+')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(version);
+    let base = without_metadata
+        .split_once('-')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(without_metadata);
+    let mut parts = Vec::new();
+    for segment in base.split('.') {
+        parts.push(segment.parse::<u32>().ok()?);
+    }
+    if parts.len() != 4 {
+        return None;
+    }
+    Some(parts)
 }
 
 fn maybe_notify(
@@ -603,7 +830,7 @@ fn maybe_notify_cli_missing(
         enabled,
         CLI_MISSING_NOTIFICATION_EVENT,
         "Codex CLI not installed",
-        "Codex needs the Codex CLI. Install it with npm or open the app to retry the automatic install flow.",
+        "Codex App needs the Codex CLI. Install it with npm or open the app to retry the automatic install flow.",
     )
 }
 
@@ -621,7 +848,7 @@ fn maybe_notify_installed(
         paths,
         enabled,
         "installed",
-        "Codex updated",
+        "Codex App updated",
         "The new package is installed and will be used the next time you open the app.",
     )
 }
@@ -636,7 +863,7 @@ async fn trigger_install(
     persist_state(paths, state)?;
 
     let _ = notify::send(
-        "Installing Codex update",
+        "Installing Codex App update",
         "Applying the locally rebuilt Linux package.",
     );
 
@@ -673,12 +900,69 @@ async fn trigger_install(
     }
 
     let error = anyhow::anyhow!(message);
+    if pkexec_authentication_was_not_obtained(&status) {
+        defer_install_until_next_app_exit(state, paths, error.to_string())?;
+        return Err(error);
+    }
+
     mark_failed_and_persist(state, paths, error.to_string())?;
     let _ = notify::send(
         "Codex update failed",
         "The package could not be installed. Check the updater log for details.",
     );
     Err(error)
+}
+
+fn pkexec_authentication_was_not_obtained(status: &std::process::ExitStatus) -> bool {
+    matches!(status.code(), Some(126 | 127))
+}
+
+fn install_auth_required_event_key(state: &PersistedState) -> Option<String> {
+    state
+        .candidate_version
+        .as_deref()
+        .map(|candidate| format!("install_auth_required:{candidate}"))
+}
+
+fn install_auth_retry_is_blocked(state: &PersistedState) -> bool {
+    install_auth_required_event_key(state)
+        .as_ref()
+        .is_some_and(|event_key| state.notified_events.contains(event_key))
+}
+
+fn clear_install_auth_required_event(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+) -> Result<()> {
+    let Some(event_key) = install_auth_required_event_key(state) else {
+        return Ok(());
+    };
+
+    if state.notified_events.remove(&event_key) {
+        persist_state(paths, state)?;
+    }
+
+    Ok(())
+}
+
+fn defer_install_until_next_app_exit(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    message: String,
+) -> Result<()> {
+    state.status = UpdateStatus::ReadyToInstall;
+    state.error_message = Some(message);
+
+    if let Some(event_key) = install_auth_required_event_key(state) {
+        if state.notified_events.insert(event_key) {
+            let _ = notify::send(
+                "Codex update needs permission",
+                "The ready update will retry after the next app close. Approve the system authentication dialog to install it.",
+            );
+        }
+    }
+
+    persist_state(paths, state)
 }
 
 fn notify_failure(
@@ -701,7 +985,6 @@ fn notify_failure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::CliPathSource;
 
     #[test]
     fn upstream_check_freshness_respects_configured_interval() {
@@ -711,11 +994,9 @@ mod tests {
             check_interval_hours: 6,
             auto_install_on_app_exit: true,
             notifications: false,
-            developer_mode: false,
             workspace_root: std::path::PathBuf::from("/tmp/cache"),
             builder_bundle_root: std::path::PathBuf::from("/tmp/builder"),
             app_executable_path: std::path::PathBuf::from("/tmp/electron"),
-            cli_path: None,
         };
 
         let mut state = PersistedState::new(true);
@@ -725,29 +1006,6 @@ mod tests {
         assert!(upstream_check_is_fresh(&config, &state));
 
         state.last_successful_check_at = Some(Utc::now() - ChronoDuration::hours(7));
-        assert!(!upstream_check_is_fresh(&config, &state));
-
-        state.last_successful_check_at = Some(Utc::now() + ChronoDuration::hours(1));
-        assert!(!upstream_check_is_fresh(&config, &state));
-    }
-
-    #[test]
-    fn upstream_check_freshness_rejects_out_of_range_interval() {
-        let config = RuntimeConfig {
-            dmg_url: "https://example.com/Codex.dmg".to_string(),
-            initial_check_delay_seconds: 1,
-            check_interval_hours: u64::MAX,
-            auto_install_on_app_exit: true,
-            notifications: false,
-            developer_mode: false,
-            workspace_root: std::path::PathBuf::from("/tmp/cache"),
-            builder_bundle_root: std::path::PathBuf::from("/tmp/builder"),
-            app_executable_path: std::path::PathBuf::from("/tmp/electron"),
-            cli_path: None,
-        };
-        let mut state = PersistedState::new(true);
-        state.last_successful_check_at = Some(Utc::now() - ChronoDuration::hours(1));
-
         assert!(!upstream_check_is_fresh(&config, &state));
     }
 
@@ -778,16 +1036,14 @@ mod tests {
             check_interval_hours: 6,
             auto_install_on_app_exit: false,
             notifications: false,
-            developer_mode: false,
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
-            cli_path: None,
         };
 
         let mut state = PersistedState::new(false);
         state.status = UpdateStatus::Failed;
-        state.candidate_version = Some("26.422.30944.2080".to_string());
+        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
         state.error_message = Some("previous failure".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
@@ -795,85 +1051,6 @@ mod tests {
 
         assert_eq!(state.status, UpdateStatus::Failed);
         assert_eq!(state.error_message.as_deref(), Some("previous failure"));
-        Ok(())
-    }
-
-    #[test]
-    fn status_text_includes_cli_path_and_source() {
-        let mut state = PersistedState::new(true);
-        state.cli_status = CliStatus::UpToDate;
-        state.cli_path = Some(Path::new("/home/user/.local/bin/codex").to_path_buf());
-        state.cli_path_source = CliPathSource::KnownPath;
-        state.cli_installed_version = Some("0.42.0".to_string());
-        state.cli_latest_version = Some("0.42.0".to_string());
-
-        let output = status_text(&state);
-
-        assert!(output.contains("cli_path: /home/user/.local/bin/codex"));
-        assert!(output.contains("cli_status: up_to_date"));
-        assert!(output.contains("cli_path_source: known_path"));
-    }
-
-    #[test]
-    fn failed_preflight_can_print_persisted_cli_path_for_nonconfigured_errors() -> Result<()> {
-        let temp = tempfile::tempdir()?;
-        let cli_path = temp.path().join("codex");
-        write_executable_script(&cli_path, "#!/bin/sh\necho 'codex-cli v0.42.0'\n")?;
-
-        let mut state = PersistedState::new(true);
-        state.cli_path = Some(cli_path.clone());
-        state.cli_status = CliStatus::Failed;
-        state.cli_error_message = Some("Codex CLI upgrade failed".to_string());
-        let error = anyhow::anyhow!("Codex CLI upgrade failed: npm install failed");
-
-        assert_eq!(
-            printable_cli_path_after_preflight_error(&error, &state),
-            Some(cli_path.as_path())
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn failed_preflight_does_not_print_path_for_invalid_cli_path_errors() -> Result<()> {
-        let temp = tempfile::tempdir()?;
-        let paths = RuntimePaths {
-            config_file: temp.path().join("config/config.toml"),
-            state_file: temp.path().join("state/state.json"),
-            log_file: temp.path().join("state/service.log"),
-            cache_dir: temp.path().join("cache"),
-            state_dir: temp.path().join("state"),
-            config_dir: temp.path().join("config"),
-        };
-        paths.ensure_dirs()?;
-
-        let cli_path = temp.path().join("codex");
-        write_executable_script(&cli_path, "#!/bin/sh\necho 'codex-cli v0.42.0'\n")?;
-        let mut state = PersistedState::new(true);
-        state.cli_path = Some(cli_path);
-
-        let config = RuntimeConfig::default_with_paths(&paths);
-        let missing_cli = temp.path().join("missing-codex");
-
-        let error = codex_cli::preflight(&config, &mut state, &paths, Some(missing_cli), false)
-            .expect_err("invalid CLI path should fail loudly");
-
-        assert!(codex_cli::is_invalid_configured_cli_path_error(&error));
-        assert_eq!(
-            printable_cli_path_after_preflight_error(&error, &state),
-            None
-        );
-        Ok(())
-    }
-
-    fn write_executable_script(path: &Path, contents: &str) -> Result<()> {
-        std::fs::write(path, contents)?;
-        let mut permissions = std::fs::metadata(path)?.permissions();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            permissions.set_mode(0o755);
-        }
-        std::fs::set_permissions(path, permissions)?;
         Ok(())
     }
 
@@ -896,11 +1073,9 @@ mod tests {
             check_interval_hours: 6,
             auto_install_on_app_exit: true,
             notifications: false,
-            developer_mode: false,
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
-            cli_path: None,
         };
 
         for status in [
@@ -946,7 +1121,7 @@ mod tests {
     }
 
     #[test]
-    fn held_check_lock_blocks_second_acquire() -> Result<()> {
+    fn held_check_lock_blocks_second_acquire_until_drop() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let paths = RuntimePaths {
             config_file: temp.path().join("config/config.toml"),
@@ -958,11 +1133,17 @@ mod tests {
         };
         paths.ensure_dirs()?;
 
-        let first_lock = try_acquire_check_lock(&paths)?;
-        let second_lock = try_acquire_check_lock(&paths)?;
+        {
+            let first_lock = try_acquire_check_lock(&paths)?;
+            let second_lock = try_acquire_check_lock(&paths)?;
 
-        assert!(first_lock.is_some());
-        assert!(second_lock.is_none());
+            assert!(first_lock.is_some());
+            assert!(second_lock.is_none());
+        }
+
+        let reacquired_lock = try_acquire_check_lock(&paths)?;
+
+        assert!(reacquired_lock.is_some());
         Ok(())
     }
 
@@ -985,16 +1166,14 @@ mod tests {
             check_interval_hours: 6,
             auto_install_on_app_exit: true,
             notifications: false,
-            developer_mode: false,
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
-            cli_path: None,
         };
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::ReadyToInstall;
-        state.candidate_version = Some("26.422.30944.2080".to_string());
+        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
         state.artifact_paths.package_path = Some(temp.path().join("missing/codex.deb"));
 
         reconcile_pending_install(&config, &mut state, &paths).await?;
@@ -1034,16 +1213,14 @@ mod tests {
             check_interval_hours: 6,
             auto_install_on_app_exit: false,
             notifications: false,
-            developer_mode: false,
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
-            cli_path: None,
         };
 
         let mut state = PersistedState::new(false);
         state.status = UpdateStatus::ReadyToInstall;
-        state.candidate_version = Some("26.422.30944.2080".to_string());
+        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
         reconcile_pending_install(&config, &mut state, &paths).await?;
@@ -1051,6 +1228,226 @@ mod tests {
         assert_eq!(state.status, UpdateStatus::ReadyToInstall);
         assert_eq!(state.error_message, None);
         Ok(())
+    }
+
+    #[test]
+    fn pkexec_authentication_failures_are_retryable() -> Result<()> {
+        for code in [126, 127] {
+            let status = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(format!("exit {code}"))
+                .status()?;
+            assert!(pkexec_authentication_was_not_obtained(&status));
+        }
+
+        let status = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg("exit 1")
+            .status()?;
+        assert!(!pkexec_authentication_was_not_obtained(&status));
+        Ok(())
+    }
+
+    #[test]
+    fn command_lookup_requires_executable_file() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let candidate = temp.path().join("zenity");
+        std::fs::write(&candidate, b"#!/bin/sh\n")?;
+
+        let mut permissions = std::fs::metadata(&candidate)?.permissions();
+        permissions.set_mode(0o644);
+        std::fs::set_permissions(&candidate, permissions)?;
+
+        assert!(!is_executable_file(&candidate));
+
+        let mut permissions = std::fs::metadata(&candidate)?.permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&candidate, permissions)?;
+
+        assert!(is_executable_file(&candidate));
+        Ok(())
+    }
+
+    #[test]
+    fn prompt_install_cli_does_not_treat_non_executable_file_as_installed() -> Result<()> {
+        let _env_guard = crate::TEST_ENV_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let original_display = std::env::var_os("DISPLAY");
+        let original_wayland_display = std::env::var_os("WAYLAND_DISPLAY");
+        let original_dbus_session_bus_address = std::env::var_os("DBUS_SESSION_BUS_ADDRESS");
+        let original_xdg_runtime_dir = std::env::var_os("XDG_RUNTIME_DIR");
+        let original_path = std::env::var_os("PATH");
+        let original_home = std::env::var_os("HOME");
+        let original_nvm_dir = std::env::var_os("NVM_DIR");
+
+        std::env::remove_var("DISPLAY");
+        std::env::remove_var("WAYLAND_DISPLAY");
+        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+        std::env::remove_var("XDG_RUNTIME_DIR");
+        std::env::set_var("PATH", temp.path().join("missing-bin"));
+        std::env::set_var("HOME", temp.path());
+        std::env::remove_var("NVM_DIR");
+
+        let invalid_cli_path = temp.path().join("codex.txt");
+        std::fs::write(&invalid_cli_path, b"not executable")?;
+
+        let mut state = PersistedState::new(true);
+        state.cli_path = Some(invalid_cli_path);
+
+        let outcome = prompt_install_cli(&mut state, &paths, None)?;
+
+        if let Some(value) = original_display {
+            std::env::set_var("DISPLAY", value);
+        } else {
+            std::env::remove_var("DISPLAY");
+        }
+        if let Some(value) = original_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", value);
+        } else {
+            std::env::remove_var("WAYLAND_DISPLAY");
+        }
+        if let Some(value) = original_dbus_session_bus_address {
+            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", value);
+        } else {
+            std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+        }
+        if let Some(value) = original_xdg_runtime_dir {
+            std::env::set_var("XDG_RUNTIME_DIR", value);
+        } else {
+            std::env::remove_var("XDG_RUNTIME_DIR");
+        }
+        if let Some(value) = original_path {
+            std::env::set_var("PATH", value);
+        } else {
+            std::env::remove_var("PATH");
+        }
+        if let Some(value) = original_home {
+            std::env::set_var("HOME", value);
+        } else {
+            std::env::remove_var("HOME");
+        }
+        if let Some(value) = original_nvm_dir {
+            std::env::set_var("NVM_DIR", value);
+        } else {
+            std::env::remove_var("NVM_DIR");
+        }
+
+        assert_eq!(outcome, PromptInstallCliOutcome::NoBackend);
+        Ok(())
+    }
+
+    #[test]
+    fn install_auth_retry_block_is_scoped_to_candidate() {
+        let mut state = PersistedState::new(true);
+        state.candidate_version = Some("2026.04.28.082247+abcdef12".to_string());
+
+        assert!(!install_auth_retry_is_blocked(&state));
+
+        state
+            .notified_events
+            .insert("install_auth_required:2026.04.28.082247+abcdef12".to_string());
+        assert!(install_auth_retry_is_blocked(&state));
+
+        state.candidate_version = Some("2026.04.29.010203+abcdef12".to_string());
+        assert!(!install_auth_retry_is_blocked(&state));
+    }
+
+    #[test]
+    fn clear_install_auth_required_event_keeps_unrelated_notifications() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let mut state = PersistedState::new(true);
+        state.candidate_version = Some("2026.04.28.082247+abcdef12".to_string());
+        state
+            .notified_events
+            .insert("install_auth_required:2026.04.28.082247+abcdef12".to_string());
+        state
+            .notified_events
+            .insert("installed:2026.04.25.054929+12345678".to_string());
+
+        clear_install_auth_required_event(&mut state, &paths)?;
+
+        assert!(!install_auth_retry_is_blocked(&state));
+        assert!(state
+            .notified_events
+            .contains("installed:2026.04.25.054929+12345678"));
+        Ok(())
+    }
+
+    #[test]
+    fn pending_install_becomes_installed_when_candidate_is_already_present() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let mut state = PersistedState::new(true);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.installed_version = "2026.04.28.082247-abcdef12.fc43".to_string();
+        state.candidate_version = Some("2026.04.28.082247+abcdef12".to_string());
+        state.error_message = Some("authentication was not obtained".to_string());
+        state
+            .notified_events
+            .insert("install_auth_required:2026.04.28.082247+abcdef12".to_string());
+
+        assert!(complete_pending_install_if_already_installed(
+            &mut state, &paths
+        )?);
+
+        assert_eq!(state.status, UpdateStatus::Installed);
+        assert_eq!(state.candidate_version, None);
+        assert_eq!(state.error_message, None);
+        assert!(state.notified_events.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn generated_versions_compare_by_timestamp_segments() {
+        assert_eq!(
+            compare_generated_versions("2026.04.01.035152", "2026.03.27.025604+1086e799"),
+            Some(std::cmp::Ordering::Greater)
+        );
+    }
+
+    #[test]
+    fn generated_versions_ignore_package_release_suffixes() {
+        assert_eq!(
+            compare_generated_versions(
+                "2026.04.25.054929-90dd7716x11.fc43",
+                "2026.04.25.054929+90dd7716",
+            ),
+            Some(std::cmp::Ordering::Equal)
+        );
+    }
+
+    #[test]
+    fn generated_version_comparison_rejects_non_generated_versions() {
+        assert_eq!(compare_generated_versions("0.34.1", "0.35.0"), None);
     }
 
     #[tokio::test]
@@ -1077,8 +1474,8 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::Installing;
-        state.installed_version = "26.422.30944.2080".to_string();
-        state.candidate_version = Some("26.422.30944.2079".to_string());
+        state.installed_version = "2026.04.01.035152".to_string();
+        state.candidate_version = Some("2026.03.27.025604+1086e799".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
         recover_interrupted_install(&mut state, &paths)?;
@@ -1112,8 +1509,8 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::Installing;
-        state.installed_version = "26.422.30944.2079".to_string();
-        state.candidate_version = Some("26.422.30944.2080".to_string());
+        state.installed_version = "2026.03.24.120000".to_string();
+        state.candidate_version = Some("2026.03.27.025604+1086e799".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
         recover_interrupted_install(&mut state, &paths)?;
@@ -1140,13 +1537,13 @@ mod tests {
         paths.ensure_dirs()?;
 
         let mut state = PersistedState::new(true);
-        state.candidate_version = Some("26.422.30944.2080".to_string());
+        state.candidate_version = Some("2026.03.24+abcd1234".to_string());
         maybe_notify(
             &mut state,
             &paths,
             false,
             "ready_to_install",
-            "Codex update ready",
+            "Codex App update ready",
             "An update is ready to install.",
         )?;
         let notified_count = state.notified_events.len();
@@ -1155,7 +1552,7 @@ mod tests {
             &paths,
             false,
             "ready_to_install",
-            "Codex update ready",
+            "Codex App update ready",
             "An update is ready to install.",
         )?;
 
@@ -1178,7 +1575,7 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::Installed;
-        state.installed_version = "26.422.30944.2080".to_string();
+        state.installed_version = "2026.04.16.120000".to_string();
 
         maybe_notify_installed(&mut state, &paths, false)?;
         let notified_count = state.notified_events.len();
@@ -1187,7 +1584,7 @@ mod tests {
         assert_eq!(state.notified_events.len(), notified_count);
         assert!(state
             .notified_events
-            .contains("installed:26.422.30944.2080"));
+            .contains("installed:2026.04.16.120000"));
         Ok(())
     }
 
@@ -1207,7 +1604,8 @@ mod tests {
         let mut state = PersistedState::new(true);
         state.cli_path = None;
         state.cli_installed_version = None;
-        state.cli_error_message = Some("Codex CLI not found in configured paths".to_string());
+        state.cli_error_message =
+            Some("Codex CLI not found in PATH or known install locations".to_string());
 
         maybe_notify_cli_missing(&mut state, &paths, false)?;
         let notified_count = state.notified_events.len();

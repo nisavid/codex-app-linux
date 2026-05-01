@@ -3,7 +3,6 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-. "$REPO_DIR/scripts/lib/package-common.sh"
 APP_DIR="${APP_DIR_OVERRIDE:-$REPO_DIR/codex-app}"
 DIST_DIR="${DIST_DIR_OVERRIDE:-$REPO_DIR/dist}"
 SPEC_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.spec"
@@ -11,14 +10,22 @@ DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.desktop"
 SERVICE_TEMPLATE="$REPO_DIR/packaging/linux/codex-app-updater.service"
 USER_SERVICE_HELPER_TEMPLATE="$REPO_DIR/packaging/linux/codex-app-updater-user-service.sh"
 ICON_SOURCE="$REPO_DIR/assets/codex.png"
-PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/packaged-runtime.sh"
+PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
 
 PACKAGE_NAME="${PACKAGE_NAME:-codex-app}"
-PACKAGE_VERSION="$(resolve_package_version)"
+PACKAGE_VERSION="${PACKAGE_VERSION:-$(date -u +%Y.%m.%d.%H%M%S)}"
 UPDATER_BINARY_SOURCE="${UPDATER_BINARY_SOURCE:-$REPO_DIR/target/release/codex-app-updater}"
 UPDATER_SERVICE_SOURCE="${UPDATER_SERVICE_SOURCE:-$SERVICE_TEMPLATE}"
 PACKAGED_RUNTIME_SOURCE="${PACKAGED_RUNTIME_SOURCE:-$PACKAGED_RUNTIME_TEMPLATE}"
 UPDATE_BUILDER_ROOT_PLACEHOLDER="__UPDATE_BUILDER_ROOT__"
+
+# Keep the installed update-builder payload aligned with the other package formats.
+# shellcheck source=scripts/lib/package-common.sh
+. "$REPO_DIR/scripts/lib/package-common.sh"
+
+info()  { echo "[INFO] $*" >&2; }
+error() { echo "[ERROR] $*" >&2; exit 1; }
+
 map_arch() {
     case "$(uname -m)" in
         x86_64)  echo "x86_64" ;;
@@ -41,6 +48,22 @@ rpm_version_parts() {
     RPM_RELEASE="$hash"
 }
 
+ensure_updater_binary() {
+    if [ -x "$UPDATER_BINARY_SOURCE" ]; then
+        return
+    fi
+
+    [ -f "$REPO_DIR/Cargo.toml" ] || error "Missing updater binary: $UPDATER_BINARY_SOURCE"
+    command -v cargo >/dev/null 2>&1 || error "cargo is required to build codex-app-updater.
+Install the Rust toolchain:
+  bash scripts/install-deps.sh        # auto-installs via rustup
+  # or manually: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+
+    info "Building codex-app-updater release binary"
+    cargo build --release -p codex-app-updater >&2
+    [ -x "$UPDATER_BINARY_SOURCE" ] || error "Failed to build updater binary: $UPDATER_BINARY_SOURCE"
+}
+
 main() {
     [ -d "$APP_DIR" ] || error "Missing app directory: $APP_DIR. Run ./install.sh first."
     [ -x "$APP_DIR/start.sh" ] || error "Missing launcher: $APP_DIR/start.sh"
@@ -52,7 +75,6 @@ main() {
     [ -f "$PACKAGED_RUNTIME_SOURCE" ] || error "Missing packaged launcher runtime helper: $PACKAGED_RUNTIME_SOURCE"
     command -v rpmbuild >/dev/null 2>&1 || error "rpmbuild is required (install rpm-build)"
 
-    validate_packaging_identifiers
     ensure_updater_binary
 
     local arch
@@ -66,10 +88,16 @@ main() {
     # shellcheck disable=SC2064
     trap "rm -rf '$build_root'" EXIT
 
-    local staging_root="${TEST_RPM_STAGING:-$build_root/STAGING}"
+    local staging_root="$build_root/STAGING"
+
     stage_common_package_files "$staging_root"
     stage_update_builder_bundle "$staging_root"
-    write_launcher_stub "$staging_root"
+
+    cat > "$staging_root/usr/bin/$PACKAGE_NAME" <<SCRIPT
+#!/bin/bash
+exec /opt/$PACKAGE_NAME/start.sh "\$@"
+SCRIPT
+    chmod 0755 "$staging_root/usr/bin/$PACKAGE_NAME"
 
     local spec_file="$build_root/codex-app.spec"
     sed \

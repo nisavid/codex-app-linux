@@ -5,7 +5,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
-    fmt,
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
@@ -35,31 +34,6 @@ pub enum UpdateStatus {
     Failed,
 }
 
-impl UpdateStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Idle => "idle",
-            Self::CheckingUpstream => "checking_upstream",
-            Self::UpdateDetected => "update_detected",
-            Self::DownloadingDmg => "downloading_dmg",
-            Self::PreparingWorkspace => "preparing_workspace",
-            Self::PatchingApp => "patching_app",
-            Self::BuildingPackage => "building_package",
-            Self::ReadyToInstall => "ready_to_install",
-            Self::WaitingForAppExit => "waiting_for_app_exit",
-            Self::Installing => "installing",
-            Self::Installed => "installed",
-            Self::Failed => "failed",
-        }
-    }
-}
-
-impl fmt::Display for UpdateStatus {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 /// Status of the user-installed Codex CLI preflight check.
@@ -71,61 +45,6 @@ pub enum CliStatus {
     UpdateRequired,
     Updating,
     Failed,
-}
-
-impl CliStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Unknown => "unknown",
-            Self::Checking => "checking",
-            Self::UpToDate => "up_to_date",
-            Self::UpdateRequired => "update_required",
-            Self::Updating => "updating",
-            Self::Failed => "failed",
-        }
-    }
-}
-
-impl fmt::Display for CliStatus {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-/// Source that selected the persisted Codex CLI path.
-pub enum CliPathSource {
-    Explicit,
-    Env,
-    Config,
-    Persisted,
-    Path,
-    KnownPath,
-    AutoInstall,
-    #[default]
-    Unknown,
-}
-
-impl CliPathSource {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Explicit => "explicit",
-            Self::Env => "env",
-            Self::Config => "config",
-            Self::Persisted => "persisted",
-            Self::Path => "path",
-            Self::KnownPath => "known_path",
-            Self::AutoInstall => "auto_install",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
-impl fmt::Display for CliPathSource {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -157,8 +76,6 @@ pub struct PersistedState {
     #[serde(default)]
     pub cli_path: Option<PathBuf>,
     #[serde(default)]
-    pub cli_path_source: CliPathSource,
-    #[serde(default)]
     pub cli_installed_version: Option<String>,
     #[serde(default)]
     pub cli_latest_version: Option<String>,
@@ -167,7 +84,11 @@ pub struct PersistedState {
     #[serde(default)]
     pub cli_last_check_at: Option<DateTime<Utc>>,
     #[serde(default)]
+    pub cli_last_verified_at: Option<DateTime<Utc>>,
+    #[serde(default)]
     pub cli_error_message: Option<String>,
+    #[serde(default)]
+    pub cli_prompt_dismissed_at: Option<DateTime<Utc>>,
 }
 
 impl PersistedState {
@@ -186,12 +107,13 @@ impl PersistedState {
             notified_events: BTreeSet::new(),
             auto_install_on_app_exit,
             cli_path: None,
-            cli_path_source: CliPathSource::Unknown,
             cli_installed_version: None,
             cli_latest_version: None,
             cli_status: CliStatus::Unknown,
             cli_last_check_at: None,
+            cli_last_verified_at: None,
             cli_error_message: None,
+            cli_prompt_dismissed_at: None,
         }
     }
 
@@ -292,18 +214,18 @@ mod tests {
         let temp = tempdir()?;
         let path = temp.path().join("state.json");
         let mut state = PersistedState::new(false);
-        state.installed_version = "26.422.30944.2079".to_string();
+        state.installed_version = "2026.03.24+deadbeef".to_string();
         state.status = UpdateStatus::WaitingForAppExit;
-        state.candidate_version = Some("26.422.30944.2080".to_string());
+        state.candidate_version = Some("2026.03.25+feedface".to_string());
         state.notified_events.insert("ready_to_install".to_string());
         state.save(&path)?;
 
         let loaded = PersistedState::load_or_default(&path, true)?;
-        assert_eq!(loaded.installed_version, "26.422.30944.2079");
+        assert_eq!(loaded.installed_version, "2026.03.24+deadbeef");
         assert_eq!(loaded.status, UpdateStatus::WaitingForAppExit);
         assert_eq!(
             loaded.candidate_version.as_deref(),
-            Some("26.422.30944.2080")
+            Some("2026.03.25+feedface")
         );
         assert!(loaded.notified_events.contains("ready_to_install"));
         assert!(!loaded.auto_install_on_app_exit);
@@ -317,7 +239,7 @@ mod tests {
         fs::write(
             &path,
             r#"{
-  "installed_version": "26.422.30944.2079",
+  "installed_version": "2026.03.24+deadbeef",
   "candidate_version": null,
   "status": "idle",
   "last_check_at": null,
@@ -336,43 +258,6 @@ mod tests {
         assert_eq!(loaded.cli_installed_version, None);
         assert_eq!(loaded.cli_latest_version, None);
         assert_eq!(loaded.cli_error_message, None);
-        assert_eq!(loaded.cli_path_source, CliPathSource::Unknown);
-        Ok(())
-    }
-
-    #[test]
-    fn loads_state_without_cli_path_source() -> Result<()> {
-        let temp = tempdir()?;
-        let path = temp.path().join("state.json");
-        fs::write(
-            &path,
-            r#"{
-  "installed_version": "26.422.30944.2079",
-  "candidate_version": null,
-  "status": "idle",
-  "last_check_at": null,
-  "last_successful_check_at": null,
-  "remote_headers_fingerprint": null,
-  "dmg_sha256": null,
-  "artifact_paths": {"dmg_path": null, "workspace_dir": null, "deb_path": null},
-  "error_message": null,
-  "notified_events": [],
-  "auto_install_on_app_exit": true,
-  "cli_path": "/usr/bin/codex",
-  "cli_installed_version": "0.42.0",
-  "cli_latest_version": "0.42.0",
-  "cli_status": "up_to_date",
-  "cli_last_check_at": null,
-  "cli_error_message": null
-}"#,
-        )?;
-
-        let loaded = PersistedState::load_or_default(&path, true)?;
-        assert_eq!(
-            loaded.cli_path.as_deref(),
-            Some(Path::new("/usr/bin/codex"))
-        );
-        assert_eq!(loaded.cli_path_source, CliPathSource::Unknown);
         Ok(())
     }
 
@@ -412,12 +297,12 @@ mod tests {
         let temp = tempdir()?;
         let path = temp.path().join("state.json");
         let mut state = PersistedState::new(true);
-        state.installed_version = "26.422.30944.2080".to_string();
+        state.installed_version = "2026.04.20.120000".to_string();
 
         state.save(&path)?;
 
         let content = fs::read_to_string(&path)?;
-        assert!(content.contains("\"installed_version\": \"26.422.30944.2080\""));
+        assert!(content.contains("\"installed_version\": \"2026.04.20.120000\""));
 
         let leftover_temp_files = fs::read_dir(temp.path())?
             .filter_map(|entry| entry.ok())

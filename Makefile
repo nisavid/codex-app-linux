@@ -4,13 +4,17 @@ SHELL := /bin/bash
 APP_DIR := $(CURDIR)/codex-app
 PACKAGE_NAME := codex-app
 PACMAN_PACKAGE_NAME := codex-app
+DEV_APP_ID ?= codex-cua-lab
+DEV_APP_NAME ?= Codex CUA Lab
+DEV_APP_DIR ?= $(CURDIR)/$(DEV_APP_ID)-app
+DEV_APP_BIN ?= $(CURDIR)/bin/$(DEV_APP_ID)
 DEB_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)_*.deb
 RPM_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-*.rpm
 PACMAN_GLOB := $(CURDIR)/dist/$(PACMAN_PACKAGE_NAME)-[0-9]*.pkg.tar.*
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check test build-updater build-app run-app deb rpm pacman package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
+.PHONY: help check test build-updater build-app run-app build-dev-app run-dev-app deb rpm pacman package install service-enable service-status clean-dist clean-state
 
 help:
 	@printf '\nCodex App Linux Make Targets\n\n'
@@ -19,20 +23,21 @@ help:
 	@printf '  %-18s %s\n' "make build-updater" "Build codex-app-updater in release mode"
 	@printf '  %-18s %s\n' "make build-app" "Run install.sh and regenerate codex-app/"
 	@printf '  %-18s %s\n' "make run-app" "Launch the local generated Electron app from codex-app/"
+	@printf '  %-18s %s\n' "make build-dev-app" "Build a side-by-side test app with a distinct app id/bin"
+	@printf '  %-18s %s\n' "make run-dev-app" "Launch the side-by-side test app"
 	@printf '  %-18s %s\n' "make deb" "Build the Debian package into dist/"
 	@printf '  %-18s %s\n' "make rpm" "Build the RPM package into dist/ (Fedora/openSUSE)"
 	@printf '  %-18s %s\n' "make pacman" "Build the pacman package into dist/ (Arch)"
 	@printf '  %-18s %s\n' "make package" "Build native package (auto-detects deb, rpm, or pacman)"
-	@printf '  %-18s %s\n' "make apple-dmg-verify" "Run macOS Apple trust checks for the upstream DMG"
-	@printf '  %-18s %s\n' "make release-gate" "Verify DMG hash, generated app security, package metadata, checksums, and optional signature"
 	@printf '  %-18s %s\n' "make install" "Install the latest generated native package"
 	@printf '  %-18s %s\n' "make service-enable" "Enable and start codex-app-updater.service for the current user"
 	@printf '  %-18s %s\n' "make service-status" "Show codex-app-updater.service status for the current user"
-	@printf '  %-18s %s\n' "make clean" "Remove generated app, cached DMG, and dist/ artifacts"
 	@printf '  %-18s %s\n' "make clean-dist" "Remove generated dist/ artifacts"
 	@printf '  %-18s %s\n' "make clean-state" "Remove updater runtime state from XDG directories"
 	@printf '\nVariables:\n\n'
 	@printf '  %-18s %s\n' "DMG=/path/file.dmg" "Override the DMG passed to install.sh (default: let install.sh reuse/download Codex.dmg)"
+	@printf '  %-18s %s\n' "DEV_APP_ID=..." "Override side-by-side test app id/bin (default: codex-cua-lab)"
+	@printf '  %-18s %s\n' "DEV_APP_NAME=..." "Override side-by-side test app display name"
 	@printf '  %-18s %s\n' "PACKAGE_VERSION=..." "Override the package version for make deb / make rpm / make pacman"
 	@printf '  %-18s %s\n' "DEB=/path/file.deb" "Override the .deb used by make install"
 	@printf '  %-18s %s\n' "RPM=/path/file.rpm" "Override the .rpm used by make install"
@@ -40,9 +45,11 @@ help:
 	@printf '\nExamples:\n\n'
 	@printf '  %s\n' "make build-app DMG=/tmp/Codex.dmg"
 	@printf '  %s\n' "make run-app"
-	@printf '  %s\n' "make deb"
-	@printf '  %s\n' "make rpm"
-	@printf '  %s\n' "make pacman"
+	@printf '  %s\n' "make build-dev-app"
+	@printf '  %s\n' "./bin/codex-cua-lab"
+	@printf '  %s\n' "make deb PACKAGE_VERSION=2026.03.24.220723+88f07cd3"
+	@printf '  %s\n' "make rpm PACKAGE_VERSION=2026.03.24.220723+88f07cd3"
+	@printf '  %s\n' "make pacman PACKAGE_VERSION=2026.03.24.220723+88f07cd3"
 	@printf '  %s\n' "make install"
 	@printf '  %s\n\n' "make service-enable"
 
@@ -65,6 +72,20 @@ build-app:
 run-app:
 	@echo "[make] Launching local Electron app"
 	"$(APP_DIR)/start.sh"
+
+build-dev-app:
+	@echo "[make] Building side-by-side Electron app as $(DEV_APP_ID)"
+	CODEX_APP_ID="$(DEV_APP_ID)" \
+	CODEX_APP_DISPLAY_NAME="$(DEV_APP_NAME)" \
+	CODEX_INSTALL_DIR="$(DEV_APP_DIR)" \
+		./install.sh "$(DMG)"
+	@mkdir -p "$(CURDIR)/bin"
+	@ln -sfn "$(DEV_APP_DIR)/start.sh" "$(DEV_APP_BIN)"
+	@echo "[make] Side-by-side launcher: $(DEV_APP_BIN)"
+
+run-dev-app:
+	@echo "[make] Launching side-by-side Electron app"
+	"$(DEV_APP_BIN)"
 
 deb: build-updater
 	@echo "[make] Building Debian package"
@@ -90,18 +111,6 @@ package: build-updater
 		echo "[make] No supported packaging tool found. Install dpkg-dev (Debian), rpm-build (Fedora), or pacman (Arch)." >&2; \
 		exit 1; \
 	fi
-
-apple-dmg-verify:
-	@echo "[make] Running Apple DMG verification"
-	@if [ -n "$(DMG)" ]; then \
-		./scripts/verify-apple-dmg.sh --dmg "$(DMG)"; \
-	else \
-		./scripts/verify-apple-dmg.sh; \
-	fi
-
-release-gate:
-	@echo "[make] Running release gate"
-	./scripts/release-gate.sh
 
 install:
 	@echo "[make] Installing latest native package"
@@ -153,10 +162,6 @@ service-enable:
 service-status:
 	@echo "[make] Showing codex-app-updater.service status"
 	systemctl --user status codex-app-updater.service --no-pager
-
-clean:
-	@echo "[make] Removing generated app, cached DMG, and dist/"
-	rm -rf "$(CURDIR)/codex-app" "$(CURDIR)/Codex.dmg" "$(CURDIR)/dist"
 
 clean-dist:
 	@echo "[make] Removing dist/"
