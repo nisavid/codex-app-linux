@@ -1,10 +1,13 @@
 //! Installation helpers for privileged and non-privileged package application.
 
 use anyhow::{Context, Result};
+#[cfg(unix)]
+use std::os::unix::fs::DirBuilderExt;
 use std::{
-    fs,
+    env, fmt, fs, io,
     path::{Path, PathBuf},
     process::Command,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const PACKAGE_NAME: &str = "codex-app";
@@ -207,38 +210,42 @@ pub fn install_deb(path: &Path) -> Result<()> {
         "Debian package not found: {}",
         path.display()
     );
-    ensure_deb_package_identity(path)?;
-    ensure_upgrade_path(path)?;
+    let staged = stage_package_for_privileged_install(path)?;
+    let staged_path = staged.path();
+    ensure_deb_package_identity(staged_path)?;
+    ensure_upgrade_path(staged_path)?;
 
     if program_exists(APT_CANDIDATES, "apt") {
-        let mut command = apt_install_command(path)?;
+        let mut command = apt_install_command(staged_path)?;
         run_install(&mut command).context("apt install failed")?;
         return Ok(());
     }
 
-    let mut command = dpkg_install_command(path);
+    let mut command = dpkg_install_command(staged_path);
     run_install(&mut command).context("dpkg -i failed")
 }
 
 /// Installs a rebuilt RPM package on the local machine.
 pub fn install_rpm(path: &Path) -> Result<()> {
     anyhow::ensure!(path.exists(), "RPM package not found: {}", path.display());
-    ensure_rpm_package_identity(path)?;
-    ensure_upgrade_path_rpm(path)?;
+    let staged = stage_package_for_privileged_install(path)?;
+    let staged_path = staged.path();
+    ensure_rpm_package_identity(staged_path)?;
+    ensure_upgrade_path_rpm(staged_path)?;
 
     if program_exists(DNF_CANDIDATES, "dnf") || program_exists(DNF_CANDIDATES, "dnf5") {
-        let mut command = dnf_install_command(path)?;
+        let mut command = dnf_install_command(staged_path)?;
         run_install(&mut command).context("dnf install failed")?;
         return Ok(());
     }
 
     if program_exists(ZYPPER_CANDIDATES, "zypper") {
-        let mut command = zypper_install_command(path)?;
+        let mut command = zypper_install_command(staged_path)?;
         run_install(&mut command).context("zypper install failed")?;
         return Ok(());
     }
 
-    let mut command = rpm_install_command(path);
+    let mut command = rpm_install_command(staged_path);
     run_install(&mut command).context("rpm -Uvh failed")
 }
 
@@ -249,9 +256,11 @@ pub fn install_pacman(path: &Path) -> Result<()> {
         "Pacman package not found: {}",
         path.display()
     );
-    ensure_upgrade_path_pacman(path)?;
+    let staged = stage_package_for_privileged_install(path)?;
+    let staged_path = staged.path();
+    ensure_upgrade_path_pacman(staged_path)?;
 
-    let mut command = pacman_install_command(path);
+    let mut command = pacman_install_command(staged_path);
     run_install(&mut command).context("pacman -U failed")
 }
 
@@ -282,6 +291,108 @@ fn run_install(command: &mut Command) -> Result<()> {
         "installation command exited with {status}"
     );
     Ok(())
+}
+
+struct StagedPackage {
+    _dir: PrivateStagingDir,
+    path: PathBuf,
+}
+
+impl StagedPackage {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+fn stage_package_for_privileged_install(path: &Path) -> Result<StagedPackage> {
+    let file_name = path
+        .file_name()
+        .with_context(|| format!("Package path has no file name: {}", path.display()))?;
+    let metadata = fs::metadata(path)
+        .with_context(|| format!("Failed to inspect package {}", path.display()))?;
+    anyhow::ensure!(
+        metadata.is_file(),
+        "Package path is not a regular file: {}",
+        path.display()
+    );
+
+    let dir = PrivateStagingDir::create("codex-app-privileged-install-")
+        .context("Failed to create private package staging directory")?;
+    let staged_path = dir.path().join(file_name);
+    fs::copy(path, &staged_path).with_context(|| {
+        format!(
+            "Failed to stage package {} at {}",
+            path.display(),
+            staged_path.display()
+        )
+    })?;
+
+    Ok(StagedPackage {
+        _dir: dir,
+        path: staged_path,
+    })
+}
+
+struct PrivateStagingDir {
+    path: PathBuf,
+}
+
+impl PrivateStagingDir {
+    fn create(prefix: &str) -> Result<Self> {
+        let base = env::temp_dir();
+        let pid = std::process::id();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("system clock is before UNIX epoch")?
+            .as_nanos();
+
+        for attempt in 0..100u32 {
+            let path = base.join(format!("{prefix}{pid}-{nanos}-{attempt}"));
+            let result = create_private_dir(&path);
+            match result {
+                Ok(()) => return Ok(Self { path }),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(error)
+                        .with_context(|| format!("Failed to create {}", path.display()));
+                }
+            }
+        }
+
+        anyhow::bail!(
+            "could not allocate a unique private staging directory in {}",
+            base.display()
+        )
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for PrivateStagingDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+impl fmt::Debug for PrivateStagingDir {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PrivateStagingDir")
+            .field("path", &self.path)
+            .finish()
+    }
+}
+
+#[cfg(unix)]
+fn create_private_dir(path: &Path) -> io::Result<()> {
+    fs::DirBuilder::new().mode(0o700).create(path)
+}
+
+#[cfg(not(unix))]
+fn create_private_dir(path: &Path) -> io::Result<()> {
+    fs::create_dir(path)
 }
 
 fn installed_version_from_command(program: &Path, args: &[&str]) -> String {
@@ -755,6 +866,24 @@ mod tests {
                 "./codex.rpm"
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn stages_privileged_install_package_in_private_copy() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("codex-app_26.429.20946_amd64.deb");
+        fs::write(&source, b"validated bytes")?;
+
+        let staged = stage_package_for_privileged_install(&source)?;
+        fs::write(&source, b"mutated bytes")?;
+
+        assert_ne!(staged.path(), source.as_path());
+        assert_eq!(
+            staged.path().file_name(),
+            Some(std::ffi::OsStr::new("codex-app_26.429.20946_amd64.deb"))
+        );
+        assert_eq!(fs::read(staged.path())?, b"validated bytes");
         Ok(())
     }
 
