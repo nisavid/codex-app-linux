@@ -1,11 +1,11 @@
 # User-Local Desktop Integration
 
-This folder packages a user-local install layout for `codex-app-linux`.
+This folder packages this fork's user-local install layout for Codex App.
 
 It adds:
 
-- a stable install root under `~/.local/opt/codex-app-linux`
-- self-contained maintenance scripts under `~/.local/opt/codex-app-linux/bin`
+- a stable install root under `~/.local/lib/codex-app`
+- self-contained maintenance scripts under `~/.local/lib/codex-app/bin`
 - thin launch/check/update/version wrappers under `~/.local/bin`
 - a desktop entry under `~/.local/share/applications`
 - an icon extracted from the local `Codex.dmg`
@@ -16,8 +16,8 @@ It adds:
 
 The package is laid out as reusable payload files. The installer copies them into:
 
-- `~/.local/opt/codex-app-linux/bin/`
-- `~/.local/opt/codex-app-linux/lib/codex-app-linux/`
+- `~/.local/lib/codex-app/bin/`
+- `~/.local/lib/codex-app/lib/`
 - `~/.local/bin/` wrappers
 - `files/.local/share/applications/codex-app.desktop`
 - `files/.config/systemd/user/codex-app-update.service`
@@ -27,9 +27,9 @@ The package is laid out as reusable payload files. The installer copies them int
 
 If installing manually, copy the files to:
 
-- `~/.local/opt/codex-app-linux/bin/`
-- `~/.local/opt/codex-app-linux/lib/codex-app-linux/`
-- `~/.local/bin/` wrappers that exec into `~/.local/opt/codex-app-linux/bin/`
+- `~/.local/lib/codex-app/bin/`
+- `~/.local/lib/codex-app/lib/`
+- `~/.local/bin/` wrappers that exec into `~/.local/lib/codex-app/bin/`
 - `~/.local/share/applications/`
 - `~/.config/systemd/user/`
 
@@ -37,7 +37,7 @@ The preferred git checkout location is:
 
 - `~/workspace/codex-app-linux`
 
-The installed maintenance scripts record the repo path in user state and use that checkout for `git pull`, while rebuilding runtime assets into `~/.local/opt/codex-app-linux` via `CODEX_INSTALL_ROOT` / `CODEX_INSTALL_DIR`.
+The installed maintenance scripts record the repo path in user state and use that checkout for `git pull`, while rebuilding runtime assets into `~/.local/lib/codex-app` via `CODEX_INSTALL_ROOT` / `CODEX_INSTALL_DIR`.
 
 ## Install
 
@@ -55,7 +55,7 @@ To also enable the weekly auto-update timer, pass `--enable-timer`:
 
 The installer:
 
-1. copies standalone helper scripts into `~/.local/opt/codex-app-linux`
+1. copies standalone helper scripts into `~/.local/lib/codex-app`
 2. installs thin wrappers into `~/.local/bin`
 3. copies systemd unit files to `~/.config/systemd/user/`
 4. makes the scripts executable
@@ -79,5 +79,5 @@ codex-app-version
 
 - The icon is not committed as a binary asset here. It is generated locally from `Codex.dmg`.
 - The helper scripts track both upstream wrapper changes and upstream `Codex.dmg` headers.
-- The helper scripts are copied into `~/.local/opt` and do not run from the git checkout directly.
+- The helper scripts are copied into `~/.local/lib/codex-app` and do not run from the git checkout directly.
 - The weekly timer runs `codex-app-update --quiet`. It is opt-in: pass `--enable-timer` to `install-user-local.sh` to activate it, or run `systemctl --user enable --now codex-app-update.timer` manually after install.

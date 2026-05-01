@@ -60,7 +60,7 @@ pub async fn snapshot_tree(
 ) -> Result<Vec<AccessibilityNode>> {
     let conn = connect().await?;
     let roots = registry_children(&conn).await?;
-    let selected_roots = select_roots(&conn, roots, app_name_or_bundle_identifier).await;
+    let selected_roots = select_roots(&conn, roots, app_name_or_bundle_identifier).await?;
     let mut nodes = Vec::new();
     let mut queue = VecDeque::new();
 
@@ -114,13 +114,13 @@ async fn select_roots(
     conn: &AccessibilityConnection,
     roots: Vec<ObjectRefOwned>,
     app_name_or_bundle_identifier: Option<&str>,
-) -> Vec<ObjectRefOwned> {
+) -> Result<Vec<ObjectRefOwned>> {
     let Some(needle) = app_name_or_bundle_identifier
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| value.to_ascii_lowercase())
     else {
-        return roots;
+        return Ok(roots);
     };
 
     let mut selected = Vec::new();
@@ -130,7 +130,14 @@ async fn select_roots(
         }
     }
 
-    selected
+    if selected.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No accessible app matched '{}'",
+            app_name_or_bundle_identifier.unwrap_or_default()
+        ));
+    }
+
+    Ok(selected)
 }
 
 async fn root_matches(

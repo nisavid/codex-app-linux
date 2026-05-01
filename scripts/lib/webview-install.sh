@@ -7,16 +7,17 @@
 # ---- Extract webview files ----
 extract_webview() {
     local app_dir="$1"
-    mkdir -p "$INSTALL_DIR/content/webview"
+    local target_webview="$app_dir/content/webview"
+    mkdir -p "$target_webview"
 
     # Webview files are inside the extracted asar at webview/
     local asar_extracted="$WORK_DIR/app-extracted"
     if [ -d "$asar_extracted/webview" ]; then
-        cp -r "$asar_extracted/webview/"* "$INSTALL_DIR/content/webview/"
+        cp -aT "$asar_extracted/webview" "$target_webview"
         # Replace transparent startup background with an opaque color for Linux.
         # The upstream app relies on macOS vibrancy for the transparent effect;
         # on Linux the transparent background causes flickering.
-        local webview_index="$INSTALL_DIR/content/webview/index.html"
+        local webview_index="$target_webview/index.html"
         if [ -f "$webview_index" ]; then
             sed -i 's/--startup-background: transparent/--startup-background: #1e1e1e/' "$webview_index"
         fi

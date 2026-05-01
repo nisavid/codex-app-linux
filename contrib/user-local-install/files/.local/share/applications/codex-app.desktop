@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Codex
-Comment=OpenAI Codex desktop wrapper for Linux
+Name=Codex App
+Comment=Run Codex App on Linux
 Exec=@HOME@/.local/bin/codex-app %U
 TryExec=@HOME@/.local/bin/codex-app
 Terminal=false

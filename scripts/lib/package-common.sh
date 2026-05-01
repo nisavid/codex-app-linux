@@ -65,8 +65,31 @@ render_packaged_runtime_helper() {
     local package_name
 
     package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
-    sed -e "s/codex-app/$package_name/g" "$PACKAGED_RUNTIME_SOURCE" > "$target"
+    sed \
+        -e "s/CHROME_DESKTOP=\"codex-app.desktop\"/CHROME_DESKTOP=\"$package_name.desktop\"/" \
+        -e "s|BAMF_DESKTOP_FILE_HINT=\"/usr/share/applications/codex-app.desktop\"|BAMF_DESKTOP_FILE_HINT=\"/usr/share/applications/$package_name.desktop\"|" \
+        "$PACKAGED_RUNTIME_SOURCE" > "$target"
     chmod 0644 "$target"
+}
+
+validate_app_payload_source() {
+    local link
+    local target
+
+    while IFS= read -r -d '' link; do
+        target="$(readlink "$link")" || error "Failed to read symlink: $link"
+        case "$target" in
+        /*|../*|*/../*|..)
+            error "Unsafe symlink in app payload: $link -> $target"
+            ;;
+        esac
+    done < <(find "$APP_DIR" -type l -print0)
+}
+
+normalize_app_payload_modes() {
+    local app_root="$1"
+
+    chmod -R u+rwX,go+rX "$app_root"
 }
 
 updater_binary_is_stale() {
@@ -112,6 +135,7 @@ stage_common_package_files() {
     local polkit_policy="$REPO_DIR/packaging/linux/com.github.nisavid.codex-app.update.policy"
 
     validate_package_inputs
+    validate_app_payload_source
     ensure_file_exists "$polkit_policy" "polkit policy"
 
     mkdir -p \
@@ -124,6 +148,7 @@ stage_common_package_files() {
 
     rm -rf "$app_root"
     cp -aT "$APP_DIR" "$app_root"
+    normalize_app_payload_modes "$app_root"
     mkdir -p "$app_root/.codex-linux"
     cp "$ICON_SOURCE" "$app_root/.codex-linux/$PACKAGE_NAME.png"
     render_desktop_entry "$root/usr/share/applications/$PACKAGE_NAME.desktop"

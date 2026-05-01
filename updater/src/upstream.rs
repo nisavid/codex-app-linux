@@ -28,7 +28,11 @@ pub struct DownloadedDmg {
 }
 
 fn validate_dmg_url(dmg_url: &str) -> Result<Url> {
-    let url = Url::parse(dmg_url).with_context(|| format!("Invalid DMG URL: {dmg_url}"))?;
+    let safe_url = sanitized_url_for_log(dmg_url);
+    let url = Url::parse(dmg_url).with_context(|| format!("Invalid DMG URL: {safe_url}"))?;
+    if url.host_str().is_none() {
+        return Err(anyhow!("DMG URL must include a host"));
+    }
     let is_loopback_http = url.scheme() == "http"
         && url
             .host_str()
@@ -185,6 +189,9 @@ async fn download_dmg_with_limit(
         file.flush()
             .await
             .with_context(|| format!("Failed flushing {}", partial_destination.display()))?;
+        file.sync_all()
+            .await
+            .with_context(|| format!("Failed syncing {}", partial_destination.display()))?;
         drop(file);
 
         tokio::fs::rename(&partial_destination, &destination)
@@ -338,6 +345,7 @@ mod tests {
     fn rejects_non_https_non_loopback_dmg_urls() {
         assert!(validate_dmg_url("http://example.com/Codex.dmg").is_err());
         assert!(validate_dmg_url("https://user:pass@example.com/Codex.dmg").is_err());
+        assert!(validate_dmg_url("https://").is_err());
         assert!(validate_dmg_url("http://127.0.0.1/Codex.dmg").is_ok());
     }
 

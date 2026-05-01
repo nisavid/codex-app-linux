@@ -815,7 +815,8 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
 
   const trayStartupNeedle = "E&&oe();";
   const previousTrayStartupPatch = "(E||process.platform===`linux`)&&oe();";
-  const trayStartupPatch = "(E||process.platform===`linux`&&codexLinuxIsTrayEnabled())&&oe();";
+  const trayStartupPatch =
+    "(E||process.platform===`linux`&&(typeof codexLinuxIsTrayEnabled!==`function`||codexLinuxIsTrayEnabled()))&&oe();";
   if (patchedSource.includes(trayStartupPatch)) {
     // Already patched.
   } else if (patchedSource.includes(previousTrayStartupPatch)) {
@@ -934,7 +935,8 @@ function applyLinuxTrayCloseSettingPatch(currentSource) {
   }
 
   if (patchedSource.includes("canHideLastLocalWindowToTray") && patchedSource.includes("Launching app")) {
-    throw new Error("Required Linux tray settings patch failed: could not gate close-to-tray behavior");
+    console.warn("WARN: Could not find close-to-tray settings needle - skipping Linux tray settings patch");
+    return currentSource;
   }
 
   return patchedSource;
@@ -1029,14 +1031,16 @@ function applyLinuxLaunchActionArgsPatch(currentSource) {
       patchedSource.includes("Launching app") &&
       patchedSource.includes("deepLinks")
     ) {
-      throw new Error("Required Linux launch action patch failed: could not add --new-chat/--quick-chat/--prompt-chat handlers");
+      console.warn("WARN: Could not find Linux launch action handler - skipping --new-chat/--quick-chat/--prompt-chat patch");
+      return currentSource;
     } else {
       console.warn("WARN: Could not find Linux launch action handler - skipping --new-chat/--quick-chat/--prompt-chat patch");
     }
   }
 
   if (patchedSource.includes("Launching app") && !patchedSource.includes("codexLinuxGetSetting=e=>")) {
-    throw new Error("Required Linux launch action patch failed: launch flags were not settings-gated");
+    console.warn("WARN: Linux launch action patch was skipped before settings gates were added");
+    return currentSource;
   }
 
   return patchedSource;

@@ -44,19 +44,19 @@ build_native_modules() {
     # Build in a CLEAN directory (asar doesn't have full source)
     local build_dir="$WORK_DIR/native-build"
     mkdir -p "$build_dir"
-    cd "$build_dir"
+    cd "$build_dir" || error "Failed to change to build directory: $build_dir"
 
     echo '{"private":true}' > package.json
 
     info "Installing fresh sources from npm..."
-    npm install "electron@$ELECTRON_VERSION" --save-dev --ignore-scripts 2>&1 >&2
-    npm install "better-sqlite3@$bs3_build_ver" "node-pty@$npty_ver" --ignore-scripts 2>&1 >&2
+    npm install "electron@$ELECTRON_VERSION" --save-dev --ignore-scripts >&2
+    npm install "better-sqlite3@$bs3_build_ver" "node-pty@$npty_ver" --ignore-scripts >&2
 
     info "Compiling for Electron v$ELECTRON_VERSION (this takes ~1 min)..."
     info "Using Electron headers: $ELECTRON_HEADERS_URL"
     npm_config_disturl="$ELECTRON_HEADERS_URL" \
     NPM_CONFIG_DISTURL="$ELECTRON_HEADERS_URL" \
-    npx --yes @electron/rebuild -v "$ELECTRON_VERSION" --force --dist-url "$ELECTRON_HEADERS_URL" 2>&1 >&2
+    npx --yes @electron/rebuild -v "$ELECTRON_VERSION" --force --dist-url "$ELECTRON_HEADERS_URL" >&2
 
     info "Native modules built successfully"
 
@@ -102,7 +102,7 @@ download_electron() {
 
     cp "$cached_zip" "$WORK_DIR/electron.zip"
     mkdir -p "$INSTALL_DIR"
-    cd "$INSTALL_DIR"
+    cd "$INSTALL_DIR" || error "Failed to change to install directory: $INSTALL_DIR"
     unzip -qo "$WORK_DIR/electron.zip"
 
     info "Electron ready"

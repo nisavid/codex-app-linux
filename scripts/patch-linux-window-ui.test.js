@@ -154,7 +154,10 @@ test("adds Linux tray support including the platform guard", () => {
     /process\.platform===`linux`&&this\.setLinuxTrayContextMenu\(\),this\.tray\.on\(`click`/,
   );
   assert.match(patched, /if\(process\.platform===`linux`\)return;e\.once\(`menu-will-show`/);
-  assert.match(patched, /\(E\|\|process\.platform===`linux`&&codexLinuxIsTrayEnabled\(\)\)&&oe\(\);/);
+  assert.match(
+    patched,
+    /\(E\|\|process\.platform===`linux`&&\(typeof codexLinuxIsTrayEnabled!==`function`\|\|codexLinuxIsTrayEnabled\(\)\)\)&&oe\(\);/,
+  );
 });
 
 test("adds Linux single-instance lock and second-instance handoff", () => {

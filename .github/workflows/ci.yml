@@ -32,6 +32,19 @@ jobs:
           bash -n scripts/build-deb.sh
           bash -n scripts/build-rpm.sh
           bash -n scripts/build-pacman.sh
+          bash -n launcher/start.sh.template
+          bash -n scripts/lib/*.sh
+          bash -n packaging/linux/codex-app-updater-user-service.sh
+          bash -n packaging/linux/codex-app-updater.postinst
+          bash -n packaging/linux/codex-app-updater.prerm
+          bash -n packaging/linux/codex-app-updater.postrm
+          bash -n packaging/linux/codex-packaged-runtime.sh
+          bash -n contrib/user-local-install/install-user-local.sh
+          bash -n contrib/user-local-install/files/.local/bin/codex-app
+          bash -n contrib/user-local-install/files/.local/bin/codex-app-check-update
+          bash -n contrib/user-local-install/files/.local/bin/codex-app-update
+          bash -n contrib/user-local-install/files/.local/bin/codex-app-version
+          bash -n contrib/user-local-install/files/.local/lib/codex-app/common.sh
 
       - name: Check Rust formatting
         run: cargo fmt --check

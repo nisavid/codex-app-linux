@@ -16,20 +16,31 @@ resolve_script_dir() {
 
 SCRIPT_DIR="$(resolve_script_dir)"
 WEBVIEW_DIR="$SCRIPT_DIR/content/webview"
-LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$CODEX_LINUX_APP_ID"
-LOG_FILE="$LOG_DIR/launcher.log"
-APP_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$CODEX_LINUX_APP_ID"
-APP_SETTINGS_FILE="$APP_CONFIG_DIR/settings.json"
-APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_LINUX_APP_ID"
-APP_PID_FILE="$APP_STATE_DIR/app.pid"
-WEBVIEW_PID_FILE="$APP_STATE_DIR/webview.pid"
-LAUNCH_ACTION_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$APP_STATE_DIR}/$CODEX_LINUX_APP_ID"
-LAUNCH_ACTION_SOCKET="$LAUNCH_ACTION_RUNTIME_DIR/launch-action.sock"
 PACKAGED_RUNTIME_HELPER="$SCRIPT_DIR/.codex-linux/codex-packaged-runtime.sh"
 APP_NOTIFICATION_ICON_NAME="$CODEX_LINUX_APP_ID"
 APP_NOTIFICATION_ICON_BUNDLE="$SCRIPT_DIR/.codex-linux/$APP_NOTIFICATION_ICON_NAME.png"
 APP_NOTIFICATION_ICON_SYSTEM="/usr/share/icons/hicolor/256x256/apps/$APP_NOTIFICATION_ICON_NAME.png"
 APP_NOTIFICATION_ICON_REPO="$SCRIPT_DIR/../assets/codex.png"
+
+refresh_runtime_paths() {
+    LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$CODEX_LINUX_APP_ID"
+    LOG_FILE="$LOG_DIR/launcher.log"
+    APP_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$CODEX_LINUX_APP_ID"
+    APP_SETTINGS_FILE="$APP_CONFIG_DIR/settings.json"
+    APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_LINUX_APP_ID"
+    APP_PID_FILE="$APP_STATE_DIR/app.pid"
+    WEBVIEW_PID_FILE="$APP_STATE_DIR/webview.pid"
+    LAUNCH_ACTION_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$APP_STATE_DIR}/$CODEX_LINUX_APP_ID"
+    LAUNCH_ACTION_SOCKET="$LAUNCH_ACTION_RUNTIME_DIR/launch-action.sock"
+}
+
+ensure_runtime_dirs() {
+    mkdir -p "$LOG_DIR" "$APP_CONFIG_DIR" "$APP_STATE_DIR" "$LAUNCH_ACTION_RUNTIME_DIR"
+    chmod 700 "$LAUNCH_ACTION_RUNTIME_DIR" 2>/dev/null || true
+    export CODEX_APP_LAUNCH_ACTION_SOCKET="$LAUNCH_ACTION_SOCKET"
+}
+
+refresh_runtime_paths
 
 case "$CODEX_LINUX_WEBVIEW_PORT" in
     ""|*[!0-9]*)
@@ -44,9 +55,7 @@ fi
 
 WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"
 
-mkdir -p "$LOG_DIR" "$APP_CONFIG_DIR" "$APP_STATE_DIR" "$LAUNCH_ACTION_RUNTIME_DIR"
-chmod 700 "$LAUNCH_ACTION_RUNTIME_DIR" 2>/dev/null || true
-export CODEX_APP_LAUNCH_ACTION_SOCKET="$LAUNCH_ACTION_SOCKET"
+ensure_runtime_dirs
 STARTED_WEBVIEW_PID=""
 ADOPTED_WEBVIEW_PID=""
 ELECTRON_PID=""
@@ -172,10 +181,6 @@ discover_graphical_env_from_processes() {
 }
 
 hydrate_graphical_session_env() {
-    if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
-        return 0
-    fi
-
     import_graphical_env_from_systemd_user && return 0
     discover_graphical_env_from_processes && return 0
     return 0
@@ -820,13 +825,16 @@ set_electron_defaults() {
 
 build_electron_launch_args() {
     ELECTRON_LAUNCH_ARGS=(
-        --no-sandbox
         --class="$CODEX_LINUX_APP_ID"
         --app-id="$CODEX_LINUX_APP_ID"
         --disable-dev-shm-usage
         --disable-gpu-sandbox
         --disable-gpu-compositing
     )
+
+    if [[ "${CODEX_APP_DISABLE_ELECTRON_SANDBOX:-0}" =~ ^(1|true|yes|on)$ ]]; then
+        ELECTRON_LAUNCH_ARGS+=(--no-sandbox)
+    fi
 
     if [ "$CODEX_LINUX_APP_ID" != "codex-app" ]; then
         ELECTRON_LAUNCH_ARGS+=(--user-data-dir="${CODEX_ELECTRON_USER_DATA_DIR:-$APP_STATE_DIR/electron-user-data}")
@@ -861,6 +869,8 @@ configure_side_by_side_app_env() {
     XDG_CONFIG_HOME="${CODEX_XDG_CONFIG_HOME:-$APP_STATE_DIR/xdg-config}"
     CODEX_ELECTRON_USER_DATA_DIR="${CODEX_ELECTRON_USER_DATA_DIR:-$APP_STATE_DIR/electron-user-data}"
     export XDG_CONFIG_HOME CODEX_ELECTRON_USER_DATA_DIR
+    refresh_runtime_paths
+    ensure_runtime_dirs
 }
 
 cleanup_launcher() {

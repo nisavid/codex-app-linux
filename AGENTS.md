@@ -38,6 +38,10 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
   logs use `codex-app-updater`. Do not adopt upstream `codex-desktop` or
   `codex-update-manager` naming as part of a sync. Integrate upstream behavior
   under the local names instead.
+- Preserve this fork's intentional layout when syncing upstream: native packages
+  install under `/opt/codex-app`, user-local integration uses
+  `~/.local/lib/codex-app`, and app state uses `~/.local/state/codex-app`.
+  Do not adopt upstream `codex-app-linux` install roots as part of a sync.
 - Keep native-package-only launcher behavior in
   `packaging/linux/codex-packaged-runtime.sh`; `install.sh` should stay generic
   and load that helper only when packaging requires it.
@@ -173,7 +177,7 @@ Do not assume `codex-app/` is pristine. If behavior differs from `install.sh`, p
 - Desktop icon association:
   The launcher runs Electron with `--class=codex-app`, and the desktop file sets `StartupWMClass=codex-app` so the taskbar/dock can associate the correct icon.
 - Webview server:
-  The launcher starts a local `python3 -m http.server 5175` from `content/webview/`, waits for port `5175` to become reachable, verifies that `http://127.0.0.1:5175/index.html` serves the expected Codex startup markers, and only then launches Electron because the extracted app expects local webview assets there.
+  The launcher starts a local `python3 -m http.server "$CODEX_LINUX_WEBVIEW_PORT"` from `content/webview/`, waits for the configured port to become reachable, verifies that `$WEBVIEW_ORIGIN/index.html` serves the expected Codex startup markers, and only then launches Electron because the extracted app expects local webview assets there.
 - Wayland/GPU compatibility:
   The generated launcher enables `--ozone-platform-hint=auto`, `--disable-gpu-sandbox`, and `--enable-features=WaylandWindowDecorations` by default. Keep these in mind when debugging Pop!_OS, Wayland, or Nvidia-specific rendering issues.
 - Webview server roadmap:

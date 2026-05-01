@@ -50,7 +50,7 @@ Good issue reports usually include:
 The recommended local setup is:
 
 ```bash
-git clone https://github.com/ilysenko/codex-app-linux.git
+git clone https://github.com/nisavid/codex-app-linux.git
 cd codex-app-linux
 bash scripts/install-deps.sh
 ```
@@ -269,7 +269,7 @@ Make commits intentional and readable.
 - prefer clear commit messages
 - keep commits focused and reviewable
 - avoid mixing formatting-only noise with functional changes unless necessary
-- if your workflow uses conventional commits, apply them consistently
+- use Conventional Commits consistently
 
 ## Documentation Expectations
 
