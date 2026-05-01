@@ -1,259 +1,492 @@
 # Codex App Linux Threat Model
 
-Date: 2026-04-25
+Date: 2026-05-01
 
-This is a point-in-time maintainer threat model for the Linux conversion,
-packaging, updater, and release flow. Track unresolved implementation work in
+This repository adapts the official OpenAI `Codex.dmg` into a Linux Electron
+app, builds native Linux packages, and ships `codex-app-updater` to check,
+rebuild, and install local updates. This threat model is repository-scoped and
+feeds future `@codex-security` reviews. Track actionable implementation work in
 [Security Backlog](security-backlog.md).
 
 ## Executive Summary
 
-The highest-risk themes are supply-chain integrity, local privilege transition, and renderer containment. The system is a local desktop packaging/conversion pipeline, but it publicly distributes native package artifacts and ships an intended auto-update path that downloads a mutable upstream DMG, rebuilds a Linux package, and installs it through `pkexec`. The most important review focus is therefore the path from upstream artifact trust to root-owned package install, followed by the Electron sandbox/webview local-origin boundary.
+The highest-risk areas are:
 
-## Scope and Assumptions
+1. **Mutable upstream artifact trust.** The installer and updater convert an
+   upstream DMG into a local Linux app and package. A bad upstream artifact,
+   wrong trust root, compromised download, or stale verification result can
+   become a root-owned package.
+2. **Privilege transition.** The updater is intentionally unprivileged until it
+   invokes `pkexec` install subcommands. Anything crossing that boundary must be
+   tightly bound to a verified package identity and digest.
+3. **Desktop and renderer containment.** The generated Electron app, local
+   webview server, Codex CLI, and Linux Computer Use backend all run with the
+   user's desktop privileges. A renderer, plugin, localhost, or CLI compromise
+   can affect local files, screenshots, input, and user processes.
+
+The repository already has meaningful hardening: HTTPS-only non-loopback DMG
+URLs, URL redaction, partial downloads, package metadata checks, private staged
+install copies, package payload symlink rejection, package mode normalization,
+builder-root permission checks, default-enabled Electron sandboxing, release
+gate checks, and Apple DMG verification tooling. The remaining critical gaps
+are trusted upstream metadata, digest binding for privileged installs, generated
+app security review evidence, and public artifact provenance.
+
+## Scope
 
 In scope:
 
-- `install.sh`
-- `scripts/`
-- `packaging/linux/`
-- `updater/`
-- `.github/workflows/`
-- `flake.nix`, `flake.lock`, `Cargo.toml`, `Cargo.lock`
-- User-facing and maintainer docs that describe runtime/update behavior
+- Installer and generated launcher sources: `install.sh`,
+  `launcher/start.sh.template`, and `scripts/lib/`.
+- ASAR and generated-app inspection tooling:
+  `scripts/patch-linux-window-ui.js`,
+  `scripts/patch-linux-window-ui.test.js`, and
+  `scripts/inspect-electron-security.js`.
+- Native package builders and templates: `scripts/build-deb.sh`,
+  `scripts/build-rpm.sh`, `scripts/build-pacman.sh`, `scripts/lib/package-common.sh`,
+  and `packaging/linux/`.
+- Updater service and CLI: `updater/`, `updater/Cargo.toml`, and updater tests.
+- Linux Computer Use backend and bundled plugin resources:
+  `computer-use-linux/` and `plugins/openai-bundled/plugins/computer-use/`.
+- Release, CI, and Nix trust roots: `.github/workflows/`, `Makefile`,
+  `flake.nix`, `flake.lock`, `Cargo.toml`, and `Cargo.lock`.
+- Maintainer docs that define security workflow, package behavior, and fork
+  contracts.
+
+Generated/runtime artifacts are security-relevant but are not durable source:
+`codex-app/`, `codex-*-app/`, `dist/`, `Codex.dmg`, and XDG config/state/cache
+paths. Inspect them when validating behavior, but fix source scripts, package
+templates, updater code, or workflows.
 
 Out of scope:
 
-- The generated `codex-app/` tree, because it was absent during this review.
-- The cached `Codex.dmg`, because it was absent during this review.
-- Live reverse engineering of the upstream Electron app bundle, BrowserWindow settings, IPC handlers, CSP, and Apple signature/notarization state.
+- Security guarantees made by OpenAI backend services, account rollout policy,
+  or the upstream macOS app outside the local conversion and packaging path.
+- Claims about a specific generated `app.asar` bundle until it has been built
+  from a specific DMG and inspected.
+- Host package-manager, polkit, npm registry, Electron release, GitHub Actions,
+  and Nix infrastructure internals except as external trust dependencies.
 
-Assumptions validated with the maintainer:
+## Assumptions
 
-- Updater auto-install after app exit is intended behavior.
-- Native package artifacts will be made available for public distribution.
-- Mutable upstream payload trust is a supply-chain risk, even if the upstream DMG may be signed; the Linux pipeline must verify the relevant signature or trusted metadata itself.
-- Local same-user processes are realistic attackers for localhost, cache/state, and PATH abuse paths.
-- LAN attackers are relevant if future local services bind beyond loopback.
+- Native package artifacts are intended for local use and may be distributed
+  publicly.
+- Updater auto-install after app exit is intentional.
+- The upstream DMG URL is mutable. TLS and a recorded SHA-256 are not enough by
+  themselves to authenticate a release for unattended rebuild and install.
+- Same-user local processes are realistic attackers for localhost ports,
+  user-writable config/state/cache, environment, and PATH influence.
+- A malicious renderer, plugin, CLI, or same-user process can matter even when
+  it cannot directly become root.
+- LAN attackers matter if any future local service binds beyond loopback.
 
-Open questions that would materially change risk ranking:
+Open questions that materially affect risk:
 
-- What exact code-signing or notarization signal is available on the upstream DMG, and can it be verified on Linux before extraction?
-- Does the generated upstream Electron app enforce `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, navigation allowlists, and safe `openExternal` handling?
-- Will public artifacts be distributed only through GitHub Releases, a package repository, or both?
+- What signed manifest, notarization, or equivalent trusted metadata can be
+  verified before extracting a DMG on Linux?
+- What exact Electron `webPreferences`, IPC, navigation, CSP, and
+  `openExternal`/`openPath` behavior does each generated app bundle expose?
+- What public artifact channel will be canonical: GitHub Releases, a package
+  repository, Nix inputs, or a combination?
+- What privilege and consent boundary should Linux Computer Use enforce when
+  account-side gating enables it?
 
 ## System Model
 
-### Primary Components
+### Primary Surfaces
 
-- Upstream artifact source: `https://persistent.oaistatic.com/codex-app-prod/Codex.dmg`, referenced by `install.sh`, updater config, and Nix.
-- Local installer: `install.sh` downloads/extracts the DMG, patches ASAR content, rebuilds native modules, downloads Electron for Linux, extracts the webview, and writes `codex-app/start.sh`.
-- Generated launcher: `codex-app/start.sh` starts the webview server, performs CLI preflight, and launches Electron.
-- Local webview server: Python `http.server` bound to `127.0.0.1` on port `5175`, serving `content/webview`.
-- Updater daemon: `codex-app-updater daemon` runs as a `systemd --user` service, checks upstream metadata, downloads DMGs, rebuilds packages, and coordinates install state.
-- Privileged install boundary: updater invokes `pkexec codex-app-updater install-* --path <package>` for final package manager installation.
-- Package builders: shell scripts build Debian, RPM, and pacman artifacts from generated app trees.
-- CI hash workflow: GitHub Actions refreshes the Nix fixed-output hash.
-- Public artifact channel: native packages intended for public distribution.
+- **Upstream artifact source:** default
+  `https://persistent.oaistatic.com/codex-app-prod/Codex.dmg`, plus explicit
+  local or configured DMG overrides.
+- **Installer:** downloads or reuses the DMG, extracts `Codex.app`, patches
+  ASAR/webview/runtime behavior, rebuilds native modules, downloads Linux
+  Electron, stages bundled plugins, and writes `codex-app/start.sh`.
+- **Generated launcher:** starts the local webview server, discovers or
+  preflights the Codex CLI, loads packaged runtime behavior when installed,
+  records app/webview liveness, and launches Electron.
+- **Local webview server:** serves extracted webview assets on loopback port
+  `5175` by default and validates startup markers before Electron launch.
+- **Linux Computer Use backend:** Rust MCP backend and plugin resources that can
+  inspect accessibility state, capture screenshots, and synthesize desktop
+  input when upstream UI/account gating enables the feature.
+- **Native package builders:** convert a generated app tree into `.deb`, `.rpm`,
+  or pacman packages under the `codex-app` identity.
+- **Updater daemon:** `codex-app-updater daemon` runs as a `systemd --user`
+  service, checks upstream metadata, downloads DMGs, rebuilds packages, tracks
+  state, prompts/notifies, and coordinates install after app exit.
+- **Privileged install commands:** `codex-app-updater install-deb`,
+  `install-rpm`, and `install-pacman` are invoked through `pkexec` for the final
+  system package-manager operation.
+- **Release and CI workflows:** update Nix hashes, verify Apple DMGs on macOS,
+  run package/test workflows, and support release-gate checksums and optional
+  signatures.
+- **Experimental user-local installer:** rootless integration under
+  `contrib/user-local-install/`, using XDG user data and user services.
 
-### Data Flows And Trust Boundaries
+### Trust Boundaries
 
-- Internet -> Installer/updater: DMG bytes and HTTP metadata cross HTTPS. Current guarantees are TLS and post-download hashing; no repo-enforced signature or trusted manifest verification is visible.
-- Internet -> NPM/Electron tooling: npm package metadata/tarballs and Electron zip bytes cross HTTPS during non-Nix builds. Current guarantees are registry/CDN TLS and npm client behavior; no checked-in lockfile/manifest pins the full build toolchain.
-- Upstream DMG -> ASAR patcher/package builder: app bundle, Info.plist, node modules, and webview assets cross from vendor artifact into local generated app tree. Current validation checks package-version string shape, not artifact authenticity.
-- Launcher -> Local webview server -> Electron renderer: static webview assets cross localhost HTTP on fixed port `5175`. Current validation checks two marker strings, not a nonce or signed asset manifest.
-- User config/state/cache -> Updater daemon: TOML config and JSON state cross from user-writable XDG paths into update decisions. Current validation is schema parsing and some path/version shape checks.
-- Updater daemon -> Package builder scripts: user-service environment and downloaded DMG cross into shell scripts. Current subprocess calls avoid shell interpolation in Rust, but PATH is inherited.
-- Updater daemon -> `pkexec` -> system package manager: package path crosses from unprivileged user context into privileged install. Current controls are polkit authorization and limited metadata checks; artifact path/digest are not strongly bound.
-- CI runner -> maintainer review -> `main`: workflow downloads a mutable DMG, computes a hash, edits `flake.nix`, and opens or updates a PR. Current controls are GitHub workflow permission, pinned workflow actions, and maintainer review before merge.
-- Maintainer build host -> Public users: `.deb`, `.rpm`, and pacman artifacts cross from local build output into public distribution. Current repo lacks signing/provenance workflow.
+| Boundary | Crosses From | Crosses To | Security Concern |
+| --- | --- | --- | --- |
+| Upstream DMG | Internet/CDN/OpenAI artifact hosting | local installer, updater, Nix hash workflow | Authenticity, freshness, downgrade, malicious payload |
+| Build toolchain | npm, Electron releases, Rust crates, distro tools, 7z/7zz | generated app and packages | Dependency compromise, unpinned downloads, malicious native modules |
+| Generated app bundle | extracted upstream app and patched ASAR | Linux Electron runtime | Renderer isolation, IPC, navigation, local file access |
+| Local webview origin | loopback HTTP server | Electron renderer | Same-user port spoofing, stale assets, marker spoofing |
+| User config/state/cache | XDG user-writable files | updater decisions and rebuild inputs | Path substitution, stale state, developer-mode misuse, secret leakage |
+| Updater rebuild | unprivileged user service | package builder scripts and artifacts | Builder-root trust, PATH/tool influence, package identity |
+| Privileged install | unprivileged updater/package path | `pkexec` and system package manager | TOCTOU, package substitution, root-owned payload install |
+| Desktop automation | Electron/plugin request | Computer Use MCP backend, AT-SPI, screenshot, ydotool/portal | Screenshot leakage, unintended input, command origin |
+| Public release | maintainer/CI build output | users and package consumers | Signing, provenance, reproducibility, trust-root drift |
 
-#### Diagram
+### Diagram
 
 ```mermaid
 flowchart LR
-  U["Upstream DMG"] --> I["Installer"]
-  U --> D["Updater daemon"]
-  N["NPM and Electron"] --> I
-  I --> G["Generated app"]
-  G --> W["Local webview server"]
+  D["Upstream Codex.dmg"] --> I["install.sh"]
+  D --> U["codex-app-updater"]
+  N["npm / Electron / Rust / distro tools"] --> I
+  I --> G["Generated codex-app/"]
+  G --> L["Launcher"]
+  L --> W["Loopback webview"]
   W --> E["Electron renderer"]
-  D --> B["Package builder"]
+  E --> C["Codex CLI"]
+  E --> M["Computer Use MCP backend"]
+  M --> H["Desktop state, screenshots, input"]
+  U --> B["Package builder"]
   B --> P["Native package"]
-  P --> X["pkexec install"]
-  X --> S["System package DB"]
-  C["User config state cache"] --> D
-  A["GitHub Actions"] --> F["Nix hash"]
-  P --> R["Public artifacts"]
+  P --> X["pkexec install-*"]
+  X --> S["System package DB and /opt/codex-app"]
+  R["XDG config/state/cache"] --> U
+  A["GitHub Actions"] --> F["Nix hash / release evidence"]
+  P --> O["Public artifacts"]
 ```
 
-## Assets And Security Objectives
+## Assets And Objectives
 
-- User workstation account: preserve confidentiality and integrity of local files and processes.
-- Root-owned package database and `/opt/codex-app`: prevent unauthorized package install, downgrade, or root-owned payload tampering.
-- Updater state/config/cache: prevent artifact substitution, malicious builder selection, and misleading recovery state.
-- Public packages: ensure recipients can verify origin, integrity, and provenance.
-- Upstream Codex app and CLI authenticity: ensure Linux conversion uses genuine, reviewed upstream inputs.
-- Electron renderer boundary: keep Chromium sandboxing and Electron isolation controls in place so XSS/webview compromise does not become host compromise.
-- Logs and state: avoid persisting secrets embedded in configured URLs or subprocess errors.
+- **User workstation account:** protect local files, shell environment, Codex
+  credentials, API tokens, screenshots, clipboard-like data, and user processes.
+- **Root-owned package state:** protect the system package database,
+  `/opt/codex-app`, `/usr/lib/codex-app`, launchers, service units, polkit
+  policy, and package scripts.
+- **Updater state and workspaces:** preserve accurate version, candidate,
+  digest, artifact path, and install status across restarts and package
+  upgrades.
+- **Generated app integrity:** ensure the Linux app is built from the intended
+  upstream DMG and reviewed patch set.
+- **Renderer and desktop-control boundary:** keep Electron, webview, CLI, and
+  Computer Use behavior constrained to intended user-consented actions.
+- **Public artifact trust:** publish verifiable packages, checksums,
+  signatures, and provenance where public consumers rely on this fork.
+- **Logs and docs:** avoid persisting secrets, and keep security workflow and
+  threat assumptions discoverable for future maintainers and agents.
 
-## Attacker Model
+## Attacker-Controlled Inputs
 
-Capabilities:
+- Configured `dmg_url`, `builder_bundle_root`, `workspace_root`, `cli_path`,
+  environment variables, and command-line options.
+- User-writable updater state/cache, generated app trees, package outputs, and
+  local build directories.
+- Upstream DMG bytes, HTTP metadata, npm metadata/tarballs, Electron archives,
+  Rust crates, distro package state, and CI workflow inputs.
+- Local loopback ports and any marker-compatible content served by same-user
+  processes.
+- Generated ASAR/webview content, renderer messages, plugin manifests, and
+  Computer Use requests.
+- Package paths passed to privileged install subcommands.
+- Subprocess stdout/stderr that may be written to service logs or state.
 
-- Same-user local process can bind localhost ports, modify user cache/state/config, influence user PATH, and race user-owned files.
-- LAN attacker can connect to any future local services that bind on non-loopback interfaces.
-- Network or supply-chain attacker can compromise or influence mutable upstream distribution, npm registry artifacts, Electron release artifacts, GitHub Actions dependencies, or public package release storage.
-- Public package consumer may verify artifacts only with metadata this project publishes.
+## Required Security Invariants
 
-Non-capabilities:
+- DMGs used for release or unattended updater install must be authenticated by
+  trusted metadata, not only fetched over TLS and hashed after download.
+- Package versions must come from the OpenAI app bundle version unless a test
+  override is explicit.
+- `codex-app-updater` must stay unprivileged until the final install subcommand.
+- Privileged install commands must install only validated `codex-app` packages
+  whose identity and digest match updater-reviewed state.
+- Package builders must reject unsafe symlinks, normalize modes, and avoid
+  preserving local build ownership.
+- Production updater builder roots must be package-owned, non-symlinked, and
+  not group/world-writable; local builder overrides require explicit developer
+  mode.
+- The generated launcher must keep local services loopback-only unless a change
+  deliberately rethinks the webview trust model.
+- Electron sandboxing must remain enabled by default; disabling it is an
+  explicit lower-security compatibility mode.
+- Computer Use must remain locally scoped, account/host-gated, and bound to
+  user-consented desktop-control semantics.
+- Logs and state must not store credential-bearing URLs or credential-looking
+  subprocess output.
 
-- No assumption of remote pre-auth access to a network service exposed by this repo, except any accidental local webview server exposure.
-- No assumption that attacker already has root.
-- No assumption that upstream Codex credentials, OpenAI accounts, or backend services are controlled by this repo.
-- No claim about generated Electron IPC/webPreferences without inspecting `codex-app/`.
+## Threat Themes
 
-## Threat Enumeration And Prioritization
+### T1: Mutable DMG Becomes A Trusted Package
 
-### T1: Malicious upstream DMG becomes a trusted Linux package
+**Entry points:** default and configured DMG URLs, `Codex.dmg`, Nix hash
+workflow, updater download path, release gate.
 
-- Entry points: `dmg_url`, `install.sh` download, updater download, CI hash workflow.
-- Abuse path: attacker controls or compromises upstream payload path -> updater downloads bytes -> hash is recorded but not verified against trusted metadata -> builder converts payload to native package -> auto-install applies it after app exit.
-- Likelihood: Medium. It requires upstream/CDN/workflow compromise or malicious config, but the URL is mutable and auto-install is intended.
-- Impact: High. A malicious package can alter root-owned app files and run user-context Electron/updater code persistently.
-- Priority: High.
-- Existing mitigations: HTTPS; Nix fixed-output hash for Nix path; post-download hash recording.
-- Gaps: no signed manifest or Linux-enforced verification of upstream signature/notarization before rebuild.
-- Recommendations: signed update metadata, maintainer-reviewed hash acceptance for public channels, explicit signature verification before extraction, and auto-install gating on verified metadata.
+**Abuse path:** attacker compromises or redirects the mutable upstream artifact
+or its metadata; the repo downloads and hashes the bytes; the updater or
+maintainer build converts them into a native package; the package is installed
+or published as trusted.
 
-### T2: Local package path substitution crosses the `pkexec` boundary
+**Impact:** High. A malicious app package can persist in root-owned paths and
+run user-context Electron/updater code.
 
-- Entry points: updater state `artifact_paths.package_path`, CLI `install-* --path`, user cache workspace.
-- Abuse path: attacker with same-user access modifies or races package artifact path -> privileged install validates insufficient metadata or validates then installs later path -> package manager installs attacker-controlled package as root.
-- Likelihood: Medium. Requires same-user access and polkit authorization timing, but same-user local processes are in scope.
-- Impact: High. Successful abuse writes root-owned package payloads and package scripts.
-- Priority: High.
-- Existing mitigations: `pkexec` authorization; argument-based subprocess calls; symlink/non-file rejection; expected `codex-app` filename shapes; private staged-copy install; Debian, RPM, and pacman package-name metadata validation; Debian/pacman version checks.
-- Gaps: caller-supplied path acceptance and no root-trusted digest binding.
-- Recommendations: digest/identity binding to trusted updater state and canonical path checks under expected workspace.
+**Existing mitigations:** HTTPS-only non-loopback updater URLs, userinfo
+rejection, redacted URL logging, download size limits, partial downloads, Nix
+fixed-output hash, release-gate hash check, Apple DMG verification script and
+workflow.
 
-### T3: Renderer compromise escapes meaningful containment if generated app settings are unsafe
+**Gaps:** No Linux-enforced signed manifest or trusted upstream metadata before
+updater rebuild/install; hash-refresh PRs still need machine-attached upstream
+version/signature evidence.
 
-- Entry points: webview content, upstream app content, local fixed HTTP origin, possible IPC/openPath handlers.
-- Abuse path: attacker gets malicious content served to renderer or exploits upstream renderer bug -> generated app has unsafe `webPreferences`, IPC, navigation, or explicit sandbox disablement -> attacker operates with user account privileges.
-- Likelihood: Medium. Requires renderer content compromise or local-origin spoofing, but local webview spoofing is plausible.
-- Impact: High. User files, tokens, CLI config, and local processes are exposed.
-- Priority: High.
-- Existing mitigations: launcher keeps Chromium sandboxing enabled by default and has no Node-related flags visible; `scripts/inspect-electron-security.js` provides a static generated-app inspection gate.
-- Gaps: generated app has not been built and reviewed in this checkout; the scanner is not a substitute for manual IPC/navigation/CSP review; explicit lower-security sandbox opt-out remains.
-- Recommendations: after building the generated app, run `make release-gate` and verify `contextIsolation`, `nodeIntegration`, sandbox, navigation/window/openExternal policy, CSP, and IPC behavior before public release.
+**Priority:** High.
 
-### T4: Local webview origin is spoofed
+### T2: Package Substitution Crosses The `pkexec` Boundary
 
-- Entry points: fixed port `5175`, Python `http.server`, marker-based origin validation.
-- Abuse path: local process occupies or races port -> marker-matching malicious HTML is served -> Electron loads attacker page as expected local origin.
-- Likelihood: Medium for local spoofing.
-- Impact: Medium, High when combined with T3.
-- Priority: Medium.
-- Existing mitigations: explicit `127.0.0.1` bind, no broad process killing, and marker checks for expected `index.html` strings.
-- Gaps: fixed port, weak validation, no nonce.
-- Recommendations: use random port/nonce where possible and validate asset manifest hashes.
+**Entry points:** updater state package paths, `install-* --path`, user cache
+workspaces, package files in `dist/`.
 
-### T5: CI or public artifact channel distributes unreviewed trusted payloads
+**Abuse path:** same-user attacker swaps or races a package path before the
+privileged install; metadata validation succeeds on one file but the package
+manager installs another, or the validated file is not bound to updater state.
 
-- Entry points: scheduled hash workflow and public package release artifacts.
-- Abuse path: workflow or upstream payload is compromised -> hash PR or artifacts are updated/published -> public users consume artifacts without signatures/provenance.
-- Likelihood: Medium for supply-chain exposure over time.
-- Impact: High because public users rely on repo-published trust decisions.
-- Priority: High.
-- Existing mitigations: Nix hash syntax validation, PR-based hash refresh, commit-pinned workflow actions, and a release gate that requires a reviewed DMG hash before writing package checksums and optional checksum signatures.
-- Gaps: no format-native package signing/attestation and no automated upstream signature/notarization evidence in hash PRs.
-- Recommendations: require release-gate checksums/signatures for public artifacts, add artifact attestations, add format-native package signing, include upstream signature/notarization verification output, and keep documented verification instructions.
+**Impact:** High. Successful abuse writes root-owned package payloads or runs
+package scripts as part of system package installation.
 
-### T6: Build environment influences package contents
+**Existing mitigations:** `pkexec`, argument-vector subprocess calls,
+symlink/non-file rejection, expected filename shapes, private staged copies,
+format-specific package-name metadata checks, Debian/pacman version checks.
 
-- Entry points: `builder_bundle_root`, npm/npx resolution, generated app payload staging.
-- Abuse path: user config points updater at malicious builder scripts -> local rebuild emits compromised package -> package is offered for privileged install or public distribution.
-- Likelihood: Medium for developer/local systems; lower for locked packaged systems if config is hardened.
-- Impact: Medium to High depending whether package is installed locally or published.
-- Priority: Medium.
-- Existing mitigations: required builder files are copied from a configured root; Rust uses argument vectors; updater rebuild commands use a fixed system PATH; packaged builder-root redirects require explicit developer mode; package staging rejects unsafe app symlinks and normalizes app payload and package directory modes; builder bundle copying rejects symlinked entries, rejects group/world-writable production roots, and requires the packaged root path to be owned by root or the kernel overflow UID exposed by a user-namespace view.
-- Gaps: developer mode intentionally trusts the configured local builder root, and generated package contents still depend on unauthenticated upstream inputs.
-- Recommendations: keep builder-root validation covered by updater tests, and pair it with upstream artifact verification before public distribution.
+**Gaps:** No root-trusted package digest binding to updater-reviewed state, and
+manual install paths still accept caller-supplied package locations.
 
-### T7: Logs and state expose sensitive configured URLs or command output
+**Priority:** High.
 
-- Entry points: `dmg_url`, npm/package-manager stderr, state and service logs.
-- Abuse path: operator configures URL with userinfo or token query -> failure paths persist full URL or stderr to state/logs.
-- Likelihood: Low. Default URL has no secret.
-- Impact: Low to Medium depending token sensitivity.
-- Priority: Low.
-- Existing mitigations: no hardcoded secrets found; updater DMG URLs reject userinfo before request execution; updater-generated URL error context redacts query values.
-- Gaps: subprocess stderr can still include arbitrary sensitive output and be persisted in build or package-manager failure logs.
-- Recommendations: keep URL validation/redaction tests and redact credential-looking stderr before persistence.
+### T3: Builder Or Toolchain Input Alters Package Contents
 
-### T8: NPM latest-state trust changes runtime CLI behavior
+**Entry points:** packaged update-builder bundle, developer-mode builder roots,
+PATH and package-manager tools, npm/Electron/Rust dependencies, generated app
+payload.
 
-- Entry points: launcher CLI preflight, `npm view @openai/codex version`, automatic npm install/upgrade.
-- Abuse path: npm account, registry, transport, or unexpected upstream release is compromised -> updater observes a new latest CLI version -> updater installs that version globally or under `~/.local` -> Electron launches with the new CLI path.
-- Likelihood: Medium. It depends on npm/upstream compromise or an unwanted release, but the check is part of normal prelaunch behavior.
-- Impact: Medium. The CLI runs with user privileges and can affect Codex app behavior and local files, though it does not directly cross the root package-install boundary.
-- Priority: Medium.
-- Existing mitigations: missing-CLI installation requires interactive launcher consent; installs use an exact version returned by npm rather than a floating spec.
-- Gaps: no repo-reviewed allowlist, no npm provenance verification, and upgrades can occur during preflight.
-- Recommendations: require explicit consent for upgrades, support an approved-version channel, verify npm provenance/signatures where available, and log the chosen version/digest.
+**Abuse path:** attacker controls builder scripts, helper binaries, dependency
+downloads, or generated payload contents; the updater or maintainer build emits
+a compromised package.
 
-## Mitigations And Recommendations
+**Impact:** Medium to High, depending on whether the package is installed
+locally or distributed publicly.
 
-High-priority implementation targets:
+**Existing mitigations:** packaged builder-root restrictions, developer-mode
+guard for builder redirection, fixed updater rebuild PATH, Rust subprocess
+argument vectors, builder bundle symlink and mode checks, package payload
+symlink rejection, package mode normalization.
 
-- Verify upstream artifacts before extraction: signed manifest or verified upstream signature/notarization, with explicit failure if verification cannot run.
-- Harden privileged installs further: trusted package digest validation and canonical workspace path checks.
-- Run the release gate and inspect generated app security settings before public release.
-- Add upstream version/build metadata and signature/notarization verification to hash-update PRs.
-- Require public artifact checksums/signatures, then add format-native signing and attestations.
+**Gaps:** non-Nix build dependencies still rely heavily on live registries and
+tool downloads; developer mode intentionally trusts local builder roots.
 
-Medium-priority implementation targets:
+**Priority:** Medium.
 
-- Remove fixed-port webview spoofing where feasible.
-- Keep packaged builder-root ownership, permission, and symlink validation covered by tests.
-- Keep package payload symlink and mode checks covered by smoke tests.
-- Keep updater download timeout and maximum-size checks covered by regression tests.
-- Evaluate narrower service filesystem protections with explicit writable XDG paths.
+### T4: Renderer Or Local Webview Origin Escapes Containment
 
-Detection and monitoring:
+**Entry points:** generated ASAR/webview content, loopback webview server,
+fixed port `5175`, renderer IPC, `openExternal`/`openPath`, sandbox opt-out.
 
-- Log artifact URL host, version, digest, signature verification result, and package path/digest without storing secrets.
-- Log and notify when `builder_bundle_root` or `dmg_url` differ from packaged defaults.
-- Publish release provenance and expected artifact hashes for public users.
+**Abuse path:** malicious or spoofed local content is served to Electron, or a
+renderer bug reaches unsafe IPC/navigation/file-opening behavior; sandboxing or
+context isolation is disabled or insufficient.
+
+**Impact:** High for user account compromise; higher if combined with package
+or updater trust failures.
+
+**Existing mitigations:** loopback bind, startup marker checks, live app marker
+preservation, default-enabled Chromium sandboxing, explicit
+`CODEX_APP_DISABLE_ELECTRON_SANDBOX` opt-out, static
+`scripts/inspect-electron-security.js` release-gate inspection.
+
+**Gaps:** fixed port and marker checks are spoofable by same-user processes;
+generated bundle IPC, CSP, navigation, and Electron `webPreferences` require
+review for each public release candidate.
+
+**Priority:** High.
+
+### T5: Computer Use Backend Exposes Desktop Control
+
+**Entry points:** bundled Computer Use plugin, Rust MCP backend, accessibility
+tree requests, screenshot paths, XDG portal/GNOME Shell DBus, ydotool/input
+backends.
+
+**Abuse path:** malicious renderer, plugin request, compromised upstream bundle,
+or confused account-side flow invokes desktop inspection, screenshots, or input
+automation beyond user intent.
+
+**Impact:** High for confidentiality and integrity of the user's desktop
+session.
+
+**Existing mitigations:** feature remains subject to upstream account-side
+rollout and host accessibility/input prerequisites; backend is packaged as a
+local app component rather than a network service; requested app selection now
+errors when no accessible app matches.
+
+**Gaps:** local authorization/consent semantics for Computer Use are mostly
+inherited from the upstream app flow; the backend needs manual review when
+plugin manifests, command routing, screenshot handling, or input backends
+change.
+
+**Priority:** High when touching Computer Use; Medium otherwise.
+
+### T6: User Config, State, Or Cache Misleads The Updater
+
+**Entry points:** `~/.config/codex-app-updater/config.toml`,
+`~/.local/state/codex-app-updater/state.json`, cache workspaces, service logs,
+candidate metadata, persisted CLI path.
+
+**Abuse path:** same-user attacker edits config/state to redirect update
+sources, builder roots, package paths, CLI paths, or status transitions; the
+updater accepts stale or malicious state as authoritative.
+
+**Impact:** Medium to High. It can influence user-context execution, package
+candidate selection, and privileged install preparation.
+
+**Existing mitigations:** config overlay parsing, developer-mode guard for
+packaged builder roots, stale persisted CLI path invalidation, interrupted
+install recovery, failed-state handling that avoids prompt loops, XDG path
+separation.
+
+**Gaps:** state is user-writable by design and does not yet cryptographically
+bind artifacts to trusted metadata.
+
+**Priority:** Medium.
+
+### T7: Codex CLI Preflight Trusts NPM Latest State
+
+**Entry points:** `npm view @openai/codex version`, automatic install/upgrade,
+`CODEX_CLI_PATH`, updater config `cli_path`, persisted CLI path, launch PATH.
+
+**Abuse path:** npm account/registry/CDN compromise or unwanted latest release
+causes preflight to install or use a malicious CLI that Electron then launches
+with user privileges.
+
+**Impact:** Medium. The CLI runs as the user and can affect local files and
+Codex app behavior, but it does not directly cross the root package boundary.
+
+**Existing mitigations:** missing CLI installation is interactive; installs use
+the exact version returned by npm rather than a floating install spec; invalid
+explicit/configured paths fail loudly; stale persisted paths fall back to local
+discovery.
+
+**Gaps:** no repo-reviewed approved-version channel, npm provenance check, or
+explicit consent gate for every upgrade.
+
+**Priority:** Medium.
+
+### T8: Public Artifacts Lack Sufficient Provenance
+
+**Entry points:** release gate outputs, GitHub Actions artifacts, package files,
+checksums, signatures, package repositories, Nix hash updates.
+
+**Abuse path:** a workflow, maintainer host, package host, or artifact storage
+path publishes a package whose origin, DMG trust evidence, or builder inputs are
+not independently verifiable by users.
+
+**Impact:** High for public consumers.
+
+**Existing mitigations:** release gate writes `SHA256SUMS`, optionally signs
+checksums, exports the release signing key, validates package identity, and can
+require signatures; hash refresh goes through PR review.
+
+**Gaps:** no format-native package signing, no hosted artifact attestations,
+and no automatic inclusion of upstream signature/notarization evidence in hash
+refresh PRs.
+
+**Priority:** High before public releases.
+
+### T9: Logs Or Error State Leak Secrets
+
+**Entry points:** configured URLs, subprocess stderr, package-manager output,
+build logs, updater state, service logs, launcher logs.
+
+**Abuse path:** URL tokens, credentials, environment-derived secrets, or
+credential-looking command output are written to long-lived logs or JSON state.
+
+**Impact:** Low to Medium, depending on token scope.
+
+**Existing mitigations:** updater rejects DMG URL userinfo; updater-generated
+URL context strips query and fragment; default URLs contain no secrets.
+
+**Gaps:** subprocess stderr from build tools, npm, and package managers can
+still contain arbitrary sensitive values.
+
+**Priority:** Low to Medium.
+
+## Recommended Review Order
+
+1. Authenticate updater DMG inputs before rebuild and install.
+2. Bind privileged installs to a verified package digest and identity.
+3. Attach Apple signature/notarization and version evidence to hash-refresh PRs.
+4. Review generated app Electron security settings before public releases.
+5. Reduce fixed-port local webview spoofing.
+6. Add package signing, checksums, and hosted provenance for public artifacts.
+7. Review Computer Use command routing, screenshots, and input backends whenever
+   that surface changes.
+8. Review npm CLI auto-upgrade trust and add an approved-version or consent
+   path.
+9. Redact credential-looking subprocess output before persistence.
 
 ## Focus Paths For Manual Security Review
 
-- `install.sh`: launcher generation, sandbox flags, webview server, DMG/Electron/npm downloads.
-- `scripts/patch-linux-window-ui.js`: ASAR patching and file-open behavior injected into upstream code.
-- `updater/src/upstream.rs`: DMG download, hashing, timeouts, and future signature verification.
-- `updater/src/app.rs`: auto-install orchestration, state transitions, and `pkexec` invocation.
-- `updater/src/install.rs`: privileged install subcommands, path validation, version checks, and TOCTOU controls.
-- `updater/src/builder.rs`: builder root trust, inherited PATH, package artifact discovery.
-- `updater/src/config.rs`: production vs developer-mode configuration boundaries.
-- `updater/src/codex_cli.rs`: npm latest checks and automatic CLI install/upgrade.
-- `updater/src/state.rs`: artifact path persistence and state-file trust.
-- `packaging/linux/codex-app-updater.service`: user-service sandboxing and environment.
-- `packaging/linux/codex-packaged-runtime.sh`: imported environment and updater service startup.
-- `packaging/linux/codex-app-updater-user-service.sh`: maintainer-script user-manager operations.
-- `scripts/lib/package-common.sh`: package payload staging and metadata normalization.
-- `scripts/build-deb.sh`: Debian package generation and public signing/provenance hooks.
-- `scripts/build-rpm.sh`: RPM packaging, shared staging, and signing hooks.
-- `scripts/build-pacman.sh`: pacman staging, `--skipinteg`, and package signing hooks.
-- `.github/workflows/update-codex-hash.yml`: CI trust-root updates and action pinning.
-- `flake.nix`: Nix fixed-output hash trust and Nix-specific binary patching.
-- `packaging/linux/control`: public package dependency footprint.
-- `packaging/linux/PKGBUILD.template`: Arch dependency footprint and package metadata.
+- `install.sh`: DMG extraction, launcher generation, native-module rebuild,
+  Electron download, bundled plugin staging.
+- `launcher/start.sh.template`: webview server lifecycle, CLI discovery,
+  sandbox flags, packaged runtime loading, liveness state.
+- `scripts/patch-linux-window-ui.js`: ASAR patch injection, fail-soft behavior,
+  file-manager handling, launch-action socket behavior.
+- `scripts/inspect-electron-security.js`: generated app security checks used by
+  release gates.
+- `scripts/lib/dmg.sh`: installer DMG download and version extraction.
+- `scripts/lib/package-common.sh`: package payload staging, symlink checks,
+  mode normalization, builder bundle layout.
+- `scripts/build-deb.sh`, `scripts/build-rpm.sh`, `scripts/build-pacman.sh`:
+  package metadata and package-manager-specific staging behavior.
+- `scripts/release-gate.sh` and `scripts/verify-apple-dmg.sh`: release trust
+  evidence, checksums, optional signatures, Apple verification.
+- `updater/src/upstream.rs`: DMG URL validation, metadata fetch, download
+  limits, redaction, hashing.
+- `updater/src/app.rs`: daemon/check/install orchestration, state transitions,
+  notifications, `pkexec` launch.
+- `updater/src/install.rs`: privileged install command surface, metadata
+  validation, private staging, package-manager invocation.
+- `updater/src/builder.rs`: builder-root trust, workspace preparation, package
+  discovery.
+- `updater/src/config.rs`: XDG paths, config overlay, developer-mode boundary.
+- `updater/src/codex_cli.rs`: CLI path resolution, npm latest checks,
+  install/upgrade behavior.
+- `updater/src/state.rs`: persisted state compatibility, artifact path state,
+  recovery assumptions.
+- `computer-use-linux/`: accessibility tree access, screenshot capture, input
+  synthesis, MCP request handling.
+- `plugins/openai-bundled/plugins/computer-use/`: plugin manifest, backend
+  command routing, packaged assets.
+- `packaging/linux/codex-app-updater.service`: user-service sandboxing,
+  environment, filesystem access.
+- `packaging/linux/codex-packaged-runtime.sh`: systemd environment import,
+  service startup, launch-time update checks.
+- `.github/workflows/update-codex-hash.yml` and
+  `.github/workflows/verify-apple-dmg.yml`: trust-root update and Apple
+  verification evidence.
+- `flake.nix`: fixed-output DMG hash, Electron patching, Nix-specific runtime
+  behavior.
 
 ## Quality Check
 
-- Covered discovered runtime entry points: installer, launcher, local webview server, updater daemon, CLI preflight, package builders, CI workflow.
-- Covered each trust boundary in at least one threat: internet downloads, generated app assets, localhost HTTP, user config/state/cache, unprivileged updater to privileged install, CI to main, public artifacts.
-- Separated runtime behavior from CI/build/dev tooling.
-- Reflected user clarifications: auto-install is intended, public distribution is intended, mutable upstream payload trust is a supply-chain risk.
-- Kept assumptions and open questions explicit, especially absent generated app and unverified upstream signing state.
+- Repository-wide product surfaces are covered before narrower examples:
+  installer, generated app, package builders, updater, privileged install,
+  Computer Use, CI/release, Nix, and docs.
+- Trust boundaries are explicit: internet downloads, generated app, localhost
+  HTTP, user-writable XDG state, updater-to-package-builder,
+  updater-to-`pkexec`, desktop automation, and public artifacts.
+- Attacker-controlled inputs are listed separately from findings.
+- Threats are repository-context classes, not findings about a current diff.
+- Current mitigations and gaps match the maintained security backlog.
+- Maintainer policy remains in maintainer docs; this file is the threat model,
+  not a replacement for validation instructions or implementation tickets.
