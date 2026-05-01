@@ -5,7 +5,7 @@ direct_remote = "upstream"
 direct_branch = "main"
 target_remote = "origin"
 target_branch = "main"
-last_synced_ref = "f6b99eb"
+baseline_source = "docs/maintainers/fork-divergences.md"
 required_merge_method = "merge_commit"
 preserve_upstream_commit_identity = true
 
@@ -24,7 +24,7 @@ read_before_conflict_resolution = [
 [local_gates]
 before_push_build_gate = true
 dmg_freshness_hours = 24
-minimum_app_build_commands = ["make build-app", "./install.sh"]
+minimum_app_build_command_one_of = ["make build-app", "./install.sh"]
 package_payload_changes_require_package_builder = true
 release_workflow_changes_require_release_gate = true
 ci_is_secondary_evidence = true

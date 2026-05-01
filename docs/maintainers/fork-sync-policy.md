@@ -19,10 +19,14 @@ agents and maintainers; runtime code does not consume it.
    normal merge commit, not a rebase or squash merge.
 6. Preserve this fork's intentional contracts unless the PR intentionally
    changes policy.
-7. Keep a sync ledger in the PR body or a temporary working note until it is
+7. Update the upstream baseline in
+   [Fork Divergences](fork-divergences.md) after the sync. The policy config
+   points to that canonical inventory instead of duplicating the mutable commit
+   hash.
+8. Keep a sync ledger in the PR body or a temporary working note until it is
    copied into the PR.
-8. Run the required local gates before pushing code changes.
-9. Inspect GitHub blockers directly. Do not infer merge readiness from summary
+9. Run the required local gates before pushing code changes.
+10. Inspect GitHub blockers directly. Do not infer merge readiness from summary
    status alone.
 
 ## Sync Ledger
@@ -32,6 +36,7 @@ Every broad upstream sync needs a ledger with:
 - upstream refs fetched and the baseline commit;
 - policy files read;
 - every divergence area checked;
+- baseline update made in [Fork Divergences](fork-divergences.md);
 - incoming changes that affect local contracts;
 - classification for each affected area: preserved, upstream now implements it,
   obsolete by policy, intentionally changed, or uncertain;
