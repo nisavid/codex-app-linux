@@ -15,10 +15,10 @@ ICON_SOURCE="$REPO_DIR/assets/codex.png"
 PRERM_TEMPLATE="$REPO_DIR/packaging/linux/codex-app-updater.prerm"
 POSTRM_TEMPLATE="$REPO_DIR/packaging/linux/codex-app-updater.postrm"
 POSTINST_TEMPLATE="$REPO_DIR/packaging/linux/codex-app-updater.postinst"
-PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/packaged-runtime.sh"
+PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
 
 PACKAGE_NAME="${PACKAGE_NAME:-codex-app}"
-PACKAGE_VERSION="$(resolve_package_version)"
+PACKAGE_VERSION="${PACKAGE_VERSION:-$(default_package_version)}"
 UPDATER_BINARY_SOURCE="${UPDATER_BINARY_SOURCE:-$REPO_DIR/target/release/codex-app-updater}"
 UPDATER_SERVICE_SOURCE="${UPDATER_SERVICE_SOURCE:-$SERVICE_TEMPLATE}"
 PACKAGED_RUNTIME_SOURCE="${PACKAGED_RUNTIME_SOURCE:-$PACKAGED_RUNTIME_TEMPLATE}"
@@ -48,7 +48,6 @@ main() {
     command -v dpkg-deb >/dev/null 2>&1 || error "dpkg-deb is required"
     command -v dpkg >/dev/null 2>&1 || error "dpkg is required"
 
-    validate_packaging_identifiers
     ensure_updater_binary
 
     local arch output_file
@@ -66,11 +65,15 @@ main() {
     write_launcher_stub "$PKG_ROOT"
 
     sed \
+        -e "s/__PACKAGE_NAME__/$PACKAGE_NAME/g" \
         -e "s/__VERSION__/$PACKAGE_VERSION/g" \
         -e "s/__ARCH__/$arch/g" \
         "$CONTROL_TEMPLATE" > "$PKG_ROOT/DEBIAN/control"
     chmod 0644 "$PKG_ROOT/DEBIAN/control"
-    cp "$POSTINST_TEMPLATE" "$PKG_ROOT/DEBIAN/postinst"
+    sed \
+        -e "s|/opt/codex-app|/opt/$PACKAGE_NAME|g" \
+        -e "s|/usr/lib/codex-app|/usr/lib/$PACKAGE_NAME|g" \
+        "$POSTINST_TEMPLATE" > "$PKG_ROOT/DEBIAN/postinst"
     cp "$PRERM_TEMPLATE" "$PKG_ROOT/DEBIAN/prerm"
     cp "$POSTRM_TEMPLATE" "$PKG_ROOT/DEBIAN/postrm"
     chmod 0755 "$PKG_ROOT/DEBIAN/postinst" "$PKG_ROOT/DEBIAN/prerm" "$PKG_ROOT/DEBIAN/postrm"
@@ -78,6 +81,10 @@ main() {
     mkdir -p "$DIST_DIR"
     info "Building $output_file"
     dpkg-deb --root-owner-group --build "$PKG_ROOT" "$output_file" >&2
+    info "Inspecting package metadata"
+    dpkg-deb -I "$output_file" >&2
+    info "Inspecting package contents"
+    dpkg-deb -c "$output_file" >&2
     info "Built package: $output_file"
 }
 

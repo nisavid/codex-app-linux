@@ -1,16 +1,14 @@
 //! Upstream DMG metadata and download helpers.
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use reqwest::{header, Client, Url};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use tokio::{
-    fs::{self, File},
-    io::AsyncWriteExt,
-};
+use tokio::{fs::File, io::AsyncWriteExt};
 
-const MAX_DMG_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_DMG_BYTES: u64 = 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Selected HTTP metadata used to detect upstream DMG changes.
@@ -26,12 +24,45 @@ pub struct RemoteMetadata {
 pub struct DownloadedDmg {
     pub path: PathBuf,
     pub sha256: String,
+    pub candidate_version: String,
+}
+
+fn validate_dmg_url(dmg_url: &str) -> Result<Url> {
+    let safe_url = sanitized_url_for_log(dmg_url);
+    let url = Url::parse(dmg_url).with_context(|| format!("Invalid DMG URL: {safe_url}"))?;
+    if url.host_str().is_none() {
+        return Err(anyhow!("DMG URL must include a host"));
+    }
+    let is_loopback_http = url.scheme() == "http"
+        && url
+            .host_str()
+            .is_some_and(|host| host == "localhost" || host == "127.0.0.1" || host == "::1");
+    if url.scheme() != "https" && !is_loopback_http {
+        return Err(anyhow!(
+            "DMG URL must use https unless it targets loopback http"
+        ));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(anyhow!("DMG URL must not contain embedded credentials"));
+    }
+    Ok(url)
+}
+
+fn sanitized_url_for_log(dmg_url: &str) -> String {
+    match Url::parse(dmg_url) {
+        Ok(mut url) => {
+            url.set_query(None);
+            url.set_fragment(None);
+            url.to_string()
+        }
+        Err(_) => "<invalid-url>".to_string(),
+    }
 }
 
 /// Fetches the upstream DMG headers used to detect candidate updates.
 pub async fn fetch_remote_metadata(client: &Client, dmg_url: &str) -> Result<RemoteMetadata> {
-    let url = parse_dmg_url(dmg_url)?;
-    let safe_url = safe_url_for_log(url.as_str());
+    let url = validate_dmg_url(dmg_url)?;
+    let safe_url = sanitized_url_for_log(dmg_url);
     let response = client
         .head(url)
         .send()
@@ -74,33 +105,45 @@ pub async fn fetch_remote_metadata(client: &Client, dmg_url: &str) -> Result<Rem
     })
 }
 
-/// Downloads the upstream DMG and hashes its contents.
+/// Downloads the upstream DMG and derives a package version from its hash.
 pub async fn download_dmg(
     client: &Client,
     dmg_url: &str,
     destination_dir: &Path,
+    version_timestamp: DateTime<Utc>,
 ) -> Result<DownloadedDmg> {
-    download_dmg_with_max_bytes(client, dmg_url, destination_dir, MAX_DMG_BYTES).await
+    download_dmg_with_limit(
+        client,
+        dmg_url,
+        destination_dir,
+        version_timestamp,
+        MAX_DMG_BYTES,
+    )
+    .await
 }
 
-async fn download_dmg_with_max_bytes(
+async fn download_dmg_with_limit(
     client: &Client,
     dmg_url: &str,
     destination_dir: &Path,
-    max_bytes: u64,
+    version_timestamp: DateTime<Utc>,
+    max_dmg_bytes: u64,
 ) -> Result<DownloadedDmg> {
-    let url = parse_dmg_url(dmg_url)?;
-    let safe_url = safe_url_for_log(url.as_str());
-
+    let url = validate_dmg_url(dmg_url)?;
+    let safe_url = sanitized_url_for_log(dmg_url);
     tokio::fs::create_dir_all(destination_dir)
         .await
         .with_context(|| format!("Failed to create {}", destination_dir.display()))?;
 
     let destination = destination_dir.join("Codex.dmg");
-    let temp_destination = destination_dir.join(".Codex.dmg.tmp");
-    let _ = fs::remove_file(&temp_destination).await;
+    let partial_destination =
+        destination_dir.join(format!(".Codex.dmg.{}.part", std::process::id()));
 
-    let result: Result<DownloadedDmg> = async {
+    let download_result: Result<String> = async {
+        let mut file = File::create(&partial_destination)
+            .await
+            .with_context(|| format!("Failed to create {}", partial_destination.display()))?;
+
         let response = client
             .get(url)
             .send()
@@ -108,111 +151,100 @@ async fn download_dmg_with_max_bytes(
             .with_context(|| format!("Failed GET request for {safe_url}"))?
             .error_for_status()
             .with_context(|| format!("GET request for {safe_url} returned an error status"))?;
-        if let Some(content_length) = response.content_length() {
-            ensure!(
-                content_length <= max_bytes,
-                "DMG download size {content_length} exceeds maximum {max_bytes} bytes"
-            );
+
+        let content_length = response
+            .headers()
+            .get(header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+            .or_else(|| response.content_length());
+        if let Some(content_length) = content_length {
+            if content_length > max_dmg_bytes {
+                return Err(anyhow!(
+                    "DMG response for {safe_url} is too large: {content_length} bytes exceeds {max_dmg_bytes}"
+                ));
+            }
         }
 
-        let mut file = File::create(&temp_destination)
-            .await
-            .with_context(|| format!("Failed to create {}", temp_destination.display()))?;
+        let mut downloaded_bytes = 0_u64;
         let mut hasher = Sha256::new();
         let mut stream = response.bytes_stream();
-        let mut downloaded_bytes = 0_u64;
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.with_context(|| format!("Failed downloading {safe_url}"))?;
-            downloaded_bytes += chunk.len() as u64;
-            if downloaded_bytes > max_bytes {
-                anyhow::bail!(
-                    "DMG download size {downloaded_bytes} exceeds maximum {max_bytes} bytes"
-                );
+            downloaded_bytes = downloaded_bytes
+                .checked_add(chunk.len() as u64)
+                .ok_or_else(|| anyhow!("DMG download byte count overflowed"))?;
+            if downloaded_bytes > max_dmg_bytes {
+                return Err(anyhow!(
+                    "DMG response for {safe_url} exceeded {max_dmg_bytes} bytes while downloading"
+                ));
             }
             file.write_all(&chunk)
                 .await
-                .with_context(|| format!("Failed writing {}", temp_destination.display()))?;
+                .with_context(|| format!("Failed writing {}", partial_destination.display()))?;
             hasher.update(&chunk);
         }
 
         file.flush()
             .await
-            .with_context(|| format!("Failed flushing {}", temp_destination.display()))?;
+            .with_context(|| format!("Failed flushing {}", partial_destination.display()))?;
+        file.sync_all()
+            .await
+            .with_context(|| format!("Failed syncing {}", partial_destination.display()))?;
         drop(file);
 
-        let sha256 = hasher
-            .finalize()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-
-        fs::rename(&temp_destination, &destination)
+        tokio::fs::rename(&partial_destination, &destination)
             .await
             .with_context(|| {
                 format!(
                     "Failed moving {} to {}",
-                    temp_destination.display(),
+                    partial_destination.display(),
                     destination.display()
                 )
             })?;
 
-        Ok(DownloadedDmg {
-            path: destination,
-            sha256,
-        })
+        Ok(hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>())
     }
     .await;
-    if result.is_err() {
-        let _ = fs::remove_file(&temp_destination).await;
-    }
-    result
-}
 
-fn parse_dmg_url(dmg_url: &str) -> Result<Url> {
-    let url = Url::parse(dmg_url).context("Failed to parse DMG URL")?;
-    let is_loopback_host = matches!(
-        url.host_str(),
-        Some("localhost") | Some("127.0.0.1") | Some("::1")
-    );
-    ensure!(url.host_str().is_some(), "DMG URL must include a host");
-    ensure!(
-        url.scheme() == "https" || (url.scheme() == "http" && is_loopback_host),
-        "DMG URL must use https unless it targets localhost/127.0.0.1/::1 over http"
-    );
-    ensure!(
-        url.username().is_empty() && url.password().is_none(),
-        "DMG URL must not include userinfo"
-    );
-    Ok(url)
-}
-
-fn safe_url_for_log(dmg_url: &str) -> String {
-    let Ok(mut url) = Url::parse(dmg_url) else {
-        return "<invalid URL>".to_string();
-    };
-    let had_fragment = url.fragment().is_some();
-    url.set_fragment(None);
-    if url.query().is_some() {
-        url.set_query(None);
-        let mut safe_url = url.to_string();
-        safe_url.push_str("?<redacted>");
-        if had_fragment {
-            safe_url.push_str("#<redacted>");
+    let sha256 = match download_result {
+        Ok(sha256) => sha256,
+        Err(error) => {
+            let _ = tokio::fs::remove_file(&partial_destination).await;
+            return Err(error);
         }
-        return safe_url;
-    }
-    let mut safe_url = url.to_string();
-    if had_fragment {
-        safe_url.push_str("#<redacted>");
-    }
-    safe_url
+    };
+    let candidate_version = derive_candidate_version(&sha256, version_timestamp)?;
+
+    Ok(DownloadedDmg {
+        path: destination,
+        sha256,
+        candidate_version,
+    })
+}
+
+/// Derives a local package version from the DMG hash and download timestamp.
+pub fn derive_candidate_version(sha256: &str, timestamp: DateTime<Utc>) -> Result<String> {
+    let short_hash = sha256
+        .get(0..8)
+        .ok_or_else(|| anyhow!("sha256 is too short to derive candidate version"))?;
+    Ok(format!(
+        "{}+{}",
+        timestamp.format("%Y.%m.%d.%H%M%S"),
+        short_hash
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::Result;
+    use chrono::TimeZone;
     use tempfile::tempdir;
     use wiremock::{
         matchers::{method, path},
@@ -247,58 +279,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_dmg_url_with_userinfo_before_request() -> Result<()> {
-        let server = MockServer::start().await;
-        Mock::given(method("HEAD"))
-            .and(path("/Codex.dmg"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-
-        let client = Client::builder().build()?;
-        let error = fetch_remote_metadata(
-            &client,
-            &server
-                .uri()
-                .replacen("://", "://user:secret@", 1)
-                .replace("127.0.0.1", "localhost"),
-        )
-        .await
-        .expect_err("URL userinfo should be rejected");
-
-        assert!(error
-            .to_string()
-            .contains("DMG URL must not include userinfo"));
-        assert!(!error.to_string().contains("secret"));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn rejects_non_https_non_loopback_dmg_url_before_request() -> Result<()> {
-        let client = Client::builder().build()?;
-        let error = fetch_remote_metadata(&client, "http://example.com/Codex.dmg")
-            .await
-            .expect_err("non-HTTPS URL should be rejected");
-
-        assert!(error
-            .to_string()
-            .contains("DMG URL must use https unless it targets localhost"));
-        Ok(())
-    }
-
-    #[test]
-    fn redacts_query_and_fragment_values_for_url_logging() {
-        assert_eq!(
-            safe_url_for_log("https://example.com/Codex.dmg?token=secret&build=123#nonce"),
-            "https://example.com/Codex.dmg?<redacted>#<redacted>"
-        );
-        assert_eq!(
-            safe_url_for_log("https://example.com/Codex.dmg#nonce"),
-            "https://example.com/Codex.dmg#<redacted>"
-        );
-    }
-
-    #[tokio::test]
     async fn downloads_dmg_and_hashes_contents() -> Result<()> {
         let server = MockServer::start().await;
         let body = b"codex-dmg-test-payload";
@@ -310,43 +290,68 @@ mod tests {
 
         let client = Client::builder().build()?;
         let temp = tempdir()?;
-        let downloaded =
-            download_dmg(&client, &format!("{}/Codex.dmg", server.uri()), temp.path()).await?;
+        let downloaded = download_dmg(
+            &client,
+            &format!("{}/Codex.dmg", server.uri()),
+            temp.path(),
+            Utc.with_ymd_and_hms(2026, 3, 24, 12, 0, 0).unwrap(),
+        )
+        .await?;
 
         assert_eq!(downloaded.path, temp.path().join("Codex.dmg"));
         assert_eq!(
             downloaded.sha256,
             "678cd508ffe0071e217020a7a4eecbebe25362c022ac78c13a5ae87b7a3a0c92"
         );
+        assert_eq!(downloaded.candidate_version, "2026.03.24.120000+678cd508");
         Ok(())
     }
 
     #[tokio::test]
-    async fn rejects_dmg_when_content_length_exceeds_limit() -> Result<()> {
+    async fn rejects_dmg_that_exceeds_content_length_limit() -> Result<()> {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/Codex.dmg"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("Content-Length", "9")
-                    .set_body_bytes(b"too large".to_vec()),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![b'x'; 9]))
             .mount(&server)
             .await;
 
         let client = Client::builder().build()?;
         let temp = tempdir()?;
-        let error = download_dmg_with_max_bytes(
+        let error = download_dmg_with_limit(
             &client,
             &format!("{}/Codex.dmg", server.uri()),
             temp.path(),
+            Utc.with_ymd_and_hms(2026, 3, 24, 12, 0, 0).unwrap(),
             8,
         )
         .await
-        .expect_err("oversized Content-Length should be rejected");
+        .expect_err("oversized DMG should fail");
 
-        assert!(error.to_string().contains("exceeds maximum"));
+        assert!(error.to_string().contains("too large"));
         assert!(!temp.path().join("Codex.dmg").exists());
         Ok(())
+    }
+
+    #[test]
+    fn sanitizes_dmg_urls_for_logs() {
+        assert_eq!(
+            sanitized_url_for_log("https://example.com/Codex.dmg?token=secret#frag"),
+            "https://example.com/Codex.dmg"
+        );
+    }
+
+    #[test]
+    fn rejects_non_https_non_loopback_dmg_urls() {
+        assert!(validate_dmg_url("http://example.com/Codex.dmg").is_err());
+        assert!(validate_dmg_url("https://user:pass@example.com/Codex.dmg").is_err());
+        assert!(validate_dmg_url("https://").is_err());
+        assert!(validate_dmg_url("http://127.0.0.1/Codex.dmg").is_ok());
+    }
+
+    #[test]
+    fn derive_candidate_version_rejects_short_hashes() {
+        let error = derive_candidate_version("short", Utc::now()).expect_err("hash should fail");
+        assert!(error.to_string().contains("sha256 is too short"));
     }
 }

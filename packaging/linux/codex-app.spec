@@ -4,17 +4,18 @@ Release:        __RPM_RELEASE__%{?dist}
 Summary:        Codex App for Linux
 License:        Proprietary
 ExclusiveArch:  __ARCH__
-Provides:       codex-desktop = %{version}-%{release}
-Obsoletes:      codex-desktop < %{version}-%{release}
+Provides:       codex-desktop
+Obsoletes:      codex-desktop
 
-Requires:       nodejs, npm, python3, p7zip, curl, unzip, gcc-c++, make
+Requires:       nodejs >= 20, npm, python3, p7zip, polkit, curl, unzip, gcc-c++, make
 Requires:       alsa-lib, at-spi2-atk, atk, glib2, gtk3, libdrm
 Requires:       nspr, nss, pango, libstdc++, libX11, libxcb
 Requires:       libXcomposite, libXdamage, libXext, libXfixes, libxkbcommon, libXrandr
 Requires:       mesa-libgbm
+Recommends:     zenity, kdialog
 
 %description
-Community-built Linux package for Codex generated from the macOS DMG.
+Community-built Linux package for Codex App generated from the macOS DMG.
 Requires the Codex CLI to be available in PATH or CODEX_CLI_PATH.
 Local auto-updates rebuild a Linux package from the upstream Codex.dmg and therefore
 require the local packaging toolchain listed in Requires.
@@ -27,13 +28,13 @@ cp -a "__RPM_STAGING_DIR__/." "%{buildroot}/"
 %files
 %defattr(-,root,root,-)
 /opt/__PACKAGE_NAME__/
+/usr/lib/__PACKAGE_NAME__/
 /usr/bin/__PACKAGE_NAME__
 /usr/bin/codex-app-updater
-/usr/lib/__PACKAGE_NAME__/packaged-runtime.sh
-/usr/lib/__PACKAGE_NAME__/update-builder/
 /usr/lib/systemd/user/codex-app-updater.service
 /usr/share/applications/__PACKAGE_NAME__.desktop
 /usr/share/icons/hicolor/256x256/apps/__PACKAGE_NAME__.png
+/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy
 
 %post
 if command -v update-desktop-database >/dev/null 2>&1; then
@@ -49,10 +50,8 @@ fi
 %preun
 SERVICE_HELPER=/usr/lib/__PACKAGE_NAME__/update-builder/packaging/linux/codex-app-updater-user-service.sh
 [ -f "$SERVICE_HELPER" ] && . "$SERVICE_HELPER"
-if [ -f "$SERVICE_HELPER" ]; then
-    codex_cleanup_user_service stop || true
-fi
 if [ $1 -eq 0 ] && [ -f "$SERVICE_HELPER" ]; then
+    codex_cleanup_user_service stop || true
     codex_cleanup_user_service disable || true
 fi
 

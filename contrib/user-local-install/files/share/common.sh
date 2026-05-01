@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INSTALL_ROOT="${HOME}/.local/lib/codex-app"
+XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
+XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
+
+INSTALL_ROOT="${CODEX_USER_INSTALL_ROOT:-${XDG_DATA_HOME}/codex-app}"
 APP_DIR="${INSTALL_ROOT}/app"
 DMG_FILE="${INSTALL_ROOT}/Codex.dmg"
 DMG_URL="https://persistent.oaistatic.com/codex-app-prod/Codex.dmg"
-
-XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
-XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 
 STATE_DIR="${XDG_STATE_HOME}/codex-app"
 LOG_DIR="${STATE_DIR}/logs"

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/software/polkit/policyconfig-1.dtd">
+<policyconfig>
+  <vendor>Codex App Linux</vendor>
+  <vendor_url>https://github.com/nisavid/codex-app-linux</vendor_url>
+  <icon_name>codex-app</icon_name>
+
+  <action id="com.github.nisavid.codex-app.update.install-deb">
+    <description>Install a Codex App update</description>
+    <message>Authentication is required to install the Codex App update.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/codex-app-updater</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">install-deb</annotate>
+  </action>
+
+  <action id="com.github.nisavid.codex-app.update.install-rpm">
+    <description>Install a Codex App update</description>
+    <message>Authentication is required to install the Codex App update.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/codex-app-updater</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">install-rpm</annotate>
+  </action>
+
+  <action id="com.github.nisavid.codex-app.update.install-pacman">
+    <description>Install a Codex App update</description>
+    <message>Authentication is required to install the Codex App update.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/codex-app-updater</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">install-pacman</annotate>
+  </action>
+</policyconfig>

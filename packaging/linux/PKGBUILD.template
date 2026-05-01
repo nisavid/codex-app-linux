@@ -9,10 +9,11 @@ license=('MIT')
 provides=('__PACKAGE_PROVIDES__')
 conflicts=('__PACKAGE_CONFLICTS__')
 depends=(
-    'nodejs'
+    'nodejs>=20'
     'npm'
     'python'
     'p7zip'
+    'polkit'
     'curl'
     'unzip'
     'gcc'
@@ -39,6 +40,10 @@ depends=(
     'nspr'
     'nss'
     'pango'
+)
+optdepends=(
+    'zenity: GTK dialog fallback when the Codex CLI is missing'
+    'kdialog: KDE dialog fallback when the Codex CLI is missing'
 )
 options=(!debug !strip)
 install=__PACKAGE_NAME__.install

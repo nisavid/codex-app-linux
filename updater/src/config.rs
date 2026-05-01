@@ -225,6 +225,7 @@ developer_mode = true
 workspace_root = "/tmp/codex-workspaces"
 builder_bundle_root = "/tmp/codex-builder"
 app_executable_path = "/opt/codex-app/electron"
+cli_path = "/opt/codex/bin/codex"
 "#,
         )?;
 
@@ -234,6 +235,7 @@ app_executable_path = "/opt/codex-app/electron"
         assert_eq!(config.check_interval_hours, 12);
         assert!(!config.auto_install_on_app_exit);
         assert!(!config.notifications);
+        assert!(config.developer_mode);
         assert_eq!(
             config.workspace_root,
             PathBuf::from("/tmp/codex-workspaces")
@@ -246,6 +248,7 @@ app_executable_path = "/opt/codex-app/electron"
             config.app_executable_path,
             PathBuf::from("/opt/codex-app/electron")
         );
+        assert_eq!(config.cli_path, Some(PathBuf::from("/opt/codex/bin/codex")));
         Ok(())
     }
 
@@ -326,9 +329,9 @@ app_executable_path = "/opt/codex-app/electron"
             check_interval_hours: 12,
             auto_install_on_app_exit: false,
             notifications: false,
+            developer_mode: true,
             workspace_root: temp.path().join("workspace"),
             builder_bundle_root: configured_root.clone(),
-            developer_mode: true,
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
             cli_path: None,
         };
@@ -336,5 +339,35 @@ app_executable_path = "/opt/codex-app/electron"
         config.enforce_packaged_builder_root(&packaged_root);
 
         assert_eq!(config.builder_bundle_root, configured_root);
+    }
+
+    #[test]
+    fn merges_partial_runtime_config_with_defaults() -> Result<()> {
+        let temp = tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        fs::create_dir_all(&paths.config_dir)?;
+        fs::write(
+            &paths.config_file,
+            r#"
+dmg_url = "https://example.com/Codex.dmg"
+notifications = false
+"#,
+        )?;
+
+        let config = RuntimeConfig::load_or_default(&paths)?;
+        assert_eq!(config.dmg_url, "https://example.com/Codex.dmg");
+        assert_eq!(config.initial_check_delay_seconds, 30);
+        assert_eq!(config.check_interval_hours, 6);
+        assert!(config.auto_install_on_app_exit);
+        assert!(!config.notifications);
+        assert_eq!(config.workspace_root, paths.cache_dir);
+        Ok(())
     }
 }

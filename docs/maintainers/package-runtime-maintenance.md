@@ -6,6 +6,10 @@ launcher, packaged runtime helper, or `codex-app-updater`.
 For security-specific follow-up, use [Security Backlog](security-backlog.md).
 For trust boundaries and attacker assumptions, use
 [Threat Model](threat-model.md).
+For fork-specific contracts that need review during upstream syncs, use
+[Fork Divergences](fork-divergences.md).
+That document also records the XDG/FHS triage for app, support, and runtime
+paths.
 
 ## Source Of Truth
 
@@ -16,12 +20,25 @@ For trust boundaries and attacker assumptions, use
 | RPM package | `scripts/build-rpm.sh`, `packaging/linux/codex-app.spec` | `dist/*.rpm`, temporary `rpmbuild` roots |
 | pacman package | `scripts/build-pacman.sh`, `packaging/linux/PKGBUILD.template`, `packaging/linux/codex-app.install` | `dist/codex-app-*.pkg.tar.*`, temporary `makepkg` roots |
 | Shared staged package files | `scripts/lib/package-common.sh` | `/opt/codex-app`, `/usr/bin/codex-app`, `/usr/bin/codex-app-updater` |
-| Packaged-only launcher behavior | `packaging/linux/packaged-runtime.sh` | `/usr/lib/codex-app/packaged-runtime.sh` |
+| Packaged-only launcher behavior | `packaging/linux/codex-packaged-runtime.sh` | `/usr/lib/codex-app/packaged-runtime.sh` |
 | User service lifecycle | `packaging/linux/codex-app-updater.service`, maintainer scripts, `packaging/linux/codex-app-updater-user-service.sh` | `systemd --user` service state |
 | Updater service and CLI | `updater/`, `updater/Cargo.toml` | XDG updater config, state, cache, and logs |
 
 Do not make `codex-app/`, `dist/`, or XDG runtime files the only durable fix.
 Inspect them to confirm behavior, then change the source files above.
+
+## Naming Contracts
+
+This fork's Linux names are intentional package and runtime contracts. Keep
+upstream behavior aligned to these names when merging upstream changes:
+
+- app, install roots, launchers, package names, desktop files, and XDG app state
+  use `codex-app`;
+- the updater crate, binary, service, config, state, cache, and logs use
+  `codex-app-updater`;
+- upstream `codex-desktop` and `codex-update-manager` names should not appear in
+  durable package/runtime surfaces unless they are compatibility metadata such
+  as `provides` or `conflicts`.
 
 ## Generated And Runtime Artifacts
 
@@ -47,10 +64,9 @@ Native packages install the generated app under `/opt/codex-app` and expose
 `/usr/bin/codex-app` as a launcher stub that execs
 `/opt/codex-app/start.sh`.
 
-The Arch package name is `codex-app`. It provides and conflicts with
-`codex-desktop` so pacman can replace older local packages. Debian and RPM
-packages also use `codex-app` and declare replacement metadata for older
-`codex-desktop` packages.
+The Arch package name is `codex-app`. It may provide or conflict with older
+upstream-derived names only as compatibility metadata. Debian and RPM packages
+also use `codex-app`.
 
 Package payload should stay aligned across formats. The top-level install
 destinations are:
@@ -158,9 +174,11 @@ runs the bundled `install.sh`, builds the native package for the host package
 manager, and records the package path in `state.json`. `install.sh` reads
 `Codex.app/Contents/Info.plist` and writes `codex-app/codex-app-version.env`;
 package builders use `CODEX_APP_PACKAGE_VERSION` from that file unless
-`PACKAGE_VERSION` is set explicitly. Generated metadata must stay three or four
-numeric dot-separated segments because the updater's installed-version
-comparison depends on that shape.
+`PACKAGE_VERSION` is set explicitly for a deliberate test build. That package
+version must track the OpenAI DMG app's `CFBundleShortVersionString`; do not
+replace it with local timestamp versions during upstream syncs. Generated
+metadata must stay three or four numeric dot-separated segments because the
+updater's installed-version comparison depends on that shape.
 
 The packaged user service sets a constrained `PATH` with system directories and
 `%h/.local/bin`, `PrivateTmp=yes`,
@@ -221,6 +239,18 @@ and release notes intentionally describe a break.
 ## Validation Selection
 
 Choose the smallest validation set that covers the changed behavior.
+
+Local app generation is the push gate for changes that affect the installer,
+ASAR patcher, generated launcher, package payload, updater rebuild path, or
+bundled runtime helpers. Refresh `Codex.dmg`, or verify the cached `Codex.dmg`
+is younger than 24 hours, before running `make build-app` or `./install.sh` from
+the current sources. If package contents changed, also run the matching native
+package builder locally and inspect package metadata/listings. CI package jobs
+are secondary evidence, not a replacement for this local gate.
+When sandboxed or CI-like hosts require writable caches, set those paths
+explicitly, for example `HOME`, `npm_config_cache`, or XDG variables, and record
+the exact DMG refresh or age-check command, timestamp, and build command in
+verification notes.
 
 Shell changes:
 

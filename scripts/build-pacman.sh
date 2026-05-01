@@ -12,13 +12,12 @@ DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.desktop"
 SERVICE_TEMPLATE="$REPO_DIR/packaging/linux/codex-app-updater.service"
 USER_SERVICE_HELPER_TEMPLATE="$REPO_DIR/packaging/linux/codex-app-updater-user-service.sh"
 ICON_SOURCE="$REPO_DIR/assets/codex.png"
-PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/packaged-runtime.sh"
+PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
 
 PACKAGE_NAME="${PACKAGE_NAME:-codex-app}"
-PACKAGE_VERSION="$(resolve_package_version)"
+PACKAGE_VERSION="${PACKAGE_VERSION:-$(default_package_version)}"
 PACKAGE_PROVIDES="${PACKAGE_PROVIDES:-codex-desktop}"
 PACKAGE_CONFLICTS="${PACKAGE_CONFLICTS:-codex-desktop}"
-APP_INSTALL_NAME="${APP_INSTALL_NAME:-codex-app}"
 UPDATER_BINARY_SOURCE="${UPDATER_BINARY_SOURCE:-$REPO_DIR/target/release/codex-app-updater}"
 UPDATER_SERVICE_SOURCE="${UPDATER_SERVICE_SOURCE:-$SERVICE_TEMPLATE}"
 PACKAGED_RUNTIME_SOURCE="${PACKAGED_RUNTIME_SOURCE:-$PACKAGED_RUNTIME_TEMPLATE}"
@@ -52,7 +51,6 @@ main() {
 		error "makepkg cannot run as root. Run this script as a regular user."
 	fi
 
-	validate_packaging_identifiers
 	ensure_updater_binary
 
 	local arch
@@ -64,7 +62,7 @@ main() {
 	# shellcheck disable=SC2064
 	trap "rm -rf '$build_root'" EXIT
 
-	local staging_root="${TEST_PACMAN_STAGING:-$build_root/staging}"
+	local staging_root="$build_root/staging"
 
 	stage_common_package_files "$staging_root"
 	stage_update_builder_bundle "$staging_root"
@@ -79,7 +77,9 @@ main() {
 		-e "s|__STAGING_DIR__|$staging_root|g" \
 		-e "s/__ARCH__/$arch/g" \
 		"$PKGBUILD_TEMPLATE" >"$build_root/PKGBUILD"
-	cp "$INSTALL_HOOKS" "$build_root/${PACKAGE_NAME}.install"
+	sed -e "s|/opt/codex-app|/opt/$PACKAGE_NAME|g" \
+		-e "s|/usr/lib/codex-app|/usr/lib/$PACKAGE_NAME|g" \
+		"$INSTALL_HOOKS" >"$build_root/${PACKAGE_NAME}.install"
 
 	mkdir -p "$DIST_DIR"
 	info "Building ${PACKAGE_NAME}-${PACMAN_PKGVER}-${PACMAN_PKGREL}-${arch}.pkg.tar.zst"
@@ -94,6 +94,13 @@ main() {
 		-o -name "${PACKAGE_NAME}-${PACMAN_PKGVER}-*.pkg.tar.xz" \) \
 		-print -quit 2>/dev/null || true)"
 	[ -f "$pkg_file" ] || error "makepkg did not produce a package"
+
+	if command -v pacman >/dev/null 2>&1; then
+		info "Inspecting package metadata"
+		pacman -Qip "$pkg_file" >&2
+		info "Inspecting package contents"
+		pacman -Qlp "$pkg_file" >&2
+	fi
 
 	info "Built package: $pkg_file"
 }

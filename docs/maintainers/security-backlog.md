@@ -7,6 +7,29 @@ of the repo root once their actionable findings are represented here.
 
 For the broader trust-boundary model, see [Threat Model](threat-model.md).
 
+## Security Review Workflow
+
+Use the `codex-security` plugin (`plugin://codex-security@openai-curated`) for
+security-sensitive backlog work before implementation is treated as review-ready.
+This applies especially to updater trust, privileged install boundaries, release
+verification, local rebuild inputs, generated-app IPC, and secret redaction.
+
+Expected workflow:
+
+1. Run the plugin against the current branch and the relevant backlog item.
+2. Record the reviewed trust boundaries, attacker capabilities, and required
+   mitigations in the PR body or a maintainer note.
+3. Implement the change in source scripts, package templates, updater code, or
+   verification workflows rather than generated artifacts.
+4. Run the local validation gate for the touched surface, including local app
+   generation and package build checks when package or rebuild behavior changes.
+5. Re-run `codex-security` or document why the previous result still applies
+   before merging.
+
+`codex-security` is an additional security review gate. It does not replace the
+local build gate, CodeQL, package metadata inspection, threat-model updates, or
+human maintainer approval where those are required.
+
 ## Highest Priority
 
 ### Authenticate updater DMG inputs before rebuild and install
@@ -15,6 +38,9 @@ The updater downloads the mutable upstream `Codex.dmg`, hashes the received
 bytes, and uses the hash for change detection and workspace naming. It does not
 verify the DMG against a signed manifest, pinned maintainer-approved metadata,
 or an equivalent trusted update channel before rebuilding a native package.
+
+Before implementing this item, run the `codex-security` workflow above against
+the proposed trust metadata design and updater state transitions.
 
 Desired state:
 
@@ -30,6 +56,9 @@ Privileged install subcommands accept caller-supplied package paths. They reject
 symlinks and non-files, require expected `codex-app` package names, stage a
 private copy, and validate package metadata, but they are not yet bound to a
 root-trusted digest for the updater-generated package.
+
+Before implementing this item, run the `codex-security` workflow above against
+the package binding design and the privileged install command surface.
 
 Desired state:
 
