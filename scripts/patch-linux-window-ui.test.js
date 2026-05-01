@@ -13,6 +13,7 @@ const {
   applyLinuxOpaqueBackgroundPatch,
   applyLinuxLaunchActionArgsPatch,
   applyLinuxHotkeyWindowPrewarmPatch,
+  applyLinuxKeybindOverridesRuntimePatch,
   applyLinuxSetIconPatch,
   applyLinuxSingleInstancePatch,
   applyLinuxTrayPatch,
@@ -266,6 +267,16 @@ test("patchMainBundleSource keeps non-icon patches active without an icon asset"
     patched,
     /nativeImage\.createFromPath\(process\.resourcesPath\+`\/\.\.\/content\/webview\/assets\//,
   );
+});
+
+test("adds keybind override runtime with escaped source literals", () => {
+  const source = "var Ct={newThread:`Ctrl+N`};";
+
+  const patched = applyPatchTwice(applyLinuxKeybindOverridesRuntimePatch, source);
+
+  assert.match(patched, /let storageKey="codex-linux-keybind-overrides"/);
+  assert.match(patched, /codexLinuxKeybindOverridesRuntime\(\)/);
+  assert.doesNotMatch(patched, /JSON\.stringify\(linuxKeybindOverridesKey\)/);
 });
 
 test("missing icon asset skips only icon patches", () => {
