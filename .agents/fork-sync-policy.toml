@@ -17,8 +17,8 @@ uncertainty_destination = "pull request body"
 sync_ledger_required = true
 read_before_conflict_resolution = [
   "AGENTS.md",
-  "docs/maintainers/fork-sync-policy.md",
   "docs/maintainers/fork-divergences.md",
+  "docs/maintainers/fork-sync-policy.md",
 ]
 
 [local_gates]
