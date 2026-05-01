@@ -3,6 +3,20 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Changed
+
+- Merged upstream launcher and updater changes: Electron now targets `41.3.0`,
+  launcher startup can reuse an existing verified webview server for warm
+  starts, launch-time update checks use `codex-app-updater check-now
+  --if-stale`, and RPM installs can use `zypper` on openSUSE.
+- Native package versions now default to the upstream Codex app bundle version
+  from `Contents/Info.plist`, including `CFBundleVersion` as the final version
+  segment, instead of synthesizing a timestamp/hash version locally. Generated
+  package metadata is restricted to three or four numeric dot-separated segments
+  so updater comparisons stay consistent across package formats.
+
 ## [0.6.0] - 2026-04-30
 
 ### Added
@@ -23,12 +37,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `codex-app-updater` now refreshes CLI status when the daemon starts and shows a desktop notification if the Codex CLI is missing, so package installs do not rely on the user manually checking updater state to understand why Codex App cannot launch cleanly.
 - When the Codex CLI is missing, terminal launches still prompt before installation and GUI launches now have a matching fallback path instead of failing with only a passive notification.
 
-
 ## [0.5.0] - 2026-04-30
 
 ### Added
 
-- Linux Computer Use plugin and native Rust MCP backend `codex-computer-use-linux`. Provides AT-SPI accessibility-tree access, screenshot capture through GNOME Shell or XDG Desktop Portal, and `ydotool` input synthesis. Plugin is gated by OpenAI's per-account Statsig rollout (`computerUse` feature flag) — installing the package does not by itself make Computer Use appear in the Codex UI.
+- Linux Computer Use plugin and native Rust MCP backend `codex-computer-use-linux`. Provides AT-SPI accessibility-tree access, screenshot capture through GNOME Shell or XDG Desktop Portal, and `ydotool` input synthesis. Plugin is gated by OpenAI's per-account Statsig rollout (`computerUse` feature flag), so installing the package does not by itself make Computer Use appear in the Codex UI.
 - Linux keybinds settings page injected into the Codex webview, with persistent toggles for the compact prompt window, system tray, and warm-start handoff.
 - Warm-start handoff: launching the app while another instance is already running now sends the launch action over a Unix-domain socket (`launch-action.sock`) and exits, instead of starting a fresh Electron. New launcher CLI flags `--new-chat`, `--quick-chat`, `--prompt-chat`, `--hotkey-window` route through that path.
 - Linux system tray with platform-gated guard, single-instance lock, and second-instance window focus through Electron's `requestSingleInstanceLock` / `second-instance` event.
@@ -43,20 +56,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 
 - ASAR patcher refactored into independent fail-soft patch functions with regex-driven needles instead of hard-coded minified variable names. Added Node test suite (`scripts/patch-linux-window-ui.test.js`).
-- DEB / RPM / pacman packages now declare `nodejs (>= 20)` and pull in `polkit` (or `policykit-1` on older Debian/Ubuntu) plus `pkexec`, so the privileged install flow works out of the box on every supported distro.
+- DEB / RPM / pacman packages now declare `nodejs (>= 20)` and pull in `polkit` or legacy policykit package names where needed, so the privileged install flow works out of the box on supported distros.
 - Wayland sessions with `DISPLAY` available now default to `--ozone-platform=x11` for Electron popup positioning compatibility; pure Wayland sessions keep `--ozone-platform-hint=auto`.
-- RPM `%preun` only stops and disables the user updater service on package erase (`$1 -eq 0`), not on upgrade. Prevents the long-standing footgun where every upgrade left the updater service stopped until the next user login.
-- RPM staging now uses the shared `stage_common_package_files` / `stage_update_builder_bundle` helpers, fixing missing `.codex-linux/codex-packaged-runtime.sh` and an incomplete `update-builder/` payload in shipped RPMs.
+- RPM `%preun` only stops and disables the user updater service on package erase (`$1 -eq 0`), not on upgrade.
+- RPM staging now uses the shared `stage_common_package_files` / `stage_update_builder_bundle` helpers, fixing missing packaged runtime helper and update-builder payload files in shipped RPMs.
 - Updater check serialization moved to a kernel-backed file lock (`flock(2)` via the `fs4` crate). A non-graceful exit no longer leaves a stale sentinel file that silences future upstream checks.
-- Webview server is now adopted and reused across launches instead of `pkill`-and-restart, and explicitly binds to `127.0.0.1` only.
+- Webview server is now adopted and reused across launches instead of being killed and restarted, and explicitly binds to `127.0.0.1` only.
 
 ### Fixed
 
-- Failed `pkexec` authentication (exit code `126` or `127`) now keeps the candidate `ReadyToInstall` for retry on the next app exit, instead of marking the candidate permanently `Failed` and surfacing repeat prompts every reconcile cycle.
+- Failed `pkexec` authentication now keeps the candidate ready for retry on the next app exit instead of surfacing repeat prompts every reconcile cycle.
 - RPM installs now reject non-newer package versions, matching the existing DEB and pacman downgrade guards.
 - Linux browser annotation screenshots now use the stored anchor geometry and render only the selected marker, fixing misaligned and over-cluttered annotation captures.
 - The Linux settings persistence patch now warns and skips instead of throwing when its needle is missing on a fresh upstream bundle, so the install pipeline no longer aborts on a bundle-shape change.
-- DEB packages now alternate-depend on `pkexec | policykit-1` and `polkitd | policykit-1`, so installs succeed on Ubuntu 22.04 and Mint 21.x where the polkit binaries still ship inside `policykit-1`.
+- DEB packages now alternate-depend on legacy policykit package names where needed, so installs succeed on older Debian/Ubuntu-derived systems.
 
 ## [0.4.2] - 2026-04-23
 
