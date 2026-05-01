@@ -17,7 +17,9 @@ Read these first:
 2. `docs/README.md`
 3. `docs/maintainers/package-runtime-maintenance.md`
 4. `docs/maintainers/fork-divergences.md`
-5. Source files for the touched area
+5. `.agents/fork-sync-policy.toml`
+6. `docs/maintainers/fork-sync-policy.md`
+7. Source files for the touched area
 
 Then inspect the smallest relevant source set:
 
@@ -43,9 +45,12 @@ Inspect generated output to verify behavior, but do not make generated output th
 When package contents move, keep the relevant package builder, `scripts/lib/package-common.sh`, and `packaging/linux/` files aligned.
 
 During upstream syncs, preserve the fork contracts recorded in
-`docs/maintainers/fork-divergences.md`: `codex-app` and `codex-app-updater`
-names, XDG/FHS-aligned paths, package versions from the OpenAI DMG bundle,
-unprivileged updater boundaries, and local release/security gates.
+`docs/maintainers/fork-divergences.md`, `.agents/fork-sync-policy.toml`, and
+`docs/maintainers/fork-sync-policy.md`. Use the user-global
+`syncing-forks-with-upstream` skill before resolving conflicts, pushing, or
+merging a broad upstream sync. If that external skill is unavailable, follow
+`docs/maintainers/fork-sync-policy.md` directly and record the missing-skill
+fallback in the sync ledger.
 
 ## Native Package Shape
 

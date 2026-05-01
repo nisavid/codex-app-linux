@@ -25,6 +25,10 @@ Use this index to choose the smallest document that matches your goal.
 - [Fork Divergences](maintainers/fork-divergences.md) is the canonical
   inventory of intentional differences from upstream, including names, paths,
   versioning, updater boundaries, Computer Use compatibility, and sync checks.
+- [Fork Sync Policy](maintainers/fork-sync-policy.md) defines the current
+  upstream-sync workflow, sync ledger, local gates, and uncertainty triage.
+- [PR #10 Fork Sync Post-Mortem](maintainers/postmortems/pr10-fork-sync.md)
+  records the incident analysis behind the current sync policy.
 - [Changelog](../CHANGELOG.md) tracks user-visible releases and packaging
   behavior changes.
 - [Contributors](../CONTRIBUTORS.md) records notable project contributions.
