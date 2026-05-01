@@ -44,6 +44,11 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
   from the OpenAI DMG app's `CFBundleShortVersionString`, written to
   `codex-app/codex-app-version.env` during app generation. Do not replace that
   with timestamp-based package versions during upstream syncs.
+- When syncing upstream, use the global `syncing-forks-with-upstream` skill and
+  the repo-local policy in `.agents/fork-sync-policy.toml`. Read
+  `docs/maintainers/fork-sync-policy.md` and
+  `docs/maintainers/fork-divergences.md` before resolving conflicts, keep a
+  sync ledger, and put uncertainty in the PR body for maintainer triage.
 - Keep native-package-only launcher behavior in `packaging/linux/codex-packaged-runtime.sh`; `install.sh` should stay generic and load that helper only when packaging requires it.
 - Keep package builders and `scripts/lib/package-common.sh` aligned when adding, removing, or moving packaged files.
 - Preserve the unprivileged updater boundary. Escalation belongs only at install time through the updater's privileged install subcommands.
@@ -64,6 +69,8 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 - User-facing overview and install guidance: `README.md`
 - Webview server design decision and acceptance criteria: `docs/webview-server-evaluation.md`
 - Fork-specific contracts and upstream-sync review inventory: `docs/maintainers/fork-divergences.md`
+- Upstream-sync policy, local gates, and sync ledger requirements:
+  `docs/maintainers/fork-sync-policy.md` and `.agents/fork-sync-policy.toml`
 - Security follow-up and `@codex-security` review routing: `docs/maintainers/security-backlog.md`
 - Additional maintainer notes: prefer `docs/maintainers/` over expanding this file.
 
@@ -77,7 +84,10 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 - Changing updater service lifecycle: inspect `packaging/linux/codex-app-updater.service` and the package maintainer scripts for Debian, RPM, and pacman effects.
 - Changing runtime CLI discovery or install behavior: keep the launcher best-effort; warnings may not block Electron startup unless the task explicitly changes that policy.
 - Changing dependencies or supported runtime requirements: update `scripts/install-deps.sh`, `README.md`, and package metadata or maintainer docs as needed.
-- Syncing upstream: read `docs/maintainers/fork-divergences.md` first and triage incoming changes against the intentional fork contracts before pushing.
+- Syncing upstream: use the global `syncing-forks-with-upstream` skill, read
+  `.agents/fork-sync-policy.toml`, `docs/maintainers/fork-sync-policy.md`, and
+  `docs/maintainers/fork-divergences.md`, then triage incoming changes against
+  the intentional fork contracts before pushing.
 
 ## Generated And Runtime Artifacts
 
