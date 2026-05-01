@@ -11,10 +11,13 @@ agents and maintainers; runtime code does not consume it.
 
 1. Create a task branch. `main` is protected.
 2. Fetch `origin` and `upstream`.
-3. Read `.agents/fork-sync-policy.toml`, this document, and
-   [Fork Divergences](fork-divergences.md) before resolving conflicts.
-4. Use the global `syncing-forks-with-upstream` skill before choosing a merge
-   method or pushing a sync branch.
+3. Read [Fork Divergences](fork-divergences.md),
+   `.agents/fork-sync-policy.toml`, and this document before resolving
+   conflicts.
+4. Use the user-global `syncing-forks-with-upstream` skill before choosing a
+   merge method or pushing a sync branch. If that external skill is unavailable,
+   continue from this document and record the missing-skill fallback in the sync
+   ledger.
 5. Preserve upstream commit identity. If a PR is required, merge the sync with a
    normal merge commit, not a rebase or squash merge.
 6. Preserve this fork's intentional contracts unless the PR intentionally
