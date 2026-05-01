@@ -11,6 +11,8 @@ const {
   applyLinuxFileManagerPatch,
   applyLinuxMenuPatch,
   applyLinuxOpaqueBackgroundPatch,
+  applyLinuxLaunchActionArgsPatch,
+  applyLinuxHotkeyWindowPrewarmPatch,
   applyLinuxSetIconPatch,
   applyLinuxSingleInstancePatch,
   applyLinuxTrayPatch,
@@ -52,6 +54,15 @@ function singleInstanceBundleFixture() {
   return [
     "agentRunId:process.env.CODEX_ELECTRON_AGENT_RUN_ID?.trim()||null}});let A=Date.now();await n.app.whenReady();",
     "l(e=>{R.deepLinks.queueProcessArgs(e)||ie()});let ae=",
+  ].join("");
+}
+
+function currentLaunchActionBundleFixture() {
+  return [
+    "let ae=e=>{e.isMinimized()&&e.restore(),e.show(),e.focus()},oe=async()=>{try{M.hotkeyWindowLifecycleManager.hide();let e=M.getPrimaryWindow(`local`)??await M.createFreshLocalWindow(`/`);if(e==null)return;ae(e)}catch(e){g.reportNonFatal(e instanceof Error?e:`Failed to open window on second instance`,{kind:`second-instance-open-window-failed`})}};",
+    "l(e=>{z.deepLinks.queueProcessArgs(e)||oe()});",
+    "let se=async(e,t)=>{M.hotkeyWindowLifecycleManager.hide();let n=M.getPrimaryWindow(B),r=n??await M.createFreshLocalWindow(e);r!=null&&(R.desktopNotificationManager.dismissByNavigationPath(e),n!=null&&t.navigateExistingWindow&&z.navigateToRoute(r,e),ae(r))};",
+    "w(`local window ensured`,A,{hostId:B,localWindowVisible:be?.isVisible()??!1}),A=Date.now(),await z.deepLinks.flushPendingDeepLinks()",
   ].join("");
 }
 
@@ -154,6 +165,21 @@ test("adds Linux single-instance lock and second-instance handoff", () => {
   assert.match(patched, /codexLinuxSecondInstanceHandler/);
   assert.match(patched, /n\.app\.on\(`second-instance`,codexLinuxSecondInstanceHandler\)/);
   assert.match(patched, /n\.app\.off\(`second-instance`,codexLinuxSecondInstanceHandler\)/);
+});
+
+test("adds Linux launch actions to the current upstream startup shape", () => {
+  const launchPatched = applyPatchTwice(
+    applyLinuxLaunchActionArgsPatch,
+    currentLaunchActionBundleFixture(),
+  );
+  const prewarmPatched = applyPatchTwice(applyLinuxHotkeyWindowPrewarmPatch, launchPatched);
+
+  assert.match(prewarmPatched, /codexLinuxHandleLaunchActionArgsFallback/);
+  assert.match(prewarmPatched, /CODEX_APP_LAUNCH_ACTION_SOCKET/);
+  assert.doesNotMatch(prewarmPatched, /CODEX_DESKTOP_LAUNCH_ACTION_SOCKET/);
+  assert.match(prewarmPatched, /e\.includes\(`--new-chat`\)\?\(await se/);
+  assert.match(prewarmPatched, /e\.includes\(`--quick-chat`\)\?\(await codexLinuxOpenQuickChat/);
+  assert.match(prewarmPatched, /process\.platform===`linux`&&codexLinuxPrewarmHotkeyWindow\(\),A=Date\.now\(\),await z\.deepLinks\.flushPendingDeepLinks\(\)/);
 });
 
 test("allows bundled Computer Use on Linux as well as macOS", () => {

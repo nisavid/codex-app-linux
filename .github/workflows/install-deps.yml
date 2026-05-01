@@ -16,6 +16,9 @@ on:
       - packaging/linux/control
       - .github/workflows/install-deps.yml
 
+permissions:
+  contents: read
+
 jobs:
   apt-node-bootstrap:
     name: ${{ matrix.image }}

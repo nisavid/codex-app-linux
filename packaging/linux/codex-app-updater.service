@@ -5,9 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/bin
 ExecStart=/usr/bin/codex-app-updater daemon
 Restart=on-failure
 RestartSec=10
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=077
 
 [Install]
 WantedBy=default.target

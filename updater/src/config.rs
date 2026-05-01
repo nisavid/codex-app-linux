@@ -20,6 +20,18 @@ pub struct RuntimeConfig {
     pub app_executable_path: PathBuf,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+struct RuntimeConfigOverlay {
+    dmg_url: Option<String>,
+    initial_check_delay_seconds: Option<u64>,
+    check_interval_hours: Option<u64>,
+    auto_install_on_app_exit: Option<bool>,
+    notifications: Option<bool>,
+    workspace_root: Option<PathBuf>,
+    builder_bundle_root: Option<PathBuf>,
+    app_executable_path: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone)]
 /// Resolved XDG filesystem locations used by the updater at runtime.
 pub struct RuntimePaths {
@@ -102,8 +114,33 @@ impl RuntimeConfig {
 
         let content = fs::read_to_string(&paths.config_file)
             .with_context(|| format!("Failed to read {}", paths.config_file.display()))?;
-        let config = toml::from_str::<Self>(&content)
+        let overlay = toml::from_str::<RuntimeConfigOverlay>(&content)
             .with_context(|| format!("Failed to parse {}", paths.config_file.display()))?;
+        let mut config = Self::default_with_paths(paths);
+        if let Some(value) = overlay.dmg_url {
+            config.dmg_url = value;
+        }
+        if let Some(value) = overlay.initial_check_delay_seconds {
+            config.initial_check_delay_seconds = value;
+        }
+        if let Some(value) = overlay.check_interval_hours {
+            config.check_interval_hours = value;
+        }
+        if let Some(value) = overlay.auto_install_on_app_exit {
+            config.auto_install_on_app_exit = value;
+        }
+        if let Some(value) = overlay.notifications {
+            config.notifications = value;
+        }
+        if let Some(value) = overlay.workspace_root {
+            config.workspace_root = value;
+        }
+        if let Some(value) = overlay.builder_bundle_root {
+            config.builder_bundle_root = value;
+        }
+        if let Some(value) = overlay.app_executable_path {
+            config.app_executable_path = value;
+        }
         Ok(config)
     }
 }
@@ -178,6 +215,36 @@ app_executable_path = "/opt/codex-app/electron"
             config.app_executable_path,
             PathBuf::from("/opt/codex-app/electron")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn merges_partial_runtime_config_with_defaults() -> Result<()> {
+        let temp = tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        fs::create_dir_all(&paths.config_dir)?;
+        fs::write(
+            &paths.config_file,
+            r#"
+dmg_url = "https://example.com/Codex.dmg"
+notifications = false
+"#,
+        )?;
+
+        let config = RuntimeConfig::load_or_default(&paths)?;
+        assert_eq!(config.dmg_url, "https://example.com/Codex.dmg");
+        assert_eq!(config.initial_check_delay_seconds, 30);
+        assert_eq!(config.check_interval_hours, 6);
+        assert!(config.auto_install_on_app_exit);
+        assert!(!config.notifications);
+        assert_eq!(config.workspace_root, paths.cache_dir);
         Ok(())
     }
 }

@@ -234,6 +234,16 @@ and release notes intentionally describe a break.
 
 Choose the smallest validation set that covers the changed behavior.
 
+Local app generation is the push gate for changes that affect the installer,
+ASAR patcher, generated launcher, package payload, updater rebuild path, or
+bundled runtime helpers. Run `make build-app` or `./install.sh` from the current
+sources before pushing those changes. If package contents changed, also run the
+matching native package builder locally and inspect package metadata/listings.
+CI package jobs are secondary evidence, not a replacement for this local gate.
+When sandboxed or CI-like hosts require writable caches, set those paths
+explicitly, for example `HOME`, `npm_config_cache`, or XDG variables, and record
+the exact command in verification notes.
+
 Shell changes:
 
 ```bash

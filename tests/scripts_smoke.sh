@@ -357,7 +357,7 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/launcher/start.sh.template" "Adopted existing webview server"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "detect_warm_start"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "send_warm_start_launch_action"
-    assert_contains "$REPO_DIR/launcher/start.sh.template" "CODEX_DESKTOP_LAUNCH_ACTION_SOCKET"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "CODEX_APP_LAUNCH_ACTION_SOCKET"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "APP_SETTINGS_FILE"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "linux_setting_enabled"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "register_url_scheme_handlers"
@@ -845,7 +845,7 @@ JS
     assert_contains "$extracted/.vite/build/main-test.js" 'ensureHotkeyWindowController'
     assert_contains "$extracted/.vite/build/main-test.js" 'codexLinuxPrewarmHotkeyWindow'
     assert_contains "$extracted/.vite/build/main-test.js" 'codexLinuxStartLaunchActionSocket'
-    assert_contains "$extracted/.vite/build/main-test.js" 'CODEX_DESKTOP_LAUNCH_ACTION_SOCKET'
+    assert_contains "$extracted/.vite/build/main-test.js" 'CODEX_APP_LAUNCH_ACTION_SOCKET'
     assert_contains "$extracted/.vite/build/main-test.js" 'e.openHome'
     assert_contains "$extracted/.vite/build/main-test.js" 'e.prewarm'
     assert_contains "$extracted/.vite/build/main-test.js" 'type:`new-quick-chat`'
@@ -1033,7 +1033,7 @@ async function flushAsyncHandlers() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-async function boot(settings = {}, env = { CODEX_DESKTOP_LAUNCH_ACTION_SOCKET: "/tmp/codex-smoke.sock" }) {
+async function boot(settings = {}, env = { CODEX_APP_LAUNCH_ACTION_SOCKET: "/tmp/codex-smoke.sock" }) {
   state = makeState(settings);
   resetCalls();
   state.primary = makeWindow("primary");
@@ -1242,7 +1242,7 @@ async function boot(settings = {}, env = { CODEX_DESKTOP_LAUNCH_ACTION_SOCKET: "
   assert(state.ensureHotkeyWindowControllerCalls === 0, "disabled prompt-chat gate should not create a controller for --hotkey-window");
   assert(state.ieCalls === 1, "disabled --hotkey-window should fall back to main-window focus");
 
-  await boot({ warmStartEnabled: false }, { CODEX_DESKTOP_LAUNCH_ACTION_SOCKET: "/tmp/codex-disabled.sock" });
+  await boot({ warmStartEnabled: false }, { CODEX_APP_LAUNCH_ACTION_SOCKET: "/tmp/codex-disabled.sock" });
   assert(state.createServerCalls === 0, "disabled warm-start gate should not create the launch-action socket server");
   assert(state.socketListenCalls.length === 0, "disabled warm-start gate should not listen on the launch-action socket");
   assert(state.socketConnectionHandler == null, "disabled warm-start gate should not register a socket connection handler");

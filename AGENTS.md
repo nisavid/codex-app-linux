@@ -12,6 +12,13 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 - Commit completed work before handoff. For long tasks, also commit at staged,
   functional cutoff points. Each commit must pass the normal checks for the
   changed surface before it is created.
+- Before pushing changes that affect the generated app, installer, ASAR patcher,
+  package builders, package payload, updater rebuild flow, or bundled runtime
+  helpers, run a local app generation/build gate first. The minimum gate is a
+  successful `./install.sh` or `make build-app` from the current sources plus the
+  relevant local package builder when package contents are affected. If the host
+  needs writable cache overrides such as `HOME`, `npm_config_cache`, or XDG
+  paths, set them explicitly and record them in the verification notes.
 - Use Conventional Commits. Commit messages must accurately describe the
   committed change.
 - Do not hand-edit generated app output as the durable fix. Change `install.sh`,
@@ -303,6 +310,14 @@ cargo test -p codex-app-updater
 dpkg-deb -I dist/codex-app_*.deb
 dpkg-deb -c dist/codex-app_*.deb | sed -n '1,40p'
 ```
+
+Treat the local app generation/build as a push gate for changes that affect
+`install.sh`, `scripts/patch-linux-window-ui.js`, `scripts/lib/*.sh`,
+`launcher/start.sh.template`, package builders/templates, updater package
+rebuild behavior, or bundled runtime payloads. Do not push those changes based
+only on static checks or CI package jobs; first prove the current checkout can
+generate `codex-app/` locally, then build the affected package format locally
+when package contents changed.
 
 If `rpmbuild` is available, also run:
 

@@ -24,6 +24,24 @@ sed_escape_replacement() {
     printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
 }
 
+validate_no_newline() {
+    local name="$1"
+    local value="$2"
+
+    case "$value" in
+    *$'\n'*|*$'\r'*)
+        error "$name must not contain newlines"
+        ;;
+    esac
+}
+
+validate_package_inputs() {
+    [[ "$PACKAGE_NAME" =~ ^[a-z0-9][a-z0-9+._-]*$ ]] || \
+        error "PACKAGE_NAME must match ^[a-z0-9][a-z0-9+._-]*$: $PACKAGE_NAME"
+    validate_no_newline "PACKAGE_DISPLAY_NAME" "${PACKAGE_DISPLAY_NAME:-Codex App}"
+    validate_no_newline "PACKAGE_COMMENT" "${PACKAGE_COMMENT:-Run Codex App on Linux}"
+}
+
 render_desktop_entry() {
     local target="$1"
     local package_name
@@ -93,6 +111,7 @@ stage_common_package_files() {
     local app_root="$root/opt/$PACKAGE_NAME"
     local polkit_policy="$REPO_DIR/packaging/linux/com.github.nisavid.codex-app.update.policy"
 
+    validate_package_inputs
     ensure_file_exists "$polkit_policy" "polkit policy"
 
     mkdir -p \

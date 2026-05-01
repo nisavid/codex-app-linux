@@ -202,7 +202,7 @@ dist/codex-app-<upstream-version>-1-x86_64.pkg.tar.zst
 ```
 
 Native packages are named `codex-app`. They declare replacement metadata for
-the older `codex-app` package name where the package format supports it,
+the older `codex-desktop` package name where the package format supports it,
 while using the installed launcher and app layout at `/usr/bin/codex-app` and
 `/opt/codex-app`.
 

@@ -6,7 +6,7 @@ FILES_DIR="${SCRIPT_DIR}/files"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 OPT_ROOT="${HOME}/.local/opt/codex-app-linux"
 OPT_BIN_DIR="${OPT_ROOT}/bin"
-OPT_LIB_DIR="${OPT_ROOT}/lib/codex-app-linux"
+OPT_LIB_DIR="${OPT_ROOT}/lib/codex-app"
 STATE_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/codex-app-linux"
 FROM_UPDATE=0
 ENABLE_TIMER=0
@@ -38,7 +38,7 @@ install_manager_files() {
     local systemd_user_dir="${XDG_CONFIG_HOME:-${HOME}/.config}/systemd/user"
     mkdir -p "$OPT_BIN_DIR" "$OPT_LIB_DIR" "${HOME}/.local/share/applications" "${HOME}/.local/bin" "$STATE_DIR" "$systemd_user_dir"
 
-    copy_file "${FILES_DIR}/.local/lib/codex-app-linux/common.sh" "${OPT_LIB_DIR}/common.sh"
+    copy_file "${FILES_DIR}/.local/lib/codex-app/common.sh" "${OPT_LIB_DIR}/common.sh"
     copy_file "${FILES_DIR}/.local/bin/codex-app" "${OPT_BIN_DIR}/codex-app"
     copy_file "${FILES_DIR}/.local/bin/codex-app-check-update" "${OPT_BIN_DIR}/codex-app-check-update"
     copy_file "${FILES_DIR}/.local/bin/codex-app-update" "${OPT_BIN_DIR}/codex-app-update"
