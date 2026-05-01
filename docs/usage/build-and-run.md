@@ -180,17 +180,17 @@ You can also run builders directly:
 By default, `install.sh` reads `Codex.app/Contents/Info.plist` from the
 extracted DMG and writes `codex-app/codex-app-version.env`. Package builders use
 that metadata, so an upstream app version such as `26.422.30944 (2080)` becomes
-package version `26.422.30944.2080`. Generated app package versions use three
-or four numeric dot-separated segments so the updater can compare installed and
+package version `26.422.30944`. Generated app package versions use three or
+four numeric dot-separated segments so the updater can compare installed and
 candidate versions consistently.
 
 Override the package version only when you need to rebuild a known app tree with
 an explicit local version:
 
 ```bash
-PACKAGE_VERSION=26.422.30944.2080 ./scripts/build-deb.sh
-PACKAGE_VERSION=26.422.30944.2080 ./scripts/build-rpm.sh
-PACKAGE_VERSION=26.422.30944.2080 ./scripts/build-pacman.sh
+PACKAGE_VERSION=26.422.30944 ./scripts/build-deb.sh
+PACKAGE_VERSION=26.422.30944 ./scripts/build-rpm.sh
+PACKAGE_VERSION=26.422.30944 ./scripts/build-pacman.sh
 ```
 
 Expected outputs:
@@ -254,6 +254,7 @@ make deb
 make rpm
 make pacman
 make package
+make apple-dmg-verify
 make release-gate
 make install
 make service-enable

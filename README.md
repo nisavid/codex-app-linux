@@ -15,6 +15,36 @@ the Nix flake.
 > This is an unofficial community project. It does not redistribute OpenAI
 > software; it automates a local conversion from the upstream Codex DMG.
 
+## Feature Status
+
+| Surface | Status | Notes |
+| --- | --- | --- |
+| Standard Codex app UI | Working | Built from the upstream macOS DMG and patched to launch under Linux Electron. |
+| Native Linux packages | Working | Builds `.deb`, `.rpm`, and pacman packages named `codex-app`. |
+| Local updater | Working | Native packages install `codex-app-updater`, which checks upstream DMGs and rebuilds local packages. |
+| Codex CLI preflight | Working | The launcher and updater find or install `@openai/codex` when host tools allow it. |
+| Tray, warm start, and Linux keybinds | Working with desktop variance | Desktop-environment support can vary, especially around tray and window behavior. |
+| Browser annotations | Working where upstream support is enabled | Uses the bundled browser resources shipped with the generated app. |
+| Linux Computer Use | Packaged and locally functional where gated on | Requires host accessibility/input support and OpenAI account-side rollout. |
+| NixOS flake | Working with pinned DMG hash | The fixed-output hash can temporarily lag after OpenAI republishes the DMG. |
+| OpenAI server-gated features | Gated by account and rollout | Installing this fork cannot bypass upstream feature flags or account policy. |
+
+## About This Fork
+
+This fork keeps the app and native Linux packages under the `codex-app` name,
+with a local updater named `codex-app-updater`. It adds native package builders,
+release and updater hardening, XDG/FHS-aligned install paths, Linux launcher
+integration, and packaged Linux Computer Use support where OpenAI enables that
+feature for the account.
+
+It builds on the upstream Linux adaptation work in
+[`ilysenko/codex-desktop-linux`](https://github.com/ilysenko/codex-desktop-linux).
+The owners and contributors there did and continue to do much of the core work
+that makes this fork possible.
+
+For the maintainer inventory of intentional fork differences, see
+[Fork Divergences](docs/maintainers/fork-divergences.md).
+
 ## Who This Is For
 
 - **Linux users** who want the Codex app on their workstation.
@@ -87,9 +117,7 @@ For a fresh package build, start by removing the generated app tree, cached DMG,
 and old package outputs:
 
 ```bash
-make clean-dist
-rm -rf codex-app/ Codex.dmg
-make build-app package
+make clean build-app package
 ```
 
 That rebuilds `codex-app/` from the current upstream DMG source, then builds the
@@ -129,7 +157,8 @@ For a local signed rehearsal where signatures are optional, omit
 
 The gate verifies the DMG hash, scans the generated app for high-confidence
 Electron security anti-patterns, validates package metadata, writes
-`dist/SHA256SUMS`. When `CODEX_RELEASE_GPG_KEY` is set, it also writes
+`dist/SHA256SUMS`, and checks package identities. When
+`CODEX_RELEASE_GPG_KEY` is set, it also writes
 `dist/SHA256SUMS.asc`, exports `dist/release-signing-key.asc`, and verifies the
 detached signature against that public key in a temporary keyring. Unsigned
 rehearsal runs omit those signature artifacts unless `REQUIRE_RELEASE_SIGNATURE=1`

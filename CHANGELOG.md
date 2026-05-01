@@ -16,6 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   package metadata is restricted to three or four numeric dot-separated segments
   so updater comparisons stay consistent across package formats.
 
+### Fixed
+
+- Restored Makefile help and targets for `clean`, `apple-dmg-verify`, and
+  `release-gate`, and kept package-build examples on the default
+  DMG-derived version path.
+
 ## [0.6.0] - 2026-04-30
 
 ### Added

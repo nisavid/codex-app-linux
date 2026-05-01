@@ -7,6 +7,10 @@ Thanks to everyone who has contributed to codex-app-linux!
 - [@ilysenko](https://github.com/ilysenko)
 - [@Leay15](https://github.com/Leay15)
 
+## Fork Maintainer
+
+This fork is maintained by [@nisavid](https://github.com/nisavid).
+
 ## Contributors
 
 - [@prichardsondev](https://github.com/prichardsondev)
