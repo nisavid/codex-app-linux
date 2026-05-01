@@ -562,7 +562,7 @@ fn parse_generated_package_version(version: &str) -> Option<Vec<u32>> {
         parts.push(segment.parse().ok()?);
     }
 
-    if parts.len() < 3 || !(2000..=2100).contains(&parts[0]) {
+    if !matches!(parts.len(), 3 | 4) {
         return None;
     }
 
@@ -879,14 +879,14 @@ mod tests {
     }
 
     #[test]
-    fn generated_package_version_comparison_rejects_non_generated_versions() {
+    fn generated_package_version_comparison_supports_dmg_app_versions() {
         assert_eq!(
-            compare_generated_package_versions("0.4.2", "2026.04.28.082247-12345678.fc43"),
-            None
+            compare_generated_package_versions("26.429.20946", "26.428.10000"),
+            Some(std::cmp::Ordering::Greater)
         );
         assert!(!generated_package_version_is_newer(
-            "0.4.2",
-            "2026.04.28.082247-12345678.fc43"
+            "not-a-version",
+            "26.428.10000"
         ));
     }
 

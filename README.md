@@ -257,7 +257,7 @@ After `make build-app`, build a native package from `codex-app/` with the format
 | Arch (pacman) | `make pacman` or `./scripts/build-pacman.sh` | `dist/codex-app-*.pkg.tar.zst` | `sudo pacman -U dist/codex-app-*.pkg.tar.zst` |
 | Auto-detect | `make package && make install` | matches your distro | handled by `make install` |
 
-Override the package version with `PACKAGE_VERSION=YYYY.MM.DD.HHMMSS+commitish ./scripts/build-*.sh`.
+By default, package versions come from the OpenAI app version embedded in the DMG. Override only for deliberate test builds with `PACKAGE_VERSION=... ./scripts/build-*.sh`.
 
 The packaging scripts only repackage what's already in `codex-app/`. They do not download or extract the DMG themselves.
 

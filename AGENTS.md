@@ -44,6 +44,10 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
   install under `/opt/codex-app`, user-local integration uses
   `~/.local/lib/codex-app`, and app state uses `~/.local/state/codex-app`.
   Do not adopt upstream `codex-app-linux` install roots as part of a sync.
+- Preserve this fork's package version contract. Native package versions come
+  from the OpenAI DMG app's `CFBundleShortVersionString`, written to
+  `codex-app/codex-app-version.env` during app generation. Do not replace that
+  with timestamp-based package versions during upstream syncs.
 - Keep native-package-only launcher behavior in
   `packaging/linux/codex-packaged-runtime.sh`; `install.sh` should stay generic
   and load that helper only when packaging requires it.
@@ -131,6 +135,8 @@ The current working flow is:
   Node test suite for the patcher. Run with `node --test`.
 - `docs/webview-server-evaluation.md`
   Decision record for the future Python-to-Rust webview server discussion.
+- `docs/maintainers/fork-divergences.md`
+  Intentional fork contracts and open layout triage for upstream sync review.
 
 ## Generated Artifacts
 

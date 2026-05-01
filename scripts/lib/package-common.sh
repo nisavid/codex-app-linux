@@ -20,6 +20,27 @@ ensure_app_layout() {
     [ -x "$APP_DIR/start.sh" ] || error "Missing launcher: $APP_DIR/start.sh"
 }
 
+default_package_version() {
+    local version_file="$APP_DIR/codex-app-version.env"
+    local version=""
+
+    if [ ! -f "$version_file" ]; then
+        error "Missing $version_file. Run ./install.sh first so package versions align with the DMG app version."
+    fi
+
+    version="$(sed -n 's/^CODEX_APP_PACKAGE_VERSION=//p' "$version_file" | head -n 1)"
+    version="${version#\'}"
+    version="${version%\'}"
+    version="${version#\"}"
+    version="${version%\"}"
+    if [[ "$version" =~ ^[0-9]+(\.[0-9]+){2,3}$ ]]; then
+        echo "$version"
+        return
+    fi
+
+    error "Invalid CODEX_APP_PACKAGE_VERSION in $version_file: $version"
+}
+
 sed_escape_replacement() {
     printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
 }

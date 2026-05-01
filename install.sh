@@ -91,6 +91,7 @@ main() {
     app_dir=$(extract_dmg "$dmg_path")
 
     detect_electron_version "$app_dir"
+    write_app_version_metadata "$app_dir"
     patch_asar "$app_dir"
     download_electron
     extract_webview "$app_dir"

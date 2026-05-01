@@ -54,6 +54,7 @@ make_fake_app() {
 #!/bin/bash
 exit 0
 SCRIPT
+    echo "CODEX_APP_PACKAGE_VERSION=26.429.20946" > "$app_dir/codex-app-version.env"
     chmod +x "$app_dir/start.sh"
 }
 
@@ -315,6 +316,37 @@ PLIST
     [ "$(tail -n 1 "$output_log")" = "42.5.7" ] || fail "Expected detected Electron version 42.5.7, got: $(cat "$output_log")"
 }
 
+test_installer_writes_package_version_from_app_plist() {
+    info "Checking app package version detection from app metadata"
+    local workspace="$TMP_DIR/app-package-version"
+    local app_dir="$workspace/Codex.app"
+    local plist_dir="$app_dir/Contents"
+    local install_dir="$workspace/codex-app"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$plist_dir"
+    cat > "$plist_dir/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleShortVersionString</key>
+    <string>26.429.20946</string>
+    <key>CFBundleVersion</key>
+    <string>2312</string>
+</dict>
+</plist>
+PLIST
+
+    CODEX_INSTALLER_SOURCE_ONLY=1 CODEX_INSTALL_DIR="$install_dir" bash -c \
+        'source "$1"; write_app_version_metadata "$2"' \
+        _ "$REPO_DIR/install.sh" "$app_dir" >"$output_log" 2>&1
+
+    assert_contains "$output_log" "Detected Codex App package version from DMG: 26.429.20946"
+    assert_contains "$install_dir/codex-app-version.env" "CODEX_APP_PACKAGE_VERSION=26.429.20946"
+    assert_contains "$install_dir/codex-app-version.env" "CODEX_APP_BUNDLE_VERSION=2312"
+}
+
 test_installer_keeps_electron_fallback_for_bad_metadata() {
     info "Checking Electron version fallback for malformed metadata"
     local workspace="$TMP_DIR/electron-version-fallback"
@@ -444,7 +476,10 @@ PY
     assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "CHROME_DESKTOP"
     assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "codex-app-updater-launch-check"
     assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "codex-app-updater check-now --if-stale"
+    assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "codex-update-manager.service"
+    assert_not_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "            PATH \\\\"
     assert_not_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "restart codex-app-updater.service"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app-updater.service" '%h/.local/bin'
     assert_contains "$REPO_DIR/scripts/install-deps.sh" 'NODEJS_MAJOR="${NODEJS_MAJOR:-22}"'
     assert_contains "$REPO_DIR/scripts/install-deps.sh" "apt_nodejs_candidate_major"
     assert_contains "$REPO_DIR/scripts/install-deps.sh" "Installing distro Node.js/npm candidate"
@@ -1392,6 +1427,7 @@ main() {
     test_missing_input_failure
     test_make_build_app_uses_installer_download_flow_by_default
     test_installer_detects_electron_version_from_plist
+    test_installer_writes_package_version_from_app_plist
     test_installer_keeps_electron_fallback_for_bad_metadata
     test_launcher_template_sanity
     test_side_by_side_launcher_identity

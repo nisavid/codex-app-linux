@@ -18,7 +18,6 @@ codex_packaged_runtime_prelaunch_background() {
     fi
 
     systemctl --user import-environment \
-        PATH \
         DISPLAY \
         WAYLAND_DISPLAY \
         DBUS_SESSION_BUS_ADDRESS \
@@ -27,7 +26,6 @@ codex_packaged_runtime_prelaunch_background() {
 
     if command -v dbus-update-activation-environment >/dev/null 2>&1; then
         dbus-update-activation-environment --systemd \
-            PATH \
             DISPLAY \
             WAYLAND_DISPLAY \
             DBUS_SESSION_BUS_ADDRESS \
@@ -35,8 +33,12 @@ codex_packaged_runtime_prelaunch_background() {
             XDG_RUNTIME_DIR >/dev/null 2>&1 || true
     fi
 
+    systemctl --user disable --now codex-update-manager.service >/dev/null 2>&1 || true
+
     if systemctl --user is-enabled codex-app-updater.service >/dev/null 2>&1; then
-        systemctl --user start codex-app-updater.service >/dev/null 2>&1 || true
+        if ! systemctl --user is-active codex-app-updater.service >/dev/null 2>&1; then
+            systemctl --user start codex-app-updater.service >/dev/null 2>&1 || true
+        fi
     else
         systemctl --user enable --now codex-app-updater.service >/dev/null 2>&1 || true
     fi

@@ -84,6 +84,51 @@ sanitize_electron_version() {
     return 1
 }
 
+sanitize_app_package_version() {
+    local value="$1"
+
+    if [[ "$value" =~ ^[0-9]+(\.[0-9]+){2,3}$ ]]; then
+        echo "$value"
+        return 0
+    fi
+
+    return 1
+}
+
+write_app_version_metadata() {
+    local app_dir="$1"
+    local plist_file="$app_dir/Contents/Info.plist"
+    local detected_version=""
+    local package_version=""
+    local bundle_version=""
+
+    [ -f "$plist_file" ] || error "Missing app Info.plist: $plist_file"
+
+    detected_version=$(python3 - "$plist_file" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    data = plistlib.load(handle)
+print(data.get("CFBundleShortVersionString", ""))
+print(data.get("CFBundleVersion", ""))
+PY
+)
+    package_version="$(printf '%s\n' "$detected_version" | sed -n '1p')"
+    bundle_version="$(printf '%s\n' "$detected_version" | sed -n '2p')"
+
+    if ! package_version="$(sanitize_app_package_version "$package_version")"; then
+        error "Invalid Codex App package version in DMG Info.plist: $(printf '%s\n' "$detected_version" | sed -n '1p')"
+    fi
+
+    mkdir -p "$INSTALL_DIR"
+    cat > "$INSTALL_DIR/codex-app-version.env" <<EOF
+CODEX_APP_PACKAGE_VERSION=$(shell_quote "$package_version")
+CODEX_APP_BUNDLE_VERSION=$(shell_quote "$bundle_version")
+EOF
+    info "Detected Codex App package version from DMG: $package_version"
+}
+
 detect_electron_version() {
     local app_dir="$1"
     local detected=""

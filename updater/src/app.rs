@@ -53,6 +53,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             print_path,
             allow_install_missing,
         } => run_cli_preflight(
+            &config,
             &mut state,
             &paths,
             cli_path,
@@ -62,8 +63,8 @@ pub async fn run(cli: Cli) -> Result<()> {
         Commands::PromptInstallCli {
             cli_path,
             print_path,
-        } => run_prompt_install_cli(&mut state, &paths, cli_path, print_path),
-        Commands::Status { json } => run_status(&mut state, &paths, json),
+        } => run_prompt_install_cli(&config, &mut state, &paths, cli_path, print_path),
+        Commands::Status { json } => run_status(&config, &mut state, &paths, json),
         Commands::InstallDeb { path } => install::install_deb(&path),
         Commands::InstallRpm { path } => install::install_rpm(&path),
         Commands::InstallPacman { path } => install::install_pacman(&path),
@@ -186,7 +187,7 @@ async fn run_daemon(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(state, paths)?;
-    codex_cli::refresh_cached_status(state, paths)?;
+    codex_cli::refresh_cached_status(config, state, paths)?;
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
     if packaged_runtime_removed(config) {
@@ -244,7 +245,7 @@ async fn run_check_now(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(state, paths)?;
-    codex_cli::refresh_cached_status(state, paths)?;
+    codex_cli::refresh_cached_status(config, state, paths)?;
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
     if if_stale && upstream_check_is_fresh(config, state) {
@@ -264,8 +265,13 @@ fn upstream_check_is_fresh(config: &RuntimeConfig, state: &PersistedState) -> bo
     Utc::now().signed_duration_since(last_successful_check_at) < freshness_window
 }
 
-fn run_status(state: &mut PersistedState, paths: &RuntimePaths, json: bool) -> Result<()> {
-    codex_cli::refresh_status(state, paths)?;
+fn run_status(
+    config: &RuntimeConfig,
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    json: bool,
+) -> Result<()> {
+    codex_cli::refresh_status(config, state, paths)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(state)?);
@@ -295,12 +301,13 @@ fn run_status(state: &mut PersistedState, paths: &RuntimePaths, json: bool) -> R
 }
 
 fn run_prompt_install_cli(
+    config: &RuntimeConfig,
     state: &mut PersistedState,
     paths: &RuntimePaths,
     cli_path: Option<PathBuf>,
     print_path: bool,
 ) -> Result<()> {
-    let outcome = prompt_install_cli(state, paths, cli_path)?;
+    let outcome = prompt_install_cli(config, state, paths, cli_path)?;
     match outcome {
         PromptInstallCliOutcome::Installed(path) => {
             if print_path {
@@ -318,13 +325,14 @@ fn run_prompt_install_cli(
 }
 
 fn run_cli_preflight(
+    config: &RuntimeConfig,
     state: &mut PersistedState,
     paths: &RuntimePaths,
     cli_path: Option<std::path::PathBuf>,
     print_path: bool,
     allow_install_missing: bool,
 ) -> Result<()> {
-    let outcome = codex_cli::preflight(state, paths, cli_path, allow_install_missing)?;
+    let outcome = codex_cli::preflight(config, state, paths, cli_path, allow_install_missing)?;
     if print_path {
         println!("{}", outcome.cli_path.display());
     }
@@ -339,6 +347,7 @@ enum PromptInstallCliOutcome {
 }
 
 fn prompt_install_cli(
+    config: &RuntimeConfig,
     state: &mut PersistedState,
     paths: &RuntimePaths,
     cli_path: Option<PathBuf>,
@@ -348,6 +357,12 @@ fn prompt_install_cli(
         .and_then(|path| codex_cli::resolve_cli_path(Some(path)))
         .or_else(|| {
             state
+                .cli_path
+                .as_deref()
+                .and_then(|path| codex_cli::resolve_cli_path(Some(path)))
+        })
+        .or_else(|| {
+            config
                 .cli_path
                 .as_deref()
                 .and_then(|path| codex_cli::resolve_cli_path(Some(path)))
@@ -382,7 +397,7 @@ fn prompt_install_cli(
     }
 
     state.cli_prompt_dismissed_at = None;
-    let outcome = codex_cli::preflight(state, paths, cli_path, true)?;
+    let outcome = codex_cli::preflight(config, state, paths, cli_path, true)?;
     Ok(PromptInstallCliOutcome::Installed(outcome.cli_path))
 }
 
@@ -743,7 +758,7 @@ fn parse_generated_version(version: &str) -> Option<Vec<u32>> {
     for segment in base.split('.') {
         parts.push(segment.parse::<u32>().ok()?);
     }
-    if parts.len() != 4 {
+    if !matches!(parts.len(), 3 | 4) {
         return None;
     }
     Some(parts)
@@ -982,9 +997,11 @@ mod tests {
             check_interval_hours: 6,
             auto_install_on_app_exit: true,
             notifications: false,
+            developer_mode: false,
             workspace_root: std::path::PathBuf::from("/tmp/cache"),
             builder_bundle_root: std::path::PathBuf::from("/tmp/builder"),
             app_executable_path: std::path::PathBuf::from("/tmp/electron"),
+            cli_path: None,
         };
 
         let mut state = PersistedState::new(true);
@@ -1024,9 +1041,11 @@ mod tests {
             check_interval_hours: 6,
             auto_install_on_app_exit: false,
             notifications: false,
+            developer_mode: false,
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
         };
 
         let mut state = PersistedState::new(false);
@@ -1061,9 +1080,11 @@ mod tests {
             check_interval_hours: 6,
             auto_install_on_app_exit: true,
             notifications: false,
+            developer_mode: false,
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
         };
 
         for status in [
@@ -1154,9 +1175,11 @@ mod tests {
             check_interval_hours: 6,
             auto_install_on_app_exit: true,
             notifications: false,
+            developer_mode: false,
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
         };
 
         let mut state = PersistedState::new(true);
@@ -1201,9 +1224,11 @@ mod tests {
             check_interval_hours: 6,
             auto_install_on_app_exit: false,
             notifications: false,
+            developer_mode: false,
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
         };
 
         let mut state = PersistedState::new(false);
@@ -1291,8 +1316,20 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.cli_path = Some(invalid_cli_path);
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: true,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
 
-        let outcome = prompt_install_cli(&mut state, &paths, None)?;
+        let outcome = prompt_install_cli(&config, &mut state, &paths, None)?;
 
         if let Some(value) = original_display {
             std::env::set_var("DISPLAY", value);
@@ -1461,8 +1498,11 @@ mod tests {
     }
 
     #[test]
-    fn generated_version_comparison_rejects_non_generated_versions() {
-        assert_eq!(compare_generated_versions("0.34.1", "0.35.0"), None);
+    fn generated_version_comparison_supports_dmg_app_versions() {
+        assert_eq!(
+            compare_generated_versions("26.429.20946", "26.428.10000"),
+            Some(std::cmp::Ordering::Greater)
+        );
     }
 
     #[tokio::test]

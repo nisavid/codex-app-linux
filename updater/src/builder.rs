@@ -86,12 +86,14 @@ pub async fn build_update(
     .context("install.sh failed during local rebuild")?;
 
     state.status = UpdateStatus::BuildingPackage;
+    let package_version = read_app_package_version(&workspace.app_dir)?;
+    state.candidate_version = Some(package_version.clone());
     state.save(&paths.state_file)?;
 
     let build_script = package_build_script(&workspace.bundle_dir);
     run_and_log(
         Command::new(&build_script)
-            .env("PACKAGE_VERSION", candidate_version)
+            .env("PACKAGE_VERSION", &package_version)
             .env("APP_DIR_OVERRIDE", &workspace.app_dir)
             .env("DIST_DIR_OVERRIDE", &workspace.dist_dir)
             .env("UPDATER_BINARY_SOURCE", std::env::current_exe()?)
@@ -116,7 +118,7 @@ pub async fn build_update(
         package_path: Some(package_path.clone()),
     };
     state.save(&paths.state_file)?;
-    info!(candidate_version, package = %package_path.display(), "local update build ready");
+    info!(candidate_version = %package_version, package = %package_path.display(), "local update build ready");
 
     Ok(BuildArtifacts {
         workspace_dir: workspace.workspace_dir,
@@ -281,6 +283,27 @@ fn is_native_package_file(path: &Path) -> bool {
         || PACMAN_PACKAGE_SUFFIXES
             .iter()
             .any(|suffix| name.ends_with(suffix))
+}
+
+fn read_app_package_version(app_dir: &Path) -> Result<String> {
+    let version_file = app_dir.join("codex-app-version.env");
+    let contents = fs::read_to_string(&version_file)
+        .with_context(|| format!("Failed to read {}", version_file.display()))?;
+    let version = contents
+        .lines()
+        .find_map(|line| line.strip_prefix("CODEX_APP_PACKAGE_VERSION="))
+        .map(|value| value.trim_matches(['"', '\'']))
+        .context("codex-app-version.env is missing CODEX_APP_PACKAGE_VERSION")?;
+
+    if version
+        .split('.')
+        .all(|segment| !segment.is_empty() && segment.chars().all(|ch| ch.is_ascii_digit()))
+        && matches!(version.split('.').count(), 3 | 4)
+    {
+        Ok(version.to_string())
+    } else {
+        anyhow::bail!("Invalid CODEX_APP_PACKAGE_VERSION: {version}")
+    }
 }
 
 fn build_command_path() -> OsString {
@@ -524,6 +547,7 @@ set -euo pipefail
 mkdir -p "${CODEX_INSTALL_DIR}"
 echo launcher > "${CODEX_INSTALL_DIR}/start.sh"
 chmod +x "${CODEX_INSTALL_DIR}/start.sh"
+echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-version.env"
 "#,
         )?;
         #[cfg(unix)]
@@ -572,9 +596,11 @@ chmod +x "${CODEX_INSTALL_DIR}/start.sh"
             check_interval_hours: 6,
             auto_install_on_app_exit: true,
             notifications: true,
+            developer_mode: false,
             workspace_root: cache_root,
             builder_bundle_root: bundle_root,
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
+            cli_path: None,
         };
         let dmg_path = temp.path().join("Codex.dmg");
         fs::write(&dmg_path, b"dmg")?;
@@ -589,6 +615,7 @@ chmod +x "${CODEX_INSTALL_DIR}/start.sh"
         )
         .await?;
         assert_eq!(state.status, UpdateStatus::ReadyToInstall);
+        assert_eq!(state.candidate_version.as_deref(), Some("26.429.20946"));
         assert!(artifacts.workspace_dir.exists());
         assert!(artifacts.package_path.exists());
         assert!(

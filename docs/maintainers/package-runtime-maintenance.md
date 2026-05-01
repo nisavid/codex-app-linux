@@ -6,6 +6,10 @@ launcher, packaged runtime helper, or `codex-app-updater`.
 For security-specific follow-up, use [Security Backlog](security-backlog.md).
 For trust boundaries and attacker assumptions, use
 [Threat Model](threat-model.md).
+For fork-specific contracts that need review during upstream syncs, use
+[Fork Divergences](fork-divergences.md).
+Some package-support paths are under open layout triage there; check that list
+before moving update-builder or packaged-runtime helper payloads.
 
 ## Source Of Truth
 
@@ -170,9 +174,11 @@ runs the bundled `install.sh`, builds the native package for the host package
 manager, and records the package path in `state.json`. `install.sh` reads
 `Codex.app/Contents/Info.plist` and writes `codex-app/codex-app-version.env`;
 package builders use `CODEX_APP_PACKAGE_VERSION` from that file unless
-`PACKAGE_VERSION` is set explicitly. Generated metadata must stay three or four
-numeric dot-separated segments because the updater's installed-version
-comparison depends on that shape.
+`PACKAGE_VERSION` is set explicitly for a deliberate test build. That package
+version must track the OpenAI DMG app's `CFBundleShortVersionString`; do not
+replace it with local timestamp versions during upstream syncs. Generated
+metadata must stay three or four numeric dot-separated segments because the
+updater's installed-version comparison depends on that shape.
 
 The packaged user service sets a constrained `PATH` with system directories and
 `%h/.local/bin`, `PrivateTmp=yes`,
