@@ -20,27 +20,36 @@ the Nix flake.
 | Surface | Status | Notes |
 | --- | --- | --- |
 | Standard Codex app UI | Working | Built from the upstream macOS DMG and patched to launch under Linux Electron. |
-| Native Linux packages | Working | Builds `.deb`, `.rpm`, and pacman packages named `codex-app`. |
-| Local updater | Working | Native packages install `codex-app-updater`, which checks upstream DMGs and rebuilds local packages. |
+| Native Linux packages | Working | Builds `.deb`, `.rpm`, and pacman packages under the `codex-app` identity and install layout. |
+| Local updater | Working | Native packages install `codex-app-updater`, adapted from upstream update-manager work to check DMGs and rebuild local packages. |
 | Codex CLI preflight | Working | The launcher and updater find or install `@openai/codex` when host tools allow it. |
 | Tray, warm start, and Linux keybinds | Working with desktop variance | Desktop-environment support can vary, especially around tray and window behavior. |
 | Browser annotations | Working where upstream support is enabled | Uses the bundled browser resources shipped with the generated app. |
-| Linux Computer Use | Packaged and locally functional where gated on | Requires host accessibility/input support and OpenAI account-side rollout. |
+| Linux Computer Use | Packaged and locally functional where gated on | Uses upstream Linux Computer Use support with local packaging/manifest compatibility fixes; requires host accessibility/input support and OpenAI account-side rollout. |
 | NixOS flake | Working with pinned DMG hash | The fixed-output hash can temporarily lag after OpenAI republishes the DMG. |
 | OpenAI server-gated features | Gated by account and rollout | Installing this fork cannot bypass upstream feature flags or account policy. |
 
 ## About This Fork
 
-This fork keeps the app and native Linux packages under the `codex-app` name,
-with a local updater named `codex-app-updater`. It adds native package builders,
-release and updater hardening, XDG/FHS-aligned install paths, Linux launcher
-integration, and packaged Linux Computer Use support where OpenAI enables that
-feature for the account.
-
-It builds on the upstream Linux adaptation work in
+This fork is a downstream maintenance fork of
 [`ilysenko/codex-desktop-linux`](https://github.com/ilysenko/codex-desktop-linux).
-The owners and contributors there did and continue to do much of the core work
-that makes this fork possible.
+Its main local differences are:
+
+- the `codex-app` app/package identity and `codex-app-updater` updater
+  identity;
+- XDG/FHS-aligned package paths, including `/opt/codex-app` for the generated
+  app and `/usr/lib/codex-app` for package-private support;
+- package versions derived from the OpenAI DMG app bundle instead of local
+  timestamp builds;
+- extra package, updater, release, and supply-chain validation around the
+  inherited Linux conversion workflow;
+- local compatibility fixes for packaging upstream Linux Computer Use support
+  without implying that account-side feature gates are bypassed.
+
+The upstream owners and contributors did, and continue to do, much of the core
+Linux adaptation work that makes this fork useful. This fork's job is to keep a
+specific local package identity, install layout, updater policy, and maintenance
+workflow coherent on top of that base.
 
 For the maintainer inventory of intentional fork differences, see
 [Fork Divergences](docs/maintainers/fork-divergences.md).
