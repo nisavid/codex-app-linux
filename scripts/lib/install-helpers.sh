@@ -135,9 +135,12 @@ prepare_install() {
 # ---- Check dependencies ----
 check_deps() {
     local missing=()
-    for cmd in node npm npx python3 7z curl unzip; do
+    for cmd in node npm npx python3 curl unzip; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
+    if ! command -v 7zz &>/dev/null && ! command -v 7z &>/dev/null; then
+        missing+=("7z or 7zz")
+    fi
     if [ ${#missing[@]} -ne 0 ]; then
         error "Missing dependencies: ${missing[*]}
 $(dependency_help)"

@@ -344,8 +344,16 @@ run_cli_preflight_background() {
         return 0
     fi
 
+    local preflight_args=(
+        cli-preflight
+        --print-path
+    )
+    if [ -n "${CODEX_CLI_PATH:-}" ]; then
+        preflight_args+=(--cli-path "$CODEX_CLI_PATH")
+    fi
+
     (
-        if ! codex-app-updater cli-preflight --cli-path "$CODEX_CLI_PATH" --print-path >/dev/null 2>&1; then
+        if ! codex-app-updater "${preflight_args[@]}" >/dev/null 2>&1; then
             echo "Codex CLI background preflight failed. Continuing with the current CLI."
         fi
     ) &
@@ -360,8 +368,16 @@ run_gui_cli_prompt() {
         return 1
     fi
 
+    local prompt_args=(
+        prompt-install-cli
+        --print-path
+    )
+    if [ -n "${CODEX_CLI_PATH:-}" ]; then
+        prompt_args+=(--cli-path "$CODEX_CLI_PATH")
+    fi
+
     local refreshed_path=""
-    if ! refreshed_path="$(codex-app-updater prompt-install-cli --cli-path "$CODEX_CLI_PATH" --print-path)"; then
+    if ! refreshed_path="$(codex-app-updater "${prompt_args[@]}")"; then
         return 1
     fi
 

@@ -236,10 +236,10 @@ Or let the script download the DMG:
 ./scripts/build-deb.sh
 ```
 
-Default output:
+Default output, using the app version from `codex-app/codex-app-version.env`:
 
 ```bash
-dist/codex-app_YYYY.MM.DD.HHMMSS_amd64.deb
+dist/codex-app_<app-version>_amd64.deb
 ```
 
 Optional version override:
@@ -254,10 +254,10 @@ PACKAGE_VERSION=2026.03.24.120000+deadbeef ./scripts/build-deb.sh
 ./scripts/build-rpm.sh
 ```
 
-Default output:
+Default output, using the app version from `codex-app/codex-app-version.env`:
 
 ```bash
-dist/codex-app-YYYY.MM.DD.HHMMSS-<release>.x86_64.rpm
+dist/codex-app-<app-version>-<release>.x86_64.rpm
 ```
 
 Optional version override:
@@ -272,10 +272,10 @@ PACKAGE_VERSION=2026.03.24.120000+deadbeef ./scripts/build-rpm.sh
 ./scripts/build-pacman.sh
 ```
 
-Default output:
+Default output, using the app version from `codex-app/codex-app-version.env`:
 
 ```bash
-dist/codex-app-YYYY.MM.DD.HHMMSS-<release>-x86_64.pkg.tar.zst
+dist/codex-app-<app-version>-<release>-x86_64.pkg.tar.zst
 ```
 
 Optional version override:
@@ -286,7 +286,7 @@ PACKAGE_VERSION=2026.03.24.120000+deadbeef ./scripts/build-pacman.sh
 
 ## Runtime Expectations
 
-- `node`, `npm`, `npx`, `python3`, `7z`, `curl`, `unzip`, `make`, and `g++` are required for `install.sh`
+- `node`, `npm`, `npx`, `python3`, `7z` or `7zz`, `curl`, `unzip`, `make`, and `g++` are required for `install.sh`
 - Node.js 20+ is required
 - On apt-based systems, `scripts/install-deps.sh` uses a compatible distro `nodejs`/`npm` candidate when available and otherwise bootstraps NodeSource Node.js 22 by default. `NODEJS_MAJOR=24 bash scripts/install-deps.sh` selects Node.js 24 instead.
 - the packaged app still requires the Codex CLI at runtime:

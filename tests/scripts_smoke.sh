@@ -410,6 +410,8 @@ runtime_body = source.split("trap cleanup_launcher EXIT", 1)[1].split("launch_el
 stop_body = source.split("stop_owned_webview_server() {", 1)[1].split("owned_webview_server_pid() {", 1)[0]
 adopt_body = source.split("adopt_existing_webview_server() {", 1)[1].split("ensure_webview_server() {", 1)[0]
 ensure_body = source.split("ensure_webview_server() {", 1)[1].split("wait_for_webview_server", 1)[0]
+gui_prompt_body = source.split("run_gui_cli_prompt() {", 1)[1].split("prompt_install_missing_cli() {", 1)[0]
+background_preflight_body = source.split("run_cli_preflight_background() {", 1)[1].split("is_interactive_terminal() {", 1)[0]
 if 'if RUNNING_APP_PID="$(find_running_app_pid)"; then' not in detect_body:
     raise SystemExit("detect_warm_start must record a running app even when warm start is disabled")
 if not re.search(r'if ! linux_setting_enabled "codex-linux-warm-start-enabled" 1; then.*?return 0', detect_body, re.S):
@@ -430,6 +432,14 @@ if 'if needs_cold_start && [ -z "$CODEX_CLI_PATH" ]; then' not in runtime_body:
     raise SystemExit("second-instance handoff must skip missing-CLI failure")
 if "if needs_cold_start;" not in runtime_body:
     raise SystemExit("second-instance handoff must skip CLI preflight")
+if 'prompt_args+=(--cli-path "$CODEX_CLI_PATH")' not in gui_prompt_body:
+    raise SystemExit("GUI CLI prompt must pass --cli-path only when CODEX_CLI_PATH is non-empty")
+if 'prompt-install-cli --cli-path "$CODEX_CLI_PATH"' in gui_prompt_body:
+    raise SystemExit("GUI CLI prompt must not pass an empty --cli-path")
+if 'preflight_args+=(--cli-path "$CODEX_CLI_PATH")' not in background_preflight_body:
+    raise SystemExit("background CLI preflight must pass --cli-path only when CODEX_CLI_PATH is non-empty")
+if 'cli-preflight --cli-path "$CODEX_CLI_PATH"' in background_preflight_body:
+    raise SystemExit("background CLI preflight must not pass an empty --cli-path")
 if "running_app_is_active" not in stop_body or "Preserving webview server" not in stop_body:
     raise SystemExit("stop_owned_webview_server must not stop the live app webview server")
 if 'ADOPTED_WEBVIEW_PID="$pid"' not in adopt_body:
@@ -486,6 +496,7 @@ PY
     assert_contains "$REPO_DIR/scripts/install-deps.sh" "/etc/apt/keyrings/nodesource.gpg"
     assert_contains "$REPO_DIR/scripts/install-deps.sh" "signed-by="
     assert_contains "$REPO_DIR/scripts/install-deps.sh" "https://deb.nodesource.com/node_"
+    assert_contains "$REPO_DIR/scripts/lib/install-helpers.sh" "7z or 7zz"
     assert_contains "$REPO_DIR/packaging/linux/control" "nodejs (>= 20)"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.spec" "nodejs >= 20"
     assert_contains "$REPO_DIR/packaging/linux/PKGBUILD.template" "nodejs>=20"
