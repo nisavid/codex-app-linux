@@ -2,7 +2,7 @@
 
 This reference records the intentional differences between this fork and the
 last synced upstream ref. Use it during upstream syncs to preserve local
-contracts without attributing upstream work to this fork.
+contracts and keep divergence claims grounded in the actual upstream baseline.
 
 The current comparison baseline is local `upstream/main` at `f6b99eb`, merged
 into this fork by PR #10. Claims below describe the current tree's diff against
@@ -17,8 +17,8 @@ For each upstream sync:
 2. Compare incoming changes against every divergence area below.
 3. Preserve local names, paths, versioning, updater boundaries, package shape,
    and security gates unless the PR intentionally changes this policy.
-4. Do not describe upstream-provided features as fork-created features. Describe
-   the local delta: naming, layout, hardening, packaging, compatibility, or
+4. Describe each divergence as the current local delta against the synced
+   upstream baseline: naming, layout, hardening, packaging, compatibility, or
    documentation.
 5. Put uncertain conflicts in the PR body for maintainer triage.
 6. Run the local build gate before pushing when generated-app, package, updater
@@ -41,9 +41,9 @@ app, packages, launcher, desktop entry, icon, app state, and package metadata as
 `codex-app`. It exposes the updater crate, binary, service, config, state,
 cache, and logs as `codex-app-updater`.
 
-**Not a fork-origin claim:** The underlying Linux app conversion and update
-manager model come from upstream. The fork-specific contract is the local
-identity and compatibility handling around that inherited model.
+**Upstream baseline:** The underlying Linux app conversion and update manager
+model come from upstream. The fork-specific contract is the local identity and
+compatibility handling around that inherited model.
 
 **Why it matters:** These names are user-visible package and runtime contracts.
 Adopting upstream names during a sync breaks upgrade paths, service state,
@@ -69,7 +69,7 @@ under `/usr/bin`, desktop assets under `/usr/share`, and mutable user files
 under XDG base directories. The update-builder bundle is deliberately under
 `/usr/lib/codex-app/update-builder`, not inside the generated app bundle.
 
-**Not a fork-origin claim:** Upstream already has package builders and an
+**Upstream baseline:** Upstream already has package builders and an
 update-builder payload. This fork changes the installed names and payload
 placement, and keeps those choices aligned with XDG/FHS criteria.
 
@@ -95,8 +95,8 @@ Electron app bundles and keeps mutable user state out of system package roots.
 during app generation. Timestamp or commit-hash package versions are explicit
 test overrides only.
 
-**Not a fork-origin claim:** Upstream already derives update candidates from
-upstream DMG metadata. This fork changes native package versioning and updater
+**Upstream baseline:** Upstream already derives update candidates from upstream
+DMG metadata. This fork changes native package versioning and updater
 comparison helpers so package upgrades track the DMG-contained app version.
 
 **Why it matters:** Package upgrades, updater comparisons, release notes, and
@@ -121,8 +121,8 @@ payload symlinks, normalizes payload modes, avoids preserving local build
 ownership into pacman packages, and prints package metadata/content inspection
 where tools support it.
 
-**Not a fork-origin claim:** Upstream already builds native packages. This fork
-adds hardening, local identity, and payload consistency constraints.
+**Upstream baseline:** Upstream already builds native packages. This fork adds
+hardening, local identity, and payload consistency constraints.
 
 **Why it matters:** Native packages must install with package-manager-owned
 system paths, predictable modes, and aligned payloads across formats.
@@ -144,9 +144,9 @@ package install. Privileged work is limited to `install-deb`, `install-rpm`,
 and `install-pacman`, which validate package paths and identity metadata,
 stage private copies, and then invoke the package manager through `pkexec`.
 
-**Not a fork-origin claim:** Upstream already has a user-level update manager
-and privileged package install path. This fork tightens the boundary and
-renames the service, policy, and package identities.
+**Upstream baseline:** Upstream already has a user-level update manager and
+privileged package install path. This fork tightens the boundary and renames
+the service, policy, and package identities.
 
 **Why it matters:** The updater handles mutable network inputs and local build
 work. Privilege must stay isolated to the smallest install surface.
@@ -168,7 +168,7 @@ user config is a partial overlay, explicit `cli_path` is supported, failed or
 dismissed installs avoid prompt loops, interrupted installs recover, and
 production builder redirection requires `developer_mode = true`.
 
-**Not a fork-origin claim:** Upstream already has persisted updater state and a
+**Upstream baseline:** Upstream already has persisted updater state and a
 daemon. This fork changes the local names, persisted config surface, recovery
 rules, and developer-mode guardrails.
 
@@ -192,9 +192,9 @@ known, gives updater preflight a fast path before direct fallback, prompts for
 missing CLI installation where interactive, and exports `CODEX_CLI_PATH`
 before Electron starts.
 
-**Not a fork-origin claim:** Upstream already has launcher/updater CLI
-preflight. This fork refines discovery precedence, config integration, and
-best-effort behavior under the `codex-app-updater` identity.
+**Upstream baseline:** Upstream already has launcher/updater CLI preflight.
+This fork refines discovery precedence, config integration, and best-effort
+behavior under the `codex-app-updater` identity.
 
 **Why it matters:** The app needs a reliable Codex CLI path without blocking
 Electron startup on registry or install work that can run later.
@@ -218,9 +218,9 @@ present, starts/enables `codex-app-updater.service` without restarting an
 active service, and triggers launch-time update checks after Electron PID
 recording.
 
-**Not a fork-origin claim:** Upstream provides the launcher template and
-packaged runtime pattern. This fork changes the package-only helper location,
-service names, environment import policy, and lifecycle details.
+**Upstream baseline:** Upstream provides the launcher template and packaged
+runtime pattern. This fork changes the package-only helper location, service
+names, environment import policy, and lifecycle details.
 
 **Why it matters:** Package-specific service orchestration must not leak into
 checkout builds or race pending updater install state.
@@ -243,9 +243,9 @@ generated keybind literals, `CODEX_APP_LAUNCH_ACTION_SOCKET`, Linux window
 default refinements, and default-enabled Electron sandboxing with an explicit
 compatibility opt-out.
 
-**Not a fork-origin claim:** Upstream already carries Linux ASAR patching. This
-fork maintains local patch safety and selected Linux behavior changes on top of
-that upstream patching system.
+**Upstream baseline:** Upstream already carries Linux ASAR patching. This fork
+maintains local patch safety and selected Linux behavior changes on top of that
+upstream patching system.
 
 **Why it matters:** Upstream minified bundle shapes change often. Linux
 behavior should degrade with actionable warnings instead of breaking app
@@ -266,9 +266,9 @@ identity and XDG state paths, preserves live app markers during warm-start or
 second-instance handoff, and keeps origin validation tied to loopback startup
 assets before Electron launch.
 
-**Not a fork-origin claim:** Upstream already has the local webview server
-model and much of the launcher lifecycle. This fork preserves and renames that
-behavior while maintaining the local XDG/path contract.
+**Upstream baseline:** Upstream already has the local webview server model and
+much of the launcher lifecycle. This fork preserves and renames that behavior
+while maintaining the local XDG/path contract.
 
 **Why it matters:** Codex expects webview assets at a local origin, while Linux
 launches must avoid LAN exposure, stale servers, and PID ownership races.
@@ -289,7 +289,7 @@ compatibility: returning an error when a requested app is not found, pointing
 the plugin manifest at a present SVG logo, adding that SVG asset, and keeping
 package/docs wording aligned with account-side gating.
 
-**Not a fork-origin claim:** The Rust MCP backend, bundled plugin resources,
+**Upstream baseline:** The Rust MCP backend, bundled plugin resources,
 accessibility tree capture, screenshot paths, and input automation are upstream
 features in the synced baseline.
 
@@ -303,9 +303,9 @@ input prerequisites.
 `scripts/lib/package-common.sh`, `launcher/start.sh.template`, `README.md`,
 `CHANGELOG.md`.
 
-**Preservation checks:** Keep package staging and README wording clear that
-local installation does not bypass OpenAI feature flags. Do not present Linux
-Computer Use itself as created by this fork.
+**Preservation checks:** Keep package staging and README wording scoped to the
+local compatibility delta and clear that local installation does not bypass
+OpenAI feature flags.
 
 ### 12. Release, Security, And Supply-Chain Verification
 
@@ -316,8 +316,8 @@ signing, public key export, macOS Apple DMG verification, reviewed
 hash-refresh PRs, safer DMG URL validation, download limits, partial-file
 downloads, and sanitized URL logging.
 
-**Not a fork-origin claim:** Upstream already downloads and converts the DMG.
-This fork adds extra verification and review gates around that inherited supply
+**Upstream baseline:** Upstream already downloads and converts the DMG. This
+fork adds extra verification and review gates around that inherited supply
 chain.
 
 **Why it matters:** This fork rebuilds a package from a mutable upstream DMG
@@ -343,9 +343,9 @@ commands, service/timer names, desktop entry, and XDG user data paths. It stays
 aligned with fork path triage while remaining separate from native package
 layout.
 
-**Not a fork-origin claim:** Upstream already has the user-local install
-experiment. This fork renames it and adjusts path choices so it does not
-reintroduce upstream names or non-XDG roots.
+**Upstream baseline:** Upstream already has the user-local install experiment.
+This fork renames it and adjusts path choices so it does not reintroduce
+upstream names or non-XDG roots.
 
 **Why it matters:** The rootless experiment should not reintroduce upstream
 names or non-XDG paths while testing a different install model.
@@ -367,9 +367,8 @@ part of upstream: always-loaded agent rules, a repo-local maintenance skill,
 maintainer references, security backlog, threat model, usage docs, README
 feature status, and the divergence inventory itself.
 
-**Not a fork-origin claim:** These docs should credit upstream for upstream
-features and describe only the local policy or documentation layer as fork
-work.
+**Upstream baseline:** These docs should preserve clear upstream credit while
+describing the local policy and documentation layer as fork work.
 
 **Why it matters:** This fork is intentionally divergent from its direct
 upstream. Future maintainers and agents need durable, discoverable policy
@@ -384,7 +383,7 @@ without turning the README or `AGENTS.md` into large maintenance manuals.
 
 **Preservation checks:** Keep `AGENTS.md` short and route details to maintainer
 docs or repo-local skills. Check README audience, clone URLs, maintainer-only
-material, upstream credit, and overclaiming before merging sync PRs.
+material, upstream credit, and divergence accuracy before merging sync PRs.
 
 ## Layout Triage
 
