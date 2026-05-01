@@ -40,11 +40,14 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
   logs use `codex-app-updater`. Do not adopt upstream `codex-desktop` or
   `codex-update-manager` naming as part of a sync. Integrate upstream behavior
   under the local names instead.
-- Preserve this fork's intentional layout when syncing upstream: native packages
-  keep the generated app bundle under `/opt/codex-app`, private package support
-  under `/usr/lib/codex-app`, system launch and desktop integration under
-  `/usr/bin` and `/usr/share`, and user runtime/config/cache/state under the
-  appropriate XDG base directories. Do not adopt upstream `codex-app-linux` or
+- Preserve this fork's intentional layout when syncing upstream. Path decisions
+  follow these criteria in order: the XDG Base Directory Specification, the
+  Filesystem Hierarchy Standard, then common conventions used by mainstream
+  Linux distros for modern Electron-style apps. Native packages keep the
+  generated app bundle under `/opt/codex-app`, private package support under
+  `/usr/lib/codex-app`, system launch and desktop integration under `/usr/bin`
+  and `/usr/share`, and user runtime/config/cache/state under the appropriate
+  XDG base directories. Do not adopt upstream `codex-app-linux` or
   `~/.local/opt` install roots as part of a sync.
 - Preserve this fork's package version contract. Native package versions come
   from the OpenAI DMG app's `CFBundleShortVersionString`, written to
