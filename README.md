@@ -128,9 +128,13 @@ Package outputs land in `dist/`:
 
 | Target | Output |
 | --- | --- |
-| Debian | `dist/codex-app_<upstream-version>_amd64.deb` |
-| RPM / Fedora / openSUSE | `dist/codex-app-<upstream-version>-1.x86_64.rpm` |
-| Arch Linux | `dist/codex-app-<upstream-version>-1-x86_64.pkg.tar.zst` |
+| Debian | `dist/codex-app_<upstream-version>_<arch>.deb` |
+| RPM / Fedora / openSUSE | `dist/codex-app-<upstream-version>-1.<arch>.rpm` |
+| Arch Linux | `dist/codex-app-<upstream-version>-1-<arch>.pkg.tar.zst` |
+
+Architecture names follow the package format: Debian uses `amd64`, `arm64`, or
+`armhf`; RPM uses `x86_64`, `aarch64`, or `armv7hl`; pacman uses `x86_64` or
+`aarch64`.
 
 The package version comes from the upstream Codex app bundle's
 `CFBundleShortVersionString`. For example, `26.422.30944 (2080)` becomes

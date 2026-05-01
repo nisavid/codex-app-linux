@@ -196,10 +196,14 @@ PACKAGE_VERSION=26.422.30944 ./scripts/build-pacman.sh
 Expected outputs:
 
 ```text
-dist/codex-app_<upstream-version>_amd64.deb
-dist/codex-app-<upstream-version>-1.x86_64.rpm
-dist/codex-app-<upstream-version>-1-x86_64.pkg.tar.zst
+dist/codex-app_<upstream-version>_<arch>.deb
+dist/codex-app-<upstream-version>-1.<arch>.rpm
+dist/codex-app-<upstream-version>-1-<arch>.pkg.tar.zst
 ```
+
+Architecture names follow the package format: Debian uses `amd64`, `arm64`, or
+`armhf`; RPM uses `x86_64`, `aarch64`, or `armv7hl`; pacman uses `x86_64` or
+`aarch64`.
 
 Native packages are named `codex-app`. They declare replacement metadata for
 the older `codex-desktop` package name where the package format supports it,
