@@ -16,9 +16,11 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
   package builders, package payload, updater rebuild flow, or bundled runtime
   helpers, run a local app generation/build gate first. The minimum gate is a
   successful `./install.sh` or `make build-app` from the current sources plus the
-  relevant local package builder when package contents are affected. If the host
-  needs writable cache overrides such as `HOME`, `npm_config_cache`, or XDG
-  paths, set them explicitly and record them in the verification notes.
+  relevant local package builder when package contents are affected. Refresh
+  `Codex.dmg` first unless the cached DMG was refreshed within the last 24
+  hours. If the host needs writable cache overrides such as `HOME`,
+  `npm_config_cache`, or XDG paths, set them explicitly and record them in the
+  verification notes.
 - Use Conventional Commits. Commit messages must accurately describe the
   committed change.
 - Do not hand-edit generated app output as the durable fix. Change `install.sh`,
@@ -320,8 +322,9 @@ Treat the local app generation/build as a push gate for changes that affect
 `launcher/start.sh.template`, package builders/templates, updater package
 rebuild behavior, or bundled runtime payloads. Do not push those changes based
 only on static checks or CI package jobs; first prove the current checkout can
-generate `codex-app/` locally, then build the affected package format locally
-when package contents changed.
+generate `codex-app/` locally from a `Codex.dmg` refreshed within the last 24
+hours, then build the affected package format locally when package contents
+changed.
 
 If `rpmbuild` is available, also run:
 
