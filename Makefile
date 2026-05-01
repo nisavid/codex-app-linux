@@ -1,5 +1,8 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
+unexport BASH_ENV
+unexport BASH_FUNC_module%%
+unexport BASH_FUNC_ml%%
 
 APP_DIR := $(CURDIR)/codex-app
 PACKAGE_NAME := codex-app
@@ -14,7 +17,7 @@ PACMAN_GLOB := $(CURDIR)/dist/$(PACMAN_PACKAGE_NAME)-[0-9]*.pkg.tar.*
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check test build-updater build-app run-app build-dev-app run-dev-app deb rpm pacman package install service-enable service-status clean-dist clean-state
+.PHONY: help check test build-updater build-app run-app build-dev-app run-dev-app deb rpm pacman package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
 
 help:
 	@printf '\nCodex App Linux Make Targets\n\n'
@@ -29,9 +32,12 @@ help:
 	@printf '  %-18s %s\n' "make rpm" "Build the RPM package into dist/ (Fedora/openSUSE)"
 	@printf '  %-18s %s\n' "make pacman" "Build the pacman package into dist/ (Arch)"
 	@printf '  %-18s %s\n' "make package" "Build native package (auto-detects deb, rpm, or pacman)"
+	@printf '  %-18s %s\n' "make apple-dmg-verify" "Run macOS Apple trust checks for the upstream DMG"
+	@printf '  %-18s %s\n' "make release-gate" "Verify DMG hash, generated app security, package metadata, checksums, and optional signature"
 	@printf '  %-18s %s\n' "make install" "Install the latest generated native package"
 	@printf '  %-18s %s\n' "make service-enable" "Enable and start codex-app-updater.service for the current user"
 	@printf '  %-18s %s\n' "make service-status" "Show codex-app-updater.service status for the current user"
+	@printf '  %-18s %s\n' "make clean" "Remove generated app, cached DMG, and dist/ artifacts"
 	@printf '  %-18s %s\n' "make clean-dist" "Remove generated dist/ artifacts"
 	@printf '  %-18s %s\n' "make clean-state" "Remove updater runtime state from XDG directories"
 	@printf '\nVariables:\n\n'
@@ -47,9 +53,9 @@ help:
 	@printf '  %s\n' "make run-app"
 	@printf '  %s\n' "make build-dev-app"
 	@printf '  %s\n' "./bin/codex-cua-lab"
-	@printf '  %s\n' "make deb PACKAGE_VERSION=2026.03.24.220723+88f07cd3"
-	@printf '  %s\n' "make rpm PACKAGE_VERSION=2026.03.24.220723+88f07cd3"
-	@printf '  %s\n' "make pacman PACKAGE_VERSION=2026.03.24.220723+88f07cd3"
+	@printf '  %s\n' "make deb"
+	@printf '  %s\n' "make rpm"
+	@printf '  %s\n' "make pacman"
 	@printf '  %s\n' "make install"
 	@printf '  %s\n\n' "make service-enable"
 
@@ -112,6 +118,18 @@ package: build-updater
 		exit 1; \
 	fi
 
+apple-dmg-verify:
+	@echo "[make] Running Apple DMG verification"
+	@if [ -n "$(DMG)" ]; then \
+		./scripts/verify-apple-dmg.sh --dmg "$(DMG)"; \
+	else \
+		./scripts/verify-apple-dmg.sh; \
+	fi
+
+release-gate:
+	@echo "[make] Running release gate"
+	./scripts/release-gate.sh
+
 install:
 	@echo "[make] Installing latest native package"
 	@if command -v pacman >/dev/null 2>&1 && ! command -v dpkg >/dev/null 2>&1; then \
@@ -162,6 +180,10 @@ service-enable:
 service-status:
 	@echo "[make] Showing codex-app-updater.service status"
 	systemctl --user status codex-app-updater.service --no-pager
+
+clean:
+	@echo "[make] Removing generated app, cached DMG, and dist/"
+	rm -rf "$(CURDIR)/codex-app" "$(CURDIR)/Codex.dmg" "$(CURDIR)/dist"
 
 clean-dist:
 	@echo "[make] Removing dist/"

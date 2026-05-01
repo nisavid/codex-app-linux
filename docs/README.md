@@ -22,6 +22,9 @@ Use this index to choose the smallest document that matches your goal.
 - [Threat Model](maintainers/threat-model.md) describes trust boundaries,
   attacker assumptions, and priority threat paths for the Linux conversion,
   packaging, updater, and release flow.
+- [Fork Divergences](maintainers/fork-divergences.md) is the canonical
+  inventory of intentional differences from upstream, including names, paths,
+  versioning, updater boundaries, Computer Use packaging, and sync checks.
 - [Changelog](../CHANGELOG.md) tracks user-visible releases and packaging
   behavior changes.
 - [Contributors](../CONTRIBUTORS.md) records notable project contributions.
@@ -33,7 +36,8 @@ Use this index to choose the smallest document that matches your goal.
   launcher behavior, updater state, privileged install boundaries, versioning,
   and validation.
 - [Security Backlog](maintainers/security-backlog.md) tracks unresolved
-  security hardening work that should stay visible to maintainers and agents.
+  security hardening work and routes supply-chain review through
+  `@codex-security`.
 - [Agentic Maintenance Policy](policies/agentic-maintenance.md) explains what
   belongs in tracked docs, what belongs in agent policy, and what should remain
   local session evidence.

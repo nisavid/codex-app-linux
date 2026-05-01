@@ -16,23 +16,36 @@ Read these first:
 1. `AGENTS.md`
 2. `docs/README.md`
 3. `docs/maintainers/package-runtime-maintenance.md`
-4. Source files for the touched area
+4. `docs/maintainers/fork-divergences.md`
+5. Source files for the touched area
 
 Then inspect the smallest relevant source set:
 
-- Installer, ASAR patches, and generated launcher: `install.sh`, `scripts/patch-linux-window-ui.js`
+- Installer, ASAR patches, launcher template, and generated launcher:
+  `install.sh`, `launcher/start.sh.template`, `scripts/patch-linux-window-ui.js`
 - Native package builders: `scripts/build-deb.sh`, `scripts/build-rpm.sh`, `scripts/build-pacman.sh`
 - Shared package staging: `scripts/lib/package-common.sh`
-- Package templates, maintainer scripts, desktop entry, service unit, and packaged runtime helper: `packaging/linux/`
+- Package templates, maintainer scripts, desktop entry, service unit, and
+  packaged runtime helper: `packaging/linux/`, especially
+  `packaging/linux/codex-packaged-runtime.sh`
+- Linux Computer Use backend and bundled plugin: `computer-use-linux/` and
+  `plugins/openai-bundled/plugins/computer-use/`
 - Updater service and CLI: `updater/`
 
 ## Source Boundaries
 
-Source scripts, templates, and updater code are the durable source of truth. `codex-app/`, `dist/`, `Codex.dmg`, and XDG updater paths are generated or runtime artifacts.
+Source scripts, templates, and updater code are the durable source of truth.
+`codex-app/`, `codex-*-app/`, `dist/`, `Codex.dmg`, and XDG updater paths are
+generated or runtime artifacts.
 
 Inspect generated output to verify behavior, but do not make generated output the only fix.
 
 When package contents move, keep the relevant package builder, `scripts/lib/package-common.sh`, and `packaging/linux/` files aligned.
+
+During upstream syncs, preserve the fork contracts recorded in
+`docs/maintainers/fork-divergences.md`: `codex-app` and `codex-app-updater`
+names, XDG/FHS-aligned paths, package versions from the OpenAI DMG bundle,
+unprivileged updater boundaries, and local release/security gates.
 
 ## Native Package Shape
 
@@ -48,6 +61,10 @@ For native package changes:
 
 Choose checks from `docs/maintainers/package-runtime-maintenance.md` that cover the changed behavior.
 
+- Before pushing installer, generated-app, package, updater rebuild, or bundled
+  runtime changes, refresh `Codex.dmg` or verify it was refreshed within the
+  last 24 hours, then run `make build-app` or `./install.sh` from current
+  sources.
 - Shell changes: run `bash -n` on edited shell scripts.
 - Updater changes: run targeted `cargo check` or updater tests.
 - Package changes: build the affected package format when practical, then inspect metadata and the first package file listing.
