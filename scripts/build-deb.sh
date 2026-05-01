@@ -70,7 +70,10 @@ main() {
         -e "s/__ARCH__/$arch/g" \
         "$CONTROL_TEMPLATE" > "$PKG_ROOT/DEBIAN/control"
     chmod 0644 "$PKG_ROOT/DEBIAN/control"
-    sed -e "s|/opt/codex-app|/opt/$PACKAGE_NAME|g" "$POSTINST_TEMPLATE" > "$PKG_ROOT/DEBIAN/postinst"
+    sed \
+        -e "s|/opt/codex-app|/opt/$PACKAGE_NAME|g" \
+        -e "s|/usr/lib/codex-app|/usr/lib/$PACKAGE_NAME|g" \
+        "$POSTINST_TEMPLATE" > "$PKG_ROOT/DEBIAN/postinst"
     cp "$PRERM_TEMPLATE" "$PKG_ROOT/DEBIAN/prerm"
     cp "$POSTRM_TEMPLATE" "$PKG_ROOT/DEBIAN/postrm"
     chmod 0755 "$PKG_ROOT/DEBIAN/postinst" "$PKG_ROOT/DEBIAN/prerm" "$PKG_ROOT/DEBIAN/postrm"

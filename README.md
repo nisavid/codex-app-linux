@@ -128,7 +128,7 @@ The package installs a companion service named `codex-app-updater`.
 - It runs as a `systemd --user` service, started in best-effort mode by the launcher on app launch.
 - Each app launch also triggers a background `check-now --if-stale`; the updater skips that request when the last successful upstream check is still fresh, or another check / rebuild / install is already active. Concurrent checks are serialized via a kernel-backed file lock (`flock(2)`).
 - It checks the upstream `Codex.dmg` on daemon startup and every 6 hours.
-- When a new DMG is detected, it rebuilds a local native package using `/opt/codex-app/update-builder`.
+- When a new DMG is detected, it rebuilds a local native package using `/usr/lib/codex-app/update-builder`.
 - If the app is open, the update waits until Electron exits.
 - When the app is closed, the updater uses `pkexec` (with `--disable-internal-agent`, so the desktop polkit agent renders the auth dialog) only for the final native-package install step.
 - On Arch, that final install step is `pacman -U --noconfirm` against the locally rebuilt `.pkg.tar.zst`.

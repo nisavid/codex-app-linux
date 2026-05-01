@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "${HOME}/.local/lib/codex-app/lib/common.sh"
+XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
+INSTALL_ROOT="${CODEX_USER_INSTALL_ROOT:-${XDG_DATA_HOME}/codex-app}"
+source "${INSTALL_ROOT}/lib/common.sh"
 
 ensure_layout
 load_install_config

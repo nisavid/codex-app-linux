@@ -16,7 +16,10 @@ resolve_script_dir() {
 
 SCRIPT_DIR="$(resolve_script_dir)"
 WEBVIEW_DIR="$SCRIPT_DIR/content/webview"
-PACKAGED_RUNTIME_HELPER="$SCRIPT_DIR/.codex-linux/codex-packaged-runtime.sh"
+PACKAGED_RUNTIME_HELPER="/usr/lib/$CODEX_LINUX_APP_ID/packaged-runtime.sh"
+if [ ! -f "$PACKAGED_RUNTIME_HELPER" ]; then
+    PACKAGED_RUNTIME_HELPER="$SCRIPT_DIR/.codex-linux/codex-packaged-runtime.sh"
+fi
 APP_NOTIFICATION_ICON_NAME="$CODEX_LINUX_APP_ID"
 APP_NOTIFICATION_ICON_BUNDLE="$SCRIPT_DIR/.codex-linux/$APP_NOTIFICATION_ICON_NAME.png"
 APP_NOTIFICATION_ICON_SYSTEM="/usr/share/icons/hicolor/256x256/apps/$APP_NOTIFICATION_ICON_NAME.png"

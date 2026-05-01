@@ -26,6 +26,7 @@ cp -a "__RPM_STAGING_DIR__/." "%{buildroot}/"
 %files
 %defattr(-,root,root,-)
 /opt/__PACKAGE_NAME__/
+/usr/lib/__PACKAGE_NAME__/
 /usr/bin/__PACKAGE_NAME__
 /usr/bin/codex-app-updater
 /usr/lib/systemd/user/codex-app-updater.service
@@ -38,14 +39,14 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 fi
 
-SERVICE_HELPER=/opt/__PACKAGE_NAME__/update-builder/packaging/linux/codex-app-updater-user-service.sh
+SERVICE_HELPER=/usr/lib/__PACKAGE_NAME__/update-builder/packaging/linux/codex-app-updater-user-service.sh
 if [ -f "$SERVICE_HELPER" ]; then
     . "$SERVICE_HELPER"
     codex_ensure_user_service_running || true
 fi
 
 %preun
-SERVICE_HELPER=/opt/__PACKAGE_NAME__/update-builder/packaging/linux/codex-app-updater-user-service.sh
+SERVICE_HELPER=/usr/lib/__PACKAGE_NAME__/update-builder/packaging/linux/codex-app-updater-user-service.sh
 [ -f "$SERVICE_HELPER" ] && . "$SERVICE_HELPER"
 if [ $1 -eq 0 ] && [ -f "$SERVICE_HELPER" ]; then
     codex_cleanup_user_service stop || true
@@ -53,7 +54,7 @@ if [ $1 -eq 0 ] && [ -f "$SERVICE_HELPER" ]; then
 fi
 
 %postun
-SERVICE_HELPER=/opt/__PACKAGE_NAME__/update-builder/packaging/linux/codex-app-updater-user-service.sh
+SERVICE_HELPER=/usr/lib/__PACKAGE_NAME__/update-builder/packaging/linux/codex-app-updater-user-service.sh
 if [ -f "$SERVICE_HELPER" ]; then
     . "$SERVICE_HELPER"
     codex_reload_user_managers || true

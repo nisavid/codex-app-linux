@@ -61,15 +61,24 @@ removes, or relocates a fork-specific behavior.
 - Upstream DMGs should be refreshed before local build gates when the cached
   `Codex.dmg` is older than 24 hours.
 
-## Open Layout Triage
+## Layout Triage
 
-These path decisions are intentionally unresolved here. During this upstream
-sync, do not rewrite one side into the other without maintainer triage.
+These path decisions are triaged against the XDG Base Directory Specification,
+the Filesystem Hierarchy Standard, and common distro packaging conventions for
+Electron-style app bundles.
 
-| Surface | Current source/code references | Conflicting doc or upstream-sync references | Triage question |
-| --- | --- | --- | --- |
-| Update builder bundle | `scripts/lib/package-common.sh` stages `/opt/<package>/update-builder`; updater defaults to `/opt/codex-app/update-builder`; package maintainer scripts source helpers from `/opt/codex-app/update-builder/...`. | `docs/maintainers/package-runtime-maintenance.md` still describes `/usr/lib/codex-app/update-builder`. | Should the packaged update-builder live under `/opt/codex-app` with the app payload, or under `/usr/lib/codex-app` as architecture-independent support data? |
-| Packaged runtime helper | `launcher/start.sh.template` loads `$SCRIPT_DIR/.codex-linux/codex-packaged-runtime.sh`; package staging renders the helper into `/opt/<package>/.codex-linux/`. | `docs/maintainers/package-runtime-maintenance.md` still describes `/usr/lib/codex-app/packaged-runtime.sh`. | Should packaged-only launcher behavior stay beside the generated app tree, or move to `/usr/lib/codex-app`? |
-| User-local checkout install root | `AGENTS.md` states user-local integration uses `~/.local/lib/codex-app`. | The rejected path family was `~/.local/opt/...`; upstream syncs may reintroduce it through installer or docs. | Should all user-local app payload references standardize on `~/.local/lib/codex-app`? |
-| App payload root | Package code and user docs use `/opt/codex-app` for the generated Electron app. | Some support payload decisions above may move non-app files to `/usr/lib/codex-app`. | Which files are app payload and which are package support payload? |
+| Surface | Decision | Rationale |
+| --- | --- | --- |
+| Generated native app bundle | Keep `/opt/codex-app`. | The extracted DMG/Electron tree is a self-contained add-on app bundle. `/opt/<package>` is the conventional location for that shape. |
+| User-facing launchers | Keep `/usr/bin/codex-app` and `/usr/bin/codex-app-updater`. | Package-managed commands belong on the normal system command path. |
+| Update builder bundle | Use `/usr/lib/codex-app/update-builder`. | The builder is package-private support used by `codex-app-updater`, not part of the app bundle or user data. |
+| Packaged runtime helper | Use `/usr/lib/codex-app/packaged-runtime.sh`. | The helper is package-private launcher support sourced by the generated launcher only in native package installs. |
+| Desktop entry and icon | Keep `/usr/share/applications/codex-app.desktop` and `/usr/share/icons/hicolor/256x256/apps/codex-app.png`. | Freedesktop desktop integration is shared, package-managed data. |
+| Updater config, state, cache, logs | Keep XDG paths: `~/.config/codex-app-updater`, `~/.local/state/codex-app-updater`, `~/.cache/codex-app-updater`, and `~/.cache/codex-app/launcher.log`. | These are per-user mutable files and should follow XDG base directories. |
+| App PID, webview PID, launch-action socket | Keep `~/.local/state/codex-app` for persistent state and `$XDG_RUNTIME_DIR/codex-app` for runtime sockets when available. | Persistent restart state belongs in XDG state; sockets and runtime objects belong in XDG runtime. |
+| User-local non-package app payloads | Use `${XDG_DATA_HOME:-~/.local/share}/codex-app`. Do not use `~/.local/opt`. | XDG has no `~/.local/opt`; user-specific app data should start from the XDG data base directory. |
 
+No path ambiguity remains for the native package payload after this triage. The
+experimental unprivileged install uses XDG user paths and should stay aligned
+with this table unless a more specific distro convention is adopted
+deliberately.

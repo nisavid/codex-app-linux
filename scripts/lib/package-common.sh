@@ -153,6 +153,7 @@ Install the Rust toolchain:
 stage_common_package_files() {
     local root="$1"
     local app_root="$root/opt/$PACKAGE_NAME"
+    local support_root="$root/usr/lib/$PACKAGE_NAME"
     local polkit_policy="$REPO_DIR/packaging/linux/com.github.nisavid.codex-app.update.policy"
 
     validate_package_inputs
@@ -162,6 +163,7 @@ stage_common_package_files() {
     mkdir -p \
         "$root/opt" \
         "$root/usr/bin" \
+        "$support_root" \
         "$root/usr/lib/systemd/user" \
         "$root/usr/share/applications" \
         "$root/usr/share/icons/hicolor/256x256/apps" \
@@ -180,12 +182,12 @@ stage_common_package_files() {
     chmod 0644 "$root/usr/lib/systemd/user/codex-app-updater.service"
     cp "$polkit_policy" "$root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
     chmod 0644 "$root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
-    render_packaged_runtime_helper "$app_root/.codex-linux/codex-packaged-runtime.sh"
+    render_packaged_runtime_helper "$support_root/packaged-runtime.sh"
 }
 
 stage_update_builder_bundle() {
     local root="$1"
-    local update_builder_root="$root/opt/$PACKAGE_NAME/update-builder"
+    local update_builder_root="$root/usr/lib/$PACKAGE_NAME/update-builder"
 
     mkdir -p \
         "$update_builder_root/scripts" \

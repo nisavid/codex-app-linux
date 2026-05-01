@@ -78,6 +78,7 @@ main() {
 		-e "s/__ARCH__/$arch/g" \
 		"$PKGBUILD_TEMPLATE" >"$build_root/PKGBUILD"
 	sed -e "s|/opt/codex-app|/opt/$PACKAGE_NAME|g" \
+		-e "s|/usr/lib/codex-app|/usr/lib/$PACKAGE_NAME|g" \
 		"$INSTALL_HOOKS" >"$build_root/${PACKAGE_NAME}.install"
 
 	mkdir -p "$DIST_DIR"

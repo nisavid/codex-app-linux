@@ -12,7 +12,7 @@ Use this index to choose the smallest document that matches your goal.
 - [Troubleshooting](usage/troubleshooting.md) lists common launch, CLI, webview,
   package, and updater symptoms.
 - [User-Local App Integration](../contrib/user-local-install/README.md)
-  describes the experimental rootless install layout under `~/.local`.
+  describes the experimental rootless install layout under XDG user paths.
 
 ## Understand The Design
 

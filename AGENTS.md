@@ -41,9 +41,11 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
   `codex-update-manager` naming as part of a sync. Integrate upstream behavior
   under the local names instead.
 - Preserve this fork's intentional layout when syncing upstream: native packages
-  install under `/opt/codex-app`, user-local integration uses
-  `~/.local/lib/codex-app`, and app state uses `~/.local/state/codex-app`.
-  Do not adopt upstream `codex-app-linux` install roots as part of a sync.
+  keep the generated app bundle under `/opt/codex-app`, private package support
+  under `/usr/lib/codex-app`, system launch and desktop integration under
+  `/usr/bin` and `/usr/share`, and user runtime/config/cache/state under the
+  appropriate XDG base directories. Do not adopt upstream `codex-app-linux` or
+  `~/.local/opt` install roots as part of a sync.
 - Preserve this fork's package version contract. Native package versions come
   from the OpenAI DMG app's `CFBundleShortVersionString`, written to
   `codex-app/codex-app-version.env` during app generation. Do not replace that
@@ -136,7 +138,7 @@ The current working flow is:
 - `docs/webview-server-evaluation.md`
   Decision record for the future Python-to-Rust webview server discussion.
 - `docs/maintainers/fork-divergences.md`
-  Intentional fork contracts and open layout triage for upstream sync review.
+  Intentional fork contracts and XDG/FHS layout triage for upstream sync review.
 
 ## Generated Artifacts
 
@@ -193,7 +195,7 @@ Do not assume `codex-app/` is pristine. If behavior differs from `install.sh`, p
 - Closing behavior:
   If future work touches shutdown behavior, assume the confirmation dialog may be implemented inside the app bundle rather than the Linux launcher.
 - Update manager:
-  The native packages include `/usr/bin/codex-app-updater`, `/usr/lib/systemd/user/codex-app-updater.service`, and a minimal rebuild bundle under `/opt/codex-app/update-builder`.
+  The native packages include `/usr/bin/codex-app-updater`, `/usr/lib/systemd/user/codex-app-updater.service`, and a minimal rebuild bundle under `/usr/lib/codex-app/update-builder`.
 - Privilege boundary:
   The updater runs unprivileged. It only escalates at install time via `pkexec /usr/bin/codex-app-updater install-deb --path <deb>`, `install-rpm --path <rpm>`, or `install-pacman --path <pkg.tar.zst>`.
 - Failed privileged installs:
@@ -295,7 +297,8 @@ The native packages currently install:
 - launcher under `/usr/bin/codex-app`
 - updater binary under `/usr/bin/codex-app-updater`
 - updater unit under `/usr/lib/systemd/user/codex-app-updater.service`
-- update builder bundle under `/opt/codex-app/update-builder`
+- packaged runtime helper under `/usr/lib/codex-app/packaged-runtime.sh`
+- update builder bundle under `/usr/lib/codex-app/update-builder`
 - desktop file under `/usr/share/applications/codex-app.desktop`
 - icon under `/usr/share/icons/hicolor/256x256/apps/codex-app.png`
 

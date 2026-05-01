@@ -121,7 +121,7 @@ fn mark_failed_and_persist(
 }
 
 fn packaged_runtime_removed(config: &RuntimeConfig) -> bool {
-    config.builder_bundle_root == Path::new("/opt/codex-app/update-builder")
+    config.builder_bundle_root == Path::new("/usr/lib/codex-app/update-builder")
         && !config.app_executable_path.exists()
         && !install::is_primary_package_installed()
 }

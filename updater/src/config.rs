@@ -9,7 +9,7 @@ use std::{
 };
 
 const SERVICE_NAME: &str = "codex-app-updater";
-pub const PACKAGED_BUILDER_BUNDLE_ROOT: &str = "/opt/codex-app/update-builder";
+pub const PACKAGED_BUILDER_BUNDLE_ROOT: &str = "/usr/lib/codex-app/update-builder";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Runtime configuration values that control how the updater behaves on Linux.
@@ -296,7 +296,7 @@ cli_path = "/opt/codex/bin/codex"
     #[test]
     fn packaged_builder_root_overrides_configured_root_without_developer_mode() {
         let temp = tempdir().expect("tempdir");
-        let packaged_root = temp.path().join("opt/codex-app/update-builder");
+        let packaged_root = temp.path().join("usr/lib/codex-app/update-builder");
         fs::create_dir_all(&packaged_root).expect("packaged root");
         let configured_root = temp.path().join("custom-builder");
         let mut config = RuntimeConfig {
@@ -320,7 +320,7 @@ cli_path = "/opt/codex/bin/codex"
     #[test]
     fn developer_mode_preserves_configured_builder_root() {
         let temp = tempdir().expect("tempdir");
-        let packaged_root = temp.path().join("opt/codex-app/update-builder");
+        let packaged_root = temp.path().join("usr/lib/codex-app/update-builder");
         fs::create_dir_all(&packaged_root).expect("packaged root");
         let configured_root = temp.path().join("custom-builder");
         let mut config = RuntimeConfig {

@@ -8,8 +8,8 @@ For trust boundaries and attacker assumptions, use
 [Threat Model](threat-model.md).
 For fork-specific contracts that need review during upstream syncs, use
 [Fork Divergences](fork-divergences.md).
-Some package-support paths are under open layout triage there; check that list
-before moving update-builder or packaged-runtime helper payloads.
+That document also records the XDG/FHS triage for app, support, and runtime
+paths.
 
 ## Source Of Truth
 

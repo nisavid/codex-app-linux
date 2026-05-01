@@ -120,12 +120,12 @@ SCRIPT
     assert_file_exists "$dist_dir/codex-app_2026.03.24.120000+deadbeef_amd64.deb"
     assert_file_exists "$pkg_root/DEBIAN/prerm"
     assert_file_exists "$pkg_root/DEBIAN/postrm"
-    assert_file_exists "$pkg_root/opt/codex-app/update-builder/scripts/lib/package-common.sh"
-    assert_file_exists "$pkg_root/opt/codex-app/update-builder/Cargo.toml"
-    assert_file_exists "$pkg_root/opt/codex-app/update-builder/computer-use-linux/Cargo.toml"
-    assert_file_exists "$pkg_root/opt/codex-app/update-builder/updater/Cargo.toml"
-    assert_file_exists "$pkg_root/opt/codex-app/update-builder/plugins/openai-bundled/plugins/computer-use/.mcp.json"
-    assert_file_exists "$pkg_root/opt/codex-app/.codex-linux/codex-packaged-runtime.sh"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/package-common.sh"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/Cargo.toml"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/computer-use-linux/Cargo.toml"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/updater/Cargo.toml"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/plugins/openai-bundled/plugins/computer-use/.mcp.json"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/packaged-runtime.sh"
 }
 
 test_deb_builder_respects_package_identity() {
@@ -182,7 +182,7 @@ SCRIPT
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "CHROME_DESKTOP=codex-cua-lab.desktop"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "/usr/bin/codex-cua-lab %u"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
-    assert_contains "$pkg_root/opt/codex-cua-lab/.codex-linux/codex-packaged-runtime.sh" 'CHROME_DESKTOP="codex-cua-lab.desktop"'
+    assert_contains "$pkg_root/usr/lib/codex-cua-lab/packaged-runtime.sh" 'CHROME_DESKTOP="codex-cua-lab.desktop"'
 }
 
 test_rpm_builder_smoke() {
@@ -494,8 +494,35 @@ PY
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app %u"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
-    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "@HOME@/.local/bin/codex-app %U"
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "@USER_BIN_DIR@/codex-app %U"
+    assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" 'INSTALL_ROOT="${CODEX_USER_INSTALL_ROOT:-${XDG_DATA_HOME}/codex-app}"'
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
+}
+
+test_user_local_installer_uses_xdg_data_home() {
+    info "Checking user-local installer XDG layout"
+    local workspace="$TMP_DIR/user-local-install"
+    local home_dir="$workspace/home"
+    local data_home="$workspace/data"
+    local config_home="$workspace/config"
+    local state_home="$workspace/state"
+
+    mkdir -p "$home_dir" "$data_home" "$config_home" "$state_home"
+
+    HOME="$home_dir" \
+    XDG_DATA_HOME="$data_home" \
+    XDG_CONFIG_HOME="$config_home" \
+    XDG_STATE_HOME="$state_home" \
+    "$REPO_DIR/contrib/user-local-install/install-user-local.sh"
+
+    assert_file_exists "$data_home/codex-app/bin/codex-app"
+    assert_file_exists "$data_home/codex-app/lib/common.sh"
+    assert_file_exists "$home_dir/.local/bin/codex-app"
+    assert_file_exists "$data_home/applications/codex-app.desktop"
+    assert_file_exists "$config_home/systemd/user/codex-app-update.service"
+    assert_file_exists "$state_home/codex-app/install.env"
+    assert_contains "$data_home/applications/codex-app.desktop" "$home_dir/.local/bin/codex-app %U"
+    assert_contains "$state_home/codex-app/install.env" "INSTALL_ROOT=$data_home/codex-app"
 }
 
 test_side_by_side_launcher_identity() {
@@ -1430,6 +1457,7 @@ main() {
     test_installer_writes_package_version_from_app_plist
     test_installer_keeps_electron_fallback_for_bad_metadata
     test_launcher_template_sanity
+    test_user_local_installer_uses_xdg_data_home
     test_side_by_side_launcher_identity
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
