@@ -24,7 +24,7 @@ Use this index to choose the smallest document that matches your goal.
   packaging, updater, and release flow.
 - [Fork Divergences](maintainers/fork-divergences.md) is the canonical
   inventory of intentional differences from upstream, including names, paths,
-  versioning, updater boundaries, Computer Use packaging, and sync checks.
+  versioning, updater boundaries, Computer Use compatibility, and sync checks.
 - [Changelog](../CHANGELOG.md) tracks user-visible releases and packaging
   behavior changes.
 - [Contributors](../CONTRIBUTORS.md) records notable project contributions.
@@ -35,6 +35,8 @@ Use this index to choose the smallest document that matches your goal.
   is the reference for source files, generated artifacts, package payloads,
   launcher behavior, updater state, privileged install boundaries, versioning,
   and validation.
+- [Threat Model](maintainers/threat-model.md) is the repository-scoped security
+  model for scans and reviews.
 - [Security Backlog](maintainers/security-backlog.md) tracks unresolved
   security hardening work and routes supply-chain review through
   `@codex-security`.

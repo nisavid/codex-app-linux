@@ -65,7 +65,7 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 - Webview server design decision and acceptance criteria: `docs/webview-server-evaluation.md`
 - Fork-specific contracts and upstream-sync review inventory: `docs/maintainers/fork-divergences.md`
 - Security follow-up and `@codex-security` review routing: `docs/maintainers/security-backlog.md`
-- Future detailed maintainer notes, when present: prefer `docs/maintainers/` over expanding this file.
+- Additional maintainer notes: prefer `docs/maintainers/` over expanding this file.
 
 ## Triggered Guidance
 
