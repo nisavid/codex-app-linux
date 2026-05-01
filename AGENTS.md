@@ -9,6 +9,9 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 ## Hard Rules
 
 - `main` is protected. Before starting work, create and switch to a task branch.
+- The first time a task branch is pushed, create a draft PR in the same workflow
+  turn. Mark it ready only after local readiness gates pass and the PR body
+  records verification evidence.
 - Commit completed work before handoff. For long tasks, also commit at staged,
   functional cutoff points. Each commit must pass the normal checks for the
   changed surface before it is created.
