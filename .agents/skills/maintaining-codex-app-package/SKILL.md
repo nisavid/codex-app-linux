@@ -16,9 +16,9 @@ Read these first:
 1. `AGENTS.md`
 2. `docs/README.md`
 3. `docs/maintainers/package-runtime-maintenance.md`
-4. `.agents/fork-sync-policy.toml`
+4. `docs/maintainers/fork-divergences.md`
 5. `docs/maintainers/fork-sync-policy.md`
-6. `docs/maintainers/fork-divergences.md`
+6. `.agents/fork-sync-policy.toml`
 7. Source files for the touched area
 
 Then inspect the smallest relevant source set:
@@ -45,8 +45,9 @@ Inspect generated output to verify behavior, but do not make generated output th
 When package contents move, keep the relevant package builder, `scripts/lib/package-common.sh`, and `packaging/linux/` files aligned.
 
 During upstream syncs, preserve the fork contracts recorded in
-`.agents/fork-sync-policy.toml`, `docs/maintainers/fork-sync-policy.md`, and
-`docs/maintainers/fork-divergences.md`. Use the global
+`docs/maintainers/fork-divergences.md`,
+`docs/maintainers/fork-sync-policy.md`, and `.agents/fork-sync-policy.toml`.
+Use the global
 `syncing-forks-with-upstream` skill before resolving conflicts, pushing, or
 merging a broad upstream sync.
 
