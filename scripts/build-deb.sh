@@ -81,6 +81,10 @@ main() {
     mkdir -p "$DIST_DIR"
     info "Building $output_file"
     dpkg-deb --root-owner-group --build "$PKG_ROOT" "$output_file" >&2
+    info "Inspecting package metadata"
+    dpkg-deb -I "$output_file" >&2
+    info "Inspecting package contents"
+    dpkg-deb -c "$output_file" >&2
     info "Built package: $output_file"
 }
 

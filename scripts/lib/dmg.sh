@@ -51,7 +51,7 @@ extract_dmg() {
     fi
 
     local app_dir
-    app_dir=$(find "$extract_dir" -maxdepth 3 -name "*.app" -type d | head -1)
+    app_dir=$(find "$extract_dir" -maxdepth 3 -name "*.app" -type d -print -quit)
 
     if [ "$seven_zip_status" -ne 0 ]; then
         if [ -n "$app_dir" ]; then

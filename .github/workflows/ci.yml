@@ -44,7 +44,7 @@ jobs:
           bash -n contrib/user-local-install/files/.local/bin/codex-app-check-update
           bash -n contrib/user-local-install/files/.local/bin/codex-app-update
           bash -n contrib/user-local-install/files/.local/bin/codex-app-version
-          bash -n contrib/user-local-install/files/.local/lib/codex-app/common.sh
+          bash -n contrib/user-local-install/files/share/common.sh
 
       - name: Check Rust formatting
         run: cargo fmt --check
@@ -97,8 +97,8 @@ jobs:
           dpkg-deb -c "$deb_file" | tee /tmp/deb-contents.txt >/dev/null
           grep -q './usr/bin/codex-app-updater' /tmp/deb-contents.txt
           grep -q './usr/lib/systemd/user/codex-app-updater.service' /tmp/deb-contents.txt
-          grep -q './opt/codex-app/update-builder/install.sh' /tmp/deb-contents.txt
-          grep -q './opt/codex-app/.codex-linux/codex-packaged-runtime.sh' /tmp/deb-contents.txt
+          grep -q './usr/lib/codex-app/update-builder/install.sh' /tmp/deb-contents.txt
+          grep -q './usr/lib/codex-app/packaged-runtime.sh' /tmp/deb-contents.txt
           {
             echo "## Debian Package Validation"
             echo ""
@@ -140,8 +140,8 @@ jobs:
           rpm -qlp "$rpm_file" | tee /tmp/rpm-contents.txt >/dev/null
           grep -q '/usr/bin/codex-app-updater' /tmp/rpm-contents.txt
           grep -q '/usr/lib/systemd/user/codex-app-updater.service' /tmp/rpm-contents.txt
-          grep -q '/opt/codex-app/update-builder/install.sh' /tmp/rpm-contents.txt
-          grep -q '/opt/codex-app/.codex-linux/codex-packaged-runtime.sh' /tmp/rpm-contents.txt
+          grep -q '/usr/lib/codex-app/update-builder/install.sh' /tmp/rpm-contents.txt
+          grep -q '/usr/lib/codex-app/packaged-runtime.sh' /tmp/rpm-contents.txt
           {
             echo "## RPM Package Validation"
             echo ""
@@ -186,8 +186,8 @@ jobs:
                 pacman -Qlp "$pkg_file" | tee /tmp/pacman-contents.txt >/dev/null
                 grep -q "usr/bin/codex-app-updater" /tmp/pacman-contents.txt
                 grep -q "usr/lib/systemd/user/codex-app-updater.service" /tmp/pacman-contents.txt
-                grep -q "opt/codex-app/update-builder/install.sh" /tmp/pacman-contents.txt
-                grep -q "opt/codex-app/.codex-linux/codex-packaged-runtime.sh" /tmp/pacman-contents.txt
+                grep -q "usr/lib/codex-app/update-builder/install.sh" /tmp/pacman-contents.txt
+                grep -q "usr/lib/codex-app/packaged-runtime.sh" /tmp/pacman-contents.txt
                 printf "%s\n" "$(basename "$pkg_file")" > /tmp/pacman-package-name.txt
               '"'"'
               cp /tmp/pacman-package-name.txt /work/.pacman-package-name.txt

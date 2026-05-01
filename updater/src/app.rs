@@ -29,6 +29,7 @@ const CLI_MISSING_NOTIFICATION_EVENT: &str = "cli_missing";
 const CLI_MISSING_PROMPT_DISMISS_TTL: ChronoDuration = ChronoDuration::minutes(10);
 const PROMPT_INSTALL_CLI_CANCELLED_EXIT_CODE: i32 = 10;
 const PROMPT_INSTALL_CLI_NO_BACKEND_EXIT_CODE: i32 = 11;
+const UPSTREAM_REQUEST_TIMEOUT_SECONDS: u64 = 600;
 
 /// Runs the updater command-line entrypoint.
 pub async fn run(cli: Cli) -> Result<()> {
@@ -248,7 +249,7 @@ async fn run_check_now(
     codex_cli::refresh_cached_status(config, state, paths)?;
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
-    if if_stale && upstream_check_is_fresh(config, state) {
+    if if_stale && state.status != UpdateStatus::Failed && upstream_check_is_fresh(config, state) {
         info!("skipping check-now because the last successful upstream check is still fresh");
         return reconcile_pending_install(config, state, paths).await;
     }
@@ -513,7 +514,9 @@ async fn run_check_cycle(
         return Ok(());
     };
 
-    let client = Client::builder().build()?;
+    let client = Client::builder()
+        .timeout(Duration::from_secs(UPSTREAM_REQUEST_TIMEOUT_SECONDS))
+        .build()?;
 
     sync_runtime_state(config, state);
     state.status = UpdateStatus::CheckingUpstream;

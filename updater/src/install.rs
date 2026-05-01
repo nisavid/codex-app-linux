@@ -552,17 +552,20 @@ fn parse_generated_package_version(version: &str) -> Option<Vec<u32>> {
         .split_once('+')
         .map(|(prefix, _)| prefix)
         .unwrap_or(version);
-    let base = without_metadata
-        .split_once('-')
-        .map(|(prefix, _)| prefix)
-        .unwrap_or(without_metadata);
     let mut parts = Vec::new();
 
-    for segment in base.split('.') {
-        parts.push(segment.parse().ok()?);
+    for segment in without_metadata.split(['.', '-']) {
+        let numeric_prefix = segment
+            .chars()
+            .take_while(|character| character.is_ascii_digit())
+            .collect::<String>();
+        if numeric_prefix.is_empty() {
+            continue;
+        }
+        parts.push(numeric_prefix.parse().ok()?);
     }
 
-    if !matches!(parts.len(), 3 | 4) {
+    if parts.len() < 3 {
         return None;
     }
 

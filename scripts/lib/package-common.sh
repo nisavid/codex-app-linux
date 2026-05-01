@@ -100,7 +100,7 @@ validate_app_payload_source() {
     while IFS= read -r -d '' link; do
         target="$(readlink "$link")" || error "Failed to read symlink: $link"
         case "$target" in
-        /*|../*|*/../*|..)
+        /*|../|../*|*/..|*/../*|..)
             error "Unsafe symlink in app payload: $link -> $target"
             ;;
         esac
@@ -110,7 +110,8 @@ validate_app_payload_source() {
 normalize_app_payload_modes() {
     local app_root="$1"
 
-    chmod -R u+rwX,go+rX "$app_root"
+    find "$app_root" -exec chmod u-s,g-s,o-t {} +
+    chmod -R u+rwX,go+rX,go-w "$app_root"
 }
 
 updater_binary_is_stale() {
@@ -191,7 +192,6 @@ stage_update_builder_bundle() {
 
     mkdir -p \
         "$update_builder_root/scripts" \
-        "$update_builder_root/scripts/lib" \
         "$update_builder_root/launcher" \
         "$update_builder_root/packaging/linux" \
         "$update_builder_root/assets"
@@ -209,14 +209,7 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/scripts/build-rpm.sh" "$update_builder_root/scripts/build-rpm.sh"
     cp "$REPO_DIR/scripts/build-pacman.sh" "$update_builder_root/scripts/build-pacman.sh"
     cp "$REPO_DIR/scripts/patch-linux-window-ui.js" "$update_builder_root/scripts/patch-linux-window-ui.js"
-    cp "$REPO_DIR/scripts/lib/package-common.sh" "$update_builder_root/scripts/lib/package-common.sh"
-    cp "$REPO_DIR/scripts/lib/install-helpers.sh" "$update_builder_root/scripts/lib/install-helpers.sh"
-    cp "$REPO_DIR/scripts/lib/process-detection.sh" "$update_builder_root/scripts/lib/process-detection.sh"
-    cp "$REPO_DIR/scripts/lib/dmg.sh" "$update_builder_root/scripts/lib/dmg.sh"
-    cp "$REPO_DIR/scripts/lib/native-modules.sh" "$update_builder_root/scripts/lib/native-modules.sh"
-    cp "$REPO_DIR/scripts/lib/asar-patch.sh" "$update_builder_root/scripts/lib/asar-patch.sh"
-    cp "$REPO_DIR/scripts/lib/webview-install.sh" "$update_builder_root/scripts/lib/webview-install.sh"
-    cp "$REPO_DIR/scripts/lib/bundled-plugins.sh" "$update_builder_root/scripts/lib/bundled-plugins.sh"
+    cp -r "$REPO_DIR/scripts/lib" "$update_builder_root/scripts/lib"
     cp "$REPO_DIR/packaging/linux/control" "$update_builder_root/packaging/linux/control"
     cp "$REPO_DIR/packaging/linux/codex-app.spec" "$update_builder_root/packaging/linux/codex-app.spec"
     cp "$REPO_DIR/packaging/linux/codex-app.desktop" "$update_builder_root/packaging/linux/codex-app.desktop"

@@ -162,16 +162,19 @@ pub fn preflight(
 
     state.cli_status = CliStatus::Updating;
     persist_state(paths, state)?;
-    install_latest_cli(&latest_version)?;
-
-    let refreshed_path = resolve_runtime_cli_path_after_install(config, state, requested_path)?
-        .or_else(|| {
-            resolve_runtime_cli_path_after_install(config, state, None)
-                .ok()
-                .flatten()
+    let refreshed_path = install_latest_cli(&latest_version)
+        .and_then(|()| {
+            resolve_runtime_cli_path_after_install(config, state, requested_path)?
+                .or_else(|| {
+                    resolve_runtime_cli_path_after_install(config, state, None)
+                        .ok()
+                        .flatten()
+                })
+                .ok_or_else(|| anyhow!("Codex CLI disappeared after the automatic upgrade attempt"))
         })
-        .ok_or_else(|| anyhow!("Codex CLI disappeared after the automatic upgrade attempt"))?;
-    let refreshed_version = read_installed_version(&refreshed_path)?;
+        .map_err(|error| persist_cli_install_failure(paths, state, error))?;
+    let refreshed_version = read_installed_version(&refreshed_path)
+        .map_err(|error| persist_cli_install_failure(paths, state, error))?;
     state.cli_path = Some(refreshed_path.clone());
     state.cli_installed_version = Some(refreshed_version.clone());
 
@@ -389,11 +392,14 @@ fn known_cli_locations() -> Vec<PathBuf> {
         let versions_root = home.join(".nvm/versions/node");
         if let Ok(entries) = fs::read_dir(versions_root) {
             let mut versioned_paths = entries
-                .filter_map(|entry| entry.ok().map(|item| item.path().join("bin/codex")))
+                .filter_map(|entry| {
+                    let path = entry.ok()?.path();
+                    let version = parse_node_version_dir(path.file_name()?.to_str()?)?;
+                    Some((version, path.join("bin/codex")))
+                })
                 .collect::<Vec<_>>();
-            versioned_paths.sort();
-            versioned_paths.reverse();
-            candidates.extend(versioned_paths);
+            versioned_paths.sort_by_key(|(version, _)| std::cmp::Reverse(*version));
+            candidates.extend(versioned_paths.into_iter().map(|(_, path)| path));
         }
         candidates.push(home.join(".local/share/pnpm/codex"));
         candidates.push(home.join(".local/bin/codex"));
@@ -401,6 +407,21 @@ fn known_cli_locations() -> Vec<PathBuf> {
     candidates.push(PathBuf::from("/usr/local/bin/codex"));
     candidates.push(PathBuf::from("/usr/bin/codex"));
     candidates
+}
+
+fn parse_node_version_dir(name: &str) -> Option<(u64, u64, u64)> {
+    let version = name.strip_prefix('v')?;
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts
+        .next()?
+        .split_once('-')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or_else(|| version.rsplit('.').next().unwrap_or(""))
+        .parse()
+        .ok()?;
+    Some((major, minor, patch))
 }
 
 fn mark_cli_missing(state: &mut PersistedState) {
@@ -579,17 +600,32 @@ fn install_missing_cli(
         latest_version,
         "Codex CLI is missing; attempting automatic installation"
     );
-    install_latest_cli(&latest_version)?;
-
-    let cli_path = resolve_runtime_cli_path_after_install(config, state, requested_path)?
-        .or_else(|| {
-            resolve_runtime_cli_path_after_install(config, state, None)
-                .ok()
-                .flatten()
+    let cli_path = install_latest_cli(&latest_version)
+        .and_then(|()| {
+            resolve_runtime_cli_path_after_install(config, state, requested_path)?
+                .or_else(|| {
+                    resolve_runtime_cli_path_after_install(config, state, None)
+                        .ok()
+                        .flatten()
+                })
+                .ok_or_else(|| anyhow!("Codex CLI installed but could not be found afterwards"))
         })
-        .ok_or_else(|| anyhow!("Codex CLI installed but could not be found afterwards"))?;
+        .map_err(|error| persist_cli_install_failure(paths, state, error))?;
 
     Ok(cli_path)
+}
+
+fn persist_cli_install_failure(
+    paths: &RuntimePaths,
+    state: &mut PersistedState,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    state.cli_status = CliStatus::Failed;
+    state.cli_error_message = Some(error.to_string());
+    if let Err(persist_error) = persist_state(paths, state) {
+        return persist_error.context(error.to_string());
+    }
+    error
 }
 
 fn run_command<I, S>(program: &Path, args: I) -> Result<String>

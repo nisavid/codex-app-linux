@@ -309,7 +309,7 @@ make clean-state
 | Electron hangs while CLI is outdated | Re-run the launcher and check `~/.cache/codex-app/launcher.log` plus `~/.local/state/codex-app-updater/service.log`. Best-effort CLI preflight will warn if the automatic refresh fails |
 | GPU / Vulkan / Wayland errors | Under Wayland with `DISPLAY` available, the launcher uses `--ozone-platform=x11` for window-positioning compatibility. Otherwise it uses `--ozone-platform-hint=auto`. GPU sandbox / compositing are disabled by default |
 | Window flickering | GPU compositing is disabled by default. If flickering persists, try `./codex-app/start.sh --disable-gpu` to fully disable GPU acceleration |
-| Sandbox errors | The launcher already sets `--no-sandbox` |
+| Sandbox errors | Set `CODEX_APP_DISABLE_ELECTRON_SANDBOX=1` only as a last-resort diagnostic, then check `~/.cache/codex-app/launcher.log` |
 | Stale install / cached DMG | `./install.sh --fresh` removes the existing install dir and re-downloads |
 | Computer Use plugin invisible in UI | Most likely the OpenAI per-account Statsig rollout (`computerUse` feature flag) hasn't been enabled for your account. Building / reinstalling does not change this |
 | Computer Use `doctor` reports `ydotool not running` | `sudo systemctl enable --now ydotoold` and add your user to the `input` group |

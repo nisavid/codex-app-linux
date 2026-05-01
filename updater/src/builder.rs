@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use std::{
     ffi::OsString,
     fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 use tokio::process::Command;
@@ -205,12 +206,30 @@ fn copy_entry(source: &Path, destination: &Path, optional: bool) -> Result<()> {
         );
     }
 
+    validate_builder_source_entry(source)?;
+
     if source.is_dir() {
         copy_dir_recursive(source, destination)?;
     } else {
         copy_path(source, destination)?;
     }
 
+    Ok(())
+}
+
+fn validate_builder_source_entry(source: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(source)
+        .with_context(|| format!("Failed to stat {}", source.display()))?;
+    anyhow::ensure!(
+        !metadata.file_type().is_symlink(),
+        "Builder bundle path must not be a symlink: {}",
+        source.display()
+    );
+    anyhow::ensure!(
+        metadata.permissions().mode() & 0o022 == 0,
+        "Builder bundle path must not be group/world writable: {}",
+        source.display()
+    );
     Ok(())
 }
 
@@ -243,6 +262,7 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
         let entry = entry?;
         let entry_path = entry.path();
         let destination_path = destination.join(entry.file_name());
+        validate_builder_source_entry(&entry_path)?;
 
         if entry.file_type()?.is_dir() {
             copy_dir_recursive(&entry_path, &destination_path)?;

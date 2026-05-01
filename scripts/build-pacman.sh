@@ -95,6 +95,13 @@ main() {
 		-print -quit 2>/dev/null || true)"
 	[ -f "$pkg_file" ] || error "makepkg did not produce a package"
 
+	if command -v pacman >/dev/null 2>&1; then
+		info "Inspecting package metadata"
+		pacman -Qip "$pkg_file" >&2
+		info "Inspecting package contents"
+		pacman -Qlp "$pkg_file" >&2
+	fi
+
 	info "Built package: $pkg_file"
 }
 
