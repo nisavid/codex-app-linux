@@ -18,7 +18,10 @@ For each upstream sync:
    and security gates unless the PR intentionally changes this policy.
 4. Put uncertain conflicts in the PR body for maintainer triage.
 5. Run the local build gate before pushing when generated-app, package, updater
-   rebuild, or bundled runtime behavior is touched.
+   rebuild, or bundled runtime behavior is touched. The minimum gate is
+   `make build-app` or `./install.sh` after the DMG freshness check; package
+   payload changes also need the relevant package builder, and release workflow
+   changes also need the relevant release-gate command.
 
 The layout rules for this fork follow, in order, the XDG Base Directory
 Specification, the Filesystem Hierarchy Standard, and common distro conventions

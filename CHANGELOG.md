@@ -9,8 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Merged upstream launcher and updater changes: Electron now targets `41.3.0`,
   launcher startup can reuse an existing verified webview server for warm
-  starts, launch-time update checks use `codex-app-updater check-now
-  --if-stale`, and RPM installs can use `zypper` on openSUSE.
+  starts, launcher CLI checks use `codex-app-updater cli-preflight`, packaged
+  launch-time update checks use `codex-app-updater check-now --if-stale`, and
+  RPM installs can use `zypper` on openSUSE.
 - Native package versions now default to the upstream Codex app bundle marketing
   version from `Contents/Info.plist` (`CFBundleShortVersionString`). Generated
   package metadata is restricted to three or four numeric dot-separated segments
