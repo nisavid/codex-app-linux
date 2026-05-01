@@ -207,6 +207,7 @@ pub fn install_deb(path: &Path) -> Result<()> {
         "Debian package not found: {}",
         path.display()
     );
+    ensure_deb_package_identity(path)?;
     ensure_upgrade_path(path)?;
 
     if program_exists(APT_CANDIDATES, "apt") {
@@ -222,6 +223,7 @@ pub fn install_deb(path: &Path) -> Result<()> {
 /// Installs a rebuilt RPM package on the local machine.
 pub fn install_rpm(path: &Path) -> Result<()> {
     anyhow::ensure!(path.exists(), "RPM package not found: {}", path.display());
+    ensure_rpm_package_identity(path)?;
     ensure_upgrade_path_rpm(path)?;
 
     if program_exists(DNF_CANDIDATES, "dnf") || program_exists(DNF_CANDIDATES, "dnf5") {
@@ -323,6 +325,40 @@ fn ensure_upgrade_path(path: &Path) -> Result<()> {
     anyhow::ensure!(
         is_version_newer(&candidate, &installed)?,
         "Refusing to install non-newer package version {candidate} over installed version {installed}"
+    );
+    Ok(())
+}
+
+fn ensure_deb_package_identity(path: &Path) -> Result<()> {
+    let package_name = deb_package_field(path, "Package")?;
+    anyhow::ensure!(
+        package_name == PACKAGE_NAME,
+        "Refusing to install Debian package {package_name}; expected {PACKAGE_NAME}"
+    );
+    Ok(())
+}
+
+fn ensure_rpm_package_identity(path: &Path) -> Result<()> {
+    let output = Command::new(program_path(RPM_CANDIDATES, "rpm"))
+        .arg("-qp")
+        .arg("--queryformat")
+        .arg("%{NAME}")
+        .arg(path)
+        .output()
+        .context("Failed to inspect RPM package identity")?;
+
+    anyhow::ensure!(
+        output.status.success(),
+        "rpm could not read the package name from {}",
+        path.display()
+    );
+    let package_name = String::from_utf8(output.stdout)
+        .context("rpm returned a non-UTF8 package name")?
+        .trim()
+        .to_string();
+    anyhow::ensure!(
+        package_name == PACKAGE_NAME,
+        "Refusing to install RPM package {package_name}; expected {PACKAGE_NAME}"
     );
     Ok(())
 }
@@ -433,29 +469,33 @@ fn updater_binary_for_privileged_install(current_exe: &Path) -> PathBuf {
 }
 
 fn deb_package_version(path: &Path) -> Result<String> {
+    deb_package_field(path, "Version")
+}
+
+fn deb_package_field(path: &Path, field: &str) -> Result<String> {
     let output = Command::new(program_path(DPKG_DEB_CANDIDATES, "dpkg-deb"))
         .arg("-f")
         .arg(path)
-        .arg("Version")
+        .arg(field)
         .output()
-        .context("Failed to inspect Debian package metadata")?;
+        .with_context(|| format!("Failed to inspect Debian package {field}"))?;
 
     anyhow::ensure!(
         output.status.success(),
-        "dpkg-deb could not read the package version from {}",
+        "dpkg-deb could not read package field {field} from {}",
         path.display()
     );
 
-    let version = String::from_utf8(output.stdout)
-        .context("dpkg-deb returned a non-UTF8 package version")?
+    let value = String::from_utf8(output.stdout)
+        .with_context(|| format!("dpkg-deb returned a non-UTF8 package field {field}"))?
         .trim()
         .to_string();
     anyhow::ensure!(
-        !version.is_empty(),
-        "dpkg-deb returned an empty package version for {}",
+        !value.is_empty(),
+        "dpkg-deb returned an empty package field {field} for {}",
         path.display()
     );
-    Ok(version)
+    Ok(value)
 }
 
 fn rpm_package_version(path: &Path) -> Result<String> {

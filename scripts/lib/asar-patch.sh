@@ -33,7 +33,7 @@ patch_asar() {
     # Repack
     info "Repacking app.asar..."
     cd "$WORK_DIR"
-    npx asar pack app-extracted app.asar --unpack "{*.node,*.so,*.dylib}" 2>/dev/null
+    npx --yes asar pack app-extracted app.asar --unpack "{*.node,*.so,*.dylib}" >&2
 
     info "app.asar patched"
 }

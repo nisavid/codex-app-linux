@@ -262,8 +262,13 @@ fn upstream_check_is_fresh(config: &RuntimeConfig, state: &PersistedState) -> bo
         return false;
     };
 
+    let elapsed = Utc::now().signed_duration_since(last_successful_check_at);
+    if elapsed < ChronoDuration::zero() {
+        return false;
+    }
+
     let freshness_window = ChronoDuration::hours(config.check_interval_hours as i64);
-    Utc::now().signed_duration_since(last_successful_check_at) < freshness_window
+    elapsed < freshness_window
 }
 
 fn run_status(
@@ -404,7 +409,8 @@ fn prompt_install_cli(
 
 fn recently_dismissed_cli_prompt(state: &PersistedState) -> bool {
     state.cli_prompt_dismissed_at.is_some_and(|dismissed_at| {
-        Utc::now().signed_duration_since(dismissed_at) < CLI_MISSING_PROMPT_DISMISS_TTL
+        let elapsed = Utc::now().signed_duration_since(dismissed_at);
+        elapsed >= ChronoDuration::zero() && elapsed < CLI_MISSING_PROMPT_DISMISS_TTL
     })
 }
 

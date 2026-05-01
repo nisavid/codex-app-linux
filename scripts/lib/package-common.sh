@@ -42,7 +42,7 @@ default_package_version() {
 }
 
 sed_escape_replacement() {
-    printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
+    printf '%s' "$1" | sed -e 's/[\\\/&]/\\&/g'
 }
 
 validate_no_newline() {

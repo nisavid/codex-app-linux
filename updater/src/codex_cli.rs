@@ -401,6 +401,11 @@ fn known_cli_locations() -> Vec<PathBuf> {
             versioned_paths.sort_by_key(|(version, _)| std::cmp::Reverse(*version));
             candidates.extend(versioned_paths.into_iter().map(|(_, path)| path));
         }
+        candidates.push(home.join(".volta/bin/codex"));
+        candidates.push(home.join(".asdf/shims/codex"));
+        candidates.push(home.join(".local/share/mise/shims/codex"));
+        candidates.push(home.join(".bun/bin/codex"));
+        candidates.push(home.join(".nix-profile/bin/codex"));
         candidates.push(home.join(".local/share/pnpm/codex"));
         candidates.push(home.join(".local/bin/codex"));
     }

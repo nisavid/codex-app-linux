@@ -47,12 +47,12 @@ refresh_runtime_paths
 
 case "$CODEX_LINUX_WEBVIEW_PORT" in
     ""|*[!0-9]*)
-        echo "CODEX_WEBVIEW_PORT must be a TCP port number" >&2
+        echo "CODEX_LINUX_WEBVIEW_PORT must be a TCP port number" >&2
         exit 1
         ;;
 esac
 if [ "$CODEX_LINUX_WEBVIEW_PORT" -lt 1 ] || [ "$CODEX_LINUX_WEBVIEW_PORT" -gt 65535 ]; then
-    echo "CODEX_WEBVIEW_PORT must be between 1 and 65535" >&2
+    echo "CODEX_LINUX_WEBVIEW_PORT must be between 1 and 65535" >&2
     exit 1
 fi
 
@@ -383,8 +383,8 @@ prompt_install_missing_cli() {
     fi
 
     local reply=""
-    printf 'Codex CLI is not installed. Install it now? [Y/n] '
-    if ! read -r reply; then
+    printf 'Codex CLI is not installed. Install it now? [Y/n] ' >/dev/tty
+    if ! read -r reply </dev/tty; then
         return 1
     fi
 

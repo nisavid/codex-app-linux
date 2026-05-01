@@ -453,7 +453,7 @@ PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" "Webview origin verified."
     assert_contains "$REPO_DIR/launcher/start.sh.template" "hydrate_graphical_session_env"
     assert_not_contains "$REPO_DIR/install.sh" "pkill -f \"http.server 5175\""
-    assert_contains "$REPO_DIR/launcher/start.sh.template" "CODEX_WEBVIEW_PORT"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "CODEX_LINUX_WEBVIEW_PORT"
     assert_contains "$REPO_DIR/launcher/start.sh.template" 'ELECTRON_RENDERER_URL="${ELECTRON_RENDERER_URL:-$WEBVIEW_ORIGIN/}"'
     assert_contains "$REPO_DIR/launcher/start.sh.template" '--app-id="$CODEX_LINUX_APP_ID"'
     assert_contains "$REPO_DIR/scripts/lib/process-detection.sh" "CODEX_APP_ID"

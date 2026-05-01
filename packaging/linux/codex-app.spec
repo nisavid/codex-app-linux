@@ -4,6 +4,8 @@ Release:        __RPM_RELEASE__%{?dist}
 Summary:        Codex App for Linux
 License:        Proprietary
 ExclusiveArch:  __ARCH__
+Provides:       codex-desktop
+Obsoletes:      codex-desktop
 
 Requires:       nodejs >= 20, npm, python3, p7zip, polkit, curl, unzip, gcc-c++, make
 Requires:       alsa-lib, at-spi2-atk, atk, glib2, gtk3, libdrm
