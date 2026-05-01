@@ -19,7 +19,7 @@ get_dmg() {
     local dmg_url="https://persistent.oaistatic.com/codex-app-prod/Codex.dmg"
     info "URL: $dmg_url"
 
-    if ! curl -L --progress-bar --max-time 600 --connect-timeout 30 \
+    if ! curl --fail -L --progress-bar --max-time 600 --connect-timeout 30 \
             -o "$dmg_dest" "$dmg_url"; then
         rm -f "$dmg_dest"
         error "Download failed. Download manually and place as: $dmg_dest"
