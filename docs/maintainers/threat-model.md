@@ -8,6 +8,11 @@ rebuild, and install local updates. This threat model is repository-scoped and
 feeds future `@codex-security` reviews. Track actionable implementation work in
 [Security Backlog](security-backlog.md).
 
+Use this document to scope security scans and reviews. Use the security backlog
+for implementation tickets, and use
+[Package and Runtime Maintenance](package-runtime-maintenance.md) for package,
+launcher, updater, and validation procedures.
+
 ## Executive Summary
 
 The highest-risk areas are:
