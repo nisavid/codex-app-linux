@@ -26,7 +26,12 @@ agents and maintainers; runtime code does not consume it.
 8. Keep a sync ledger in the PR body or a temporary working note until it is
    copied into the PR.
 9. Run the required local gates before pushing code changes.
-10. Inspect GitHub blockers directly. Do not infer merge readiness from summary
+10. On the first push of any task branch, create a draft PR in the same
+   workflow turn.
+11. Keep the PR in draft until local gates pass and the PR body records
+   verification evidence. The required lifecycle is: first push, draft PR,
+   local gates, PR verification notes, ready for review.
+12. Inspect GitHub blockers directly. Do not infer merge readiness from summary
    status alone.
 
 ## Sync Ledger
