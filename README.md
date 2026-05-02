@@ -25,7 +25,7 @@ the Nix flake.
 | Codex CLI preflight | Working | The launcher and updater find or install `@openai/codex` when host tools allow it. |
 | Tray, warm start, and Linux keybinds | Working with desktop variance | Desktop-environment support can vary, especially around tray and window behavior. |
 | Browser annotations | Working where upstream support is enabled | Uses the bundled browser resources shipped with the generated app. |
-| Linux Computer Use | Packaged and locally functional where gated on | Uses upstream Linux Computer Use support with local packaging/manifest compatibility fixes; requires host accessibility/input support and OpenAI account-side rollout. |
+| Linux Computer Use | Packaged; UI controls opt in | Uses upstream Linux Computer Use support with local packaging/manifest compatibility fixes; requires host accessibility/input support and OpenAI account-side rollout. |
 | NixOS flake | Working with pinned DMG hash | The fixed-output hash can temporarily lag after OpenAI republishes the DMG. |
 | OpenAI server-gated features | Gated by account and rollout | Installing this fork cannot bypass upstream feature flags or account policy. |
 
@@ -203,11 +203,38 @@ republished after the pinned hash changed. A scheduled GitHub Actions job
 refreshes that hash on `main` once every 24 hours. Retry after the bot has had
 time to run; if it still fails, open an issue.
 
+## Linux Computer Use
+
+Linux Computer Use support is packaged from upstream's Rust MCP backend. The
+backend can inspect apps through AT-SPI, capture screenshots through GNOME Shell
+or XDG Desktop Portal paths, and synthesize input through `ydotool` when the
+host is configured for it.
+
+The plugin manifest gate is applied by default so the backend can register on
+Linux. The in-app Computer Use UI controls are opt in because they touch
+upstream rollout-gated UI paths. Enable them for a build with:
+
+```bash
+CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 make build-app
+```
+
+To keep the opt-in across updater rebuilds, write the persisted setting used by
+the patcher:
+
+```bash
+mkdir -p ~/.config/codex-app
+printf '%s\n' '{"codex-linux-computer-use-ui-enabled": true}' > ~/.config/codex-app/settings.json
+```
+
+This local opt-in does not bypass OpenAI account-side feature gates.
+
 ## Updates
 
 Native packages install `codex-app-updater`, a `systemd --user` service that
 checks for newer upstream DMGs, rebuilds the matching Linux package locally, and
 uses `pkexec` only for the final package install step.
+
+Current updater crate version: `0.6.2`.
 
 Useful service commands after installing a native package:
 

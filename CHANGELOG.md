@@ -23,6 +23,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `release-gate`, and kept package-build examples on the default
   DMG-derived version path.
 
+## [0.6.2] - 2026-05-01
+
+### Added
+
+- Linux Computer Use UI patches are now opt in through
+  `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` at build time or
+  `~/.config/codex-app/settings.json` with
+  `"codex-linux-computer-use-ui-enabled": true`, including smoke coverage for
+  default-off, env-var, and persisted-setting paths.
+
+### Changed
+
+- The bundled Computer Use plugin manifest gate remains default-on for Linux
+  platform registration, while the UI patches that touch upstream rollout-gated
+  code now require explicit opt-in.
+
+## [0.6.1] - 2026-04-30
+
+### Added
+
+- GitHub Actions workflow `upstream-build-app.yml` builds `make build-app`
+  against the real upstream `Codex.dmg`, records DMG provenance, and exercises
+  the installer/cache behavior against current upstream metadata.
+
+### Changed
+
+- Script smoke tests now cover the upstream-DMG build workflow and newer ASAR
+  patcher shapes, including launch-action, tray, Computer Use, and stale
+  background-helper cases.
+
 ## [0.6.0] - 2026-04-30
 
 ### Added
