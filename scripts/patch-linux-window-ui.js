@@ -380,7 +380,10 @@ function patchKeybindsSettingsAssets(extractedDir) {
 function applyKeybindsSettingsSectionsPatch(currentSource) {
   let patchedSource = currentSource;
 
-  if (patchedSource.includes("slug:`keybinds`")) {
+  if (
+    patchedSource.includes("slug:`keybinds`") ||
+    patchedSource.includes("slug:`keyboard-shortcuts`")
+  ) {
     return patchedSource;
   }
 
@@ -405,6 +408,13 @@ function applyKeybindsSettingsSectionsPatch(currentSource) {
 
 function applyKeybindsSettingsSharedPatch(currentSource) {
   let patchedSource = currentSource;
+
+  if (
+    patchedSource.includes("settings.nav.keyboard-shortcuts") &&
+    patchedSource.includes("settings.section.keyboard-shortcuts")
+  ) {
+    return patchedSource;
+  }
 
   if (!patchedSource.includes("settings.nav.keybinds")) {
     const navNeedle =
@@ -446,39 +456,53 @@ function applyLinuxKeybindOverridesRuntimePatch(currentSource) {
 function applyKeybindsSettingsIndexPatch(currentSource) {
   let patchedSource = currentSource;
 
-  if (
-    !patchedSource.includes("var c_e=") &&
-    !patchedSource.includes("Xge=") &&
-    !patchedSource.includes("Zge=")
-  ) {
-    return patchedSource;
+  if (patchedSource.includes('"keyboard-shortcuts":')) {
+    if (!patchedSource.includes(`${keybindsSettingsAsset}`)) {
+      const routePattern =
+        /"keyboard-shortcuts":\(0,([A-Za-z_$][\w$]*)\.lazy\)\(\(\)=>([A-Za-z_$][\w$]*)\(\(\)=>import\(`\.\/[^`]+`\)[\s\S]*?,import\.meta\.url\)\),((?:"[^"]+"|[A-Za-z_$][\w$]*):)/;
+      if (!routePattern.test(patchedSource)) {
+        throw new Error(
+          "Required Keybinds settings patch failed: could not replace keyboard shortcuts route",
+        );
+      }
+      patchedSource = patchedSource.replace(
+        routePattern,
+        `"keyboard-shortcuts":(0,$1.lazy)(()=>$2(()=>import(\`./${keybindsSettingsAsset}\`),[],import.meta.url)),$3`,
+      );
+    }
+
+    return applyLinuxKeybindOverridesRuntimePatch(patchedSource);
   }
 
   if (!patchedSource.includes(`${keybindsSettingsAsset}`)) {
-    const routeNeedle = 'var c_e={"general-settings":';
-    const routePatch = `var c_e={keybinds:(0,Z.lazy)(()=>s(()=>import(\`./${keybindsSettingsAsset}\`),[],import.meta.url)),"general-settings":`;
-    if (!patchedSource.includes(routeNeedle)) {
+    const routePattern =
+      /((?:var|let|const) [A-Za-z_$][\w$]*=\{(?:\.\.\.[A-Za-z_$][\w$]*,)?)"general-settings":(?=\(0,([A-Za-z_$][\w$]*)\.lazy\)\(\(\)=>([A-Za-z_$][\w$]*)\()/;
+    if (!routePattern.test(patchedSource)) {
       throw new Error("Required Keybinds settings patch failed: could not add keybinds route");
     }
-    patchedSource = patchedSource.replace(routeNeedle, routePatch);
+    patchedSource = patchedSource.replace(
+      routePattern,
+      `$1keybinds:(0,$2.lazy)(()=>$3(()=>import(\`./${keybindsSettingsAsset}\`),[],import.meta.url)),"general-settings":`,
+    );
   }
 
-  if (!patchedSource.includes("keybinds:xh")) {
-    const iconNeedle = 'Xge={"general-settings":xh,';
-    const iconPatch = 'Xge={keybinds:xh,"general-settings":xh,';
-    if (!patchedSource.includes(iconNeedle)) {
+  if (!/[,{]keybinds:[A-Za-z_$][\w$]*,"general-settings":/.test(patchedSource)) {
+    const iconPattern = /([A-Za-z_$][\w$]*=\{)"general-settings":([A-Za-z_$][\w$]*),/;
+    if (!iconPattern.test(patchedSource)) {
       throw new Error("Required Keybinds settings patch failed: could not add keybinds icon");
     }
-    patchedSource = patchedSource.replace(iconNeedle, iconPatch);
+    patchedSource = patchedSource.replace(
+      iconPattern,
+      (_match, prefix, icon) => `${prefix}keybinds:${icon},"general-settings":${icon},`,
+    );
   }
 
-  if (!patchedSource.includes("Zge=[`general-settings`,`keybinds`")) {
-    const orderNeedle = "Zge=[`general-settings`,`appearance`";
-    const orderPatch = "Zge=[`general-settings`,`keybinds`,`appearance`";
-    if (!patchedSource.includes(orderNeedle)) {
+  if (!/=\[`general-settings`,`keybinds`/.test(patchedSource)) {
+    const orderPattern = /([A-Za-z_$][\w$]*=\[`general-settings`,)`appearance`/;
+    if (!orderPattern.test(patchedSource)) {
       throw new Error("Required Keybinds settings patch failed: could not add keybinds nav order");
     }
-    patchedSource = patchedSource.replace(orderNeedle, orderPatch);
+    patchedSource = patchedSource.replace(orderPattern, "$1`keybinds`,`appearance`");
   }
 
   if (!patchedSource.includes("slugs:[`general-settings`,`keybinds`")) {
