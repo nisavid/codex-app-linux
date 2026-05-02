@@ -831,7 +831,7 @@ ensure_webview_server() {
     stop_stale_webview_server
     stop_status=$?
     if [ "$stop_status" -ne 0 ]; then
-        notify_error "stop_stale_webview_server failed with status $stop_status"
+        notify_error "Unable to stop the Codex webview helper process. Close any running Codex App windows or reboot, then check $CODEX_LINUX_LOG_FILE for details."
         exit "$stop_status"
     fi
 
