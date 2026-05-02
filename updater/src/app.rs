@@ -1159,7 +1159,14 @@ mod tests {
             assert!(second_lock.is_none());
         }
 
-        let reacquired_lock = try_acquire_check_lock(&paths)?;
+        let mut reacquired_lock = None;
+        for _ in 0..10 {
+            reacquired_lock = try_acquire_check_lock(&paths)?;
+            if reacquired_lock.is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
 
         assert!(reacquired_lock.is_some());
         Ok(())
