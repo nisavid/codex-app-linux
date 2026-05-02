@@ -445,6 +445,28 @@ test_rebuild_report_tolerates_bad_patch_json() {
     assert_contains "$output_report" '"patchReportError"'
 }
 
+test_rebuild_report_records_missing_patch_json() {
+    info "Checking rebuild report records a missing patch report"
+    local workspace="$TMP_DIR/rebuild-report-missing-patch-json"
+    local output_report="$workspace/rebuild-report.json"
+    local patch_report="$workspace/missing-patch-report.json"
+
+    mkdir -p "$workspace"
+
+    bash -c \
+        'source "$1"; write_rebuild_report_json "$2" "$3" "$4" "$5" "$6"' \
+        _ "$REPO_DIR/scripts/lib/rebuild-report.sh" \
+        "$output_report" \
+        "$workspace/Codex.dmg" \
+        "41.2.0" \
+        "$patch_report" \
+        "$workspace/codex-app"
+
+    assert_contains "$output_report" '"patches": []'
+    assert_contains "$output_report" '"patchReportError"'
+    assert_contains "$output_report" "ENOENT"
+}
+
 test_installer_keeps_electron_fallback_for_bad_metadata() {
     info "Checking Electron version fallback for malformed metadata"
     local workspace="$TMP_DIR/electron-version-fallback"
@@ -1780,6 +1802,7 @@ main() {
     test_installer_writes_package_version_from_app_plist
     test_installer_inspect_mode_does_not_write_install_metadata
     test_rebuild_report_tolerates_bad_patch_json
+    test_rebuild_report_records_missing_patch_json
     test_installer_keeps_electron_fallback_for_bad_metadata
     test_launcher_template_sanity
     test_user_local_installer_uses_xdg_data_home

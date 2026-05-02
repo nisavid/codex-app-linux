@@ -706,7 +706,20 @@ async fn run_install_ready(
     paths: &RuntimePaths,
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
+    let recovering_interrupted_install = state.status == UpdateStatus::Installing;
     recover_interrupted_install(state, paths)?;
+    if recovering_interrupted_install && state.status == UpdateStatus::Failed {
+        let message = state
+            .error_message
+            .clone()
+            .unwrap_or_else(|| "Previous install attempt could not be recovered".to_string());
+        maybe_send_notification(
+            config.notifications,
+            "Codex update failed",
+            "The previous install attempt could not be recovered. Check the updater log for details.",
+        );
+        return Err(anyhow::anyhow!(message));
+    }
 
     if complete_pending_install_if_already_installed(state, paths)? {
         let _ = maybe_notify_installed(state, paths, config.notifications);
@@ -1534,6 +1547,48 @@ mod tests {
             state.error_message.as_deref(),
             Some("No ready update package is recorded")
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn install_ready_reports_unrecoverable_interrupted_install() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(false);
+        state.status = UpdateStatus::Installing;
+        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.artifact_paths.package_path = Some(temp.path().join("missing/codex.deb"));
+
+        let result = run_install_ready(&config, &mut state, &paths).await;
+
+        assert!(result.is_err());
+        assert_eq!(state.status, UpdateStatus::Failed);
+        assert!(state
+            .error_message
+            .as_deref()
+            .is_some_and(|message| message.contains("interrupted")));
         Ok(())
     }
 

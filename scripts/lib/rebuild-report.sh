@@ -25,12 +25,10 @@ const path = require("node:path");
 const [outputPath, dmgPath, electronVersion, patchReportPath, appDir] = process.argv.slice(2);
 let patchReport = { patches: [] };
 let patchReportError = null;
-if (fs.existsSync(patchReportPath)) {
-  try {
-    patchReport = JSON.parse(fs.readFileSync(patchReportPath, "utf8"));
-  } catch (error) {
-    patchReportError = error instanceof Error ? error.message : String(error);
-  }
+try {
+  patchReport = JSON.parse(fs.readFileSync(patchReportPath, "utf8"));
+} catch (error) {
+  patchReportError = error instanceof Error ? error.message : String(error);
 }
 
 const report = {

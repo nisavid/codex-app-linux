@@ -498,6 +498,7 @@ test("adds Linux package updater behind the existing app updater manager", () =>
   assert.match(patched, /status: Installing/);
   assert.match(patched, /grep -q "\^status: Installed"/);
   assert.match(patched, /\("\$2" >\/dev\/null 2>&1 &\)/);
+  assert.match(patched, /exit 0;fi;done;exit 1/);
   assert.match(patched, /codexLinuxAppUpdaterPath\(\),codexLinuxAppLauncherPath\(\)/);
   assert.match(patched, /detached:!0,stdio:`ignore`/);
   assert.match(patched, /codexLinuxInstallAfterQuit\(\);let e=setTimeout/);
@@ -576,6 +577,7 @@ test("migrates an already-patched Linux updater bridge to relaunch after install
   assert.match(migrated, /grep -q "\^status: Installed"/);
   assert.match(migrated, /codexLinuxAppLauncherPath\(\)/);
   assert.match(migrated, /\("\$2" >\/dev\/null 2>&1 &\)/);
+  assert.match(migrated, /exit 0;fi;done;exit 1/);
 });
 
 test("enables the existing app update menu on Linux", () => {
