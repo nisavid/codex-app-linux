@@ -367,6 +367,45 @@ PLIST
     assert_contains "$install_dir/codex-app-version.env" "CODEX_APP_BUNDLE_VERSION=2312"
 }
 
+test_installer_inspect_mode_does_not_write_install_metadata() {
+    info "Checking inspect mode does not write install metadata"
+    local workspace="$TMP_DIR/inspect-no-install-metadata"
+    local fake_dmg="$workspace/Codex.dmg"
+    local app_dir="$workspace/Codex.app"
+    local install_dir="$workspace/codex-app"
+    local trace_log="$workspace/trace.log"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$app_dir" "$install_dir"
+    : > "$fake_dmg"
+
+    CODEX_INSTALLER_SOURCE_ONLY=1 \
+    CODEX_INSTALL_DIR="$install_dir" \
+    TRACE_LOG="$trace_log" \
+    FAKE_APP_DIR="$app_dir" \
+    FAKE_DMG="$fake_dmg" \
+    bash -c '
+        source "$1"
+
+        check_deps() { :; }
+        extract_dmg() { printf "%s\n" "$FAKE_APP_DIR"; }
+        detect_electron_version() { printf "%s\n" detect >> "$TRACE_LOG"; }
+        inspect_rebuild_candidate() { printf "%s\n" inspect >> "$TRACE_LOG"; }
+        write_app_version_metadata() {
+            printf "%s\n" metadata >> "$TRACE_LOG"
+            mkdir -p "$INSTALL_DIR"
+            printf "%s\n" "CODEX_APP_PACKAGE_VERSION=should-not-write" > "$INSTALL_DIR/codex-app-version.env"
+        }
+
+        main --inspect "$FAKE_DMG"
+    ' _ "$REPO_DIR/install.sh" >"$output_log" 2>&1
+
+    assert_contains "$trace_log" "detect"
+    assert_contains "$trace_log" "inspect"
+    assert_not_contains "$trace_log" "metadata"
+    [ ! -e "$install_dir/codex-app-version.env" ] || fail "Inspect mode wrote install metadata"
+}
+
 test_installer_keeps_electron_fallback_for_bad_metadata() {
     info "Checking Electron version fallback for malformed metadata"
     local workspace="$TMP_DIR/electron-version-fallback"
@@ -1700,6 +1739,7 @@ main() {
     test_upstream_build_app_workflow_tracks_dmg_metadata
     test_installer_detects_electron_version_from_plist
     test_installer_writes_package_version_from_app_plist
+    test_installer_inspect_mode_does_not_write_install_metadata
     test_installer_keeps_electron_fallback_for_bad_metadata
     test_launcher_template_sanity
     test_user_local_installer_uses_xdg_data_home
