@@ -299,6 +299,7 @@ test_upstream_build_app_workflow_tracks_dmg_metadata() {
     assert_contains "$workflow" 'actions/cache@v4'
     assert_contains "$workflow" 'path: /tmp/codex-upstream-ci/Codex.dmg'
     assert_contains "$workflow" 'Last-Modified'
+    assert_contains "$workflow" 'tolower($0) ~ /^last-modified:/'
     assert_contains "$workflow" 'sha256sum'
     assert_contains "$workflow" 'make build-app DMG=/tmp/codex-upstream-ci/Codex.dmg'
     assert_contains "$workflow" 'DMG Last-Modified'
