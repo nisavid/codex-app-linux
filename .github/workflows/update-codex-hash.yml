@@ -61,13 +61,15 @@ jobs:
 
           This scheduled workflow opens a PR for maintainer review instead of pushing directly to main."
 
-          PR_NUMBER="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          PR_NUMBER="$(gh pr list --repo nisavid/codex-app-linux --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
           if [ -n "$PR_NUMBER" ]; then
             gh pr edit "$PR_NUMBER" \
+              --repo nisavid/codex-app-linux \
               --title "fix(nix): update Codex.dmg hash" \
               --body "$PR_BODY"
           else
             gh pr create \
+              --repo nisavid/codex-app-linux \
               --base main \
               --head "$BRANCH" \
               --title "fix(nix): update Codex.dmg hash" \
