@@ -733,35 +733,28 @@ async fn run_install_ready(
     }
 
     let Some(package_path) = state.artifact_paths.package_path.clone() else {
-        mark_failed_and_persist(state, paths, "No ready update package is recorded")?;
+        let message = "No ready update package is recorded";
+        mark_failed_and_persist(state, paths, message)?;
         maybe_send_notification(
             config.notifications,
             "Codex update failed",
             "The updater has no package path recorded for the ready update.",
         );
-        println!("No ready update package is recorded.");
-        return Ok(());
+        return Err(anyhow::anyhow!(message));
     };
 
     if !package_path.exists() {
-        mark_failed_and_persist(
-            state,
-            paths,
-            format!(
-                "Pending package artifact is missing: {}",
-                package_path.display()
-            ),
-        )?;
+        let message = format!(
+            "Pending package artifact is missing: {}",
+            package_path.display()
+        );
+        mark_failed_and_persist(state, paths, message.clone())?;
         maybe_send_notification(
             config.notifications,
             "Codex update failed",
             "The rebuilt package is missing. Check the updater log for details.",
         );
-        println!(
-            "Ready update package is missing: {}",
-            package_path.display()
-        );
-        return Ok(());
+        return Err(anyhow::anyhow!(message));
     }
 
     if liveness::is_app_running(config)? {
@@ -1488,13 +1481,55 @@ mod tests {
         state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
         state.artifact_paths.package_path = Some(temp.path().join("missing/codex.deb"));
 
-        run_install_ready(&config, &mut state, &paths).await?;
+        let result = run_install_ready(&config, &mut state, &paths).await;
 
+        assert!(result.is_err());
         assert_eq!(state.status, UpdateStatus::Failed);
         assert!(state
             .error_message
             .as_deref()
             .is_some_and(|message| message.contains("Pending package artifact is missing")));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn install_ready_marks_missing_package_record_failed() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(false);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+
+        let result = run_install_ready(&config, &mut state, &paths).await;
+
+        assert!(result.is_err());
+        assert_eq!(state.status, UpdateStatus::Failed);
+        assert_eq!(
+            state.error_message.as_deref(),
+            Some("No ready update package is recorded")
+        );
         Ok(())
     }
 

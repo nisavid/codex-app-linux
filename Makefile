@@ -226,12 +226,12 @@ service-status:
 	systemctl --user status codex-app-updater.service --no-pager
 
 clean:
-	@echo "[make] Removing generated app, cached DMG, and dist/"
-	rm -rf "$(CURDIR)/codex-app" "$(CURDIR)/Codex.dmg" "$(CURDIR)/dist"
+	@echo "[make] Removing generated app, cached DMG, dist/, and rebuild artifacts"
+	rm -rf "$(CURDIR)/codex-app" "$(CURDIR)/Codex.dmg" "$(CURDIR)/dist" "$(NEXT_APP_DIR)" "$(REBUILD_REPORT_DIR)"
 
 clean-dist:
-	@echo "[make] Removing dist/"
-	rm -rf "$(CURDIR)/dist"
+	@echo "[make] Removing dist/ and rebuild reports"
+	rm -rf "$(CURDIR)/dist" "$(REBUILD_REPORT_DIR)"
 
 clean-state:
 	@echo "[make] Removing updater runtime state"

@@ -185,6 +185,10 @@ SCRIPT
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "CHROME_DESKTOP=codex-cua-lab.desktop"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "/usr/bin/codex-cua-lab %u"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
+    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Actions=CheckForUpdates;InstallReadyUpdate;"
+    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Exec=/usr/bin/codex-app-updater check-now"
+    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Exec=/usr/bin/codex-app-updater install-ready"
+    assert_not_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "codex-cua-lab-updater"
     assert_contains "$pkg_root/usr/lib/codex-cua-lab/packaged-runtime.sh" 'CHROME_DESKTOP="codex-cua-lab.desktop"'
 }
 

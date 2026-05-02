@@ -514,6 +514,30 @@ test("adds Linux package updater behind the existing app updater manager", () =>
   assert.match(patched, /if\(t\?\.status===`waiting_for_app_exit`\)/);
 });
 
+test("adds Linux package updater when the minified updater class name changes", () => {
+  const source = appUpdaterBundleFixture().replace("var tD=class{", "var qR=class{");
+  const patched = applyPatchTwice(applyLinuxAppUpdaterBridgePatch, source);
+
+  assert.match(patched, /function codexLinuxUpdateLifecycleState\(e\)/);
+  assert.match(patched, /async initializeLinuxPackageUpdater\(\)/);
+  assert.match(patched, /process\.platform===`linux`\?await this\.initializeLinuxPackageUpdater\(\)/);
+});
+
+test("skips Linux updater bridge when Electron binding is absent", () => {
+  const source = appUpdaterBundleFixture().replace("let t=require(`electron`),", "let ");
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.map(String).join(" "));
+  try {
+    const patched = applyLinuxAppUpdaterBridgePatch(source);
+
+    assert.equal(patched, source);
+    assert.ok(warnings.some((warning) => warning.includes("Could not find updater bridge module bindings")));
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test("migrates an already-patched Linux updater bridge to quit before install", () => {
   const patched = applyLinuxAppUpdaterBridgePatch(appUpdaterBundleFixture());
   const oldPatched = patched
@@ -1049,6 +1073,42 @@ test("patcher CLI writes --report-json output", () => {
     const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
     assert.equal(report.mainBundle, "main.js");
     assert.ok(report.patches.some((patch) => patch.name === "main-process-ui"));
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("patcher CLI writes --report-json output when patching fails", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-failure-test-"));
+  try {
+    const buildDir = path.join(tempRoot, ".vite", "build");
+    const reportPath = path.join(tempRoot, "reports", "patch-report.json");
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(buildDir, "main.js"),
+      [
+        mainBundlePrefix,
+        "process.platform===`win32`&&k.removeMenu(),",
+        alreadyOpaqueBackgroundBundle,
+        fileManagerBundle,
+        trayBundleFixture(),
+        singleInstanceBundleFixture(),
+      ].join(""),
+    );
+    fs.writeFileSync(path.join(tempRoot, "package.json"), "{");
+
+    const result = spawnSync(
+      process.execPath,
+      [path.join(__dirname, "patch-linux-window-ui.js"), "--report-json", reportPath, tempRoot],
+      { encoding: "utf8" },
+    );
+
+    assert.notEqual(result.status, 0);
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+    assert.match(report.fatalError, /SyntaxError|Expected property name|JSON/);
+    assert.ok(
+      report.patches.some((patch) => patch.name === "patcher-cli" && patch.status === "failed-required"),
+    );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

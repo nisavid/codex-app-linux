@@ -138,6 +138,7 @@ find_running_app_pid() {
 install_candidate() {
     local backup=""
     local pid
+    local staged
 
     [ -d "$NEXT_APP_DIR" ] || error "Candidate app was not created: $NEXT_APP_DIR"
     [ "$NEXT_APP_DIR" != "$FINAL_APP_DIR" ] || error "Candidate and final app paths must differ"
@@ -146,14 +147,31 @@ install_candidate() {
         error "Codex App is running from $FINAL_APP_DIR (pid $pid). Close it before installing."
     fi
 
+    staged="$(unique_backup_path "$FINAL_APP_DIR.candidate")"
+    info "Staging candidate: $staged"
+    if ! mv "$NEXT_APP_DIR" "$staged"; then
+        error "Failed to stage candidate from $NEXT_APP_DIR"
+    fi
+
     if [ -e "$FINAL_APP_DIR" ]; then
         backup="$(unique_backup_path "$FINAL_APP_DIR")"
         info "Moving existing app to backup: $backup"
-        mv "$FINAL_APP_DIR" "$backup"
+        if ! mv "$FINAL_APP_DIR" "$backup"; then
+            mv "$staged" "$NEXT_APP_DIR" 2>/dev/null || true
+            error "Failed to move existing app to backup"
+        fi
     fi
 
     info "Installing candidate: $FINAL_APP_DIR"
-    mv "$NEXT_APP_DIR" "$FINAL_APP_DIR"
+    if ! mv "$staged" "$FINAL_APP_DIR"; then
+        if [ -n "$backup" ] && [ -e "$backup" ] && [ ! -e "$FINAL_APP_DIR" ]; then
+            mv "$backup" "$FINAL_APP_DIR" 2>/dev/null || true
+        fi
+        if [ -e "$staged" ] && [ ! -e "$NEXT_APP_DIR" ]; then
+            mv "$staged" "$NEXT_APP_DIR" 2>/dev/null || true
+        fi
+        error "Failed to install candidate"
+    fi
 
     echo "$backup"
 }

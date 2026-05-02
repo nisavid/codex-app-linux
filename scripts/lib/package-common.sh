@@ -74,7 +74,9 @@ render_desktop_entry() {
     comment="$(sed_escape_replacement "${PACKAGE_COMMENT:-Run Codex App on Linux}")"
 
     sed \
+        -e "s/codex-app-updater/__CODEX_APP_UPDATER__/g" \
         -e "s/codex-app/$package_name/g" \
+        -e "s/__CODEX_APP_UPDATER__/codex-app-updater/g" \
         -e "s/^Name=.*/Name=$display_name/g" \
         -e "s/^Comment=.*/Comment=$comment/g" \
         "$DESKTOP_TEMPLATE" > "$target"

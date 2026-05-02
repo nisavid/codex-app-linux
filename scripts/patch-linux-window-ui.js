@@ -1846,6 +1846,10 @@ function recordAssetPatch(report, name, patchResult, warnings) {
     recordPatch(report, name, "skipped-optional", warnings[0] ?? "no matching bundle found");
     return;
   }
+  if (patchResult.changed === 0 && warnings.length > 0) {
+    recordPatch(report, name, "skipped-optional", warnings[0] ?? "no matching bundle found");
+    return;
+  }
 
   recordPatch(
     report,
@@ -2026,8 +2030,21 @@ function main() {
   }
 
   const report = reportJson == null ? null : createPatchReport();
-  patchExtractedApp(extractedDir, { report });
-  writePatchReport(reportJson, report);
+  let fatalError = null;
+  try {
+    patchExtractedApp(extractedDir, { report });
+  } catch (error) {
+    fatalError = error;
+    if (report != null) {
+      report.fatalError = error?.stack ?? String(error);
+      recordPatch(report, "patcher-cli", "failed-required", error?.message ?? String(error));
+    }
+  } finally {
+    writePatchReport(reportJson, report);
+  }
+  if (fatalError != null) {
+    throw fatalError;
+  }
 }
 
 if (require.main === module) {

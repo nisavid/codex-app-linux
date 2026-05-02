@@ -17,9 +17,6 @@ function replaceInstallAfterQuitSource(source, childProcessVar) {
 }
 
 function buildQuitForUpdateSource(electronVar, callInstallAfterQuit) {
-  if (electronVar == null) {
-    return "function codexLinuxQuitForUpdate(){codexLinuxInstallAfterQuit()}";
-  }
   const prefix = callInstallAfterQuit ? "codexLinuxInstallAfterQuit();" : "";
   return `function codexLinuxQuitForUpdate(){try{${prefix}let e=setTimeout(()=>${electronVar}.app?.exit?.(0),1500);e.unref?.(),${electronVar}.app?.quit?.()}catch{}}`;
 }
@@ -35,7 +32,8 @@ function buildBridgeSource({ childProcessVar, electronVar, fsVar, pathVar }) {
 }
 
 function applyLinuxAppUpdaterBridgePatch(currentSource) {
-  if (!currentSource.includes("var tD=class{") || !currentSource.includes("initializeMacSparkle")) {
+  if (!currentSource.includes("initializeMacSparkle")) {
+    console.warn("WARN: Could not find updater initializeMacSparkle marker - skipping Linux updater bridge patch");
     return currentSource;
   }
 
@@ -44,18 +42,14 @@ function applyLinuxAppUpdaterBridgePatch(currentSource) {
   const electronVar = requireName(currentSource, "electron") ?? requireName(currentSource, "node:electron");
   const fsVar = requireName(currentSource, "node:fs") ?? requireName(currentSource, "fs");
   const pathVar = requireName(currentSource, "node:path") ?? requireName(currentSource, "path");
-  if (childProcessVar == null || fsVar == null || pathVar == null) {
+  if (childProcessVar == null || electronVar == null || fsVar == null || pathVar == null) {
     console.warn("WARN: Could not find updater bridge module bindings - skipping Linux updater bridge patch");
     return currentSource;
   }
 
   let patchedSource = currentSource;
   if (!patchedSource.includes("function codexLinuxUpdateLifecycleState(")) {
-    const classNeedle = "var tD=class{";
-    patchedSource = patchedSource.replace(
-      classNeedle,
-      `${buildBridgeSource({ childProcessVar, electronVar, fsVar, pathVar })};${classNeedle}`,
-    );
+    patchedSource = `${buildBridgeSource({ childProcessVar, electronVar, fsVar, pathVar })};${patchedSource}`;
   }
   if (!patchedSource.includes("function codexLinuxQuitForUpdate(")) {
     const quitSource = `${buildInstallAfterQuitSource(childProcessVar)}${buildQuitForUpdateSource(electronVar, true)}`;
@@ -151,7 +145,7 @@ function patchLinuxAppUpdaterBridge(extractedDir) {
   for (const fileName of fs.readdirSync(buildDir).filter((name) => name.endsWith(".js")).sort()) {
     const filePath = path.join(buildDir, fileName);
     const source = fs.readFileSync(filePath, "utf8");
-    if (!source.includes("var tD=class{") && !source.includes("shouldIncludeSparkle")) {
+    if (!source.includes("initializeMacSparkle") && !source.includes("shouldIncludeSparkle")) {
       continue;
     }
     matched += 1;
