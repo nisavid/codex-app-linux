@@ -75,8 +75,10 @@ main() {
 
     parse_args "$@"
     validate_app_identity
-    check_deps
-    if [ "$INSPECT_ONLY" -ne 1 ]; then
+    if [ "$INSPECT_ONLY" -eq 1 ]; then
+        check_inspect_deps
+    else
+        check_deps
         assert_install_target_not_running
         prepare_install
     fi

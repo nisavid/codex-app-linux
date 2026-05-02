@@ -486,16 +486,19 @@ test("adds Linux package updater behind the existing app updater manager", () =>
   assert.match(patched, /function codexLinuxReadUpdateState\(\)/);
   assert.match(patched, /function codexLinuxUpdateLifecycleState\(e\)/);
   assert.match(patched, /function codexLinuxAppUpdaterPath\(\)/);
+  assert.match(patched, /function codexLinuxAppLauncherPath\(\)/);
   assert.match(patched, /async function codexLinuxShowUpdateMessage\(e,n\)/);
   assert.match(patched, /function codexLinuxInstallAfterQuit\(\)/);
   assert.match(patched, /function codexLinuxQuitForUpdate\(\)/);
   assert.match(patched, /t\.dialog\?\.showMessageBox\(\{type:`info`/);
   assert.match(patched, /u\.spawn\(`\/bin\/sh`/);
   assert.match(patched, /install-ready\|\|exit \$\?/);
+  assert.doesNotMatch(patched, /WaitingForAppExit"&&continue;echo "\$s"\|grep -q "\^status: Installing"&&continue;"\$1" install-ready/);
   assert.match(patched, /grep -q "\^status: WaitingForAppExit"/);
   assert.match(patched, /status: Installing/);
   assert.match(patched, /grep -q "\^status: Installed"/);
-  assert.match(patched, /\/usr\/bin\/codex-app >\/dev\/null 2>&1 &/);
+  assert.match(patched, /\("\$2" >\/dev\/null 2>&1 &\)/);
+  assert.match(patched, /codexLinuxAppUpdaterPath\(\),codexLinuxAppLauncherPath\(\)/);
   assert.match(patched, /detached:!0,stdio:`ignore`/);
   assert.match(patched, /codexLinuxInstallAfterQuit\(\);let e=setTimeout/);
   assert.match(patched, /t\.app\?\.quit\?\.\(\)/);
@@ -566,12 +569,13 @@ test("migrates an already-patched Linux updater bridge to relaunch after install
     /function codexLinuxInstallAfterQuit\(\)\{try\{let e=u\.spawn\(`\/bin\/sh`,\[`-c`,[^]*?e\.unref\?\.\(\)\}catch\{\}\}/,
     oldHelper,
   );
-  assert.doesNotMatch(oldPatched, /\/usr\/bin\/codex-app/);
+  assert.doesNotMatch(oldPatched, /\("\$2" >\/dev\/null 2>&1 &\)/);
 
   const migrated = applyLinuxAppUpdaterBridgePatch(oldPatched);
 
   assert.match(migrated, /grep -q "\^status: Installed"/);
-  assert.match(migrated, /\/usr\/bin\/codex-app >\/dev\/null 2>&1 &/);
+  assert.match(migrated, /codexLinuxAppLauncherPath\(\)/);
+  assert.match(migrated, /\("\$2" >\/dev\/null 2>&1 &\)/);
 });
 
 test("enables the existing app update menu on Linux", () => {
@@ -587,6 +591,9 @@ test("enables the existing app update menu on Linux", () => {
 
 test("patchLinuxAppUpdaterBridge scans build bundles and stays idempotent", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-update-bridge-test-"));
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.map(String).join(" "));
   try {
     const buildDir = path.join(tempRoot, ".vite", "build");
     fs.mkdirSync(buildDir, { recursive: true });
@@ -605,7 +612,9 @@ test("patchLinuxAppUpdaterBridge scans build bundles and stays idempotent", () =
     assert.deepEqual(second, { matched: 2, changed: 0 });
     assert.match(manager, /initializeLinuxPackageUpdater/);
     assert.match(main, /\|\|process\.platform===`linux`/);
+    assert.ok(!warnings.some((warning) => warning.includes("initializeMacSparkle marker")));
   } finally {
+    console.warn = originalWarn;
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });

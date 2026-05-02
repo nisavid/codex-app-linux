@@ -23,9 +23,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const [outputPath, dmgPath, electronVersion, patchReportPath, appDir] = process.argv.slice(2);
-const patchReport = fs.existsSync(patchReportPath)
-  ? JSON.parse(fs.readFileSync(patchReportPath, "utf8"))
-  : { patches: [] };
+let patchReport = { patches: [] };
+let patchReportError = null;
+if (fs.existsSync(patchReportPath)) {
+  try {
+    patchReport = JSON.parse(fs.readFileSync(patchReportPath, "utf8"));
+  } catch (error) {
+    patchReportError = error instanceof Error ? error.message : String(error);
+  }
+}
 
 const report = {
   generatedAt: new Date().toISOString(),
@@ -38,6 +44,9 @@ const report = {
   patches: patchReport.patches ?? [],
   patchReportPath: path.resolve(patchReportPath),
 };
+if (patchReportError != null) {
+  report.patchReportError = patchReportError;
+}
 
 fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 NODE

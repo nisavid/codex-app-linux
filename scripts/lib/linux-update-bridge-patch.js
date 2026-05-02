@@ -7,7 +7,7 @@ function requireName(source, moduleName) {
 }
 
 function buildInstallAfterQuitSource(childProcessVar) {
-  return `function codexLinuxInstallAfterQuit(){try{let e=${childProcessVar}.spawn(\`/bin/sh\`,[\`-c\`,\`for i in 1 2 3 4 5 6 7 8 9 10;do sleep 1;s="$("$1" status 2>/dev/null||true)";echo "$s"|grep -q "^status: WaitingForAppExit"&&continue;echo "$s"|grep -q "^status: Installing"&&continue;"$1" install-ready||exit $?;s="$("$1" status 2>/dev/null||true)";echo "$s"|grep -q "^status: WaitingForAppExit"&&continue;echo "$s"|grep -q "^status: Installing"&&continue;if echo "$s"|grep -q "^status: Installed";then (/usr/bin/codex-app >/dev/null 2>&1 &);fi;exit 0;done\`,\`codex-linux-update-install\`,codexLinuxAppUpdaterPath()],{detached:!0,stdio:\`ignore\`,windowsHide:!0});e.unref?.()}catch{}}`;
+  return `function codexLinuxInstallAfterQuit(){try{let e=${childProcessVar}.spawn(\`/bin/sh\`,[\`-c\`,\`for i in 1 2 3 4 5 6 7 8 9 10;do sleep 1;s="$("$1" status 2>/dev/null||true)";echo "$s"|grep -q "^status: Installing"&&continue;"$1" install-ready||exit $?;s="$("$1" status 2>/dev/null||true)";echo "$s"|grep -q "^status: WaitingForAppExit"&&continue;echo "$s"|grep -q "^status: Installing"&&continue;if echo "$s"|grep -q "^status: Installed";then ("$2" >/dev/null 2>&1 &);fi;exit 0;done\`,\`codex-linux-update-install\`,codexLinuxAppUpdaterPath(),codexLinuxAppLauncherPath()],{detached:!0,stdio:\`ignore\`,windowsHide:!0});e.unref?.()}catch{}}`;
 }
 
 function replaceInstallAfterQuitSource(source, childProcessVar) {
@@ -28,7 +28,7 @@ function buildBridgeSource({ childProcessVar, electronVar, fsVar, pathVar }) {
       : `async function codexLinuxShowUpdateMessage(e,n){try{await ${electronVar}.dialog?.showMessageBox({type:\`info\`,buttons:[\`OK\`],defaultId:0,noLink:!0,message:e,detail:n})}catch{}}`;
   const installAfterQuit = buildInstallAfterQuitSource(childProcessVar);
   const quitForUpdate = buildQuitForUpdateSource(electronVar, true);
-  return `function codexLinuxUpdateStatePath(){let e=process.env.XDG_STATE_HOME||process.env.HOME&&(0,${pathVar}.join)(process.env.HOME,\`.local\`,\`state\`);return e?(0,${pathVar}.join)(e,\`codex-app-updater\`,\`state.json\`):null}function codexLinuxReadUpdateState(){let e=codexLinuxUpdateStatePath();if(!e||!${fsVar}.existsSync(e))return null;try{let t=JSON.parse(${fsVar}.readFileSync(e,\`utf8\`));return t&&typeof t===\`object\`&&!Array.isArray(t)?t:null}catch{return null}}function codexLinuxUpdateLifecycleState(e){switch(e){case\`ready_to_install\`:case\`waiting_for_app_exit\`:return\`ready\`;case\`installing\`:return\`installing\`;case\`checking_upstream\`:case\`update_detected\`:case\`downloading_dmg\`:case\`preparing_workspace\`:case\`patching_app\`:case\`building_package\`:return\`checking\`;default:return\`idle\`}}function codexLinuxAppUpdaterPath(){let e=process.env.CODEX_APP_UPDATER_PATH;return typeof e===\`string\`&&e.trim().length>0?e:\`codex-app-updater\`}${showUpdateMessage}${installAfterQuit}${quitForUpdate}function codexLinuxRunAppUpdater(e){return new Promise((t,n)=>{${childProcessVar}.execFile(codexLinuxAppUpdaterPath(),e,{encoding:\`utf8\`,windowsHide:!0},(e,r,i)=>{if(e){e.stdout=r,e.stderr=i,n(e);return}t({stdout:r??\`\`,stderr:i??\`\`})})})}`;
+  return `function codexLinuxUpdateStatePath(){let e=process.env.XDG_STATE_HOME||process.env.HOME&&(0,${pathVar}.join)(process.env.HOME,\`.local\`,\`state\`);return e?(0,${pathVar}.join)(e,\`codex-app-updater\`,\`state.json\`):null}function codexLinuxReadUpdateState(){let e=codexLinuxUpdateStatePath();if(!e||!${fsVar}.existsSync(e))return null;try{let t=JSON.parse(${fsVar}.readFileSync(e,\`utf8\`));return t&&typeof t===\`object\`&&!Array.isArray(t)?t:null}catch{return null}}function codexLinuxUpdateLifecycleState(e){switch(e){case\`ready_to_install\`:case\`waiting_for_app_exit\`:return\`ready\`;case\`installing\`:return\`installing\`;case\`checking_upstream\`:case\`update_detected\`:case\`downloading_dmg\`:case\`preparing_workspace\`:case\`patching_app\`:case\`building_package\`:return\`checking\`;default:return\`idle\`}}function codexLinuxAppUpdaterPath(){let e=process.env.CODEX_APP_UPDATER_PATH;return typeof e===\`string\`&&e.trim().length>0?e:\`codex-app-updater\`}function codexLinuxAppLauncherPath(){let e=process.env.CODEX_APP_LAUNCHER_PATH;return typeof e===\`string\`&&e.trim().length>0?e:\`codex-app\`}${showUpdateMessage}${installAfterQuit}${quitForUpdate}function codexLinuxRunAppUpdater(e){return new Promise((t,n)=>{${childProcessVar}.execFile(codexLinuxAppUpdaterPath(),e,{encoding:\`utf8\`,windowsHide:!0},(e,r,i)=>{if(e){e.stdout=r,e.stderr=i,n(e);return}t({stdout:r??\`\`,stderr:i??\`\`})})})}`;
 }
 
 function applyLinuxAppUpdaterBridgePatch(currentSource) {
@@ -148,8 +148,20 @@ function patchLinuxAppUpdaterBridge(extractedDir) {
     if (!source.includes("initializeMacSparkle") && !source.includes("shouldIncludeSparkle")) {
       continue;
     }
+    let patched = source;
+    let fileMatched = false;
+    if (source.includes("shouldIncludeSparkle")) {
+      patched = applyLinuxAppUpdaterMenuPatch(patched);
+      fileMatched = true;
+    }
+    if (source.includes("initializeMacSparkle")) {
+      patched = applyLinuxAppUpdaterBridgePatch(patched);
+      fileMatched = true;
+    }
+    if (!fileMatched) {
+      continue;
+    }
     matched += 1;
-    const patched = applyLinuxAppUpdaterBridgePatch(applyLinuxAppUpdaterMenuPatch(source));
     if (patched !== source) {
       fs.writeFileSync(filePath, patched, "utf8");
       changed += 1;

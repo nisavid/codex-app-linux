@@ -111,6 +111,22 @@ canonical_path() {
     readlink -f "$1" 2>/dev/null || realpath "$1"
 }
 
+pid_is_current_user() {
+    local pid="$1"
+    local uid
+
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    [ -d "/proc/$pid" ] || return 1
+    uid="$(awk '/^Uid:/ {print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+    [ "$uid" = "$(id -u)" ]
+}
+
+pid_is_electron_helper() {
+    local pid="$1"
+    [ -r "/proc/$pid/cmdline" ] || return 1
+    tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null | grep -q '^--type='
+}
+
 find_running_app_pid() {
     local electron_path="$1"
     local expected
@@ -125,6 +141,8 @@ find_running_app_pid() {
         [ -e "$proc_exe" ] || continue
         pid="${proc_exe#/proc/}"
         pid="${pid%/exe}"
+        pid_is_current_user "$pid" || continue
+        pid_is_electron_helper "$pid" && continue
         actual="$(readlink -f "$proc_exe" 2>/dev/null || true)"
         if [ "$actual" = "$expected" ]; then
             echo "$pid"

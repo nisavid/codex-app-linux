@@ -640,6 +640,10 @@ async fn reconcile_pending_install(
                 return Ok(());
             }
 
+            // The persisted `auto_install_on_app_exit` key is kept for config
+            // compatibility. In this flow it controls whether the updater
+            // nudges a running app; installation still requires an explicit
+            // install-ready trigger from the app/menu path.
             if state.auto_install_on_app_exit && liveness::is_app_running(config)? {
                 maybe_notify(
                     state,
