@@ -128,6 +128,19 @@ test("adds the Linux quit guard when electron/path/fs requires are split across 
   assert.match(patched, /codexLinuxIsQuitInProgress=\(\)=>codexLinuxQuitInProgress===!0/);
 });
 
+test("adds the Linux quit guard after the Electron import as a fallback", () => {
+  const source = "const e={gr:e=>({default:e,...e})};let n=require(`electron`);n=e.gr(n);";
+
+  const patched = applyPatchTwice(applyLinuxQuitGuardPatch, source);
+
+  assert.match(patched, /let n=require\(`electron`\);n=e\.gr\(n\);let codexLinuxQuitInProgress=!1/);
+  assert.equal(
+    patched.match(/let codexLinuxQuitInProgress=!1/g)?.length ?? 0,
+    1,
+    "quit state should be declared exactly once",
+  );
+});
+
 test("adds Linux menu hiding next to Windows removeMenu calls", () => {
   const source = "process.platform===`win32`&&k.removeMenu(),k.on(`closed`,()=>{})";
   const patched = applyPatchTwice(applyLinuxMenuPatch, source);
@@ -359,6 +372,13 @@ test("adds Linux launch actions when captured window identifiers contain dollar 
   assert.match(patched, /e\.includes\(`--quick-chat`\)/);
   assert.match(patched, /e\.includes\(`--prompt-chat`\)/);
   assert.match(patched, /e\.includes\(`--hotkey-window`\)/);
+
+  const fullyPatched = applyPatchTwice(patchMainBundleSource, source, null);
+  assert.equal(
+    fullyPatched.match(/let codexLinuxQuitInProgress=!1/g)?.length ?? 0,
+    1,
+    "full main-bundle patch should declare quit state exactly once",
+  );
 });
 
 test("skips the launch-action patch without throwing when upstream startup architecture changes", () => {

@@ -865,7 +865,7 @@ function applyLinuxQuitGuardPatch(currentSource) {
   const quitGuardSuffix =
     "let codexLinuxQuitInProgress=!1,codexLinuxMarkQuitInProgress=()=>{codexLinuxQuitInProgress=!0},codexLinuxIsQuitInProgress=()=>codexLinuxQuitInProgress===!0;";
 
-  if (patchedSource.includes("codexLinuxQuitInProgress=!1,codexLinuxMarkQuitInProgress=()=>{codexLinuxQuitInProgress=!0},codexLinuxIsQuitInProgress=()=>codexLinuxQuitInProgress===!0;")) {
+  if (patchedSource.includes("let codexLinuxQuitInProgress=!1")) {
     return patchedSource;
   }
 
@@ -878,6 +878,14 @@ function applyLinuxQuitGuardPatch(currentSource) {
   const splitQuitGuardMatch = patchedSource.match(splitQuitGuardNeedle);
   if (splitQuitGuardMatch != null) {
     const matchedPrefix = splitQuitGuardMatch[0];
+    return patchedSource.replace(matchedPrefix, `${matchedPrefix}${quitGuardSuffix}`);
+  }
+
+  const electronRequireNeedle =
+    /let ([A-Za-z_$][\w$]*)=require\(`electron`\);(?:\1=[^;]+;)?/;
+  const electronRequireMatch = patchedSource.match(electronRequireNeedle);
+  if (electronRequireMatch != null) {
+    const matchedPrefix = electronRequireMatch[0];
     return patchedSource.replace(matchedPrefix, `${matchedPrefix}${quitGuardSuffix}`);
   }
 
