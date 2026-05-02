@@ -133,11 +133,12 @@ pub async fn scroll(
         notify_pointer_motion_absolute(&proxy, &session.session_handle, stream_id, x, y).await?;
     }
 
+    let steps = steps.max(1);
     let (axis, steps) = match direction {
-        ScrollDirection::Up => (AXIS_VERTICAL, steps.max(1)),
-        ScrollDirection::Down => (AXIS_VERTICAL, -steps.max(1)),
-        ScrollDirection::Left => (AXIS_HORIZONTAL, steps.max(1)),
-        ScrollDirection::Right => (AXIS_HORIZONTAL, -steps.max(1)),
+        ScrollDirection::Up => (AXIS_VERTICAL, -steps),
+        ScrollDirection::Down => (AXIS_VERTICAL, steps),
+        ScrollDirection::Left => (AXIS_HORIZONTAL, -steps),
+        ScrollDirection::Right => (AXIS_HORIZONTAL, steps),
     };
 
     notify_pointer_axis_discrete(&proxy, &session.session_handle, axis, steps).await

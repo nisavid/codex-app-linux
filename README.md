@@ -222,8 +222,23 @@ To keep the opt-in across updater rebuilds, write the persisted setting used by
 the patcher:
 
 ```bash
-mkdir -p ~/.config/codex-app
-printf '%s\n' '{"codex-linux-computer-use-ui-enabled": true}' > ~/.config/codex-app/settings.json
+settings_dir="${XDG_CONFIG_HOME:-$HOME/.config}/codex-app"
+mkdir -p "$settings_dir"
+python3 - "$settings_dir/settings.json" <<'PY'
+import json
+import os
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+data = {}
+if path.exists():
+    data = json.loads(path.read_text() or "{}")
+data["codex-linux-computer-use-ui-enabled"] = True
+tmp = path.with_name(path.name + ".tmp")
+tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+os.replace(tmp, path)
+PY
 ```
 
 This local opt-in does not bypass OpenAI account-side feature gates.
