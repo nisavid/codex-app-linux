@@ -22,7 +22,7 @@
 
         codexDmg = pkgs.fetchurl {
           url = "https://persistent.oaistatic.com/codex-app-prod/Codex.dmg";
-          hash = "sha256-j7Kj8rBAlo70S3TW8jwuzAh95LrJPvMptYwK6txsmXw=";
+          hash = "sha256-qd0LCxoFaG7R8AksuxMldzhZ3t91qzGzXKRmVrK5LLY=";
         };
 
         electronLibs = with pkgs; [
@@ -116,7 +116,7 @@
               fi
 
               find "$install_dir" -maxdepth 1 -name "*.so*" -type f | while read -r so; do
-                patchelf --set-rpath "${electronLibPath}" "$so" 2>/dev/null || true
+                patchelf --set-rpath "$install_dir:${electronLibPath}" "$so" 2>/dev/null || true
               done
 
               echo "[NIX] Electron patched successfully"

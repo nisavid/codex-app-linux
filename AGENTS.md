@@ -72,6 +72,8 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 - Host dependency bootstrap: `scripts/install-deps.sh`
 - Linux package templates, maintainer scripts, desktop entry, service unit, packaged runtime helper: `packaging/linux/`
 - Rust updater service and CLI: `updater/`
+- Updater crate version and versioning policy: `updater/Cargo.toml` and
+  `docs/maintainers/package-runtime-maintenance.md` (current version: `0.6.2`)
 - User-facing overview and install guidance: `README.md`
 - Webview server design decision and acceptance criteria: `docs/webview-server-evaluation.md`
 - Fork-specific contracts and upstream-sync review inventory: `docs/maintainers/fork-divergences.md`

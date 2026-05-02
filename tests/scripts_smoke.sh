@@ -27,13 +27,13 @@ assert_file_exists() {
 assert_contains() {
     local path="$1"
     local pattern="$2"
-    grep -q -- "$pattern" "$path" || fail "Expected '$pattern' in $path"
+    grep -Fq -- "$pattern" "$path" || fail "Expected '$pattern' in $path"
 }
 
 assert_not_contains() {
     local path="$1"
     local pattern="$2"
-    if grep -q -- "$pattern" "$path"; then
+    if grep -Fq -- "$pattern" "$path"; then
         fail "Did not expect '$pattern' in $path"
     fi
 }
@@ -43,7 +43,7 @@ assert_occurrence_count() {
     local pattern="$2"
     local expected="$3"
     local actual
-    actual="$(grep -o -- "$pattern" "$path" | wc -l | tr -d ' ')"
+    actual="$(grep -oF -- "$pattern" "$path" | wc -l | tr -d ' ')"
     [ "$actual" = "$expected" ] || fail "Expected '$pattern' to appear $expected times in $path, found $actual"
 }
 
@@ -289,6 +289,23 @@ SCRIPT
     [ -z "$second_line" ] || fail "Expected make build-app default DMG argument to be empty so install.sh falls back to reuse/download, got: $(cat "$install_log")"
 }
 
+test_upstream_build_app_workflow_tracks_dmg_metadata() {
+    info "Checking upstream build-app workflow metadata and cache behavior"
+    local workflow="$REPO_DIR/.github/workflows/upstream-build-app.yml"
+
+    assert_file_exists "$workflow"
+    assert_contains "$workflow" 'name: Upstream Build App'
+    assert_contains "$workflow" 'UPSTREAM_DMG_URL: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg'
+    assert_contains "$workflow" 'actions/cache@v4'
+    assert_contains "$workflow" 'path: /tmp/codex-upstream-ci/Codex.dmg'
+    assert_contains "$workflow" 'Last-Modified'
+    assert_contains "$workflow" 'tolower($0) ~ /^last-modified:/'
+    assert_contains "$workflow" 'sha256sum'
+    assert_contains "$workflow" 'make build-app DMG=/tmp/codex-upstream-ci/Codex.dmg'
+    assert_contains "$workflow" 'DMG Last-Modified'
+    assert_contains "$workflow" 'DMG SHA-256'
+}
+
 test_installer_detects_electron_version_from_plist() {
     info "Checking Electron version detection from app metadata"
     local workspace="$TMP_DIR/electron-version"
@@ -479,7 +496,7 @@ PY
     assert_contains "$REPO_DIR/scripts/lib/process-detection.sh" "Codex App is currently running from"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "prompt_install_missing_cli"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "prompt-install-cli"
-    assert_contains "$REPO_DIR/launcher/start.sh.template" "Install it now? \\[Y/n\\]"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "Install it now? [Y/n]"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "is_interactive_terminal"
     assert_contains "$REPO_DIR/updater/src/app.rs" "kdialog"
     assert_contains "$REPO_DIR/updater/src/app.rs" "zenity"
@@ -554,7 +571,7 @@ test_side_by_side_launcher_identity() {
 
     assert_file_exists "$app_dir/start.sh"
     assert_contains "$app_dir/start.sh" "CODEX_LINUX_APP_ID=codex-cua-lab"
-    assert_contains "$app_dir/start.sh" "CODEX_LINUX_APP_DISPLAY_NAME=Codex\\\\ CUA\\\\ Lab"
+    assert_contains "$app_dir/start.sh" "CODEX_LINUX_APP_DISPLAY_NAME=Codex\\ CUA\\ Lab"
     assert_contains "$app_dir/start.sh" 'CODEX_LINUX_WEBVIEW_PORT=${CODEX_WEBVIEW_PORT:-5176}'
     assert_contains "$app_dir/start.sh" 'WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"'
     assert_contains "$app_dir/start.sh" 'ELECTRON_RENDERER_URL="${ELECTRON_RENDERER_URL:-$WEBVIEW_ORIGIN/}"'
@@ -645,6 +662,47 @@ test_linux_translucent_sidebar_default_patch_smoke() {
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
     assert_occurrence_count "$extracted/webview/assets/general-settings-test.js" 'navigator.userAgent.includes(`Linux`)' '1'
     assert_occurrence_count "$extracted/webview/assets/index-test.js" 'dataset.codexOs===`linux`' '1'
+}
+
+test_linux_opaque_background_patch_smoke() {
+    info "Checking Linux opaque background patch behavior"
+    local workspace="$TMP_DIR/opaque-background-patch"
+    local extracted="$workspace/extracted"
+    local repaired="$workspace/repaired"
+    local output_log="$workspace/output.log"
+    local bundle_body
+    local bad_bundle_body
+
+    mkdir -p "$workspace"
+    bundle_body="$(cat <<'JS'
+function gw(e){return e.pendingUrl.length>0&&e.pendingUrl!==e.url?e.pendingUrl:e.url}
+function jM(e){return e===`avatarOverlay`||e===`browserCommentPopup`||e===`globalDictation`||e===`hotkeyWindowHome`||e===`hotkeyWindowThread`}
+function PM({platform:e,appearance:t,opaqueWindowsEnabled:n,prefersDarkColors:r}){return e===`win32`&&!jM(t)?n?{backgroundColor:r?lM:uM,backgroundMaterial:`none`}:{backgroundColor:cM,backgroundMaterial:`mica`}:{backgroundColor:cM,backgroundMaterial:null}}
+let cM=`#00000000`,lM=`#000000`,uM=`#f9f9f9`;
+JS
+)"
+    make_fake_extracted_asar "$extracted" "$bundle_body"
+
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
+    assert_contains "$extracted/.vite/build/main-test.js" 'e===`linux`&&!jM(t)?{backgroundColor:r?lM:uM,backgroundMaterial:null}'
+    assert_contains "$extracted/.vite/build/main-test.js" 'function gw(e){return e.pendingUrl.length'
+    assert_not_contains "$extracted/.vite/build/main-test.js" '!gw(t)'
+
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'e===`linux`&&!jM(t)' '1'
+
+    bad_bundle_body="$(cat <<'JS'
+function gw(e){return e.pendingUrl.length>0&&e.pendingUrl!==e.url?e.pendingUrl:e.url}
+function jM(e){return e===`avatarOverlay`||e===`browserCommentPopup`||e===`globalDictation`||e===`hotkeyWindowHome`||e===`hotkeyWindowThread`}
+function PM({platform:e,appearance:t,opaqueWindowsEnabled:n,prefersDarkColors:r}){return e===`win32`&&!jM(t)?n?{backgroundColor:r?lM:uM,backgroundMaterial:`none`}:{backgroundColor:cM,backgroundMaterial:`mica`}:process.platform===`linux`&&!gw(t)?{backgroundColor:r?lM:uM,backgroundMaterial:null}:{backgroundColor:cM,backgroundMaterial:null}}
+let cM=`#00000000`,lM=`#000000`,uM=`#f9f9f9`;
+JS
+)"
+    make_fake_extracted_asar "$repaired" "$bad_bundle_body"
+
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$repaired" >"$output_log" 2>&1
+    assert_contains "$repaired/.vite/build/main-test.js" 'e===`linux`&&!jM(t)?{backgroundColor:r?lM:uM,backgroundMaterial:null}'
+    assert_not_contains "$repaired/.vite/build/main-test.js" '!gw(t)'
 }
 
 test_linux_tray_patch_smoke() {
@@ -748,8 +806,8 @@ JS
     assert_contains "$extracted/webview/assets/settings-shared-test.js" "settings.section.keybinds"
     assert_contains "$extracted/webview/assets/index-test.js" "keybinds-settings-linux.js"
     assert_contains "$extracted/webview/assets/index-test.js" "keybinds:xh"
-    assert_contains "$extracted/webview/assets/index-test.js" 'Zge=\[`general-settings`,`keybinds`'
-    assert_contains "$extracted/webview/assets/index-test.js" 'slugs:\[`general-settings`,`keybinds`'
+    assert_contains "$extracted/webview/assets/index-test.js" 'Zge=[`general-settings`,`keybinds`'
+    assert_contains "$extracted/webview/assets/index-test.js" 'slugs:[`general-settings`,`keybinds`'
     assert_contains "$extracted/webview/assets/index-test.js" 'case`keybinds`:return l===`electron`'
     assert_contains "$extracted/webview/assets/index-test.js" "codexLinuxKeybindOverridesRuntime"
     assert_contains "$extracted/webview/assets/index-test.js" "codex-linux-keybind-overrides"
@@ -1444,6 +1502,74 @@ JS
     assert_occurrence_count "$extracted/.vite/build/main-test.js" '(t===`darwin`||t===`linux`)&&e.computerUse' '1'
 }
 
+test_linux_computer_use_ui_opt_in_smoke() {
+    info "Checking Linux Computer Use UI opt-in gating"
+    local workspace="$TMP_DIR/computer-use-ui-opt-in"
+    local extracted="$workspace/extracted"
+    local fake_home="$workspace/home"
+    local output_log="$workspace/output.log"
+    local main_bundle="$extracted/.vite/build/main-test.js"
+    local renderer_asset="$extracted/webview/assets/use-model-settings-test.js"
+    local install_flow_asset="$extracted/webview/assets/use-plugin-install-flow-test.js"
+    local bundle_body
+    local renderer_body
+    local install_flow_body
+
+    mkdir -p "$workspace" "$fake_home/.config/codex-app"
+
+    bundle_body="$(cat <<'JS'
+let n={app:{whenReady(){},quit(){},requestSingleInstanceLock(){},on(){},off(){}}};
+let Qt=`openai-bundled`,$t=`browser-use`,en=`chrome-internal`,tn=`computer-use`,nn=`latex-tectonic`;
+var $n=[{name:tn,isEnabled:({features:e,platform:t})=>t===`darwin`&&e.computerUse,migrate:wn}];
+function me(e,{env:t=process.env,platform:n=process.platform}={}){return n!==`win32`||t.CODEX_ELECTRON_ENABLE_WINDOWS_COMPUTER_USE!==`1`?e:{...e,computerUse:!0,computerUseNodeRepl:!0}}
+JS
+)"
+    renderer_body="$(cat <<'JS'
+function hae(e){return e===`macOS`||e===`windows`}
+function RS(e){let t=(0,q.c)(8),{enabled:n,hostId:r,isHostLocal:i}=e,a=n===void 0?!0:n,o=r===void 0?R:r,s=Kn(),{isLoading:c,platform:l}=Hr(),u=Vn(`1506311413`),d;t[0]===o?d=t[1]:(d={featureName:`computer_use`,hostId:o},t[0]=o,t[1]=d);let f=LS(d),p;t[2]===l?p=t[3]:(p=hae(l),t[2]=l,t[3]=p);let m=a&&i&&s===`electron`&&u&&(c||p),h=m&&!c&&f.enabled&&!f.isLoading,g=m&&f.isLoading,_=m&&(c||f.isLoading),v;return v}
+JS
+)"
+    install_flow_body='function Qe({forceReloadPlugins:e,hostId:t}){let ne=f({featureName:`computer_use`,hostId:t}),re=!ne.isLoading&&ne.enabled,[L,R]=(0,Z.useState)({});return re}'
+
+    make_fake_extracted_asar "$extracted" "$bundle_body"
+    printf '%s\n' "$renderer_body" > "$renderer_asset"
+    printf '%s\n' "$install_flow_body" > "$install_flow_asset"
+
+    # Branch 1: no env var, no settings.json — only the plugin manifest gate runs.
+    env -u CODEX_LINUX_ENABLE_COMPUTER_USE_UI HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
+        node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
+    assert_contains "$main_bundle" '(t===`darwin`||t===`linux`)&&e.computerUse'
+    assert_not_contains "$main_bundle" 'return n===`linux`?{...e,computerUse:!0,computerUseNodeRepl:!0}'
+    assert_not_contains "$renderer_asset" 'function hae(e){return e===`macOS`||e===`windows`||e===`linux`}'
+    assert_not_contains "$install_flow_asset" 'navigator.userAgent.includes(`Linux`)'
+
+    # Branch 2: env var opts in — all four patches apply.
+    rm "$main_bundle" "$renderer_asset" "$install_flow_asset"
+    printf '%s\n' "$bundle_body" > "$main_bundle"
+    printf '%s\n' "$renderer_body" > "$renderer_asset"
+    printf '%s\n' "$install_flow_body" > "$install_flow_asset"
+
+    env CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
+        node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
+    assert_contains "$main_bundle" '(t===`darwin`||t===`linux`)&&e.computerUse'
+    assert_contains "$main_bundle" 'return n===`linux`?{...e,computerUse:!0,computerUseNodeRepl:!0}'
+    assert_contains "$renderer_asset" 'function hae(e){return e===`macOS`||e===`windows`||e===`linux`}'
+    assert_contains "$install_flow_asset" 'navigator.userAgent.includes(`Linux`)'
+
+    # Branch 3: settings.json flag opts in even without env var.
+    rm "$main_bundle" "$renderer_asset" "$install_flow_asset"
+    printf '%s\n' "$bundle_body" > "$main_bundle"
+    printf '%s\n' "$renderer_body" > "$renderer_asset"
+    printf '%s\n' "$install_flow_body" > "$install_flow_asset"
+    printf '%s\n' '{"codex-linux-computer-use-ui-enabled": true}' > "$fake_home/.config/codex-app/settings.json"
+
+    env -u CODEX_LINUX_ENABLE_COMPUTER_USE_UI HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
+        node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
+    assert_contains "$main_bundle" 'return n===`linux`?{...e,computerUse:!0,computerUseNodeRepl:!0}'
+    assert_contains "$renderer_asset" 'function hae(e){return e===`macOS`||e===`windows`||e===`linux`}'
+    assert_contains "$install_flow_asset" 'navigator.userAgent.includes(`Linux`)'
+}
+
 test_linux_file_manager_patch_fails_soft() {
     info "Checking Linux file manager patch fallback"
     local workspace="$TMP_DIR/file-manager-patch-fallback"
@@ -1464,6 +1590,7 @@ main() {
     test_rpm_builder_smoke
     test_missing_input_failure
     test_make_build_app_uses_installer_download_flow_by_default
+    test_upstream_build_app_workflow_tracks_dmg_metadata
     test_installer_detects_electron_version_from_plist
     test_installer_writes_package_version_from_app_plist
     test_installer_keeps_electron_fallback_for_bad_metadata
@@ -1472,12 +1599,14 @@ main() {
     test_side_by_side_launcher_identity
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
+    test_linux_opaque_background_patch_smoke
     test_keybinds_settings_tab_patch_smoke
     test_keybinds_settings_patch_warns_on_bundle_shape_miss
     test_linux_tray_patch_smoke
     test_browser_annotation_screenshot_patch_smoke
     test_linux_single_instance_patch_smoke
     test_linux_computer_use_gate_patch_smoke
+    test_linux_computer_use_ui_opt_in_smoke
     test_linux_file_manager_patch_fails_soft
     info "All script smoke tests passed"
 }

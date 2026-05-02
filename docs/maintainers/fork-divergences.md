@@ -4,8 +4,8 @@ This reference records the intentional differences between this fork and the
 last synced upstream ref. Use it during upstream syncs to preserve local
 contracts and keep divergence claims grounded in the actual upstream baseline.
 
-The current comparison baseline is local `upstream/main` at `f6b99eb`, merged
-into this fork by PR #10. Claims below describe the current tree's diff against
+The current comparison baseline is local `upstream/main` at `5aec7d5`, merged
+by the 2026-05-02 upstream-sync branch. Claims below describe the current tree's diff against
 that baseline, with current source files taking precedence over generated
 output.
 
