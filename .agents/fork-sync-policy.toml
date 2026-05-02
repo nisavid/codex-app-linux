@@ -15,6 +15,8 @@ sync_procedure = "docs/maintainers/fork-sync-policy.md"
 postmortem = "docs/maintainers/postmortems/pr10-fork-sync.md"
 uncertainty_destination = "pull request body"
 sync_ledger_required = true
+github_pr_repo = "nisavid/codex-app-linux"
+github_pr_commands_require_explicit_repo = true
 read_before_conflict_resolution = [
   "AGENTS.md",
   "docs/maintainers/fork-divergences.md",

@@ -261,7 +261,7 @@ EOF
 
 ```bash
 git push -u origin docs/upstream-sync-alignment
-gh pr create --draft --title "docs: align upstream sync documentation" --body-file /tmp/codex-app-linux-upstream-sync-docs-pr.md
+gh pr create --repo nisavid/codex-app-linux --draft --title "docs: align upstream sync documentation" --body-file /tmp/codex-app-linux-upstream-sync-docs-pr.md
 ```
 
 - [ ] Use this PR body in `/tmp/codex-app-linux-upstream-sync-docs-pr.md`:
