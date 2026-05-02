@@ -118,7 +118,7 @@ function currentLaunchActionBundleFixture() {
 function keybindsIndexBundleFixture() {
   return [
     "var Kge={\"general-settings\":xh,appearance:Pf,\"git-settings\":t1};",
-    "var i_e={\"general-settings\":(0,Z.lazy)(()=>s(()=>import(`./general-settings-DsLl9t6Z.js`),[],import.meta.url)),appearance:(0,Z.lazy)(()=>s(()=>import(`./appearance.js`),[],import.meta.url))};",
+    "var i_e={\"general-settings\":(0,Q.lazy)(()=>it(()=>import(`./general-settings-DsLl9t6Z.js`),[],import.meta.url)),appearance:(0,Q.lazy)(()=>it(()=>import(`./appearance.js`),[],import.meta.url))};",
     "qge=[`general-settings`,`appearance`,`connections`,`git-settings`,`usage`];",
     "Jge=[{key:`app`,heading:H7.appHeading,slugs:[`general-settings`,`appearance`,`connections`,`git-settings`,`usage`]}];",
     "switch(e){case`appearance`:case`git-settings`:case`worktrees`:case`local-environments`:case`data-controls`:case`environments`:return l===`electron`;}",
@@ -512,7 +512,7 @@ test("adds Keybinds settings route after upstream minified variable drift", () =
 
   assert.match(
     patched,
-    /var i_e=\{keybinds:\(0,Z\.lazy\)\(\(\)=>s\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\)/,
+    /var i_e=\{keybinds:\(0,Q\.lazy\)\(\(\)=>it\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\)/,
   );
   assert.match(patched, /var Kge=\{keybinds:xh,"general-settings":xh,/);
   assert.match(patched, /qge=\[`general-settings`,`keybinds`,`appearance`/);
