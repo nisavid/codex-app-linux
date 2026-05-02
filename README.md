@@ -233,7 +233,12 @@ import sys
 path = pathlib.Path(sys.argv[1])
 data = {}
 if path.exists():
-    data = json.loads(path.read_text() or "{}")
+    try:
+        parsed = json.loads(path.read_text() or "{}")
+    except json.JSONDecodeError:
+        parsed = {}
+    if isinstance(parsed, dict):
+        data = parsed
 data["codex-linux-computer-use-ui-enabled"] = True
 tmp = path.with_name(path.name + ".tmp")
 tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
