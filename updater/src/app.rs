@@ -181,6 +181,17 @@ fn update_install_is_pending(status: &UpdateStatus) -> bool {
     )
 }
 
+fn reconcile_cli_if_present_best_effort(
+    config: &RuntimeConfig,
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    context: &'static str,
+) {
+    if let Err(error) = codex_cli::reconcile_if_present(config, state, paths) {
+        warn!(?error, context, "unable to reconcile Codex CLI");
+    }
+}
+
 async fn run_daemon(
     config: &RuntimeConfig,
     state: &mut PersistedState,
@@ -188,7 +199,7 @@ async fn run_daemon(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(state, paths)?;
-    codex_cli::reconcile_if_present(config, state, paths)?;
+    reconcile_cli_if_present_best_effort(config, state, paths, "daemon startup");
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
     if packaged_runtime_removed(config) {
@@ -246,7 +257,7 @@ async fn run_check_now(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(state, paths)?;
-    codex_cli::reconcile_if_present(config, state, paths)?;
+    reconcile_cli_if_present_best_effort(config, state, paths, "check-now");
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
     if if_stale && state.status != UpdateStatus::Failed && upstream_check_is_fresh(config, state) {
@@ -277,7 +288,7 @@ fn run_status(
     paths: &RuntimePaths,
     json: bool,
 ) -> Result<()> {
-    codex_cli::reconcile_if_present(config, state, paths)?;
+    codex_cli::refresh_status(config, state, paths)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(state)?);
@@ -509,12 +520,7 @@ async fn run_check_cycle(
     state: &mut PersistedState,
     paths: &RuntimePaths,
 ) -> Result<()> {
-    if let Err(error) = codex_cli::reconcile_if_present(config, state, paths) {
-        warn!(
-            ?error,
-            "unable to reconcile Codex CLI before checking upstream packages"
-        );
-    }
+    reconcile_cli_if_present_best_effort(config, state, paths, "check cycle");
 
     let retrying_failed_update = state.status == UpdateStatus::Failed;
 

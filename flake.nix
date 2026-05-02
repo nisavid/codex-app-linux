@@ -98,8 +98,8 @@ codex_nixos_add_runtime_library_dirs() {\
 \
     for dir in \\\
         "$runtime_root/dependencies/python/lib" \\\
-        "$runtime_root/dependencies/python/lib/python3.12/site-packages/pillow.libs" \\\
-        "$runtime_root/dependencies/python/lib/python3.12/site-packages/numpy.libs" \\\
+        "$runtime_root/dependencies/python/lib/python${pkgs.python3.pythonVersion}/site-packages/pillow.libs" \\\
+        "$runtime_root/dependencies/python/lib/python${pkgs.python3.pythonVersion}/site-packages/numpy.libs" \\\
         "$runtime_root/dependencies/node/node_modules/@img/sharp-libvips-linux-x64/lib" \\\
         "$runtime_root/dependencies/node/node_modules/@img/sharp-linux-x64/lib" \\\
         "$runtime_root/dependencies/node/node_modules/@napi-rs/canvas-linux-x64-gnu"; do\

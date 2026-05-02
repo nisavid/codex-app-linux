@@ -9,12 +9,10 @@
 //! pick up the real `~/.nvm/.../bin/npm` instead of the temp-dir fake. Each
 //! test that touches env vars must hold this lock for its entire body.
 
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::MutexGuard;
 
 pub(crate) fn env_lock() -> MutexGuard<'static, ()> {
-    static ENV_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
-    ENV_MUTEX
-        .get_or_init(|| Mutex::new(()))
+    crate::TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|err| err.into_inner())
 }

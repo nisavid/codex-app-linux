@@ -936,7 +936,7 @@ mod tests {
 
     #[test]
     fn refresh_status_uses_persisted_cli_path_and_cached_latest() -> Result<()> {
-        let _env_guard = crate::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = env_lock();
         let temp = tempdir()?;
         let paths = test_runtime_paths(temp.path());
         paths.ensure_dirs()?;
@@ -964,6 +964,8 @@ mod tests {
         assert_eq!(state.cli_error_message, None);
         if let Some(value) = original_cli_path {
             std::env::set_var("CODEX_CLI_PATH", value);
+        } else {
+            std::env::remove_var("CODEX_CLI_PATH");
         }
         Ok(())
     }
@@ -1002,7 +1004,7 @@ mod tests {
 
     #[test]
     fn preflight_uses_configured_cli_path() -> Result<()> {
-        let _env_guard = crate::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = env_lock();
         let temp = tempdir()?;
         let paths = test_runtime_paths(temp.path());
         paths.ensure_dirs()?;
@@ -1029,13 +1031,15 @@ mod tests {
         assert_eq!(state.cli_status, CliStatus::UpToDate);
         if let Some(value) = original_cli_path {
             std::env::set_var("CODEX_CLI_PATH", value);
+        } else {
+            std::env::remove_var("CODEX_CLI_PATH");
         }
         Ok(())
     }
 
     #[test]
     fn refresh_cached_status_uses_cached_installed_version_without_running_cli() -> Result<()> {
-        let _env_guard = crate::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = env_lock();
         let temp = tempdir()?;
         let paths = test_runtime_paths(temp.path());
         paths.ensure_dirs()?;
@@ -1064,6 +1068,8 @@ mod tests {
         assert_eq!(state.cli_error_message, None);
         if let Some(value) = original_cli_path {
             std::env::set_var("CODEX_CLI_PATH", value);
+        } else {
+            std::env::remove_var("CODEX_CLI_PATH");
         }
         Ok(())
     }
@@ -1200,9 +1206,11 @@ mod tests {
         let original_home = std::env::var_os("HOME");
         let original_path = std::env::var_os("PATH");
         let original_nvm_dir = std::env::var_os("NVM_DIR");
+        let original_codex_cli_path = std::env::var_os("CODEX_CLI_PATH");
         std::env::set_var("HOME", temp.path());
         std::env::set_var("PATH", std::env::join_paths([bin_dir.clone()])?);
         std::env::remove_var("NVM_DIR");
+        std::env::remove_var("CODEX_CLI_PATH");
         std::env::set_var("FAKE_CODEX_PATH", &codex_path);
 
         assert_eq!(npm_program(), npm_path);
@@ -1227,6 +1235,11 @@ mod tests {
             std::env::set_var("NVM_DIR", nvm_dir);
         } else {
             std::env::remove_var("NVM_DIR");
+        }
+        if let Some(cli_path) = original_codex_cli_path {
+            std::env::set_var("CODEX_CLI_PATH", cli_path);
+        } else {
+            std::env::remove_var("CODEX_CLI_PATH");
         }
         std::env::remove_var("FAKE_CODEX_PATH");
 

@@ -263,10 +263,14 @@ impl ComputerUseLinux {
         };
         if let ClickTarget::PrimaryAction {
             object_ref,
+            action_index,
             action_name,
         } = target
         {
-            return match invoke_accessibility_action(&object_ref, Some("0")).await {
+            let requested_action = action_index.to_string();
+            return match invoke_accessibility_action(&object_ref, Some(requested_action.as_str()))
+                .await
+            {
                 Ok(invocation) => Json(ActionOutput {
                     ok: invocation.ok,
                     implemented: true,
@@ -1137,14 +1141,15 @@ impl ComputerUseLinux {
                 "No cached accessibility node for element_index {element_index}. Call get_app_state first."
             ));
         };
-        let Some(action_name) = primary_action_name(node.actions.as_slice()) else {
+        let Some(action) = primary_action(node.actions.as_slice()) else {
             return Err(format!(
                 "No clickable bounds cached for element_index {element_index}, and the element exposes no primary AT-SPI action."
             ));
         };
         Ok(ClickTarget::PrimaryAction {
             object_ref: node.object_ref.clone(),
-            action_name: Some(action_name),
+            action_index: action.index,
+            action_name: Some(action.name.clone()),
         })
     }
 
@@ -1252,6 +1257,7 @@ enum ClickTarget {
     Coordinates(i32, i32),
     PrimaryAction {
         object_ref: String,
+        action_index: i32,
         action_name: Option<String>,
     },
 }
@@ -1262,8 +1268,8 @@ fn is_plain_left_click(button: Option<&str>, click_count: Option<u32>) -> bool {
     matches!(button.to_ascii_lowercase().as_str(), "left" | "primary") && click_count == 1
 }
 
-fn primary_action_name(actions: &[AccessibilityAction]) -> Option<String> {
-    actions.first().map(|action| action.name.clone())
+fn primary_action(actions: &[AccessibilityAction]) -> Option<&AccessibilityAction> {
+    actions.first()
 }
 
 fn bounds_center(bounds: &Bounds) -> Option<(i32, i32)> {
@@ -1961,9 +1967,11 @@ mod tests {
         match target {
             ClickTarget::PrimaryAction {
                 object_ref,
+                action_index,
                 action_name,
             } => {
                 assert_eq!(object_ref, ":1.7/org/a11y/atspi/accessible/7");
+                assert_eq!(action_index, 0);
                 assert_eq!(action_name.as_deref(), Some("Click"));
             }
             ClickTarget::Coordinates(_, _) => {
@@ -1984,7 +1992,7 @@ mod tests {
                 height: 1,
             }),
             vec![AccessibilityAction {
-                index: 0,
+                index: 3,
                 name: "Click".to_string(),
                 description: "Clicks the button".to_string(),
                 keybinding: String::new(),
@@ -2004,9 +2012,11 @@ mod tests {
         match target {
             ClickTarget::PrimaryAction {
                 object_ref,
+                action_index,
                 action_name,
             } => {
                 assert_eq!(object_ref, ":1.7/org/a11y/atspi/accessible/7");
+                assert_eq!(action_index, 3);
                 assert_eq!(action_name.as_deref(), Some("Click"));
             }
             ClickTarget::Coordinates(_, _) => {

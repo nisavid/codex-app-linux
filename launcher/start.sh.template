@@ -638,13 +638,20 @@ PY
 
 pid_has_webview_server_cmdline() {
     local pid="$1"
-    local cmdline
+    local argv=()
+    local arg
+    local has_http_server=0
+    local has_port=0
 
     [[ "$pid" =~ ^[0-9]+$ ]] || return 1
     [ -d "/proc/$pid" ] || return 1
     pid_is_current_user "$pid" || return 1
-    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-    [[ "$cmdline" == *"http.server $CODEX_LINUX_WEBVIEW_PORT"* ]]
+    mapfile -d '' -t argv < "/proc/$pid/cmdline" 2>/dev/null || return 1
+    for arg in "${argv[@]}"; do
+        [ "$arg" = "http.server" ] && has_http_server=1
+        [ "$arg" = "$CODEX_LINUX_WEBVIEW_PORT" ] && has_port=1
+    done
+    [ "$has_http_server" -eq 1 ] && [ "$has_port" -eq 1 ]
 }
 
 pid_is_webview_server() {
@@ -746,16 +753,30 @@ stale_webview_server_pid() {
 
 stop_stale_webview_server() {
     local pid
+    local cwd
 
     running_app_is_active && return 0
 
     while pid="$(stale_webview_server_pid)"; do
-        echo "Stopping stale webview server pid=$pid cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+        cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+        echo "Stopping stale webview server pid=$pid cwd=$cwd"
         kill "$pid" 2>/dev/null || true
         for _ in $(seq 1 20); do
             kill -0 "$pid" 2>/dev/null || break
             sleep 0.05
         done
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Stale webview server pid=$pid did not stop after SIGTERM; sending SIGKILL" >&2
+            kill -9 "$pid" 2>/dev/null || true
+            for _ in $(seq 1 20); do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 0.05
+            done
+        fi
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Unable to stop stale webview server pid=$pid" >&2
+            return 1
+        fi
     done
 }
 
