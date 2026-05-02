@@ -14,8 +14,8 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
   records verification evidence.
 - Use `--repo nisavid/codex-app-linux` on every `gh pr` command in this
   checkout, including `create`, `view`, `ready`, `checks`, `merge`, and
-  `status`. Bare `gh pr` commands resolve to the upstream parent repository
-  here, even though `origin` points at this fork.
+  `status`. Do not rely on GitHub CLI's inferred repository; it can target the
+  wrong repository in this fork checkout.
 - Commit completed work before handoff. For long tasks, also commit at staged,
   functional cutoff points. Each commit must pass the normal checks for the
   changed surface before it is created.

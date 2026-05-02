@@ -33,8 +33,8 @@ agents and maintainers; runtime code does not consume it.
 10. On the first push of any task branch, create a draft PR in the same
    workflow turn.
 11. Use `--repo nisavid/codex-app-linux` on every `gh pr` command in this
-   checkout. Bare `gh pr` commands resolve to the upstream parent repository
-   here; do not rely on GitHub CLI's inferred repository.
+   checkout. Do not rely on GitHub CLI's inferred repository; it can target the
+   wrong repository in this fork checkout.
 12. Keep the PR in draft until local gates pass and the PR body records
    verification evidence. For code-changing branches, the required lifecycle is:
    local gates, first push, draft PR, PR verification notes, ready for review.
