@@ -140,7 +140,7 @@ not inherited from the local build user.
 ### 5. Updater Privilege Boundary And Install Hardening
 
 **Fork delta:** `codex-app-updater` remains unprivileged until the final native
-package install. Privileged work is limited to `install-deb`, `install-rpm`,
+package install. Privileged work runs only through `install-deb`, `install-rpm`,
 and `install-pacman`, which validate package paths and identity metadata,
 stage private copies, and then invoke the package manager through `pkexec`.
 
@@ -241,7 +241,10 @@ checkout builds or race pending updater install state.
 shapes. The current fork delta includes local identity updates, sanitized
 generated keybind literals, `CODEX_APP_LAUNCH_ACTION_SOCKET`, Linux window
 default refinements, and default-enabled Electron sandboxing with an explicit
-compatibility opt-out.
+compatibility opt-out. It also keeps the Linux Computer Use plugin manifest gate
+default-on while keeping Computer Use UI patches opt-in through
+`CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` or the persisted
+`codex-linux-computer-use-ui-enabled` setting.
 
 **Upstream baseline:** Upstream already carries Linux ASAR patching. This fork
 maintains local patch safety and selected Linux behavior changes on top of that
@@ -284,28 +287,30 @@ changing the local server model, port behavior, or warm-start adoption.
 ### 11. Linux Computer Use Integration Compatibility
 
 **Fork delta:** Upstream's Linux Computer Use backend and bundled plugin remain
-part of the packaged app. This fork's current source delta is limited to local
-compatibility: returning an error when a requested app is not found, pointing
-the plugin manifest at a present SVG logo, adding that SVG asset, and keeping
-package/docs wording aligned with account-side gating.
+part of the packaged app. This fork preserves the `codex-app` package identity,
+keeps the plugin manifest pointed at packaged assets, carries local Linux
+input/window-targeting hardening where needed, and documents the local opt-in for
+Computer Use UI patching without claiming that local installation changes
+OpenAI account policy or server-side availability.
 
 **Upstream baseline:** The Rust MCP backend, bundled plugin resources,
 accessibility tree capture, screenshot paths, and input automation are upstream
 features in the synced baseline.
 
-**Why it matters:** The package can stage local Computer Use support, but the
-Codex UI remains gated by OpenAI account-side rollout and host accessibility or
-input prerequisites.
+**Why it matters:** The package can stage local Computer Use support and register
+the backend on Linux, but useful operation still depends on host accessibility,
+screenshot, and input prerequisites. Local UI opt-in controls fork-side patching
+only; it is not a server-side entitlement change.
 
-**Current paths:** `computer-use-linux/src/atspi_tree.rs`,
-`plugins/openai-bundled/plugins/computer-use/.codex-plugin/plugin.json`,
-`plugins/openai-bundled/plugins/computer-use/assets/app-icon.svg`,
+**Current paths:** `computer-use-linux/src/`,
+`plugins/openai-bundled/plugins/computer-use/`,
+`scripts/patch-linux-window-ui.js`, `scripts/patch-linux-window-ui.test.js`,
 `scripts/lib/package-common.sh`, `launcher/start.sh.template`, `README.md`,
-`CHANGELOG.md`.
+`docs/usage/build-and-run.md`, `CHANGELOG.md`.
 
 **Preservation checks:** Keep package staging and README wording scoped to the
-local compatibility delta and clear that local installation does not bypass
-OpenAI feature flags.
+local compatibility delta, preserve the `codex-app/settings.json` setting path,
+and clear that local installation does not bypass OpenAI feature flags.
 
 ### 12. Release, Security, And Supply-Chain Verification
 

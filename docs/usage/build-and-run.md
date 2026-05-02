@@ -145,6 +145,43 @@ To use a DMG you already have:
 make build-app DMG=/path/to/Codex.dmg
 ```
 
+### Linux Computer Use UI Opt-In
+
+The Linux Computer Use backend and plugin manifest are packaged by default. The
+in-app UI controls are opt-in because they patch upstream UI paths during app
+generation.
+
+Enable the UI patches for one build:
+
+```bash
+CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 make build-app
+```
+
+To keep the opt-in across updater rebuilds, write the persisted setting read by
+the patcher at `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/settings.json`. This
+matters for updater runs because the `systemd --user` service does not inherit
+interactive shell environment variables.
+
+```bash
+settings_dir="${XDG_CONFIG_HOME:-$HOME/.config}/codex-app"
+mkdir -p "$settings_dir"
+python3 - "$settings_dir/settings.json" <<'PY'
+import json
+import os
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+data = {}
+if path.exists():
+    data = json.loads(path.read_text() or "{}")
+data["codex-linux-computer-use-ui-enabled"] = True
+tmp = path.with_name(path.name + ".tmp")
+tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+os.replace(tmp, path)
+PY
+```
+
 To remove the existing generated tree and redownload the DMG:
 
 ```bash
