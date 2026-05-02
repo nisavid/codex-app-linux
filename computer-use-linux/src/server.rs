@@ -378,8 +378,11 @@ impl ComputerUseLinux {
         &self,
         Parameters(params): Parameters<ActionParams>,
     ) -> Json<ActionOutput> {
-        self.perform_element_action(&params, params.action.as_deref().or(Some("0")))
-            .await
+        self.perform_element_action(
+            &params,
+            Some(requested_action_or_primary(params.action.as_deref())),
+        )
+        .await
     }
 
     #[tool(
@@ -1263,13 +1266,23 @@ enum ClickTarget {
 }
 
 fn is_plain_left_click(button: Option<&str>, click_count: Option<u32>) -> bool {
-    let button = button.unwrap_or("left");
+    let button = button
+        .map(str::trim)
+        .filter(|button| !button.is_empty())
+        .unwrap_or("left");
     let click_count = click_count.unwrap_or(1);
     matches!(button.to_ascii_lowercase().as_str(), "left" | "primary") && click_count == 1
 }
 
 fn primary_action(actions: &[AccessibilityAction]) -> Option<&AccessibilityAction> {
     actions.first()
+}
+
+fn requested_action_or_primary(action: Option<&str>) -> &str {
+    action
+        .map(str::trim)
+        .filter(|action| !action.is_empty())
+        .unwrap_or("0")
 }
 
 fn bounds_center(bounds: &Bounds) -> Option<(i32, i32)> {
@@ -2050,6 +2063,20 @@ mod tests {
             .unwrap_err();
 
         assert!(error.contains("No clickable bounds cached for element_index 7"));
+    }
+
+    #[test]
+    fn blank_button_uses_plain_left_click_fallback() {
+        assert!(is_plain_left_click(Some("  "), None));
+        assert!(is_plain_left_click(Some(" primary "), Some(1)));
+        assert!(!is_plain_left_click(Some("  "), Some(2)));
+    }
+
+    #[test]
+    fn blank_action_defaults_to_primary_action() {
+        assert_eq!(requested_action_or_primary(None), "0");
+        assert_eq!(requested_action_or_primary(Some("  ")), "0");
+        assert_eq!(requested_action_or_primary(Some("  3 ")), "3");
     }
 
     #[test]

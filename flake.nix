@@ -274,7 +274,7 @@ NODE
               --prefix LD_LIBRARY_PATH : "${electronLibPath}" \
               --prefix LD_LIBRARY_PATH : "${runtimeLibPath}" \
               --prefix PATH : "/run/current-system/sw/bin" \
-              --prefix PATH : "/etc/profiles/per-user/$(whoami)/bin"
+              --prefix PATH : "/etc/profiles/per-user/\$USER/bin"
 
             runHook postInstall
           '';
@@ -330,14 +330,14 @@ NODE
       in
       {
         packages = {
-          default = codexApp;
+          default = installer;
           codex-app = codexApp;
           installer = installer;
         };
 
         apps.default = {
           type = "app";
-          program = "${codexApp}/bin/codex-app";
+          program = "${installer}/bin/codex-app-installer";
         };
 
         apps.installer = {

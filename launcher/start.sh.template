@@ -809,6 +809,8 @@ adopt_existing_webview_server() {
 }
 
 ensure_webview_server() {
+    local stop_status
+
     if [ ! -d "$WEBVIEW_DIR" ] || [ ! "$(ls -A "$WEBVIEW_DIR" 2>/dev/null)" ]; then
         return 0
     fi
@@ -827,6 +829,11 @@ ensure_webview_server() {
     fi
 
     stop_stale_webview_server
+    stop_status=$?
+    if [ "$stop_status" -ne 0 ]; then
+        notify_error "stop_stale_webview_server failed with status $stop_status"
+        exit "$stop_status"
+    fi
 
     if verify_webview_origin "$WEBVIEW_ORIGIN/index.html" >/dev/null 2>&1; then
         notify_error "$CODEX_LINUX_APP_DISPLAY_NAME webview port $CODEX_LINUX_WEBVIEW_PORT is already serving Codex content, but it is not owned by this launcher. Stop the other webview server and try again."

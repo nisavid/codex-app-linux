@@ -340,6 +340,11 @@ test("adds Linux launch actions when captured window identifiers contain dollar 
   assert.match(patched, /codexLinuxHandleLaunchActionArgs/);
   assert.match(patched, /z\.navigateToRoute\(r\$,e\),ae\(r\$\)/);
   assert.match(patched, /codexLinuxQuitInProgress=!1/);
+  assert.equal(
+    patched.match(/let codexLinuxQuitInProgress=!1/g)?.length ?? 0,
+    1,
+    "quit state should be declared exactly once",
+  );
   assert.match(patched, /codexLinuxMarkQuitInProgress=\(\)=>\{codexLinuxQuitInProgress=!0\}/);
   assert.match(patched, /codexLinuxIsQuitInProgress=\(\)=>codexLinuxQuitInProgress===!0/);
   assert.match(patched, /codexLinuxGetSetting=e=>/);
