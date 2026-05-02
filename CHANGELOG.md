@@ -21,7 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   instead of overloading `Unknown`.
 - Automatic installation of a missing Codex CLI is launcher-scoped. The daemon
   and `codex-app-updater status` report and notify when the dependency is
-  missing, but they do not install it on their own.
+  missing, but they do not install missing CLI dependencies on their own;
+  best-effort reconciliation may still upgrade an existing CLI.
 
 ### Added
 
@@ -30,8 +31,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `~/.config/codex-app/settings.json` with
   `"codex-linux-computer-use-ui-enabled": true`, including smoke coverage for
   default-off, env-var, and persisted-setting paths.
-
-### Changed
 
 - The bundled Computer Use plugin manifest gate remains default-on for Linux
   platform registration, while the UI patches that touch upstream rollout-gated

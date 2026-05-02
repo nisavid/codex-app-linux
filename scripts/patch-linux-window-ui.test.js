@@ -321,7 +321,9 @@ test("adds Linux launch actions through current setSecondInstanceArgsHandler bun
   assert.match(launchPatched, /e\.includes\(`--prompt-chat`\)/);
   assert.match(launchPatched, /e\.includes\(`--quick-chat`\)/);
   assert.match(launchPatched, /e\.includes\(`--new-chat`\)/);
-  assert.match(launchPatched, /process\.platform===`linux`&&codexLinuxStartLaunchActionSocket\(\);l\(e=>/);
+  assert.match(launchPatched, /codexLinuxBeforeQuitHandler=\(\)=>\{codexLinuxMarkQuitInProgress\(\)\}/);
+  assert.match(launchPatched, /n\.app\.on\(`before-quit`,codexLinuxBeforeQuitHandler\)/);
+  assert.match(launchPatched, /process\.platform===`linux`&&\(n\.app\.on\(`before-quit`,codexLinuxBeforeQuitHandler\),k\.add\(\(\)=>\{n\.app\.off\(`before-quit`,codexLinuxBeforeQuitHandler\)\}\),codexLinuxStartLaunchActionSocket\(\)\);l\(e=>/);
   assert.doesNotMatch(launchPatched, /l\(e=>\{z\.deepLinks\.queueProcessArgs\(e\)\|\|oe\(\)\}\)/);
   assert.match(
     prewarmPatched,

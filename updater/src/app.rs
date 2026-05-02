@@ -1687,9 +1687,7 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.cli_status = CliStatus::NotInstalled;
-        state.cli_error_message = Some(
-            "Codex CLI is required but not currently installed. Open the app to retry the automatic install flow, or install it manually with npm.".to_string(),
-        );
+        state.cli_error_message = Some(codex_cli::CLI_NOT_INSTALLED_MESSAGE.to_string());
 
         maybe_notify_cli_missing(&mut state, &paths, false)?;
         let notified_count = state.notified_events.len();

@@ -86,7 +86,9 @@
           if [ -f "${installDir}/start.sh" ]; then
             ${pkgs.gnused}/bin/sed -i '1s|^#!/bin/bash$|#!${pkgs.bash}/bin/bash|' "${installDir}/start.sh"
             if ! grep -q "NixOS Electron library path" "${installDir}/start.sh"; then
-              ${pkgs.gnused}/bin/sed -i '2i# NixOS Electron library path for dlopen()ed GL/EGL libraries.\nexport LD_LIBRARY_PATH="${electronLibPath}:${runtimeLibPath}:''${LD_LIBRARY_PATH:-}"' "${installDir}/start.sh"
+              ${pkgs.gnused}/bin/sed -i '2i\
+# NixOS Electron library path for dlopen()ed GL/EGL libraries.\
+export LD_LIBRARY_PATH="${electronLibPath}:${runtimeLibPath}:''${LD_LIBRARY_PATH:-}"' "${installDir}/start.sh"
             fi
             if ! grep -q "codex_nixos_add_runtime_library_dirs" "${installDir}/start.sh"; then
               ${pkgs.gnused}/bin/sed -i '/^set -euo pipefail$/a\

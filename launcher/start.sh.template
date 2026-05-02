@@ -659,7 +659,7 @@ pid_is_webview_server() {
     local cwd
 
     pid_has_webview_server_cmdline "$pid" || return 1
-    cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
     [ "$cwd" = "$(canonical_path "$WEBVIEW_DIR")" ]
 }
 
@@ -669,7 +669,7 @@ pid_is_stale_webview_server() {
     local deleted_webview_dir
 
     pid_has_webview_server_cmdline "$pid" || return 1
-    cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
     deleted_webview_dir="$(canonical_path "$WEBVIEW_DIR") (deleted)"
     [ "$cwd" = "$deleted_webview_dir" ]
 }

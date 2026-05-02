@@ -16,7 +16,7 @@ use std::{
 use tracing::{info, warn};
 
 const CLI_PACKAGE_NAME: &str = "@openai/codex";
-const CLI_NOT_INSTALLED_MESSAGE: &str =
+pub(crate) const CLI_NOT_INSTALLED_MESSAGE: &str =
     "Codex CLI is required but not currently installed. Open the app to retry the automatic install flow, or install it manually with npm.";
 const CLI_VERSION_CHECK_TTL: Duration = Duration::hours(1);
 #[cfg(test)]
@@ -320,7 +320,13 @@ pub fn reconcile_if_present(
         return Ok(false);
     }
 
-    Ok(preflight(config, state, paths, None, false)?.updated)
+    preflight(config, state, paths, None, false)
+        .map(|outcome| outcome.updated)
+        .map_err(|error| {
+            let original_message = error.to_string();
+            let _ = refresh_status(config, state, paths);
+            anyhow!(original_message)
+        })
 }
 
 fn persist_state(paths: &RuntimePaths, state: &PersistedState) -> Result<()> {
@@ -1249,6 +1255,38 @@ mod tests {
         assert_eq!(state.cli_latest_version.as_deref(), Some("0.42.1"));
         assert_eq!(state.cli_status, CliStatus::UpToDate);
         assert_eq!(read_installed_version(&codex_path)?, "0.42.1");
+        Ok(())
+    }
+
+    #[test]
+    fn reconcile_if_present_persists_failed_status_when_preflight_fails() -> Result<()> {
+        let temp = tempdir()?;
+        let paths = test_runtime_paths(temp.path());
+        paths.ensure_dirs()?;
+
+        let codex_path = temp.path().join("codex");
+        write_executable_script(&codex_path, "#!/bin/sh\nexit 42\n")?;
+
+        let mut state = PersistedState::new(true);
+        state.cli_path = Some(codex_path.clone());
+        state.cli_installed_version = Some("0.42.0".to_string());
+        state.cli_status = CliStatus::UpToDate;
+
+        let config = test_runtime_config(&paths);
+        let error = reconcile_if_present(&config, &mut state, &paths).unwrap_err();
+
+        assert!(error.to_string().contains("exited with exit status: 42"));
+        assert_eq!(state.cli_path.as_deref(), Some(codex_path.as_path()));
+        assert_eq!(state.cli_status, CliStatus::Failed);
+        assert!(state
+            .cli_error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Could not read the installed @openai/codex version"));
+
+        let loaded = PersistedState::load_or_default(&paths.state_file, true)?;
+        assert_eq!(loaded.cli_status, CliStatus::Failed);
+        assert_eq!(loaded.cli_error_message, state.cli_error_message);
         Ok(())
     }
 }
