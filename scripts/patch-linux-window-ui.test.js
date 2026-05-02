@@ -134,7 +134,7 @@ function keyboardShortcutsIndexBundleFixture() {
   return [
     "var ww={\"general-settings\":(0,Q.lazy)(()=>it(()=>import(`./general-settings-OdfVFvhe.js`).then(e=>({default:e.GeneralSettings})),__vite__mapDeps([233]),import.meta.url)),",
     "\"keyboard-shortcuts\":(0,Q.lazy)(()=>it(()=>import(`./keyboard-shortcuts-settings-BWZg3k-L.js`).then(e=>({default:e.KeyboardShortcutsSettings})),__vite__mapDeps([243,3,1]),import.meta.url)),",
-    "appearance:(0,Q.lazy)(()=>it(()=>import(`./appearance-settings-DQinhDUY.js`).then(e=>({default:e.AppearanceSettings})),__vite__mapDeps([245]),import.meta.url))};",
+    "agent:(0,Q.lazy)(()=>it(()=>import(`./agent-settings-DZfkvWn6.js`).then(e=>({default:e.AgentSettings})),__vite__mapDeps([245]),import.meta.url))};",
     "var fe={\"general-settings\":I,\"keyboard-shortcuts\":ue,appearance:re};",
     "pe=[`general-settings`,`appearance`,`agent`,`personalization`,`keyboard-shortcuts`];",
     "me=[{key:`connection`,slugs:[`agent`,`personalization`,`keyboard-shortcuts`]}];",
@@ -548,7 +548,7 @@ test("uses upstream Keyboard Shortcuts settings surface when available", () => {
 
   assert.match(
     patched,
-    /"keyboard-shortcuts":\(0,Q\.lazy\)\(\(\)=>it\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\),\[\],import\.meta\.url\)\),appearance:/,
+    /"keyboard-shortcuts":\(0,Q\.lazy\)\(\(\)=>it\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\),\[\],import\.meta\.url\)\),agent:/,
   );
   assert.doesNotMatch(patched, /keybinds:\(0,Q\.lazy/);
   assert.match(patched, /"keyboard-shortcuts":ue/);

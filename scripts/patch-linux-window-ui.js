@@ -459,7 +459,7 @@ function applyKeybindsSettingsIndexPatch(currentSource) {
   if (patchedSource.includes('"keyboard-shortcuts":')) {
     if (!patchedSource.includes(`${keybindsSettingsAsset}`)) {
       const routePattern =
-        /"keyboard-shortcuts":\(0,([A-Za-z_$][\w$]*)\.lazy\)\(\(\)=>([A-Za-z_$][\w$]*)\(\(\)=>import\(`\.\/[^`]+`\)[\s\S]*?,import\.meta\.url\)\),appearance:/;
+        /"keyboard-shortcuts":\(0,([A-Za-z_$][\w$]*)\.lazy\)\(\(\)=>([A-Za-z_$][\w$]*)\(\(\)=>import\(`\.\/[^`]+`\)[\s\S]*?,import\.meta\.url\)\),((?:"[^"]+"|[A-Za-z_$][\w$]*):)/;
       if (!routePattern.test(patchedSource)) {
         throw new Error(
           "Required Keybinds settings patch failed: could not replace keyboard shortcuts route",
@@ -467,7 +467,7 @@ function applyKeybindsSettingsIndexPatch(currentSource) {
       }
       patchedSource = patchedSource.replace(
         routePattern,
-        `"keyboard-shortcuts":(0,$1.lazy)(()=>$2(()=>import(\`./${keybindsSettingsAsset}\`),[],import.meta.url)),appearance:`,
+        `"keyboard-shortcuts":(0,$1.lazy)(()=>$2(()=>import(\`./${keybindsSettingsAsset}\`),[],import.meta.url)),$3`,
       );
     }
 
