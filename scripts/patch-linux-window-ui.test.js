@@ -126,6 +126,10 @@ function keybindsIndexBundleFixture() {
   ].join("");
 }
 
+function spreadKeybindsIndexBundleFixture() {
+  return keybindsIndexBundleFixture().replace("var i_e={", "const allRoutes={...base,");
+}
+
 function keyboardShortcutsIndexBundleFixture() {
   return [
     "var ww={\"general-settings\":(0,Q.lazy)(()=>it(()=>import(`./general-settings-OdfVFvhe.js`).then(e=>({default:e.GeneralSettings})),__vite__mapDeps([233]),import.meta.url)),",
@@ -519,6 +523,20 @@ test("adds Keybinds settings route after upstream minified variable drift", () =
   assert.match(patched, /slugs:\[`general-settings`,`keybinds`,`appearance`/);
   assert.match(patched, /case`keybinds`:return l===`electron`/);
   assert.match(patched, /case`keybinds`:k=!1;break bb0;/);
+  assert.match(patched, /codexLinuxKeybindOverridesRuntime/);
+});
+
+test("adds Keybinds settings route when the route table starts with a spread", () => {
+  const patched = applyPatchTwice(
+    applyKeybindsSettingsIndexPatch,
+    spreadKeybindsIndexBundleFixture(),
+  );
+
+  assert.match(
+    patched,
+    /const allRoutes=\{\.\.\.base,keybinds:\(0,Q\.lazy\)\(\(\)=>it\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\)/,
+  );
+  assert.match(patched, /"general-settings":\(0,Q\.lazy\)/);
   assert.match(patched, /codexLinuxKeybindOverridesRuntime/);
 });
 
