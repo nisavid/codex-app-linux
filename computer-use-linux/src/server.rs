@@ -1203,7 +1203,6 @@ fn accessibility_filter_candidates(window_context: Option<&WindowInfo>) -> Vec<S
     };
 
     let mut candidates = Vec::new();
-    push_candidate(&mut candidates, window.title.as_deref());
     push_candidate(&mut candidates, window.wm_class.as_deref());
 
     if let Some(app_id) = trimmed_nonempty(window.app_id.as_deref()) {
@@ -1664,7 +1663,7 @@ mod tests {
     }
 
     #[test]
-    fn accessibility_filter_candidates_prefer_title_and_skip_synthetic_app_id() {
+    fn accessibility_filter_candidates_skip_title_and_synthetic_app_id() {
         let window = window_info(
             42,
             Some("CU ATSPI GTK Test"),
@@ -1675,13 +1674,7 @@ mod tests {
 
         let candidates = accessibility_filter_candidates(Some(&window));
 
-        assert_eq!(
-            candidates,
-            vec![
-                "CU ATSPI GTK Test".to_string(),
-                "cu_atspi_gtk_test.py".to_string(),
-            ]
-        );
+        assert_eq!(candidates, vec!["cu_atspi_gtk_test.py".to_string()]);
     }
 
     #[test]

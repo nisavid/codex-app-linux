@@ -1,7 +1,8 @@
 use crate::diagnostics::hydrate_session_bus_env;
 use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
+use tokio::sync::Mutex;
 use zbus::{
     proxy::SignalStream,
     zvariant::{OwnedObjectPath, OwnedValue, Value},
@@ -38,6 +39,7 @@ pub struct PortalPointerSession {
     connection: Connection,
     session_handle: OwnedObjectPath,
     streams: Vec<PortalStream>,
+    op_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +90,7 @@ pub async fn start_portal_pointer_session() -> Result<PortalPointerSession> {
         connection,
         session_handle,
         streams,
+        op_lock: Arc::new(Mutex::new(())),
     })
 }
 
@@ -98,6 +101,7 @@ pub async fn click(
     button: PointerButton,
     click_count: u32,
 ) -> Result<()> {
+    let _op_guard = session.op_lock.lock().await;
     let proxy = remote_desktop_proxy(&session.connection).await?;
     let (stream_id, x, y) = session.map_absolute_point(x, y)?;
     notify_pointer_motion_absolute(&proxy, &session.session_handle, stream_id, x, y).await?;
@@ -127,6 +131,7 @@ pub async fn scroll(
     direction: ScrollDirection,
     steps: i32,
 ) -> Result<()> {
+    let _op_guard = session.op_lock.lock().await;
     let proxy = remote_desktop_proxy(&session.connection).await?;
     if let Some((x, y)) = target_point {
         let (stream_id, x, y) = session.map_absolute_point(x, y)?;
@@ -151,6 +156,7 @@ pub async fn drag(
     end_x: i32,
     end_y: i32,
 ) -> Result<()> {
+    let _op_guard = session.op_lock.lock().await;
     let proxy = remote_desktop_proxy(&session.connection).await?;
     let (start_stream, start_x, start_y) = session.map_absolute_point(start_x, start_y)?;
     notify_pointer_motion_absolute(
@@ -222,7 +228,10 @@ impl PortalStream {
 
     fn relative_point(&self, x: i32, y: i32) -> (u32, f64, f64) {
         let (stream_x, stream_y) = self.position.unwrap_or((0, 0));
-        let (width, height) = self.size.unwrap_or((i32::MAX, i32::MAX));
+        let (width, height) = self
+            .size
+            .filter(|(width, height)| *width > 0 && *height > 0)
+            .unwrap_or((i32::MAX, i32::MAX));
         let rel_x = (x - stream_x).clamp(0, width.saturating_sub(1)) as f64;
         let rel_y = (y - stream_y).clamp(0, height.saturating_sub(1)) as f64;
         (self.node_id, rel_x, rel_y)
@@ -506,7 +515,7 @@ fn parse_streams(value: &OwnedValue) -> Result<Vec<PortalStream>> {
         .map(|(node_id, properties)| PortalStream {
             node_id,
             position: get_pair_i32(&properties, "position"),
-            size: get_pair_i32(&properties, "size"),
+            size: get_size_pair_i32(&properties, "size"),
         })
         .collect())
 }
@@ -522,9 +531,15 @@ fn get_pair_i32(properties: &HashMap<String, OwnedValue>, key: &str) -> Option<(
                     .try_clone()
                     .ok()
                     .and_then(|owned| <(u32, u32)>::try_from(owned).ok())
-                    .map(|(left, right)| (left as i32, right as i32))
+                    .and_then(|(left, right)| {
+                        Some((i32::try_from(left).ok()?, i32::try_from(right).ok()?))
+                    })
             })
     })
+}
+
+fn get_size_pair_i32(properties: &HashMap<String, OwnedValue>, key: &str) -> Option<(i32, i32)> {
+    get_pair_i32(properties, key).filter(|(width, height)| *width > 0 && *height > 0)
 }
 
 fn request_path(unique_name: &str, token: &str) -> String {

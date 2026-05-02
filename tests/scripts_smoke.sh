@@ -27,13 +27,13 @@ assert_file_exists() {
 assert_contains() {
     local path="$1"
     local pattern="$2"
-    grep -q -- "$pattern" "$path" || fail "Expected '$pattern' in $path"
+    grep -Fq -- "$pattern" "$path" || fail "Expected '$pattern' in $path"
 }
 
 assert_not_contains() {
     local path="$1"
     local pattern="$2"
-    if grep -q -- "$pattern" "$path"; then
+    if grep -Fq -- "$pattern" "$path"; then
         fail "Did not expect '$pattern' in $path"
     fi
 }
@@ -43,7 +43,7 @@ assert_occurrence_count() {
     local pattern="$2"
     local expected="$3"
     local actual
-    actual="$(grep -o -- "$pattern" "$path" | wc -l | tr -d ' ')"
+    actual="$(grep -oF -- "$pattern" "$path" | wc -l | tr -d ' ')"
     [ "$actual" = "$expected" ] || fail "Expected '$pattern' to appear $expected times in $path, found $actual"
 }
 
@@ -496,7 +496,7 @@ PY
     assert_contains "$REPO_DIR/scripts/lib/process-detection.sh" "Codex App is currently running from"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "prompt_install_missing_cli"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "prompt-install-cli"
-    assert_contains "$REPO_DIR/launcher/start.sh.template" "Install it now? \\[Y/n\\]"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "Install it now? [Y/n]"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "is_interactive_terminal"
     assert_contains "$REPO_DIR/updater/src/app.rs" "kdialog"
     assert_contains "$REPO_DIR/updater/src/app.rs" "zenity"
@@ -571,7 +571,7 @@ test_side_by_side_launcher_identity() {
 
     assert_file_exists "$app_dir/start.sh"
     assert_contains "$app_dir/start.sh" "CODEX_LINUX_APP_ID=codex-cua-lab"
-    assert_contains "$app_dir/start.sh" "CODEX_LINUX_APP_DISPLAY_NAME=Codex\\\\ CUA\\\\ Lab"
+    assert_contains "$app_dir/start.sh" "CODEX_LINUX_APP_DISPLAY_NAME=Codex\\ CUA\\ Lab"
     assert_contains "$app_dir/start.sh" 'CODEX_LINUX_WEBVIEW_PORT=${CODEX_WEBVIEW_PORT:-5176}'
     assert_contains "$app_dir/start.sh" 'WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"'
     assert_contains "$app_dir/start.sh" 'ELECTRON_RENDERER_URL="${ELECTRON_RENDERER_URL:-$WEBVIEW_ORIGIN/}"'
@@ -806,8 +806,8 @@ JS
     assert_contains "$extracted/webview/assets/settings-shared-test.js" "settings.section.keybinds"
     assert_contains "$extracted/webview/assets/index-test.js" "keybinds-settings-linux.js"
     assert_contains "$extracted/webview/assets/index-test.js" "keybinds:xh"
-    assert_contains "$extracted/webview/assets/index-test.js" 'Zge=\[`general-settings`,`keybinds`'
-    assert_contains "$extracted/webview/assets/index-test.js" 'slugs:\[`general-settings`,`keybinds`'
+    assert_contains "$extracted/webview/assets/index-test.js" 'Zge=[`general-settings`,`keybinds`'
+    assert_contains "$extracted/webview/assets/index-test.js" 'slugs:[`general-settings`,`keybinds`'
     assert_contains "$extracted/webview/assets/index-test.js" 'case`keybinds`:return l===`electron`'
     assert_contains "$extracted/webview/assets/index-test.js" "codexLinuxKeybindOverridesRuntime"
     assert_contains "$extracted/webview/assets/index-test.js" "codex-linux-keybind-overrides"
