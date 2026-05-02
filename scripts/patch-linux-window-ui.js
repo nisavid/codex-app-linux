@@ -972,8 +972,10 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
 
   const trayStartupNeedle = "E&&oe();";
   const previousTrayStartupPatch = "(E||process.platform===`linux`)&&oe();";
+  const linuxTrayEnabledPredicate =
+    "process.platform===`linux`&&(typeof codexLinuxIsTrayEnabled!==`function`||codexLinuxIsTrayEnabled())";
   const trayStartupPatch =
-    "(E||process.platform===`linux`&&(typeof codexLinuxIsTrayEnabled!==`function`||codexLinuxIsTrayEnabled()))&&oe();";
+    `(E||${linuxTrayEnabledPredicate})&&oe();`;
   if (patchedSource.includes(trayStartupPatch)) {
     // Already patched.
   } else if (patchedSource.includes(previousTrayStartupPatch)) {
@@ -987,12 +989,12 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
       : findDynamicTrayStartupCall(patchedSource, traySetup.setupFn, traySetup.index);
     if (
       traySetup != null &&
-      patchedSource.includes(`process.platform===\`linux\`&&codexLinuxIsTrayEnabled())&&${traySetup.setupFn}();`)
+      patchedSource.includes(`${linuxTrayEnabledPredicate})&&${traySetup.setupFn}();`)
     ) {
       // Already patched with a newer minifier's tray setup identifier.
     } else if (dynamicTrayStartupMatch != null) {
       const isWindowsVar = dynamicTrayStartupMatch[1];
-      patchedSource = `${patchedSource.slice(0, dynamicTrayStartupMatch.index)}(${isWindowsVar}||process.platform===\`linux\`&&codexLinuxIsTrayEnabled())&&${traySetup.setupFn}();${patchedSource.slice(dynamicTrayStartupMatch.index + dynamicTrayStartupMatch[0].length)}`;
+      patchedSource = `${patchedSource.slice(0, dynamicTrayStartupMatch.index)}(${isWindowsVar}||${linuxTrayEnabledPredicate})&&${traySetup.setupFn}();${patchedSource.slice(dynamicTrayStartupMatch.index + dynamicTrayStartupMatch[0].length)}`;
     } else {
       console.warn("WARN: Could not find tray startup call — skipping Linux tray startup patch");
     }
