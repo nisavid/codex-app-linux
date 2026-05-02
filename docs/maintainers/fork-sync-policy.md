@@ -32,10 +32,13 @@ agents and maintainers; runtime code does not consume it.
    changes covered by [Local Gates](#local-gates).
 10. On the first push of any task branch, create a draft PR in the same
    workflow turn.
-11. Keep the PR in draft until local gates pass and the PR body records
+11. Use `--repo nisavid/codex-app-linux` on every `gh pr` command in this
+   checkout. Bare `gh pr` commands resolve to the upstream parent repository
+   here; do not rely on GitHub CLI's inferred repository.
+12. Keep the PR in draft until local gates pass and the PR body records
    verification evidence. For code-changing branches, the required lifecycle is:
    local gates, first push, draft PR, PR verification notes, ready for review.
-12. Inspect GitHub blockers directly. Do not infer merge readiness from summary
+13. Inspect GitHub blockers directly. Do not infer merge readiness from summary
    status alone.
 
 ## Sync Ledger
