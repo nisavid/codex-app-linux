@@ -732,10 +732,6 @@ function applyLinuxSetIconPatch(currentSource, iconAsset) {
 }
 
 function applyLinuxOpaqueBackgroundPatch(currentSource) {
-  if (currentSource.includes("===`linux`&&!OM(")) {
-    return currentSource;
-  }
-
   const colorConstRegex =
     /([A-Za-z_$][\w$]*)=`#00000000`,([A-Za-z_$][\w$]*)=`#000000`,([A-Za-z_$][\w$]*)=`#f9f9f9`/;
   const colorMatch = currentSource.match(colorConstRegex);
@@ -749,28 +745,52 @@ function applyLinuxOpaqueBackgroundPatch(currentSource) {
 
   const [, transparentVar, darkVar, lightVar] = colorMatch;
   const funcParamRegex =
-    /function\s+[A-Za-z_$][\w$]*\(\{platform:([A-Za-z_$][\w$]*),appearance:([A-Za-z_$][\w$]*),opaqueWindowsEnabled:[A-Za-z_$][\w$]*,prefersDarkColors:([A-Za-z_$][\w$]*)\}\)\{return\s*\1===`win32`&&!([A-Za-z_$][\w$]*)\(\2\)/;
+    /\{platform:([A-Za-z_$][\w$]*),appearance:([A-Za-z_$][\w$]*),opaqueWindowsEnabled:[A-Za-z_$][\w$]*,prefersDarkColors:([A-Za-z_$][\w$]*)\}\)\{return\s*([A-Za-z_$][\w$]*)===`win32`&&!([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)/;
   const funcMatch = currentSource.match(funcParamRegex);
 
   if (funcMatch == null) {
-    console.warn("WARN: Could not find BrowserWindow background function signature — skipping background patch");
+    console.warn(
+      "WARN: Could not find BrowserWindow appearance guard — skipping background patch",
+    );
     return currentSource;
   }
 
-  const [, platformParam, appearanceParam, darkColorsParam, transparentAppearancePredicate] =
-    funcMatch;
+  const [
+    ,
+    platformParam,
+    appearanceParam,
+    darkColorsParam,
+    win32PlatformParam,
+    appearanceGuardFn,
+    appearanceGuardArg,
+  ] = funcMatch;
+  if (platformParam !== win32PlatformParam || appearanceParam !== appearanceGuardArg) {
+    console.warn(
+      "WARN: BrowserWindow appearance guard shape was inconsistent — skipping background patch",
+    );
+    return currentSource;
+  }
   const bgNeedle =
     `backgroundMaterial:\`mica\`}:{backgroundColor:${transparentVar},backgroundMaterial:null}}`;
-  const oldLinuxBgPatch =
-    `backgroundMaterial:\`mica\`}:process.platform===\`linux\`?{backgroundColor:${darkColorsParam}?${darkVar}:${lightVar},backgroundMaterial:null}:{backgroundColor:${transparentVar},backgroundMaterial:null}}`;
+  const linuxBgGuard = `${platformParam}===\`linux\`&&!${appearanceGuardFn}(${appearanceParam})`;
   const bgReplacement =
-    `backgroundMaterial:\`mica\`}:${platformParam}===\`linux\`&&!${transparentAppearancePredicate}(${appearanceParam})?{backgroundColor:${darkColorsParam}?${darkVar}:${lightVar},backgroundMaterial:null}:{backgroundColor:${transparentVar},backgroundMaterial:null}}`;
+    `backgroundMaterial:\`mica\`}:${linuxBgGuard}?{backgroundColor:${darkColorsParam}?${darkVar}:${lightVar},backgroundMaterial:null}:{backgroundColor:${transparentVar},backgroundMaterial:null}}`;
+  const previousLinuxBgPatches = [
+    `backgroundMaterial:\`mica\`}:process.platform===\`linux\`?{backgroundColor:${darkColorsParam}?${darkVar}:${lightVar},backgroundMaterial:null}:{backgroundColor:${transparentVar},backgroundMaterial:null}}`,
+    `backgroundMaterial:\`mica\`}:process.platform===\`linux\`&&!gw(${appearanceParam})?{backgroundColor:${darkColorsParam}?${darkVar}:${lightVar},backgroundMaterial:null}:{backgroundColor:${transparentVar},backgroundMaterial:null}}`,
+  ];
+
+  if (currentSource.includes(bgReplacement)) {
+    return currentSource;
+  }
 
   if (currentSource.includes(bgNeedle)) {
     return currentSource.replace(bgNeedle, bgReplacement);
   }
-  if (currentSource.includes(oldLinuxBgPatch)) {
-    return currentSource.replace(oldLinuxBgPatch, bgReplacement);
+  for (const previousPatch of previousLinuxBgPatches) {
+    if (currentSource.includes(previousPatch)) {
+      return currentSource.replace(previousPatch, bgReplacement);
+    }
   }
 
   console.warn("WARN: Could not find BrowserWindow background color needle — skipping background patch");

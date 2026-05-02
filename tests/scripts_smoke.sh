@@ -663,6 +663,47 @@ test_linux_translucent_sidebar_default_patch_smoke() {
     assert_occurrence_count "$extracted/webview/assets/index-test.js" 'dataset.codexOs===`linux`' '1'
 }
 
+test_linux_opaque_background_patch_smoke() {
+    info "Checking Linux opaque background patch behavior"
+    local workspace="$TMP_DIR/opaque-background-patch"
+    local extracted="$workspace/extracted"
+    local repaired="$workspace/repaired"
+    local output_log="$workspace/output.log"
+    local bundle_body
+    local bad_bundle_body
+
+    mkdir -p "$workspace"
+    bundle_body="$(cat <<'JS'
+function gw(e){return e.pendingUrl.length>0&&e.pendingUrl!==e.url?e.pendingUrl:e.url}
+function jM(e){return e===`avatarOverlay`||e===`browserCommentPopup`||e===`globalDictation`||e===`hotkeyWindowHome`||e===`hotkeyWindowThread`}
+function PM({platform:e,appearance:t,opaqueWindowsEnabled:n,prefersDarkColors:r}){return e===`win32`&&!jM(t)?n?{backgroundColor:r?lM:uM,backgroundMaterial:`none`}:{backgroundColor:cM,backgroundMaterial:`mica`}:{backgroundColor:cM,backgroundMaterial:null}}
+let cM=`#00000000`,lM=`#000000`,uM=`#f9f9f9`;
+JS
+)"
+    make_fake_extracted_asar "$extracted" "$bundle_body"
+
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
+    assert_contains "$extracted/.vite/build/main-test.js" 'e===`linux`&&!jM(t)?{backgroundColor:r?lM:uM,backgroundMaterial:null}'
+    assert_contains "$extracted/.vite/build/main-test.js" 'function gw(e){return e.pendingUrl.length'
+    assert_not_contains "$extracted/.vite/build/main-test.js" '!gw(t)'
+
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'e===`linux`&&!jM(t)' '1'
+
+    bad_bundle_body="$(cat <<'JS'
+function gw(e){return e.pendingUrl.length>0&&e.pendingUrl!==e.url?e.pendingUrl:e.url}
+function jM(e){return e===`avatarOverlay`||e===`browserCommentPopup`||e===`globalDictation`||e===`hotkeyWindowHome`||e===`hotkeyWindowThread`}
+function PM({platform:e,appearance:t,opaqueWindowsEnabled:n,prefersDarkColors:r}){return e===`win32`&&!jM(t)?n?{backgroundColor:r?lM:uM,backgroundMaterial:`none`}:{backgroundColor:cM,backgroundMaterial:`mica`}:process.platform===`linux`&&!gw(t)?{backgroundColor:r?lM:uM,backgroundMaterial:null}:{backgroundColor:cM,backgroundMaterial:null}}
+let cM=`#00000000`,lM=`#000000`,uM=`#f9f9f9`;
+JS
+)"
+    make_fake_extracted_asar "$repaired" "$bad_bundle_body"
+
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$repaired" >"$output_log" 2>&1
+    assert_contains "$repaired/.vite/build/main-test.js" 'e===`linux`&&!jM(t)?{backgroundColor:r?lM:uM,backgroundMaterial:null}'
+    assert_not_contains "$repaired/.vite/build/main-test.js" '!gw(t)'
+}
+
 test_linux_tray_patch_smoke() {
     info "Checking Linux tray patch behavior"
     local workspace="$TMP_DIR/tray-patch"
@@ -1558,6 +1599,7 @@ main() {
     test_side_by_side_launcher_identity
     test_linux_file_manager_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
+    test_linux_opaque_background_patch_smoke
     test_keybinds_settings_tab_patch_smoke
     test_keybinds_settings_patch_warns_on_bundle_shape_miss
     test_linux_tray_patch_smoke
