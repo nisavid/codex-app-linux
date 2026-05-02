@@ -10,6 +10,8 @@ mod liveness;
 mod logging;
 mod notify;
 mod state;
+#[cfg(test)]
+mod test_util;
 mod upstream;
 
 use anyhow::Result;

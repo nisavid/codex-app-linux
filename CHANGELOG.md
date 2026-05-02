@@ -16,14 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   version from `Contents/Info.plist` (`CFBundleShortVersionString`). Generated
   package metadata is restricted to three or four numeric dot-separated segments
   so updater comparisons stay consistent across package formats.
-
-### Fixed
-
-- Restored Makefile help and targets for `clean`, `apple-dmg-verify`, and
-  `release-gate`, and kept package-build examples on the default
-  DMG-derived version path.
-
-## [0.6.2] - 2026-05-01
+- Missing Codex CLI recovery is exposed as an explicit
+  `cli_status: NotInstalled` state in updater status output and persisted state,
+  instead of overloading `Unknown`.
+- Automatic installation of a missing Codex CLI is launcher-scoped. The daemon
+  and `codex-app-updater status` report and notify when the dependency is
+  missing, but they do not install missing CLI dependencies on their own;
+  best-effort reconciliation may still upgrade an existing CLI.
 
 ### Added
 
@@ -33,11 +32,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `"codex-linux-computer-use-ui-enabled": true`, including smoke coverage for
   default-off, env-var, and persisted-setting paths.
 
-### Changed
-
 - The bundled Computer Use plugin manifest gate remains default-on for Linux
   platform registration, while the UI patches that touch upstream rollout-gated
   code now require explicit opt-in.
+
+### Fixed
+
+- Launcher error messages now distinguish between a CLI that is missing versus an automatic installation attempt that failed, clarifying the supported recovery path.
+- Missing-CLI desktop notifications now key off the explicit `NotInstalled` state instead of inferring absence from cleared fields.
+- Restored Makefile help and targets for `clean`, `apple-dmg-verify`, and
+  `release-gate`, and kept package-build examples on the default
+  DMG-derived version path.
+
+## [0.6.2] - 2026-05-01
 
 ## [0.6.1] - 2026-04-30
 

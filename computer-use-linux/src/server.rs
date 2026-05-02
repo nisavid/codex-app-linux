@@ -1,6 +1,7 @@
 use crate::atspi_tree::{
-    list_accessible_apps, perform_action, set_element_value, snapshot_tree, AccessibilityNode,
-    AccessibleAppSummary, ValueSetInvocation,
+    list_accessible_apps, perform_action as invoke_accessibility_action, set_element_value,
+    snapshot_tree, AccessibilityAction, AccessibilityNode, AccessibleAppSummary, Bounds,
+    ValueSetInvocation,
 };
 use crate::diagnostics::{doctor_report, setup_accessibility_report, DoctorReport, SetupReport};
 use crate::gnome_extension::{setup_window_targeting_report, WindowTargetingSetupReport};
@@ -248,8 +249,8 @@ impl ComputerUseLinux {
     )]
     async fn click(&self, Parameters(params): Parameters<ClickParams>) -> Json<ActionOutput> {
         let received = Some(serde_json::json!(params));
-        let (x, y) = match self.resolve_target_point(params.x, params.y, params.element_index) {
-            Ok(point) => point,
+        let target = match self.resolve_click_target(&params) {
+            Ok(target) => target,
             Err(message) => {
                 return Json(ActionOutput {
                     ok: false,
@@ -259,6 +260,53 @@ impl ComputerUseLinux {
                     received,
                 });
             }
+        };
+        if let ClickTarget::PrimaryAction {
+            object_ref,
+            action_index,
+            action_name,
+        } = target
+        {
+            let requested_action = action_index.to_string();
+            return match invoke_accessibility_action(&object_ref, Some(requested_action.as_str()))
+                .await
+            {
+                Ok(invocation) => Json(ActionOutput {
+                    ok: invocation.ok,
+                    implemented: true,
+                    action: "click".to_string(),
+                    message: if invocation.ok {
+                        format!(
+                            "No clickable bounds were cached, so I invoked the primary AT-SPI action{}.",
+                            action_name
+                                .as_deref()
+                                .filter(|name| !name.is_empty())
+                                .map(|name| format!(" ({name})"))
+                                .unwrap_or_default()
+                        )
+                    } else {
+                        format!(
+                            "The primary AT-SPI action{} returned false.",
+                            action_name
+                                .as_deref()
+                                .filter(|name| !name.is_empty())
+                                .map(|name| format!(" ({name})"))
+                                .unwrap_or_default()
+                        )
+                    },
+                    received,
+                }),
+                Err(error) => Json(ActionOutput {
+                    ok: false,
+                    implemented: true,
+                    action: "click".to_string(),
+                    message: error.to_string(),
+                    received,
+                }),
+            };
+        }
+        let ClickTarget::Coordinates(x, y) = target else {
+            unreachable!("click target must resolve to coordinates or an AT-SPI action");
         };
         let button = mouse_button_code(params.button.as_deref());
         let click_count = params.click_count.unwrap_or(1).clamp(1, 10).to_string();
@@ -323,65 +371,18 @@ impl ComputerUseLinux {
     }
 
     #[tool(
-        name = "perform_secondary_action",
-        description = "Invoke a secondary accessibility action exposed by an element."
+        name = "perform_action",
+        description = "Invoke an accessibility action exposed by an element. Defaults to the primary action unless action is provided."
     )]
-    async fn perform_secondary_action(
+    async fn perform_action(
         &self,
-        Parameters(params): Parameters<SecondaryActionParams>,
+        Parameters(params): Parameters<ActionParams>,
     ) -> Json<ActionOutput> {
-        let received = Some(serde_json::json!(params.clone()));
-        let object_ref = match self
-            .resolve_object_ref(params.element_index, params.element_identifier.as_deref())
-        {
-            Ok(object_ref) => object_ref,
-            Err(message) => {
-                return Json(ActionOutput {
-                    ok: false,
-                    implemented: true,
-                    action: "perform_secondary_action".to_string(),
-                    message,
-                    received,
-                });
-            }
-        };
-
-        match perform_action(&object_ref, params.action.as_deref()).await {
-            Ok(invocation) => Json(ActionOutput {
-                ok: invocation.ok,
-                implemented: true,
-                action: "perform_secondary_action".to_string(),
-                message: if invocation.ok {
-                    format!(
-                        "AT-SPI action {} ({}) invoked.",
-                        invocation.action_index,
-                        invocation
-                            .action_name
-                            .as_deref()
-                            .filter(|name| !name.is_empty())
-                            .unwrap_or("unnamed")
-                    )
-                } else {
-                    format!(
-                        "AT-SPI action {} ({}) returned false.",
-                        invocation.action_index,
-                        invocation
-                            .action_name
-                            .as_deref()
-                            .filter(|name| !name.is_empty())
-                            .unwrap_or("unnamed")
-                    )
-                },
-                received,
-            }),
-            Err(error) => Json(ActionOutput {
-                ok: false,
-                implemented: true,
-                action: "perform_secondary_action".to_string(),
-                message: error.to_string(),
-                received,
-            }),
-        }
+        self.perform_element_action(
+            &params,
+            Some(requested_action_or_primary(params.action.as_deref())),
+        )
+        .await
     }
 
     #[tool(
@@ -838,7 +839,7 @@ struct ClickParams {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-struct SecondaryActionParams {
+struct ActionParams {
     #[serde(default)]
     element_index: Option<u32>,
     #[serde(default)]
@@ -1090,19 +1091,6 @@ impl ComputerUseLinux {
         }
     }
 
-    fn resolve_target_point(
-        &self,
-        x: Option<i32>,
-        y: Option<i32>,
-        element_index: Option<u32>,
-    ) -> std::result::Result<(i32, i32), String> {
-        self.resolve_optional_target_point(x, y, element_index)?
-            .ok_or_else(|| {
-                "Pass x/y coordinates or an element_index from the latest get_app_state result."
-                    .to_string()
-            })
-    }
-
     fn resolve_optional_target_point(
         &self,
         x: Option<i32>,
@@ -1123,14 +1111,55 @@ impl ComputerUseLinux {
         }
     }
 
+    fn resolve_click_target(
+        &self,
+        params: &ClickParams,
+    ) -> std::result::Result<ClickTarget, String> {
+        if let Some((x, y)) = params.x.zip(params.y) {
+            return Ok(ClickTarget::Coordinates(x, y));
+        }
+
+        let Some(element_index) = params.element_index else {
+            return Err(
+                "Pass x/y coordinates or an element_index from the latest get_app_state result."
+                    .to_string(),
+            );
+        };
+
+        if let Some((x, y)) = self.center_for_cached_node(element_index) {
+            return Ok(ClickTarget::Coordinates(x, y));
+        }
+
+        if !is_plain_left_click(params.button.as_deref(), params.click_count) {
+            return Err(format!(
+                "No clickable bounds cached for element_index {element_index}. Call get_app_state first and choose a node with positive width and height."
+            ));
+        }
+
+        let cached = self.last_nodes.lock().map_err(|_| {
+            "Could not read cached accessibility nodes. Call get_app_state and retry.".to_string()
+        })?;
+        let Some(node) = cached.iter().find(|node| node.index == element_index) else {
+            return Err(format!(
+                "No cached accessibility node for element_index {element_index}. Call get_app_state first."
+            ));
+        };
+        let Some(action) = primary_action(node.actions.as_slice()) else {
+            return Err(format!(
+                "No clickable bounds cached for element_index {element_index}, and the element exposes no primary AT-SPI action."
+            ));
+        };
+        Ok(ClickTarget::PrimaryAction {
+            object_ref: node.object_ref.clone(),
+            action_index: action.index,
+            action_name: Some(action.name.clone()),
+        })
+    }
+
     fn center_for_cached_node(&self, element_index: u32) -> Option<(i32, i32)> {
         let cached = self.last_nodes.lock().ok()?;
         let node = cached.iter().find(|node| node.index == element_index)?;
-        let bounds = node.bounds.as_ref()?;
-        if bounds.width <= 0 || bounds.height <= 0 {
-            return None;
-        }
-        Some((bounds.x + bounds.width / 2, bounds.y + bounds.height / 2))
+        bounds_center(node.bounds.as_ref()?)
     }
 
     fn resolve_object_ref(
@@ -1165,6 +1194,108 @@ impl ComputerUseLinux {
                 )
             })
     }
+
+    async fn perform_element_action(
+        &self,
+        params: &ActionParams,
+        requested_action: Option<&str>,
+    ) -> Json<ActionOutput> {
+        let received = Some(serde_json::json!(params.clone()));
+        let object_ref = match self
+            .resolve_object_ref(params.element_index, params.element_identifier.as_deref())
+        {
+            Ok(object_ref) => object_ref,
+            Err(message) => {
+                return Json(ActionOutput {
+                    ok: false,
+                    implemented: true,
+                    action: "perform_action".to_string(),
+                    message,
+                    received,
+                });
+            }
+        };
+
+        match invoke_accessibility_action(&object_ref, requested_action).await {
+            Ok(invocation) => Json(ActionOutput {
+                ok: invocation.ok,
+                implemented: true,
+                action: "perform_action".to_string(),
+                message: if invocation.ok {
+                    format!(
+                        "AT-SPI action {} ({}) invoked.",
+                        invocation.action_index,
+                        invocation
+                            .action_name
+                            .as_deref()
+                            .filter(|name| !name.is_empty())
+                            .unwrap_or("unnamed")
+                    )
+                } else {
+                    format!(
+                        "AT-SPI action {} ({}) returned false.",
+                        invocation.action_index,
+                        invocation
+                            .action_name
+                            .as_deref()
+                            .filter(|name| !name.is_empty())
+                            .unwrap_or("unnamed")
+                    )
+                },
+                received,
+            }),
+            Err(error) => Json(ActionOutput {
+                ok: false,
+                implemented: true,
+                action: "perform_action".to_string(),
+                message: error.to_string(),
+                received,
+            }),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ClickTarget {
+    Coordinates(i32, i32),
+    PrimaryAction {
+        object_ref: String,
+        action_index: i32,
+        action_name: Option<String>,
+    },
+}
+
+fn is_plain_left_click(button: Option<&str>, click_count: Option<u32>) -> bool {
+    let button = button
+        .map(str::trim)
+        .filter(|button| !button.is_empty())
+        .unwrap_or("left");
+    let click_count = click_count.unwrap_or(1);
+    matches!(button.to_ascii_lowercase().as_str(), "left" | "primary") && click_count == 1
+}
+
+fn primary_action(actions: &[AccessibilityAction]) -> Option<&AccessibilityAction> {
+    actions.first()
+}
+
+fn requested_action_or_primary(action: Option<&str>) -> &str {
+    action
+        .map(str::trim)
+        .filter(|action| !action.is_empty())
+        .unwrap_or("0")
+}
+
+fn bounds_center(bounds: &Bounds) -> Option<(i32, i32)> {
+    if bounds.width <= 0 || bounds.height <= 0 {
+        return None;
+    }
+    if bounds.x <= i32::MIN / 2 || bounds.y <= i32::MIN / 2 {
+        return None;
+    }
+    Some((
+        bounds.x.checked_add(bounds.width / 2)?,
+        bounds.y.checked_add(bounds.height / 2)?,
+    ))
 }
 
 fn select_accessibility_object_ref(
@@ -1614,10 +1745,18 @@ fn looks_like_desktop_app(name: &str, command: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::atspi_tree::Bounds;
+    use crate::atspi_tree::{AccessibilityAction, Bounds};
     use crate::windows::WindowBounds;
 
     fn node(index: u32, bounds: Option<Bounds>) -> AccessibilityNode {
+        node_with_actions(index, bounds, Vec::new())
+    }
+
+    fn node_with_actions(
+        index: u32,
+        bounds: Option<Bounds>,
+        actions: Vec<AccessibilityAction>,
+    ) -> AccessibilityNode {
         AccessibilityNode {
             index,
             parent_index: None,
@@ -1628,7 +1767,7 @@ mod tests {
             description: None,
             child_count: 0,
             bounds,
-            actions: Vec::new(),
+            actions,
             value: None,
             supports_editable_text: false,
         }
@@ -1724,7 +1863,10 @@ mod tests {
             }),
         )]);
 
-        let point = backend.resolve_target_point(None, None, Some(7)).unwrap();
+        let point = backend
+            .resolve_optional_target_point(None, None, Some(7))
+            .unwrap()
+            .unwrap();
 
         assert_eq!(point, (60, 40));
     }
@@ -1743,7 +1885,8 @@ mod tests {
         )]);
 
         let point = backend
-            .resolve_target_point(Some(200), Some(300), Some(7))
+            .resolve_optional_target_point(Some(200), Some(300), Some(7))
+            .unwrap()
             .unwrap();
 
         assert_eq!(point, (200, 300));
@@ -1763,7 +1906,27 @@ mod tests {
         )]);
 
         let error = backend
-            .resolve_target_point(None, None, Some(7))
+            .resolve_optional_target_point(None, None, Some(7))
+            .unwrap_err();
+
+        assert!(error.contains("No clickable bounds cached for element_index 7"));
+    }
+
+    #[test]
+    fn cached_element_index_ignores_sentinel_bounds() {
+        let backend = ComputerUseLinux::default();
+        backend.cache_nodes(&[node(
+            7,
+            Some(Bounds {
+                x: i32::MIN,
+                y: i32::MIN,
+                width: 1,
+                height: 1,
+            }),
+        )]);
+
+        let error = backend
+            .resolve_optional_target_point(None, None, Some(7))
             .unwrap_err();
 
         assert!(error.contains("No clickable bounds cached for element_index 7"));
@@ -1784,10 +1947,136 @@ mod tests {
         backend.cache_nodes(&[]);
 
         let error = backend
-            .resolve_target_point(None, None, Some(7))
+            .resolve_optional_target_point(None, None, Some(7))
             .unwrap_err();
 
         assert!(error.contains("No clickable bounds cached for element_index 7"));
+    }
+
+    #[test]
+    fn click_target_falls_back_to_primary_action_without_bounds() {
+        let backend = ComputerUseLinux::default();
+        backend.cache_nodes(&[node_with_actions(
+            7,
+            None,
+            vec![AccessibilityAction {
+                index: 0,
+                name: "Click".to_string(),
+                description: "Clicks the button".to_string(),
+                keybinding: String::new(),
+            }],
+        )]);
+
+        let target = backend
+            .resolve_click_target(&ClickParams {
+                element_index: Some(7),
+                x: None,
+                y: None,
+                button: None,
+                click_count: None,
+            })
+            .unwrap();
+
+        match target {
+            ClickTarget::PrimaryAction {
+                object_ref,
+                action_index,
+                action_name,
+            } => {
+                assert_eq!(object_ref, ":1.7/org/a11y/atspi/accessible/7");
+                assert_eq!(action_index, 0);
+                assert_eq!(action_name.as_deref(), Some("Click"));
+            }
+            ClickTarget::Coordinates(_, _) => {
+                panic!("expected AT-SPI primary-action fallback")
+            }
+        }
+    }
+
+    #[test]
+    fn click_target_falls_back_to_primary_action_with_sentinel_bounds() {
+        let backend = ComputerUseLinux::default();
+        backend.cache_nodes(&[node_with_actions(
+            7,
+            Some(Bounds {
+                x: i32::MIN,
+                y: i32::MIN,
+                width: 1,
+                height: 1,
+            }),
+            vec![AccessibilityAction {
+                index: 3,
+                name: "Click".to_string(),
+                description: "Clicks the button".to_string(),
+                keybinding: String::new(),
+            }],
+        )]);
+
+        let target = backend
+            .resolve_click_target(&ClickParams {
+                element_index: Some(7),
+                x: None,
+                y: None,
+                button: None,
+                click_count: None,
+            })
+            .unwrap();
+
+        match target {
+            ClickTarget::PrimaryAction {
+                object_ref,
+                action_index,
+                action_name,
+            } => {
+                assert_eq!(object_ref, ":1.7/org/a11y/atspi/accessible/7");
+                assert_eq!(action_index, 3);
+                assert_eq!(action_name.as_deref(), Some("Click"));
+            }
+            ClickTarget::Coordinates(_, _) => {
+                panic!("expected AT-SPI primary-action fallback")
+            }
+        }
+    }
+
+    #[test]
+    fn click_target_requires_bounds_for_non_plain_clicks() {
+        let backend = ComputerUseLinux::default();
+        backend.cache_nodes(&[node_with_actions(
+            7,
+            None,
+            vec![AccessibilityAction {
+                index: 0,
+                name: "Click".to_string(),
+                description: "Clicks the button".to_string(),
+                keybinding: String::new(),
+            }],
+        )]);
+
+        let error = backend
+            .resolve_click_target(&ClickParams {
+                element_index: Some(7),
+                x: None,
+                y: None,
+                button: Some("right".to_string()),
+                click_count: None,
+            })
+            .unwrap_err();
+
+        assert!(error.contains("No clickable bounds cached for element_index 7"));
+    }
+
+    #[test]
+    fn blank_button_uses_plain_left_click_fallback() {
+        assert!(is_plain_left_click(Some("  "), None));
+        assert!(is_plain_left_click(Some(" primary "), Some(1)));
+        assert!(!is_plain_left_click(Some("  "), Some(2)));
+    }
+
+    #[test]
+    fn blank_action_defaults_to_primary_action() {
+        assert_eq!(requested_action_or_primary(None), "0");
+        assert_eq!(requested_action_or_primary(Some("  ")), "0");
+        assert_eq!(requested_action_or_primary(Some("  3 ")), "3");
     }
 
     #[test]

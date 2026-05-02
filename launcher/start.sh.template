@@ -636,18 +636,42 @@ if missing:
 PY
 }
 
-pid_is_webview_server() {
+pid_has_webview_server_cmdline() {
     local pid="$1"
-    local cmdline
-    local cwd
+    local argv=()
+    local arg
+    local has_http_server=0
+    local has_port=0
 
     [[ "$pid" =~ ^[0-9]+$ ]] || return 1
     [ -d "/proc/$pid" ] || return 1
     pid_is_current_user "$pid" || return 1
-    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-    [[ "$cmdline" == *"http.server $CODEX_LINUX_WEBVIEW_PORT"* ]] || return 1
-    cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+    mapfile -d '' -t argv < "/proc/$pid/cmdline" 2>/dev/null || return 1
+    for arg in "${argv[@]}"; do
+        [ "$arg" = "http.server" ] && has_http_server=1
+        [ "$arg" = "$CODEX_LINUX_WEBVIEW_PORT" ] && has_port=1
+    done
+    [ "$has_http_server" -eq 1 ] && [ "$has_port" -eq 1 ]
+}
+
+pid_is_webview_server() {
+    local pid="$1"
+    local cwd
+
+    pid_has_webview_server_cmdline "$pid" || return 1
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
     [ "$cwd" = "$(canonical_path "$WEBVIEW_DIR")" ]
+}
+
+pid_is_stale_webview_server() {
+    local pid="$1"
+    local cwd
+    local deleted_webview_dir
+
+    pid_has_webview_server_cmdline "$pid" || return 1
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+    deleted_webview_dir="$(canonical_path "$WEBVIEW_DIR") (deleted)"
+    [ "$cwd" = "$deleted_webview_dir" ]
 }
 
 stop_owned_webview_server() {
@@ -662,7 +686,7 @@ stop_owned_webview_server() {
         return 0
     fi
 
-    if [ -n "$pid" ] && pid_is_webview_server "$pid"; then
+    if [ -n "$pid" ] && { pid_is_webview_server "$pid" || pid_is_stale_webview_server "$pid"; }; then
         echo "Stopping owned webview server pid=$pid"
         kill "$pid" 2>/dev/null || true
         for _ in $(seq 1 20); do
@@ -710,6 +734,52 @@ discover_webview_server_pid() {
     return 1
 }
 
+stale_webview_server_pid() {
+    local proc_cmdline
+    local pid
+
+    for proc_cmdline in /proc/[0-9]*/cmdline; do
+        [ -e "$proc_cmdline" ] || continue
+        pid="${proc_cmdline#/proc/}"
+        pid="${pid%/cmdline}"
+        if pid_is_stale_webview_server "$pid"; then
+            echo "$pid"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+stop_stale_webview_server() {
+    local pid
+    local cwd
+
+    running_app_is_active && return 0
+
+    while pid="$(stale_webview_server_pid)"; do
+        cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+        echo "Stopping stale webview server pid=$pid cwd=$cwd"
+        kill "$pid" 2>/dev/null || true
+        for _ in $(seq 1 20); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.05
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Stale webview server pid=$pid did not stop after SIGTERM; sending SIGKILL" >&2
+            kill -9 "$pid" 2>/dev/null || true
+            for _ in $(seq 1 20); do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 0.05
+            done
+        fi
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Unable to stop stale webview server pid=$pid" >&2
+            return 1
+        fi
+    done
+}
+
 adopt_existing_webview_server() {
     local pid
 
@@ -739,6 +809,8 @@ adopt_existing_webview_server() {
 }
 
 ensure_webview_server() {
+    local stop_status
+
     if [ ! -d "$WEBVIEW_DIR" ] || [ ! "$(ls -A "$WEBVIEW_DIR" 2>/dev/null)" ]; then
         return 0
     fi
@@ -754,6 +826,13 @@ ensure_webview_server() {
             notify_error "Codex App webview server is already running for pid $RUNNING_APP_PID, but origin validation failed. Keeping the live app untouched."
             exit 1
         fi
+    fi
+
+    stop_stale_webview_server
+    stop_status=$?
+    if [ "$stop_status" -ne 0 ]; then
+        notify_error "Unable to stop the Codex webview helper process. Close any running Codex App windows or reboot, then check $LOG_FILE for details."
+        exit "$stop_status"
     fi
 
     if verify_webview_origin "$WEBVIEW_ORIGIN/index.html" >/dev/null 2>&1; then
@@ -979,18 +1058,18 @@ if needs_cold_start && [ -z "$CODEX_CLI_PATH" ]; then
     if is_interactive_terminal; then
         if prompt_install_missing_cli; then
             if ! run_cli_preflight 1; then
-                notify_error "Codex CLI automatic installation failed. Install with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
+                notify_error "Codex CLI installation was attempted but did not succeed. Retry by reopening the app, or install it manually with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
                 exit 1
             fi
         fi
     elif ! run_gui_cli_prompt; then
-        notify_error "Codex CLI not found. Install with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
+        notify_error "Codex CLI is required but is not installed. Reopen the app to retry the automatic install flow, or install it manually with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
         exit 1
     fi
 fi
 
 if needs_cold_start && [ -z "$CODEX_CLI_PATH" ]; then
-    notify_error "Codex CLI not found. Install with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
+    notify_error "Codex CLI is required but is not installed. Reopen the app to retry the automatic install flow, or install it manually with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
     exit 1
 fi
 

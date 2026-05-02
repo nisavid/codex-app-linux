@@ -26,6 +26,7 @@ patch_asar() {
 
     # Build native modules in clean environment and copy back
     build_native_modules "$WORK_DIR/app-extracted"
+    rm -f "$WORK_DIR/app-extracted/node_modules/node-pty/build/Makefile"
 
     info "Patching Linux window and shell behavior..."
     node "$SCRIPT_DIR/scripts/patch-linux-window-ui.js" "$WORK_DIR/app-extracted"
@@ -33,7 +34,8 @@ patch_asar() {
     # Repack
     info "Repacking app.asar..."
     cd "$WORK_DIR"
-    npx --yes asar pack app-extracted app.asar --unpack "{*.node,*.so,*.dylib}" >&2
+    (cd app-extracted && find . -type f | LC_ALL=C sort | sed 's#^\./##') > "$WORK_DIR/app.asar.ordering"
+    npx --yes asar pack app-extracted app.asar --ordering "$WORK_DIR/app.asar.ordering" --unpack "{*.node,*.so,*.dylib}" >&2
 
     info "app.asar patched"
 }
