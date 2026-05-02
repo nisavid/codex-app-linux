@@ -162,6 +162,9 @@ the patcher at `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/settings.json`. This
 matters for updater runs because the `systemd --user` service does not inherit
 interactive shell environment variables.
 
+If the existing file is missing, invalid JSON, or not a JSON object, this writes
+a new JSON object containing only `"codex-linux-computer-use-ui-enabled": true`.
+
 ```bash
 settings_dir="${XDG_CONFIG_HOME:-$HOME/.config}/codex-app"
 mkdir -p "$settings_dir"

@@ -37,9 +37,8 @@ Expected: plan is tracked in the same PR as the docs changes.
 
 ```bash
 git add docs/superpowers/plans/2026-05-02-upstream-sync-doc-alignment.md
-git commit -m "docs: add upstream sync alignment plan
-
-Co-authored-by: Codex <noreply@openai.com>"
+git commit -m "docs: add upstream sync alignment plan" \
+  -m "Co-authored-by: Codex <noreply@openai.com>"
 ```
 
 ## Task 2: Update User-Facing Linux Computer Use Wording
@@ -87,6 +86,9 @@ To keep the opt-in across updater rebuilds, write the persisted setting read by
 the patcher at `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/settings.json`. This
 matters for updater runs because the `systemd --user` service does not inherit
 interactive shell environment variables.
+
+If the existing file is missing, invalid JSON, or not a JSON object, this writes
+a new JSON object containing only `"codex-linux-computer-use-ui-enabled": true`.
 
 ```bash
 settings_dir="${XDG_CONFIG_HOME:-$HOME/.config}/codex-app"
@@ -140,10 +142,12 @@ Expected: all three terms are present.
 - [ ] Verify the maintainer doc uses the fork path, not upstream's old identity.
 
 ```bash
-rg -n "codex-desktop/settings|codex-app/settings.json|CODEX_LINUX_ENABLE_COMPUTER_USE_UI" docs/maintainers/package-runtime-maintenance.md
+rg -n "codex-desktop/settings" docs/maintainers/package-runtime-maintenance.md
+rg -n "codex-app/settings.json|CODEX_LINUX_ENABLE_COMPUTER_USE_UI" docs/maintainers/package-runtime-maintenance.md
 ```
 
-Expected: no `codex-desktop/settings`; expected opt-in terms are present.
+Expected: first command prints nothing; second command prints matches for the
+opt-in terms.
 
 ## Task 5: Update Fork Divergence Inventory
 

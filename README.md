@@ -221,6 +221,9 @@ CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 make build-app
 To keep the opt-in across updater rebuilds, write the persisted setting used by
 the patcher:
 
+If the existing file is missing, invalid JSON, or not a JSON object, this writes
+a new JSON object containing only `"codex-linux-computer-use-ui-enabled": true`.
+
 ```bash
 settings_dir="${XDG_CONFIG_HOME:-$HOME/.config}/codex-app"
 mkdir -p "$settings_dir"
