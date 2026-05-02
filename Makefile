@@ -7,6 +7,8 @@ unexport BASH_FUNC_ml%%
 APP_DIR := $(CURDIR)/codex-app
 PACKAGE_NAME := codex-app
 PACMAN_PACKAGE_NAME := codex-app
+NEXT_APP_DIR := $(CURDIR)/codex-app-next
+REBUILD_REPORT_DIR := $(CURDIR)/dist-next/rebuild
 DEV_APP_ID ?= codex-cua-lab
 DEV_APP_NAME ?= Codex CUA Lab
 DEV_APP_DIR ?= $(CURDIR)/$(DEV_APP_ID)-app
@@ -17,14 +19,19 @@ PACMAN_GLOB := $(CURDIR)/dist/$(PACMAN_PACKAGE_NAME)-[0-9]*.pkg.tar.*
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check test build-updater build-app run-app build-dev-app run-dev-app deb rpm pacman package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
+.PHONY: help check test build-updater update rebuild rebuild-install inspect-upstream build-app rebuild-next run-app build-dev-app run-dev-app deb rpm pacman package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
 
 help:
 	@printf '\nCodex App Linux Make Targets\n\n'
 	@printf '  %-18s %s\n' "make check" "Run cargo check for codex-app-updater"
 	@printf '  %-18s %s\n' "make test" "Run updater test suite"
 	@printf '  %-18s %s\n' "make build-updater" "Build codex-app-updater in release mode"
+	@printf '  %-18s %s\n' "make update" "Find a DMG, rebuild, and replace codex-app/ with backup"
+	@printf '  %-18s %s\n' "make rebuild" "Inspect a DMG and build a side-by-side candidate"
+	@printf '  %-18s %s\n' "make rebuild-install" "Find a DMG, rebuild, and install into codex-app/"
+	@printf '  %-18s %s\n' "make inspect-upstream" "Inspect a DMG and write rebuild reports without changing codex-app/"
 	@printf '  %-18s %s\n' "make build-app" "Run install.sh and regenerate codex-app/"
+	@printf '  %-18s %s\n' "make rebuild-next" "Build a side-by-side candidate in codex-app-next/"
 	@printf '  %-18s %s\n' "make run-app" "Launch the local generated Electron app from codex-app/"
 	@printf '  %-18s %s\n' "make build-dev-app" "Build a side-by-side test app with a distinct app id/bin"
 	@printf '  %-18s %s\n' "make run-dev-app" "Launch the side-by-side test app"
@@ -41,7 +48,10 @@ help:
 	@printf '  %-18s %s\n' "make clean-dist" "Remove generated dist/ artifacts"
 	@printf '  %-18s %s\n' "make clean-state" "Remove updater runtime state from XDG directories"
 	@printf '\nVariables:\n\n'
-	@printf '  %-18s %s\n' "DMG=/path/file.dmg" "Override the DMG passed to install.sh (default: let install.sh reuse/download Codex.dmg)"
+	@printf '  %-18s %s\n' "DMG=/path/file.dmg" "Override the DMG; rebuild commands auto-find ./Codex.dmg"
+	@printf '  %-18s %s\n' "NEXT_APP_DIR=..." "Override side-by-side rebuild candidate directory"
+	@printf '  %-18s %s\n' "APP_DIR=..." "Override final app directory for make rebuild-install"
+	@printf '  %-18s %s\n' "REBUILD_REPORT_DIR=..." "Override inspect/rebuild report output directory"
 	@printf '  %-18s %s\n' "DEV_APP_ID=..." "Override side-by-side test app id/bin (default: codex-cua-lab)"
 	@printf '  %-18s %s\n' "DEV_APP_NAME=..." "Override side-by-side test app display name"
 	@printf '  %-18s %s\n' "PACKAGE_VERSION=..." "Override the package version for make deb / make rpm / make pacman"
@@ -49,7 +59,12 @@ help:
 	@printf '  %-18s %s\n' "RPM=/path/file.rpm" "Override the .rpm used by make install"
 	@printf '  %-18s %s\n' "PKG=/path/file.pkg.tar.zst" "Override the pacman package used by make install"
 	@printf '\nExamples:\n\n'
+	@printf '  %s\n' "make update"
+	@printf '  %s\n' "make rebuild-install"
+	@printf '  %s\n' "make rebuild DMG=/tmp/Codex.dmg"
 	@printf '  %s\n' "make build-app DMG=/tmp/Codex.dmg"
+	@printf '  %s\n' "make inspect-upstream DMG=/tmp/Codex.dmg"
+	@printf '  %s\n' "make rebuild-next DMG=/tmp/Codex.dmg"
 	@printf '  %s\n' "make run-app"
 	@printf '  %s\n' "make build-dev-app"
 	@printf '  %s\n' "./bin/codex-cua-lab"
@@ -71,9 +86,38 @@ build-updater:
 	@echo "[make] Building codex-app-updater (release)"
 	cargo build --release -p codex-app-updater
 
+update: rebuild-install
+
+rebuild:
+	@echo "[make] Running safe rebuild flow"
+	REBUILD_REPORT_DIR="$(REBUILD_REPORT_DIR)" \
+	CODEX_NEXT_APP_DIR="$(NEXT_APP_DIR)" \
+		./scripts/rebuild-candidate.sh "$(DMG)"
+
+rebuild-install:
+	@echo "[make] Running rebuild and local install flow"
+	REBUILD_REPORT_DIR="$(REBUILD_REPORT_DIR)" \
+	CODEX_NEXT_APP_DIR="$(NEXT_APP_DIR)" \
+	CODEX_FINAL_APP_DIR="$(APP_DIR)" \
+		./scripts/rebuild-candidate.sh --install "$(DMG)"
+
+inspect-upstream:
+	@echo "[make] Inspecting upstream DMG"
+	./install.sh --inspect --report-dir "$(REBUILD_REPORT_DIR)" "$(DMG)"
+
 build-app:
 	@echo "[make] Regenerating codex-app from DMG"
 	./install.sh "$(DMG)"
+
+rebuild-next:
+	@echo "[make] Building side-by-side rebuild candidate"
+	CODEX_INSTALL_DIR="$(NEXT_APP_DIR)" \
+	CODEX_PATCH_REPORT_JSON="$(REBUILD_REPORT_DIR)/patch-report.json" \
+	CODEX_REBUILD_REPORT_JSON="$(REBUILD_REPORT_DIR)/rebuild-report.json" \
+	REBUILD_REPORT_DIR="$(REBUILD_REPORT_DIR)" \
+		./install.sh "$(DMG)"
+	@echo "[make] Candidate app: $(NEXT_APP_DIR)"
+	@echo "[make] Rebuild report: $(REBUILD_REPORT_DIR)/rebuild-report.json"
 
 run-app:
 	@echo "[make] Launching local Electron app"

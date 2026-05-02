@@ -40,6 +40,8 @@ CACHED_DMG_PATH="$SCRIPT_DIR/Codex.dmg"
 FRESH_INSTALL=0
 REUSE_CACHED_DMG=1
 PROVIDED_DMG_PATH=""
+INSPECT_ONLY=0
+REPORT_DIR=""
 
 usage() {
     cat <<'HELP'
@@ -51,6 +53,9 @@ Options:
   -h, --help     Show this help message and exit
   --fresh        Remove existing install directory and cached DMG before building
   --reuse-dmg    Reuse cached Codex.dmg if present (default)
+  --inspect      Inspect the DMG and write patch/rebuild reports without installing
+  --report-dir DIR
+                 Directory for --inspect reports (default: ./dist-next/rebuild)
 
 Environment variables:
   CODEX_INSTALL_DIR   Override the install directory (default: ./codex-app)
@@ -65,6 +70,7 @@ Environment variables:
                       (default: https://artifacts.electronjs.org/headers/dist)
   ELECTRON_MIRROR     Override the Electron runtime download mirror root
                       (example: https://npmmirror.com/mirrors/electron/)
+  REBUILD_REPORT_DIR  Default report directory for --inspect and rebuild reports
 
 After install, launch with:
   ./codex-app/start.sh
@@ -80,6 +86,14 @@ parse_args() {
                 ;;
             --reuse-dmg)
                 REUSE_CACHED_DMG=1
+                ;;
+            --inspect)
+                INSPECT_ONLY=1
+                ;;
+            --report-dir)
+                shift
+                [ $# -gt 0 ] || error "--report-dir requires a directory"
+                REPORT_DIR="$1"
                 ;;
             -h|--help)
                 usage

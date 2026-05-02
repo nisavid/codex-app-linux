@@ -37,6 +37,8 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Install the already rebuilt update package, if one is ready.
+    InstallReady,
     /// Install a Debian package (.deb) with elevated privileges.
     InstallDeb {
         #[arg(long)]

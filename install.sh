@@ -34,6 +34,7 @@ ICON_SOURCE="$SCRIPT_DIR/assets/codex.png"
 . "$SCRIPT_DIR/scripts/lib/asar-patch.sh"
 . "$SCRIPT_DIR/scripts/lib/webview-install.sh"
 . "$SCRIPT_DIR/scripts/lib/bundled-plugins.sh"
+. "$SCRIPT_DIR/scripts/lib/rebuild-report.sh"
 
 # ---- Create start script ----
 create_start_script() {
@@ -75,8 +76,10 @@ main() {
     parse_args "$@"
     validate_app_identity
     check_deps
-    assert_install_target_not_running
-    prepare_install
+    if [ "$INSPECT_ONLY" -ne 1 ]; then
+        assert_install_target_not_running
+        prepare_install
+    fi
 
     local dmg_path=""
     if [ -n "$PROVIDED_DMG_PATH" ]; then
@@ -92,12 +95,27 @@ main() {
 
     detect_electron_version "$app_dir"
     write_app_version_metadata "$app_dir"
+    if [ "$INSPECT_ONLY" -eq 1 ]; then
+        inspect_rebuild_candidate "$app_dir" "$dmg_path"
+        return 0
+    fi
+
     patch_asar "$app_dir"
     download_electron
     extract_webview "$app_dir"
     install_app
     install_bundled_plugin_resources "$app_dir"
     create_start_script
+
+    if [ -n "${CODEX_REBUILD_REPORT_JSON:-}" ] && [ -n "${CODEX_PATCH_REPORT_JSON:-}" ]; then
+        write_rebuild_report_json \
+            "$CODEX_REBUILD_REPORT_JSON" \
+            "$dmg_path" \
+            "$ELECTRON_VERSION" \
+            "$CODEX_PATCH_REPORT_JSON" \
+            "$INSTALL_DIR"
+        info "Rebuild report: $CODEX_REBUILD_REPORT_JSON"
+    fi
 
     if ! command -v codex &>/dev/null; then
         warn "Codex CLI not found. Install it with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"

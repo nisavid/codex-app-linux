@@ -35,9 +35,13 @@ const REQUIRED_BUNDLE_FILES: [(&str, &str); 12] = [
     ("packaging/linux", "packaging/linux"),
     ("assets/codex.png", "assets/codex.png"),
 ];
-const OPTIONAL_BUNDLE_FILES: [(&str, &str); 2] = [
+const OPTIONAL_BUNDLE_FILES: [(&str, &str); 3] = [
     ("scripts/build-rpm.sh", "scripts/build-rpm.sh"),
     ("scripts/build-pacman.sh", "scripts/build-pacman.sh"),
+    (
+        "scripts/rebuild-candidate.sh",
+        "scripts/rebuild-candidate.sh",
+    ),
 ];
 const PACMAN_PACKAGE_SUFFIXES: &[&str] = &[
     ".pkg.tar.zst",
@@ -592,6 +596,10 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
             FakePackageOutput::Pacman,
         )?;
         fs::write(
+            bundle_root.join("scripts/rebuild-candidate.sh"),
+            b"#!/bin/bash\n",
+        )?;
+        fs::write(
             bundle_root.join("scripts/patch-linux-window-ui.js"),
             b"console.log('patched');\n",
         )?;
@@ -638,6 +646,10 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         assert_eq!(state.candidate_version.as_deref(), Some("26.429.20946"));
         assert!(artifacts.workspace_dir.exists());
         assert!(artifacts.package_path.exists());
+        assert!(artifacts
+            .workspace_dir
+            .join("builder/scripts/rebuild-candidate.sh")
+            .exists());
         assert!(
             is_native_package_file(&artifacts.package_path),
             "expected a native package (.deb, .rpm, or .pkg.tar.zst), got {}",

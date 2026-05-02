@@ -208,6 +208,7 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/scripts/build-deb.sh" "$update_builder_root/scripts/build-deb.sh"
     cp "$REPO_DIR/scripts/build-rpm.sh" "$update_builder_root/scripts/build-rpm.sh"
     cp "$REPO_DIR/scripts/build-pacman.sh" "$update_builder_root/scripts/build-pacman.sh"
+    cp "$REPO_DIR/scripts/rebuild-candidate.sh" "$update_builder_root/scripts/rebuild-candidate.sh"
     cp "$REPO_DIR/scripts/patch-linux-window-ui.js" "$update_builder_root/scripts/patch-linux-window-ui.js"
     cp -r "$REPO_DIR/scripts/lib" "$update_builder_root/scripts/lib"
     cp "$REPO_DIR/packaging/linux/control" "$update_builder_root/packaging/linux/control"

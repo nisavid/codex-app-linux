@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -13,6 +14,8 @@ const {
   applyLinuxComputerUseInstallFlowPatch,
   applyLinuxComputerUsePluginGatePatch,
   applyLinuxComputerUseRendererAvailabilityPatch,
+  applyLinuxAppUpdaterBridgePatch,
+  applyLinuxAppUpdaterMenuPatch,
   applyLinuxFileManagerPatch,
   applyLinuxQuitGuardPatch,
   applyLinuxHotkeyWindowPrewarmPatch,
@@ -29,6 +32,8 @@ const {
   patchMainBundleSource,
   patchExtractedApp,
   patchPackageJson,
+  patchLinuxAppUpdaterBridge,
+  createPatchReport,
   resolveDesktopName,
 } = require("./patch-linux-window-ui.js");
 
@@ -104,6 +109,14 @@ function currentLaunchActionBundleFixture() {
   return [
     "const e={gr:e=>({default:e,...e})};let n=require(`electron`);let i=require(`node:path`);i=e.gr(i);let o=require(`node:fs`);o=e.gr(o);let f=require(`node:net`);f=e.gr(f);",
     "async function CN(){let{setSecondInstanceArgsHandler:l}=t.y(),g={reportNonFatal(){}},k=new t.In;k.add(x);let j={globalState:{get(){return true}},repoRoot:`/tmp`,codexHome:`/tmp`},M={hotkeyWindowLifecycleManager:{hide(){},ensureHotkeyWindowController(){}},getPrimaryWindow(){},createFreshLocalWindow(){},ensureHostWindow(){},windowManager:{sendMessageToWindow(){}}},B=`local`,R={desktopNotificationManager:{dismissByNavigationPath(){}},getOrCreateContext(){},localHost:B},z={deepLinks:{queueProcessArgs(){},flushPendingDeepLinks(){}},navigateToRoute(){}};let A=Date.now(),w=()=>{},ae=e=>{e.isMinimized()&&e.restore(),e.show(),e.focus()},oe=async()=>{try{M.hotkeyWindowLifecycleManager.hide();let e=M.getPrimaryWindow(`local`)??await M.createFreshLocalWindow(`/`);if(e==null)return;ae(e)}catch(e){g.reportNonFatal(e instanceof Error?e:`Failed to open window on second instance`,{kind:`second-instance-open-window-failed`})}};l(e=>{z.deepLinks.queueProcessArgs(e)||oe()});let se=async(e,t)=>{M.hotkeyWindowLifecycleManager.hide();let n=M.getPrimaryWindow(B),r=n??await M.createFreshLocalWindow(e);r!=null&&(R.desktopNotificationManager.dismissByNavigationPath(e),n!=null&&t.navigateExistingWindow&&z.navigateToRoute(r,e),ae(r))};let ce=async()=>{};E&&ce();let be=await M.ensureHostWindow(B);be&&ae(be),w(`local window ensured`,A,{hostId:B,localWindowVisible:be?.isVisible()??!1}),A=Date.now(),await z.deepLinks.flushPendingDeepLinks();}",
+  ].join("");
+}
+
+function appUpdaterBundleFixture() {
+  return [
+    "let t=require(`electron`),i=require(`node:path`),s=require(`node:fs`),u=require(`node:child_process`);",
+    "var ZE=()=>({warning(){},error(){}});",
+    "var tD=class{updater=null;isUpdateReady=!1;updateLifecycleState=`idle`;installProgressPercent=null;lastUnavailableReason=null;constructor(e){this.options=e}async initialize(){if(!this.options.enableUpdater){this.lastUnavailableReason=process.platform!==`darwin`&&process.platform!==`win32`?`unsupported platform`:`disabled for build flavor (${this.options.buildFlavor})`;return}try{if(process.platform===`win32`?await this.initializeWindowsUpdater():await this.initializeMacSparkle(),t.ipcMain.handle(`codex_desktop:check-for-updates`,async e=>{this.options.isTrustedIpcEvent(e)&&await this.checkForUpdates()}),this.hasUpdater())return}catch(e){this.lastUnavailableReason=`updater initialization failed`,this.updater=null}}hasUpdater(){return this.updater!=null}getIsUpdateReady(){return this.isUpdateReady}getInstallProgressPercent(){return this.installProgressPercent}getUpdateLifecycleState(){return this.updateLifecycleState}async checkForUpdates(){if(!this.updater)return;try{await this.updater.checkForUpdates()}catch(e){}}async installUpdatesIfAvailable(){if(!this.updater)return;try{this.isUpdateReady&&this.setUpdateLifecycleState(`installing`),await this.updater.installUpdatesIfAvailable()}catch(e){}}getUnavailableReason(){return this.lastUnavailableReason}async initializeWindowsUpdater(){}async initializeMacSparkle(){}setUpdateReady(e){this.isUpdateReady=e}setUpdateLifecycleState(e){this.updateLifecycleState=e}setInstallProgressPercent(e){this.installProgressPercent=e}};",
   ].join("");
 }
 
@@ -250,6 +263,10 @@ test("adds Linux tray support for current minified window and startup identifier
   const patched = applyPatchTwice(applyLinuxTrayPatch, source, null);
 
   assert.match(patched, /\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&f===`local`/);
+  assert.match(
+    patched,
+    /\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&f===`local`&&!this\.isAppQuitting&&!codexLinuxIsQuitInProgress\(\)/,
+  );
   assert.match(patched, /e\.preventDefault\(\),j\.hide\(\);return/);
   assert.match(
     patched,
@@ -461,6 +478,112 @@ test("allows bundled Computer Use on Linux as well as macOS", () => {
     /\{installWhenMissing:!0,name:tn,isEnabled:\(\{features:e,platform:t\}\)=>\(t===`darwin`\|\|t===`linux`\)&&e\.computerUse/,
   );
   assert.doesNotMatch(patched, /t===`darwin`&&e\.computerUse/);
+});
+
+test("adds Linux package updater behind the existing app updater manager", () => {
+  const patched = applyPatchTwice(applyLinuxAppUpdaterBridgePatch, appUpdaterBundleFixture());
+
+  assert.match(patched, /function codexLinuxReadUpdateState\(\)/);
+  assert.match(patched, /function codexLinuxUpdateLifecycleState\(e\)/);
+  assert.match(patched, /function codexLinuxAppUpdaterPath\(\)/);
+  assert.match(patched, /async function codexLinuxShowUpdateMessage\(e,n\)/);
+  assert.match(patched, /function codexLinuxInstallAfterQuit\(\)/);
+  assert.match(patched, /function codexLinuxQuitForUpdate\(\)/);
+  assert.match(patched, /t\.dialog\?\.showMessageBox\(\{type:`info`/);
+  assert.match(patched, /u\.spawn\(`\/bin\/sh`/);
+  assert.match(patched, /install-ready\|\|exit \$\?/);
+  assert.match(patched, /grep -q "\^status: WaitingForAppExit"/);
+  assert.match(patched, /status: Installing/);
+  assert.match(patched, /grep -q "\^status: Installed"/);
+  assert.match(patched, /\/usr\/bin\/codex-app >\/dev\/null 2>&1 &/);
+  assert.match(patched, /detached:!0,stdio:`ignore`/);
+  assert.match(patched, /codexLinuxInstallAfterQuit\(\);let e=setTimeout/);
+  assert.match(patched, /t\.app\?\.quit\?\.\(\)/);
+  assert.match(patched, /t\.app\?\.exit\?\.\(0\)/);
+  assert.match(patched, /execFile\(codexLinuxAppUpdaterPath\(\),e/);
+  assert.match(patched, /codexLinuxRunAppUpdater\(\[`--help`\]\)/);
+  assert.match(patched, /if\(!this\.options\.enableUpdater&&process\.platform!==`linux`\)/);
+  assert.match(patched, /process\.platform===`linux`\?await this\.initializeLinuxPackageUpdater\(\)/);
+  assert.match(patched, /async initializeLinuxPackageUpdater\(\)/);
+  assert.match(patched, /codexLinuxRunAppUpdater\(\[`check-now`\]\)/);
+  assert.match(patched, /codexLinuxRunAppUpdater\(\[`install-ready`\]\)/);
+  assert.match(patched, /this\.setInstallProgressPercent\(0\),this\.setUpdateLifecycleState\(`installing`\)/);
+  assert.match(patched, /this\.setInstallProgressPercent\(null\),codexLinuxQuitForUpdate\(\)/);
+  assert.doesNotMatch(patched, /this\.options\.onInstallUpdatesRequested\?\.\(\)/);
+  assert.match(patched, /n\.stdout\?\.includes\(`already installed`\)\?await codexLinuxShowUpdateMessage/);
+  assert.match(patched, /if\(t\?\.status===`waiting_for_app_exit`\)/);
+});
+
+test("migrates an already-patched Linux updater bridge to quit before install", () => {
+  const patched = applyLinuxAppUpdaterBridgePatch(appUpdaterBundleFixture());
+  const oldPatched = patched
+    .replace(/function codexLinuxInstallAfterQuit\(\)\{try\{let e=u\.spawn\(`\/bin\/sh`,\[`-c`,[^]*?\);e\.unref\?\.\(\)\}catch\{\}\}/, "")
+    .replace(
+      /function codexLinuxQuitForUpdate\(\)\{try\{codexLinuxInstallAfterQuit\(\);let e=setTimeout\(\(\)=>t\.app\?\.exit\?\.\(0\),1500\);e\.unref\?\.\(\),t\.app\?\.quit\?\.\(\)\}catch\{\}\}/,
+      "function codexLinuxQuitForUpdate(){try{let e=setTimeout(()=>t.app?.exit?.(0),1500);e.unref?.(),t.app?.quit?.()}catch{}}",
+    )
+    .replace("codexLinuxQuitForUpdate();return", "this.options.onInstallUpdatesRequested?.();return");
+  assert.doesNotMatch(oldPatched, /function codexLinuxInstallAfterQuit\(\)/);
+  assert.match(oldPatched, /this\.options\.onInstallUpdatesRequested\?\.\(\)/);
+  const migrated = applyLinuxAppUpdaterBridgePatch(oldPatched);
+
+  assert.match(migrated, /function codexLinuxInstallAfterQuit\(\)/);
+  assert.match(migrated, /function codexLinuxQuitForUpdate\(\)/);
+  assert.match(migrated, /codexLinuxInstallAfterQuit\(\);let e=setTimeout/);
+  assert.match(migrated, /this\.setInstallProgressPercent\(null\),codexLinuxQuitForUpdate\(\)/);
+  assert.doesNotMatch(migrated, /this\.options\.onInstallUpdatesRequested\?\.\(\)/);
+});
+
+test("migrates an already-patched Linux updater bridge to relaunch after install", () => {
+  const patched = applyLinuxAppUpdaterBridgePatch(appUpdaterBundleFixture());
+  const oldHelper =
+    "function codexLinuxInstallAfterQuit(){try{let e=u.spawn(`/bin/sh`,[`-c`,`for i in 1 2 3 4 5 6 7 8 9 10;do sleep 1;\"$1\" install-ready||exit $?;\"$1\" status|grep -q \"^status: WaitingForAppExit\"||exit 0;done`,`codex-linux-update-install`,codexLinuxAppUpdaterPath()],{detached:!0,stdio:`ignore`,windowsHide:!0});e.unref?.()}catch{}}";
+  const oldPatched = patched.replace(
+    /function codexLinuxInstallAfterQuit\(\)\{try\{let e=u\.spawn\(`\/bin\/sh`,\[`-c`,[^]*?e\.unref\?\.\(\)\}catch\{\}\}/,
+    oldHelper,
+  );
+  assert.doesNotMatch(oldPatched, /\/usr\/bin\/codex-app/);
+
+  const migrated = applyLinuxAppUpdaterBridgePatch(oldPatched);
+
+  assert.match(migrated, /grep -q "\^status: Installed"/);
+  assert.match(migrated, /\/usr\/bin\/codex-app >\/dev\/null 2>&1 &/);
+});
+
+test("enables the existing app update menu on Linux", () => {
+  const source =
+    "let{startedAtMs:r,buildFlavor:a,desktopSentry:o,sparkleManager:s,setSparkleBridgeHandlers:c,setSecondInstanceArgsHandler:l}=t.y(),u=t.Z(a),d=t.C.shouldIncludeSparkle(a,process.platform,process.env),f=t.C.shouldIncludeUpdater(a,process.platform,process.env);Yb({enableSparkle:d});";
+  const patched = applyPatchTwice(applyLinuxAppUpdaterMenuPatch, source);
+
+  assert.match(
+    patched,
+    /d=t\.C\.shouldIncludeSparkle\(a,process\.platform,process\.env\)\|\|process\.platform===`linux`/,
+  );
+});
+
+test("patchLinuxAppUpdaterBridge scans build bundles and stays idempotent", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-update-bridge-test-"));
+  try {
+    const buildDir = path.join(tempRoot, ".vite", "build");
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.writeFileSync(path.join(buildDir, "workspace-root-drop-handler.js"), appUpdaterBundleFixture());
+    fs.writeFileSync(
+      path.join(buildDir, "main.js"),
+      "let{startedAtMs:r,buildFlavor:a,desktopSentry:o,sparkleManager:s,setSparkleBridgeHandlers:c,setSecondInstanceArgsHandler:l}=t.y(),u=t.Z(a),d=t.C.shouldIncludeSparkle(a,process.platform,process.env),f=t.C.shouldIncludeUpdater(a,process.platform,process.env);Yb({enableSparkle:d});",
+    );
+
+    const first = patchLinuxAppUpdaterBridge(tempRoot);
+    const manager = fs.readFileSync(path.join(buildDir, "workspace-root-drop-handler.js"), "utf8");
+    const main = fs.readFileSync(path.join(buildDir, "main.js"), "utf8");
+    const second = patchLinuxAppUpdaterBridge(tempRoot);
+
+    assert.deepEqual(first, { matched: 2, changed: 2 });
+    assert.deepEqual(second, { matched: 2, changed: 0 });
+    assert.match(manager, /initializeLinuxPackageUpdater/);
+    assert.match(main, /\|\|process\.platform===`linux`/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("adds installWhenMissing to an already Linux-enabled Computer Use gate", () => {
@@ -851,6 +974,81 @@ test("missing icon asset skips only icon patches", () => {
     assert.equal(fs.readFileSync(patchedMainPath, "utf8"), patchedMain);
     assert.equal(fs.readFileSync(patchedThemePath, "utf8"), patchedTheme);
     assert.equal(fs.readFileSync(patchedPackagePath, "utf8"), patchedPackageRaw);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("patchExtractedApp records a structured patch report", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-test-"));
+  try {
+    const buildDir = path.join(tempRoot, ".vite", "build");
+    const assetsDir = path.join(tempRoot, "webview", "assets");
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(buildDir, "main.js"),
+      [
+        mainBundlePrefix,
+        "process.platform===`win32`&&k.removeMenu(),",
+        alreadyOpaqueBackgroundBundle,
+        fileManagerBundle,
+        trayBundleFixture(),
+        singleInstanceBundleFixture(),
+      ].join(""),
+    );
+    fs.writeFileSync(path.join(assetsDir, "app-test.png"), "");
+    fs.writeFileSync(
+      path.join(assetsDir, "code-theme-test.js"),
+      "opaqueWindows:e?.opaqueWindows??n.opaqueWindows,semanticColors:",
+    );
+    fs.writeFileSync(path.join(tempRoot, "package.json"), JSON.stringify({ name: "codex" }));
+
+    const report = createPatchReport();
+    patchExtractedApp(tempRoot, { report });
+
+    assert.equal(report.mainBundle, "main.js");
+    assert.equal(report.iconAsset, "app-test.png");
+    assert.equal(report.desktopName, "codex-app.desktop");
+    assert.ok(report.patches.some((patch) => patch.name === "main-process-ui" && patch.status === "applied"));
+    assert.ok(report.patches.some((patch) => patch.name === "opaque-window-default-code-theme" && patch.status === "applied"));
+    assert.ok(report.patches.some((patch) => patch.name === "keybinds-settings" && patch.status === "skipped-optional"));
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("patcher CLI writes --report-json output", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-cli-test-"));
+  try {
+    const buildDir = path.join(tempRoot, ".vite", "build");
+    const assetsDir = path.join(tempRoot, "webview", "assets");
+    const reportPath = path.join(tempRoot, "reports", "patch-report.json");
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(buildDir, "main.js"),
+      [
+        mainBundlePrefix,
+        "process.platform===`win32`&&k.removeMenu(),",
+        alreadyOpaqueBackgroundBundle,
+        fileManagerBundle,
+        trayBundleFixture(),
+        singleInstanceBundleFixture(),
+      ].join(""),
+    );
+    fs.writeFileSync(path.join(tempRoot, "package.json"), JSON.stringify({ name: "codex" }));
+
+    const result = spawnSync(
+      process.execPath,
+      [path.join(__dirname, "patch-linux-window-ui.js"), "--report-json", reportPath, tempRoot],
+      { encoding: "utf8" },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+    assert.equal(report.mainBundle, "main.js");
+    assert.ok(report.patches.some((patch) => patch.name === "main-process-ui"));
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

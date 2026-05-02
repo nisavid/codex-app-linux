@@ -2,6 +2,18 @@
 
 const fs = require("fs");
 const path = require("path");
+const {
+  captureWarnings,
+  createPatchReport,
+  patchStatusFromChange,
+  recordPatch,
+  writePatchReport,
+} = require("./lib/patch-report.js");
+const {
+  applyLinuxAppUpdaterBridgePatch,
+  applyLinuxAppUpdaterMenuPatch,
+  patchLinuxAppUpdaterBridge,
+} = require("./lib/linux-update-bridge-patch.js");
 
 function readDirectoryNames(dir) {
   if (!fs.existsSync(dir)) {
@@ -119,7 +131,7 @@ function patchAssetFiles(extractedDir, filenamePattern, patchFn, missingWarnMess
     console.warn(
       `WARN: Could not find webview assets directory in ${webviewAssetsDir} — skipping asset patch`,
     );
-    return;
+    return { matched: 0, changed: 0 };
   }
 
   const candidates = fs
@@ -129,17 +141,21 @@ function patchAssetFiles(extractedDir, filenamePattern, patchFn, missingWarnMess
 
   if (candidates.length === 0) {
     console.warn(missingWarnMessage);
-    return;
+    return { matched: 0, changed: 0 };
   }
 
+  let changed = 0;
   for (const candidate of candidates) {
     const filePath = path.join(webviewAssetsDir, candidate);
     const currentSource = fs.readFileSync(filePath, "utf8");
     const patchedSource = patchFn(currentSource);
     if (patchedSource !== currentSource) {
       fs.writeFileSync(filePath, patchedSource, "utf8");
+      changed += 1;
     }
   }
+
+  return { matched: candidates.length, changed };
 }
 
 function readWebviewAsset(webviewAssetsDir, assetName) {
@@ -320,6 +336,10 @@ function collectRequiredAssetPatches(extractedDir, filenamePattern, patchFn, des
 function patchKeybindsSettingsAssets(extractedDir) {
   try {
     const keybindsAsset = resolveKeybindsSettingsAsset(extractedDir);
+    const keybindsAssetExists = fs.existsSync(keybindsAsset.filePath);
+    const previousKeybindsSource = keybindsAssetExists
+      ? fs.readFileSync(keybindsAsset.filePath, "utf8")
+      : null;
     const patches = [
       ...collectRequiredAssetPatches(
         extractedDir,
@@ -342,14 +362,18 @@ function patchKeybindsSettingsAssets(extractedDir) {
     ];
 
     fs.writeFileSync(keybindsAsset.filePath, keybindsAsset.source, "utf8");
+    let changed = previousKeybindsSource !== keybindsAsset.source ? 1 : 0;
     for (const patch of patches) {
       if (patch.patchedSource !== patch.currentSource) {
         fs.writeFileSync(patch.filePath, patch.patchedSource, "utf8");
+        changed += 1;
       }
     }
+    return { matched: true, changed };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`WARN: Keybinds settings patch skipped: ${message}`);
+    return { matched: false, changed: 0, reason: message };
   }
 }
 
@@ -1767,6 +1791,7 @@ function patchMainBundleSource(source, iconAsset) {
     patched = applyLinuxComputerUseFeaturePatch(patched);
   }
   patched = applyLinuxComputerUsePluginGatePatch(patched);
+  patched = applyLinuxAppUpdaterMenuPatch(patched);
   patched = applyLinuxTrayCloseSettingPatch(patched);
   patched = applyLinuxSettingsPersistencePatch(patched);
   patched = applyLinuxLaunchActionArgsPatch(patched);
@@ -1804,25 +1829,48 @@ function patchCommentPreloadBundle(extractedDir) {
     console.warn(
       `WARN: Could not find comment preload bundle in ${path.dirname(commentPreloadBundle)} — skipping annotation screenshot patch`,
     );
-    return;
+    return { matched: false, changed: false };
   }
 
   const source = fs.readFileSync(commentPreloadBundle, "utf8");
   const patchedSource = applyBrowserAnnotationScreenshotPatch(source);
   if (patchedSource !== source) {
     fs.writeFileSync(commentPreloadBundle, patchedSource, "utf8");
+    return { matched: true, changed: true };
   }
+  return { matched: true, changed: false };
 }
 
-function patchExtractedApp(extractedDir) {
+function recordAssetPatch(report, name, patchResult, warnings) {
+  if (patchResult.matched === 0) {
+    recordPatch(report, name, "skipped-optional", warnings[0] ?? "no matching bundle found");
+    return;
+  }
+
+  recordPatch(
+    report,
+    name,
+    patchResult.changed > 0 ? "applied" : "already-applied",
+  );
+}
+
+function patchExtractedApp(extractedDir, options = {}) {
+  const report = options.report ?? null;
   const main = findMainBundle(extractedDir);
+  if (report != null) {
+    report.mainBundle = main?.mainBundle ?? null;
+    report.target = main == null ? null : path.join(main.buildDir, main.mainBundle);
+  }
   if (main == null) {
-    console.warn(
-      `WARN: Could not find main bundle in ${path.join(extractedDir, ".vite", "build")} — skipping main-process UI patches`,
-    );
+    const reason = `Could not find main bundle in ${path.join(extractedDir, ".vite", "build")}`;
+    console.warn(`WARN: ${reason} — skipping main-process UI patches`);
+    recordPatch(report, "main-process-ui", "failed-required", reason);
   }
 
   const iconAsset = findIconAsset(extractedDir);
+  if (report != null) {
+    report.iconAsset = iconAsset;
+  }
   if (iconAsset == null) {
     console.warn(
       `WARN: Could not find app icon asset in ${path.join(extractedDir, "webview", "assets")} — skipping icon patches`,
@@ -1832,79 +1880,114 @@ function patchExtractedApp(extractedDir) {
   if (main != null) {
     const target = path.join(main.buildDir, main.mainBundle);
     const source = fs.readFileSync(target, "utf8");
-    const patchedSource = patchMainBundleSource(source, iconAsset);
+    const { value: patchedSource, warnings } = captureWarnings(() =>
+      patchMainBundleSource(source, iconAsset),
+    );
     if (patchedSource !== source) {
       fs.writeFileSync(target, patchedSource, "utf8");
     }
+    recordPatch(
+      report,
+      "main-process-ui",
+      patchStatusFromChange(patchedSource !== source, warnings),
+      warnings[0] ?? null,
+    );
   }
 
-  patchCommentPreloadBundle(extractedDir);
+  {
+    const { value: result, warnings } = captureWarnings(() => patchLinuxAppUpdaterBridge(extractedDir));
+    recordAssetPatch(report, "linux-app-updater-bridge", result, warnings);
+  }
 
-  patchAssetFiles(
-    extractedDir,
-    /^code-theme-.*\.js$/,
-    applyLinuxOpaqueWindowsDefaultPatch,
-    `WARN: Could not find code theme bundle in ${path.join(
-      extractedDir,
-      "webview",
-      "assets",
-    )} — skipping translucent sidebar default patch`,
-  );
-  patchAssetFiles(
-    extractedDir,
-    /^general-settings-.*\.js$/,
-    applyLinuxOpaqueWindowsDefaultPatch,
-    `WARN: Could not find general settings bundle in ${path.join(
-      extractedDir,
-      "webview",
-      "assets",
-    )} — skipping translucent sidebar default patch`,
-  );
-  patchAssetFiles(
-    extractedDir,
-    /^index-.*\.js$/,
-    applyLinuxOpaqueWindowsDefaultPatch,
-    `WARN: Could not find webview index bundle in ${path.join(
-      extractedDir,
-      "webview",
-      "assets",
-    )} — skipping translucent sidebar default patch`,
-  );
-  patchAssetFiles(
-    extractedDir,
-    /^use-resolved-theme-variant-.*\.js$/,
-    applyLinuxOpaqueWindowsDefaultPatch,
-    `WARN: Could not find resolved theme bundle in ${path.join(
-      extractedDir,
-      "webview",
-      "assets",
-    )} — skipping translucent sidebar default patch`,
-  );
+  {
+    const { value: result, warnings } = captureWarnings(() => patchCommentPreloadBundle(extractedDir));
+    recordPatch(
+      report,
+      "browser-annotation-screenshot",
+      patchStatusFromChange(result.changed, warnings),
+      warnings[0] ?? null,
+    );
+  }
+
+  for (const [name, pattern, warning] of [
+    [
+      "opaque-window-default-code-theme",
+      /^code-theme-.*\.js$/,
+      `WARN: Could not find code theme bundle in ${path.join(extractedDir, "webview", "assets")} — skipping translucent sidebar default patch`,
+    ],
+    [
+      "opaque-window-default-general-settings",
+      /^general-settings-.*\.js$/,
+      `WARN: Could not find general settings bundle in ${path.join(extractedDir, "webview", "assets")} — skipping translucent sidebar default patch`,
+    ],
+    [
+      "opaque-window-default-webview-index",
+      /^index-.*\.js$/,
+      `WARN: Could not find webview index bundle in ${path.join(extractedDir, "webview", "assets")} — skipping translucent sidebar default patch`,
+    ],
+    [
+      "opaque-window-default-resolved-theme",
+      /^use-resolved-theme-variant-.*\.js$/,
+      `WARN: Could not find resolved theme bundle in ${path.join(extractedDir, "webview", "assets")} — skipping translucent sidebar default patch`,
+    ],
+  ]) {
+    const { value: result, warnings } = captureWarnings(() =>
+      patchAssetFiles(extractedDir, pattern, applyLinuxOpaqueWindowsDefaultPatch, warning),
+    );
+    recordAssetPatch(report, name, result, warnings);
+  }
+
   if (isComputerUseUiEnabled()) {
-    patchAssetFiles(
-      extractedDir,
-      /^use-model-settings-.*\.js$/,
-      applyLinuxComputerUseRendererAvailabilityPatch,
-      `WARN: Could not find model settings bundle in ${path.join(
-        extractedDir,
-        "webview",
-        "assets",
-      )} — skipping Linux Computer Use UI availability patch`,
-    );
-    patchAssetFiles(
-      extractedDir,
-      /^use-plugin-install-flow-.*\.js$/,
-      applyLinuxComputerUseInstallFlowPatch,
-      `WARN: Could not find plugin install flow bundle in ${path.join(
-        extractedDir,
-        "webview",
-        "assets",
-      )} — skipping Linux Computer Use install flow patch`,
+    for (const [name, pattern, patchFn, warning] of [
+      [
+        "linux-computer-use-ui-availability",
+        /^use-model-settings-.*\.js$/,
+        applyLinuxComputerUseRendererAvailabilityPatch,
+        `WARN: Could not find model settings bundle in ${path.join(extractedDir, "webview", "assets")} — skipping Linux Computer Use UI availability patch`,
+      ],
+      [
+        "linux-computer-use-install-flow",
+        /^use-plugin-install-flow-.*\.js$/,
+        applyLinuxComputerUseInstallFlowPatch,
+        `WARN: Could not find plugin install flow bundle in ${path.join(extractedDir, "webview", "assets")} — skipping Linux Computer Use install flow patch`,
+      ],
+    ]) {
+      const { value: result, warnings } = captureWarnings(() =>
+        patchAssetFiles(extractedDir, pattern, patchFn, warning),
+      );
+      recordAssetPatch(report, name, result, warnings);
+    }
+  }
+
+  {
+    const { value: result, warnings } = captureWarnings(() => patchKeybindsSettingsAssets(extractedDir));
+    recordPatch(
+      report,
+      "keybinds-settings",
+      result.changed > 0 ? "applied" : result.matched ? "already-applied" : "skipped-optional",
+      result.reason ?? warnings[0] ?? null,
     );
   }
-  patchKeybindsSettingsAssets(extractedDir);
 
+  const packageJsonPath = path.join(extractedDir, "package.json");
+  const previousPackageJson = fs.existsSync(packageJsonPath)
+    ? fs.readFileSync(packageJsonPath, "utf8")
+    : null;
   const desktopName = patchPackageJson(extractedDir);
+  const nextPackageJson = fs.existsSync(packageJsonPath)
+    ? fs.readFileSync(packageJsonPath, "utf8")
+    : null;
+  if (report != null) {
+    report.desktopName = desktopName;
+  }
+  recordPatch(
+    report,
+    "package-desktop-name",
+    desktopName == null
+      ? "skipped-optional"
+      : previousPackageJson !== nextPackageJson ? "applied" : "already-applied",
+    desktopName == null ? "package.json not found" : null,
+  );
   console.log("Patched Linux window, shell, and appearance behavior:", {
     target: main == null ? null : path.join(main.buildDir, main.mainBundle),
     mainBundle: main?.mainBundle ?? null,
@@ -1914,14 +1997,37 @@ function patchExtractedApp(extractedDir) {
 }
 
 function main() {
-  const extractedDir = process.argv[2];
+  const args = process.argv.slice(2);
+  let reportJson = null;
+  const positional = [];
 
-  if (!extractedDir) {
-    console.error("Usage: patch-linux-window-ui.js <extracted-app-asar-dir>");
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--report-json") {
+      reportJson = args[index + 1];
+      if (!reportJson) {
+        console.error("Usage: patch-linux-window-ui.js [--report-json path] <extracted-app-asar-dir>");
+        process.exit(1);
+      }
+      index += 1;
+    } else if (arg === "--help" || arg === "-h") {
+      console.log("Usage: patch-linux-window-ui.js [--report-json path] <extracted-app-asar-dir>");
+      process.exit(0);
+    } else {
+      positional.push(arg);
+    }
+  }
+
+  const extractedDir = positional[0];
+
+  if (!extractedDir || positional.length > 1) {
+    console.error("Usage: patch-linux-window-ui.js [--report-json path] <extracted-app-asar-dir>");
     process.exit(1);
   }
 
-  patchExtractedApp(extractedDir);
+  const report = reportJson == null ? null : createPatchReport();
+  patchExtractedApp(extractedDir, { report });
+  writePatchReport(reportJson, report);
 }
 
 if (require.main === module) {
@@ -1939,6 +2045,9 @@ module.exports = {
   applyLinuxComputerUseFeaturePatch,
   applyLinuxComputerUseRendererAvailabilityPatch,
   applyLinuxComputerUseInstallFlowPatch,
+  applyLinuxAppUpdaterBridgePatch,
+  applyLinuxAppUpdaterMenuPatch,
+  patchLinuxAppUpdaterBridge,
   applyLinuxFileManagerPatch,
   applyLinuxHotkeyWindowPrewarmPatch,
   applyLinuxKeybindOverridesRuntimePatch,
@@ -1959,6 +2068,7 @@ module.exports = {
   patchExtractedApp,
   patchMainBundleSource,
   patchPackageJson,
+  createPatchReport,
   resolveDesktopName,
   resolveKeybindsSettingsAsset,
 };

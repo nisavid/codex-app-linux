@@ -1,10 +1,13 @@
 *.dmg
 node_modules/
 codex-app/
+codex-app.backup-*/
 codex-*-app/
+codex-app-next/
 bin/codex-*
 target/
 dist/
+dist-next/
 .idea/
 .claude/
 /.codex

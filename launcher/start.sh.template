@@ -306,7 +306,7 @@ resolve_browser_use_runtime_env() {
 
 run_cli_preflight() {
     local allow_install_missing="${1:-0}"
-    if ! command -v codex-app-updater >/dev/null 2>&1; then
+    if ! has_app_updater; then
         if [ "$allow_install_missing" = "1" ]; then
             return 1
         fi
@@ -325,7 +325,7 @@ run_cli_preflight() {
     fi
 
     local refreshed_path=""
-    if ! refreshed_path="$(codex-app-updater "${preflight_args[@]}")"; then
+    if ! refreshed_path="$(run_app_updater "${preflight_args[@]}")"; then
         if [ "$allow_install_missing" = "1" ]; then
             return 1
         fi
@@ -340,7 +340,7 @@ run_cli_preflight() {
 }
 
 run_cli_preflight_background() {
-    if ! command -v codex-app-updater >/dev/null 2>&1; then
+    if ! has_app_updater; then
         return 0
     fi
 
@@ -353,7 +353,7 @@ run_cli_preflight_background() {
     fi
 
     (
-        if ! codex-app-updater "${preflight_args[@]}" >/dev/null 2>&1; then
+        if ! run_app_updater "${preflight_args[@]}" >/dev/null 2>&1; then
             echo "Codex CLI background preflight failed. Continuing with the current CLI."
         fi
     ) &
@@ -364,7 +364,7 @@ is_interactive_terminal() {
 }
 
 run_gui_cli_prompt() {
-    if ! command -v codex-app-updater >/dev/null 2>&1; then
+    if ! has_app_updater; then
         return 1
     fi
 
@@ -377,7 +377,7 @@ run_gui_cli_prompt() {
     fi
 
     local refreshed_path=""
-    if ! refreshed_path="$(codex-app-updater "${prompt_args[@]}")"; then
+    if ! refreshed_path="$(run_app_updater "${prompt_args[@]}")"; then
         return 1
     fi
 
@@ -394,7 +394,7 @@ prompt_install_missing_cli() {
         return 1
     fi
 
-    if ! command -v codex-app-updater >/dev/null 2>&1; then
+    if ! has_app_updater; then
         return 1
     fi
 
@@ -481,6 +481,43 @@ notify_error() {
 
 canonical_path() {
     readlink -f "$1" 2>/dev/null || echo "$1"
+}
+
+resolve_app_updater_path() {
+    if [ -n "${CODEX_APP_UPDATER_PATH:-}" ] && [ -x "$CODEX_APP_UPDATER_PATH" ]; then
+        return 0
+    fi
+
+    local candidate
+    for candidate in \
+        "$SCRIPT_DIR/../target/release/codex-app-updater" \
+        "$SCRIPT_DIR/codex-app-updater" \
+        "/usr/bin/codex-app-updater" \
+        "/usr/local/bin/codex-app-updater"
+    do
+        if [ -x "$candidate" ]; then
+            CODEX_APP_UPDATER_PATH="$(canonical_path "$candidate")"
+            export CODEX_APP_UPDATER_PATH
+            return 0
+        fi
+    done
+
+    if command -v codex-app-updater >/dev/null 2>&1; then
+        CODEX_APP_UPDATER_PATH="$(command -v codex-app-updater)"
+        export CODEX_APP_UPDATER_PATH
+        return 0
+    fi
+
+    return 1
+}
+
+has_app_updater() {
+    resolve_app_updater_path >/dev/null 2>&1
+}
+
+run_app_updater() {
+    resolve_app_updater_path || return 127
+    "$CODEX_APP_UPDATER_PATH" "$@"
 }
 
 pid_is_current_user() {
