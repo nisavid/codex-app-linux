@@ -501,7 +501,7 @@ fn select_action_index(actions: &[atspi::Action], requested_action: Option<&str>
         Ok(1)
     } else {
         Err(anyhow!(
-            "element exposes only one AT-SPI action; pass action_name or action_index to invoke it explicitly"
+            "element exposes only one AT-SPI action; pass action with an action name or numeric index to invoke it explicitly"
         ))
     }
 }

@@ -599,6 +599,15 @@ impl ComputerUseLinux {
         Parameters(params): Parameters<PressKeyParams>,
     ) -> Json<ActionOutput> {
         let received = Some(serde_json::json!(params.clone()));
+        let Some(key_events) = key_sequence(&params.key) else {
+            return Json(ActionOutput {
+                ok: false,
+                implemented: true,
+                action: "press_key".to_string(),
+                message: "Unsupported key. Use names like Enter, Escape, Tab, ArrowLeft, Super, Ctrl+L, or a single US keyboard letter/digit.".to_string(),
+                received,
+            });
+        };
         let focus = match self.focus_target_for_input(&params.window_target()).await {
             Ok(focus) => focus,
             Err(message) => {
@@ -611,18 +620,9 @@ impl ComputerUseLinux {
                 });
             }
         };
-        let Some(key_events) = key_sequence(&params.key) else {
-            return Json(ActionOutput {
-                ok: false,
-                implemented: true,
-                action: "press_key".to_string(),
-                message: "Unsupported key. Use names like Enter, Escape, Tab, ArrowLeft, Super, Ctrl+L, or a single US keyboard letter/digit.".to_string(),
-                received,
-            });
-        };
         let mut args = vec!["key".to_string()];
         args.extend(key_events);
-        let result = run_ydotool(&args).map(|output| vec![output]);
+        let result = run_ydotool_blocking(args).await.map(|output| vec![output]);
         Json(action_result_with_focus(
             "press_key",
             result,
@@ -652,7 +652,8 @@ impl ComputerUseLinux {
                 });
             }
         };
-        let result = run_ydotool(&["type".to_string(), "--".to_string(), params.text])
+        let result = run_ydotool_blocking(vec!["type".to_string(), "--".to_string(), params.text])
+            .await
             .map(|output| vec![output]);
         Json(action_result_with_focus(
             "type_text",
@@ -1352,6 +1353,12 @@ async fn run_ydotool_sequence_blocking(
     commands: Vec<Vec<String>>,
 ) -> std::result::Result<Vec<Output>, String> {
     tokio::task::spawn_blocking(move || run_ydotool_sequence(&commands))
+        .await
+        .map_err(|error| format!("ydotool task failed: {error}"))?
+}
+
+async fn run_ydotool_blocking(args: Vec<String>) -> std::result::Result<Output, String> {
+    tokio::task::spawn_blocking(move || run_ydotool(&args))
         .await
         .map_err(|error| format!("ydotool task failed: {error}"))?
 }
