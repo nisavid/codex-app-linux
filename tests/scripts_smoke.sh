@@ -392,6 +392,14 @@ test_installer_inspect_mode_does_not_write_install_metadata() {
         source "$1"
 
         check_deps() { :; }
+        assert_install_target_not_running() {
+            printf "%s\n" assert_install_target_not_running >> "$TRACE_LOG"
+            exit 1
+        }
+        prepare_install() {
+            printf "%s\n" prepare_install >> "$TRACE_LOG"
+            exit 1
+        }
         extract_dmg() { printf "%s\n" "$FAKE_APP_DIR"; }
         detect_electron_version() { printf "%s\n" detect >> "$TRACE_LOG"; }
         inspect_rebuild_candidate() { printf "%s\n" inspect >> "$TRACE_LOG"; }
@@ -581,8 +589,8 @@ PY
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app %u"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "Actions=CheckForUpdates;InstallReadyUpdate;"
-    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "codex-app-updater check-now"
-    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "codex-app-updater install-ready"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app-updater check-now"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app-updater install-ready"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "@USER_BIN_DIR@/codex-app %U"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" 'INSTALL_ROOT="${CODEX_USER_INSTALL_ROOT:-${XDG_DATA_HOME}/codex-app}"'
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
