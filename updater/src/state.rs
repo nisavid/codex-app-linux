@@ -40,6 +40,7 @@ pub enum UpdateStatus {
 pub enum CliStatus {
     #[default]
     Unknown,
+    NotInstalled,
     Checking,
     UpToDate,
     UpdateRequired,
@@ -259,6 +260,19 @@ mod tests {
         assert_eq!(loaded.cli_latest_version, None);
         assert_eq!(loaded.cli_error_message, None);
         Ok(())
+    }
+
+    #[test]
+    fn serialises_not_installed_cli_status() {
+        let json = serde_json::to_string(&CliStatus::NotInstalled).expect("should serialise");
+        assert_eq!(json, r#""not_installed""#);
+    }
+
+    #[test]
+    fn deserialises_not_installed_cli_status() {
+        let status: CliStatus =
+            serde_json::from_str(r#""not_installed""#).expect("should parse not_installed");
+        assert_eq!(status, CliStatus::NotInstalled);
     }
 
     #[test]

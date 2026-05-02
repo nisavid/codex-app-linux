@@ -14,6 +14,7 @@ const {
   applyLinuxComputerUsePluginGatePatch,
   applyLinuxComputerUseRendererAvailabilityPatch,
   applyLinuxFileManagerPatch,
+  applyLinuxQuitGuardPatch,
   applyLinuxHotkeyWindowPrewarmPatch,
   applyLinuxLaunchActionArgsPatch,
   applyLinuxMenuPatch,
@@ -116,6 +117,17 @@ test("adds Linux file manager support without relying on exact minified variable
   assert.match(patched, /n\.shell\.openPath\(__codexOpenTarget\)/);
 });
 
+test("adds the Linux quit guard when electron/path/fs requires are split across statements", () => {
+  const source =
+    "const e={gr:e=>({default:e,...e})};let n=require(`electron`);let i=require(`node:path`);i=e.gr(i);let o=require(`node:fs`);o=e.gr(o);";
+
+  const patched = applyPatchTwice(applyLinuxQuitGuardPatch, source);
+
+  assert.match(patched, /let codexLinuxQuitInProgress=!1/);
+  assert.match(patched, /codexLinuxMarkQuitInProgress=\(\)=>\{codexLinuxQuitInProgress=!0\}/);
+  assert.match(patched, /codexLinuxIsQuitInProgress=\(\)=>codexLinuxQuitInProgress===!0/);
+});
+
 test("adds Linux menu hiding next to Windows removeMenu calls", () => {
   const source = "process.platform===`win32`&&k.removeMenu(),k.on(`closed`,()=>{})";
   const patched = applyPatchTwice(applyLinuxMenuPatch, source);
@@ -191,12 +203,24 @@ test("adds Linux tray support including the platform guard", () => {
     new RegExp(`nativeImage\\.createFromPath\\(${escapeRegExp(iconPathExpression)}\\)`),
   );
   assert.match(patched, /\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&f===`local`/);
+  assert.match(
+    patched,
+    /\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&f===`local`&&!this\.isAppQuitting&&!codexLinuxIsQuitInProgress\(\)/,
+  );
   assert.match(patched, /setLinuxTrayContextMenu\(\)\{let e=n\.Menu\.buildFromTemplate/);
   assert.match(
     patched,
     /process\.platform===`linux`&&this\.setLinuxTrayContextMenu\(\),this\.tray\.on\(`click`/,
   );
+  assert.match(
+    patched,
+    /openNativeTrayMenu\(\)\{if\(process\.platform===`linux`&&codexLinuxIsQuitInProgress\(\)\)return;/,
+  );
   assert.match(patched, /if\(process\.platform===`linux`\)return;e\.once\(`menu-will-show`/);
+  assert.match(
+    patched,
+    /this\.trayMenuThreads=e\.trayMenuThreads,process\.platform===`linux`&&!codexLinuxIsQuitInProgress\(\)&&this\.setLinuxTrayContextMenu\?\.\(\)/,
+  );
   assert.match(
     patched,
     /\(E\|\|process\.platform===`linux`&&\(typeof codexLinuxIsTrayEnabled!==`function`\|\|codexLinuxIsTrayEnabled\(\)\)\)&&oe\(\);/,
@@ -260,6 +284,9 @@ test("adds Linux single-instance lock and second-instance handoff", () => {
 
   assert.match(patched, /process\.platform===`linux`&&!n\.app\.requestSingleInstanceLock\(\)/);
   assert.match(patched, /n\.app\.quit\(\);return/);
+  assert.match(patched, /codexLinuxBeforeQuitHandler=\(\)=>\{codexLinuxMarkQuitInProgress\(\)\}/);
+  assert.match(patched, /n\.app\.on\(`before-quit`,codexLinuxBeforeQuitHandler\)/);
+  assert.match(patched, /n\.app\.off\(`before-quit`,codexLinuxBeforeQuitHandler\)/);
   assert.match(patched, /codexLinuxSecondInstanceHandler/);
   assert.match(patched, /n\.app\.on\(`second-instance`,codexLinuxSecondInstanceHandler\)/);
   assert.match(patched, /n\.app\.off\(`second-instance`,codexLinuxSecondInstanceHandler\)/);
@@ -312,6 +339,19 @@ test("adds Linux launch actions when captured window identifiers contain dollar 
 
   assert.match(patched, /codexLinuxHandleLaunchActionArgs/);
   assert.match(patched, /z\.navigateToRoute\(r\$,e\),ae\(r\$\)/);
+  assert.match(patched, /codexLinuxQuitInProgress=!1/);
+  assert.match(patched, /codexLinuxMarkQuitInProgress=\(\)=>\{codexLinuxQuitInProgress=!0\}/);
+  assert.match(patched, /codexLinuxIsQuitInProgress=\(\)=>codexLinuxQuitInProgress===!0/);
+  assert.match(patched, /codexLinuxGetSetting=e=>/);
+  assert.match(patched, /codexLinuxHandleLaunchActionArgs=async e=>/);
+  assert.match(patched, /codexLinuxHandleLaunchActionArgs=async e=>codexLinuxIsQuitInProgress\(\)\?!0:/);
+  assert.match(patched, /codexLinuxHandleLaunchActionArgsFallback=\(e,t\)=>\{if\(codexLinuxIsQuitInProgress\(\)\)return;/);
+  assert.match(patched, /codexLinuxStartLaunchActionSocket=\(\)=>/);
+  assert.match(patched, /codexLinuxPrewarmHotkeyWindow=\(\)=>/);
+  assert.match(patched, /e\.includes\(`--new-chat`\)/);
+  assert.match(patched, /e\.includes\(`--quick-chat`\)/);
+  assert.match(patched, /e\.includes\(`--prompt-chat`\)/);
+  assert.match(patched, /e\.includes\(`--hotkey-window`\)/);
 });
 
 test("skips the launch-action patch without throwing when upstream startup architecture changes", () => {
@@ -707,6 +747,9 @@ test("patchMainBundleSource keeps non-icon patches active without an icon asset"
 
   const patched = applyPatchTwice(patchMainBundleSource, source, null);
 
+  assert.match(patched, /codexLinuxQuitInProgress=!1/);
+  assert.match(patched, /codexLinuxIsQuitInProgress=\(\)=>codexLinuxQuitInProgress===!0/);
+  assert.match(patched, /n\.app\.on\(`before-quit`,codexLinuxBeforeQuitHandler\)/);
   assert.match(patched, /process\.platform===`linux`&&k\.setMenuBarVisibility\(!1\)/);
   assert.match(patched, /linux:\{label:`File Manager`/);
   assert.match(
