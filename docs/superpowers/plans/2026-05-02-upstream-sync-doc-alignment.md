@@ -234,6 +234,25 @@ Co-authored-by: Codex <noreply@openai.com>"
 
 ## Task 7: Open PR
 
+- [ ] Write the PR body file.
+
+```bash
+cat > /tmp/codex-app-linux-upstream-sync-docs-pr.md <<'EOF'
+## Summary
+- aligns Linux Computer Use docs with the latest completed upstream sync range `f6b99eb..5aec7d5`
+- documents local UI opt-in behavior in the build guide
+- refreshes maintainer runtime and fork-divergence notes for the Computer Use patch split
+
+## Verification
+- `git diff --check`
+- `rg -n "codex-desktop/settings|account-side rollout|Statsig rollout|requires.*rollout" README.md docs/usage/build-and-run.md docs/maintainers/package-runtime-maintenance.md docs/maintainers/fork-divergences.md`
+- `rg -n "CODEX_LINUX_ENABLE_COMPUTER_USE_UI|codex-linux-computer-use-ui-enabled|codex-app/settings.json" README.md docs/usage/build-and-run.md docs/maintainers/package-runtime-maintenance.md docs/maintainers/fork-divergences.md`
+
+## Notes
+Docs-only change; no app generation, package build, or updater validation required.
+EOF
+```
+
 - [ ] Push and create a draft PR.
 
 ```bash
@@ -241,7 +260,7 @@ git push -u origin docs/upstream-sync-alignment
 gh pr create --draft --title "docs: align upstream sync documentation" --body-file /tmp/codex-app-linux-upstream-sync-docs-pr.md
 ```
 
-- [ ] Use this PR body:
+- [ ] Use this PR body in `/tmp/codex-app-linux-upstream-sync-docs-pr.md`:
 
 ```markdown
 ## Summary
