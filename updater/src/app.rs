@@ -66,6 +66,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             print_path,
         } => run_prompt_install_cli(&config, &mut state, &paths, cli_path, print_path),
         Commands::Status { json } => run_status(&config, &mut state, &paths, json),
+        Commands::InstallReady => run_install_ready(&config, &mut state, &paths).await,
         Commands::InstallDeb { path } => install::install_deb(&path),
         Commands::InstallRpm { path } => install::install_rpm(&path),
         Commands::InstallPacman { path } => install::install_pacman(&path),
@@ -595,14 +596,7 @@ async fn run_check_cycle(
             .clone()
             .expect("candidate version should be set before local build");
         builder::build_update(config, state, paths, &candidate_version, &downloaded.path).await?;
-        maybe_notify(
-            state,
-            paths,
-            config.notifications,
-            "ready_to_install",
-            "Codex App update ready",
-            "A rebuilt Linux package is ready to install.",
-        )?;
+        maybe_notify_update_ready(state, paths, config.notifications)?;
         Ok(())
     }
     .await;
@@ -629,7 +623,42 @@ async fn reconcile_pending_install(
     }
 
     match state.status {
-        UpdateStatus::ReadyToInstall | UpdateStatus::WaitingForAppExit => {
+        UpdateStatus::ReadyToInstall => {
+            let Some(package_path) = state.artifact_paths.package_path.clone() else {
+                return Ok(());
+            };
+
+            if !package_path.exists() {
+                mark_failed_and_persist(
+                    state,
+                    paths,
+                    format!(
+                        "Pending package artifact is missing: {}",
+                        package_path.display()
+                    ),
+                )?;
+                return Ok(());
+            }
+
+            // The persisted `auto_install_on_app_exit` key is kept for config
+            // compatibility. In this flow it controls whether the updater
+            // nudges a running app; installation still requires an explicit
+            // install-ready trigger from the app/menu path.
+            if state.auto_install_on_app_exit && liveness::is_app_running(config)? {
+                maybe_notify(
+                    state,
+                    paths,
+                    config.notifications,
+                    "ready_to_install",
+                    "Codex App update ready",
+                    "Open Codex App and choose Update to install the ready update.",
+                )?;
+                return Ok(());
+            }
+
+            set_status(state, paths, UpdateStatus::ReadyToInstall)?;
+        }
+        UpdateStatus::WaitingForAppExit => {
             let Some(package_path) = state.artifact_paths.package_path.clone() else {
                 return Ok(());
             };
@@ -648,7 +677,6 @@ async fn reconcile_pending_install(
 
             if liveness::is_app_running(config)? {
                 clear_install_auth_required_event(state, paths)?;
-                set_status(state, paths, UpdateStatus::WaitingForAppExit)?;
                 maybe_notify(
                     state,
                     paths,
@@ -664,17 +692,102 @@ async fn reconcile_pending_install(
                 return Ok(());
             }
 
-            if !state.auto_install_on_app_exit {
-                set_status(state, paths, UpdateStatus::ReadyToInstall)?;
-                return Ok(());
-            }
-
             trigger_install(state, paths, &package_path).await?;
         }
         _ => {}
     }
 
     Ok(())
+}
+
+async fn run_install_ready(
+    config: &RuntimeConfig,
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+) -> Result<()> {
+    sync_and_persist(config, state, paths)?;
+    let recovering_interrupted_install = state.status == UpdateStatus::Installing;
+    recover_interrupted_install(state, paths)?;
+    if recovering_interrupted_install && state.status == UpdateStatus::Failed {
+        let message = state
+            .error_message
+            .clone()
+            .unwrap_or_else(|| "Previous install attempt could not be recovered".to_string());
+        maybe_send_notification(
+            config.notifications,
+            "Codex update failed",
+            "The previous install attempt could not be recovered. Check the updater log for details.",
+        );
+        return Err(anyhow::anyhow!(message));
+    }
+
+    if complete_pending_install_if_already_installed(state, paths)? {
+        let _ = maybe_notify_installed(state, paths, config.notifications);
+        println!("Codex App update is already installed.");
+        return Ok(());
+    }
+
+    match state.status {
+        UpdateStatus::ReadyToInstall | UpdateStatus::WaitingForAppExit => {}
+        UpdateStatus::Installing => {
+            maybe_send_notification(
+                config.notifications,
+                "Codex update already installing",
+                "Codex App is already applying the ready update.",
+            );
+            println!("Codex App update is already installing.");
+            return Ok(());
+        }
+        _ => {
+            maybe_send_notification(
+                config.notifications,
+                "No Codex update ready",
+                "There is no rebuilt Codex App update waiting to install.",
+            );
+            println!("No Codex App update is ready to install.");
+            return Ok(());
+        }
+    }
+
+    let Some(package_path) = state.artifact_paths.package_path.clone() else {
+        let message = "No ready update package is recorded";
+        mark_failed_and_persist(state, paths, message)?;
+        maybe_send_notification(
+            config.notifications,
+            "Codex update failed",
+            "The updater has no package path recorded for the ready update.",
+        );
+        return Err(anyhow::anyhow!(message));
+    };
+
+    if !package_path.exists() {
+        let message = format!(
+            "Pending package artifact is missing: {}",
+            package_path.display()
+        );
+        mark_failed_and_persist(state, paths, message.clone())?;
+        maybe_send_notification(
+            config.notifications,
+            "Codex update failed",
+            "The rebuilt package is missing. Check the updater log for details.",
+        );
+        return Err(anyhow::anyhow!(message));
+    }
+
+    if liveness::is_app_running(config)? {
+        clear_install_auth_required_event(state, paths)?;
+        set_status(state, paths, UpdateStatus::WaitingForAppExit)?;
+        maybe_send_notification(
+            config.notifications,
+            "Codex App update ready",
+            "Close Codex App to install the ready update.",
+        );
+        println!("Codex App is running. Close it to install the ready update.");
+        return Ok(());
+    }
+
+    clear_install_auth_required_event(state, paths)?;
+    trigger_install(state, paths, &package_path).await
 }
 
 fn complete_pending_install_if_already_installed(
@@ -878,6 +991,39 @@ fn maybe_notify_installed(
     )
 }
 
+fn maybe_notify_update_ready(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    enabled: bool,
+) -> Result<()> {
+    let version = state
+        .candidate_version
+        .as_deref()
+        .unwrap_or(&state.installed_version);
+    let event_key = format!("ready_to_install:{version}");
+    if !state.notified_events.insert(event_key) {
+        return Ok(());
+    }
+
+    if enabled {
+        if let Err(error) = notify::send(
+            "Codex App update ready",
+            "A rebuilt Linux package is ready. Open Codex App and choose Update to install it.",
+        ) {
+            warn!(?error, "failed to send update-ready notification");
+        }
+    }
+
+    persist_state(paths, state)?;
+    Ok(())
+}
+
+fn maybe_send_notification(enabled: bool, summary: &str, body: &str) {
+    if enabled {
+        let _ = notify::send(summary, body);
+    }
+}
+
 async fn trigger_install(
     state: &mut PersistedState,
     paths: &RuntimePaths,
@@ -1066,7 +1212,7 @@ mod tests {
             developer_mode: false,
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
-            app_executable_path: temp.path().join("not-running-electron"),
+            app_executable_path: std::env::current_exe()?,
             cli_path: None,
         };
 
@@ -1227,7 +1373,53 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ready_update_respects_manual_install_mode() -> Result<()> {
+    async fn ready_update_waits_for_explicit_install_ready() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let package_path = temp.path().join("dist/codex.deb");
+        std::fs::create_dir_all(
+            package_path
+                .parent()
+                .expect("package path should have parent"),
+        )?;
+        std::fs::write(&package_path, b"deb")?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: true,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(true);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.artifact_paths.package_path = Some(package_path);
+
+        reconcile_pending_install(&config, &mut state, &paths).await?;
+
+        assert_eq!(state.status, UpdateStatus::ReadyToInstall);
+        assert_eq!(state.error_message, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn install_ready_waits_when_app_is_running() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let paths = RuntimePaths {
             config_file: temp.path().join("config/config.toml"),
@@ -1256,7 +1448,7 @@ mod tests {
             developer_mode: false,
             workspace_root: temp.path().join("cache"),
             builder_bundle_root: temp.path().join("builder"),
-            app_executable_path: temp.path().join("not-running-electron"),
+            app_executable_path: std::env::current_exe()?,
             cli_path: None,
         };
 
@@ -1264,11 +1456,139 @@ mod tests {
         state.status = UpdateStatus::ReadyToInstall;
         state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
         state.artifact_paths.package_path = Some(package_path);
+        state
+            .notified_events
+            .insert("install_auth_required:2026.03.25.010203+deadbeef".to_string());
 
-        reconcile_pending_install(&config, &mut state, &paths).await?;
+        run_install_ready(&config, &mut state, &paths).await?;
 
-        assert_eq!(state.status, UpdateStatus::ReadyToInstall);
-        assert_eq!(state.error_message, None);
+        assert_eq!(state.status, UpdateStatus::WaitingForAppExit);
+        assert!(!install_auth_retry_is_blocked(&state));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn install_ready_marks_missing_artifact_failed() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(false);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.artifact_paths.package_path = Some(temp.path().join("missing/codex.deb"));
+
+        let result = run_install_ready(&config, &mut state, &paths).await;
+
+        assert!(result.is_err());
+        assert_eq!(state.status, UpdateStatus::Failed);
+        assert!(state
+            .error_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Pending package artifact is missing")));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn install_ready_marks_missing_package_record_failed() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(false);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+
+        let result = run_install_ready(&config, &mut state, &paths).await;
+
+        assert!(result.is_err());
+        assert_eq!(state.status, UpdateStatus::Failed);
+        assert_eq!(
+            state.error_message.as_deref(),
+            Some("No ready update package is recorded")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn install_ready_reports_unrecoverable_interrupted_install() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(false);
+        state.status = UpdateStatus::Installing;
+        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.artifact_paths.package_path = Some(temp.path().join("missing/codex.deb"));
+
+        let result = run_install_ready(&config, &mut state, &paths).await;
+
+        assert!(result.is_err());
+        assert_eq!(state.status, UpdateStatus::Failed);
+        assert!(state
+            .error_message
+            .as_deref()
+            .is_some_and(|message| message.contains("interrupted")));
         Ok(())
     }
 

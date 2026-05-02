@@ -121,6 +121,9 @@ SCRIPT
     assert_file_exists "$pkg_root/DEBIAN/prerm"
     assert_file_exists "$pkg_root/DEBIAN/postrm"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/package-common.sh"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-update-bridge-patch.js"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/patch-report.js"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/rebuild-report.sh"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/computer-use-linux/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/updater/Cargo.toml"
@@ -182,6 +185,10 @@ SCRIPT
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "CHROME_DESKTOP=codex-cua-lab.desktop"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "/usr/bin/codex-cua-lab %u"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
+    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Actions=CheckForUpdates;InstallReadyUpdate;"
+    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Exec=/usr/bin/codex-app-updater check-now"
+    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Exec=/usr/bin/codex-app-updater install-ready"
+    assert_not_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "codex-cua-lab-updater"
     assert_contains "$pkg_root/usr/lib/codex-cua-lab/packaged-runtime.sh" 'CHROME_DESKTOP="codex-cua-lab.desktop"'
 }
 
@@ -364,6 +371,102 @@ PLIST
     assert_contains "$install_dir/codex-app-version.env" "CODEX_APP_BUNDLE_VERSION=2312"
 }
 
+test_installer_inspect_mode_does_not_write_install_metadata() {
+    info "Checking inspect mode does not write install metadata"
+    local workspace="$TMP_DIR/inspect-no-install-metadata"
+    local fake_dmg="$workspace/Codex.dmg"
+    local app_dir="$workspace/Codex.app"
+    local install_dir="$workspace/codex-app"
+    local trace_log="$workspace/trace.log"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$app_dir" "$install_dir"
+    : > "$fake_dmg"
+
+    CODEX_INSTALLER_SOURCE_ONLY=1 \
+    CODEX_INSTALL_DIR="$install_dir" \
+    TRACE_LOG="$trace_log" \
+    FAKE_APP_DIR="$app_dir" \
+    FAKE_DMG="$fake_dmg" \
+    bash -c '
+        source "$1"
+
+        check_deps() {
+            printf "%s\n" check_deps >> "$TRACE_LOG"
+            exit 1
+        }
+        check_inspect_deps() { :; }
+        assert_install_target_not_running() {
+            printf "%s\n" assert_install_target_not_running >> "$TRACE_LOG"
+            exit 1
+        }
+        prepare_install() {
+            printf "%s\n" prepare_install >> "$TRACE_LOG"
+            exit 1
+        }
+        extract_dmg() { printf "%s\n" "$FAKE_APP_DIR"; }
+        detect_electron_version() { printf "%s\n" detect >> "$TRACE_LOG"; }
+        inspect_rebuild_candidate() { printf "%s\n" inspect >> "$TRACE_LOG"; }
+        write_app_version_metadata() {
+            printf "%s\n" metadata >> "$TRACE_LOG"
+            mkdir -p "$INSTALL_DIR"
+            printf "%s\n" "CODEX_APP_PACKAGE_VERSION=should-not-write" > "$INSTALL_DIR/codex-app-version.env"
+        }
+
+        main --inspect "$FAKE_DMG"
+    ' _ "$REPO_DIR/install.sh" >"$output_log" 2>&1
+
+    assert_contains "$trace_log" "detect"
+    assert_contains "$trace_log" "inspect"
+    assert_not_contains "$trace_log" "metadata"
+    assert_not_contains "$trace_log" "check_deps"
+    [ ! -e "$install_dir/codex-app-version.env" ] || fail "Inspect mode wrote install metadata"
+}
+
+test_rebuild_report_tolerates_bad_patch_json() {
+    info "Checking rebuild report tolerates malformed patch report JSON"
+    local workspace="$TMP_DIR/rebuild-report-bad-patch-json"
+    local output_report="$workspace/rebuild-report.json"
+    local patch_report="$workspace/patch-report.json"
+
+    mkdir -p "$workspace"
+    printf '{\n' > "$patch_report"
+
+    bash -c \
+        'source "$1"; write_rebuild_report_json "$2" "$3" "$4" "$5" "$6"' \
+        _ "$REPO_DIR/scripts/lib/rebuild-report.sh" \
+        "$output_report" \
+        "$workspace/Codex.dmg" \
+        "41.2.0" \
+        "$patch_report" \
+        "$workspace/codex-app"
+
+    assert_contains "$output_report" '"patches": []'
+    assert_contains "$output_report" '"patchReportError"'
+}
+
+test_rebuild_report_records_missing_patch_json() {
+    info "Checking rebuild report records a missing patch report"
+    local workspace="$TMP_DIR/rebuild-report-missing-patch-json"
+    local output_report="$workspace/rebuild-report.json"
+    local patch_report="$workspace/missing-patch-report.json"
+
+    mkdir -p "$workspace"
+
+    bash -c \
+        'source "$1"; write_rebuild_report_json "$2" "$3" "$4" "$5" "$6"' \
+        _ "$REPO_DIR/scripts/lib/rebuild-report.sh" \
+        "$output_report" \
+        "$workspace/Codex.dmg" \
+        "41.2.0" \
+        "$patch_report" \
+        "$workspace/codex-app"
+
+    assert_contains "$output_report" '"patches": []'
+    assert_contains "$output_report" '"patchReportError"'
+    assert_contains "$output_report" "ENOENT"
+}
+
 test_installer_keeps_electron_fallback_for_bad_metadata() {
     info "Checking Electron version fallback for malformed metadata"
     local workspace="$TMP_DIR/electron-version-fallback"
@@ -395,6 +498,11 @@ PLIST
 test_launcher_template_sanity() {
     info "Checking launcher template markers"
     assert_contains "$REPO_DIR/install.sh" 'DEFAULT_CODEX_WEBVIEW_PORT=5175'
+    assert_contains "$REPO_DIR/install.sh" "inspect_rebuild_candidate"
+    assert_contains "$REPO_DIR/scripts/lib/install-helpers.sh" "--inspect"
+    assert_contains "$REPO_DIR/scripts/lib/install-helpers.sh" "--report-dir"
+    assert_contains "$REPO_DIR/scripts/lib/asar-patch.sh" "CODEX_PATCH_REPORT_JSON"
+    assert_contains "$REPO_DIR/scripts/lib/rebuild-report.sh" "write_rebuild_report_json"
     assert_contains "$REPO_DIR/install.sh" "MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_41=\"12.9.0\""
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "better_sqlite3_build_version"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "CODEX_ELECTRON_CACHE_DIR"
@@ -501,13 +609,16 @@ PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" "prompt_install_missing_cli"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "prompt-install-cli"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "Install it now? [Y/n]"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "CODEX_APP_UPDATER_PATH"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "resolve_app_updater_path"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "run_app_updater"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "is_interactive_terminal"
     assert_contains "$REPO_DIR/updater/src/app.rs" "kdialog"
     assert_contains "$REPO_DIR/updater/src/app.rs" "zenity"
     assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "CHROME_DESKTOP"
     assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "codex-app-updater-launch-check"
     assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "codex-app-updater check-now --if-stale"
-    assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "codex-update-manager.service"
+    assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "codex-app-updater.service"
     assert_not_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "            PATH \\\\"
     assert_not_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "restart codex-app-updater.service"
     assert_contains "$REPO_DIR/packaging/linux/codex-app-updater.service" '%h/.local/bin'
@@ -526,6 +637,9 @@ PY
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app %u"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "Actions=CheckForUpdates;InstallReadyUpdate;"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app-updater check-now"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app-updater install-ready"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "@USER_BIN_DIR@/codex-app %U"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" 'INSTALL_ROOT="${CODEX_USER_INSTALL_ROOT:-${XDG_DATA_HOME}/codex-app}"'
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
@@ -1686,6 +1800,9 @@ main() {
     test_upstream_build_app_workflow_tracks_dmg_metadata
     test_installer_detects_electron_version_from_plist
     test_installer_writes_package_version_from_app_plist
+    test_installer_inspect_mode_does_not_write_install_metadata
+    test_rebuild_report_tolerates_bad_patch_json
+    test_rebuild_report_records_missing_patch_json
     test_installer_keeps_electron_fallback_for_bad_metadata
     test_launcher_template_sanity
     test_user_local_installer_uses_xdg_data_home

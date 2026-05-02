@@ -10,3 +10,12 @@ MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;
 StartupNotify=true
 StartupWMClass=codex-app
 X-GNOME-WMClass=codex-app
+Actions=CheckForUpdates;InstallReadyUpdate;
+
+[Desktop Action CheckForUpdates]
+Name=Check for Updates
+Exec=/usr/bin/codex-app-updater check-now
+
+[Desktop Action InstallReadyUpdate]
+Name=Install Ready Update
+Exec=/usr/bin/codex-app-updater install-ready
