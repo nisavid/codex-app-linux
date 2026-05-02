@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- Linux Computer Use plugin now exposes accessibility actions and editable-value setting via a new `perform_action` MCP tool. `element_index` selections resolve to cached AT-SPI object-reference IDs, then open the target object on demand so actions and value writes target the same node as a click.
+- Linux Computer Use plugin now exposes accessibility actions and editable-value setting via a new `perform_action` MCP tool. `element_index` selections resolve to AT-SPI object-reference IDs from the latest `get_app_state` result, then open the target object on demand so actions and value writes target the same node as a click.
 - UI-driven Linux app update flow: when an update is rebuilt and ready, the in-app updater control can request install. The app exits, the user service installs the package, and the launcher relaunches `/usr/bin/codex-app` after the update lands. Backed by a new `codex-app-updater install-ready` subcommand and a `scripts/rebuild-candidate.sh` helper packaged into the update-builder bundle.
 - NixOS launcher exposes Electron GL/EGL libraries and primary-runtime native libraries via `LD_LIBRARY_PATH`, so the bundled Python/Node payloads (Pillow, NumPy, sharp, canvas) load on stock NixOS.
 
