@@ -11,6 +11,8 @@ const {
   COMPUTER_USE_UI_ENV_VAR,
   COMPUTER_USE_UI_SETTINGS_KEY,
   applyKeybindsSettingsIndexPatch,
+  applyKeybindsSettingsSectionsPatch,
+  applyKeybindsSettingsSharedPatch,
   applyLinuxComputerUseFeaturePatch,
   applyLinuxComputerUseInstallFlowPatch,
   applyLinuxComputerUsePluginGatePatch,
@@ -121,6 +123,19 @@ function keybindsIndexBundleFixture() {
     "Jge=[{key:`app`,heading:H7.appHeading,slugs:[`general-settings`,`appearance`,`connections`,`git-settings`,`usage`]}];",
     "switch(e){case`appearance`:case`git-settings`:case`worktrees`:case`local-environments`:case`data-controls`:case`environments`:return l===`electron`;}",
     "switch(e){case`usage`:k=g;break bb0;case`appearance`:case`general-settings`:case`agent`:case`git-settings`:case`account`:case`data-controls`:case`personalization`:k=!1;break bb0;}",
+  ].join("");
+}
+
+function keyboardShortcutsIndexBundleFixture() {
+  return [
+    "var ww={\"general-settings\":(0,Q.lazy)(()=>it(()=>import(`./general-settings-OdfVFvhe.js`).then(e=>({default:e.GeneralSettings})),__vite__mapDeps([233]),import.meta.url)),",
+    "\"keyboard-shortcuts\":(0,Q.lazy)(()=>it(()=>import(`./keyboard-shortcuts-settings-BWZg3k-L.js`).then(e=>({default:e.KeyboardShortcutsSettings})),__vite__mapDeps([243,3,1]),import.meta.url)),",
+    "appearance:(0,Q.lazy)(()=>it(()=>import(`./appearance-settings-DQinhDUY.js`).then(e=>({default:e.AppearanceSettings})),__vite__mapDeps([245]),import.meta.url))};",
+    "var fe={\"general-settings\":I,\"keyboard-shortcuts\":ue,appearance:re};",
+    "pe=[`general-settings`,`appearance`,`agent`,`personalization`,`keyboard-shortcuts`];",
+    "me=[{key:`connection`,slugs:[`agent`,`personalization`,`keyboard-shortcuts`]}];",
+    "switch(e.slug){case`keyboard-shortcuts`:return d===`electron`&&h}",
+    "switch(M.slug){case`keyboard-shortcuts`:P=d===`electron`&&g;break bb0;}",
   ].join("");
 }
 
@@ -505,6 +520,33 @@ test("adds Keybinds settings route after upstream minified variable drift", () =
   assert.match(patched, /case`keybinds`:return l===`electron`/);
   assert.match(patched, /case`keybinds`:k=!1;break bb0;/);
   assert.match(patched, /codexLinuxKeybindOverridesRuntime/);
+});
+
+test("uses upstream Keyboard Shortcuts settings surface when available", () => {
+  const patched = applyPatchTwice(
+    applyKeybindsSettingsIndexPatch,
+    keyboardShortcutsIndexBundleFixture(),
+  );
+
+  assert.match(
+    patched,
+    /"keyboard-shortcuts":\(0,Q\.lazy\)\(\(\)=>it\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\),\[\],import\.meta\.url\)\),appearance:/,
+  );
+  assert.doesNotMatch(patched, /keybinds:\(0,Q\.lazy/);
+  assert.match(patched, /"keyboard-shortcuts":ue/);
+  assert.match(patched, /`keyboard-shortcuts`/);
+  assert.match(patched, /codexLinuxKeybindOverridesRuntime/);
+});
+
+test("does not duplicate upstream Keyboard Shortcuts settings metadata", () => {
+  const sections = "n=[{slug:`general-settings`},{slug:`appearance`},{slug:`keyboard-shortcuts`}]";
+  const shared = [
+    '"keyboard-shortcuts":{id:`settings.nav.keyboard-shortcuts`,defaultMessage:`Keyboard shortcuts`,description:`Title for keyboard shortcuts settings section`},',
+    "case`keyboard-shortcuts`:{return (0,d.jsx)(n,{id:`settings.section.keyboard-shortcuts`,defaultMessage:`Keyboard shortcuts`,description:`Title for keyboard shortcuts settings section`})}",
+  ].join("");
+
+  assert.equal(applyKeybindsSettingsSectionsPatch(sections), sections);
+  assert.equal(applyKeybindsSettingsSharedPatch(shared), shared);
 });
 
 test("adds Linux package updater behind the existing app updater manager", () => {

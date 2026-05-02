@@ -380,7 +380,10 @@ function patchKeybindsSettingsAssets(extractedDir) {
 function applyKeybindsSettingsSectionsPatch(currentSource) {
   let patchedSource = currentSource;
 
-  if (patchedSource.includes("slug:`keybinds`")) {
+  if (
+    patchedSource.includes("slug:`keybinds`") ||
+    patchedSource.includes("slug:`keyboard-shortcuts`")
+  ) {
     return patchedSource;
   }
 
@@ -405,6 +408,13 @@ function applyKeybindsSettingsSectionsPatch(currentSource) {
 
 function applyKeybindsSettingsSharedPatch(currentSource) {
   let patchedSource = currentSource;
+
+  if (
+    patchedSource.includes("settings.nav.keyboard-shortcuts") &&
+    patchedSource.includes("settings.section.keyboard-shortcuts")
+  ) {
+    return patchedSource;
+  }
 
   if (!patchedSource.includes("settings.nav.keybinds")) {
     const navNeedle =
@@ -445,6 +455,24 @@ function applyLinuxKeybindOverridesRuntimePatch(currentSource) {
 
 function applyKeybindsSettingsIndexPatch(currentSource) {
   let patchedSource = currentSource;
+
+  if (patchedSource.includes('"keyboard-shortcuts":')) {
+    if (!patchedSource.includes(`${keybindsSettingsAsset}`)) {
+      const routePattern =
+        /"keyboard-shortcuts":\(0,([A-Za-z_$][\w$]*)\.lazy\)\(\(\)=>([A-Za-z_$][\w$]*)\(\(\)=>import\(`\.\/[^`]+`\)[\s\S]*?,import\.meta\.url\)\),appearance:/;
+      if (!routePattern.test(patchedSource)) {
+        throw new Error(
+          "Required Keybinds settings patch failed: could not replace keyboard shortcuts route",
+        );
+      }
+      patchedSource = patchedSource.replace(
+        routePattern,
+        `"keyboard-shortcuts":(0,$1.lazy)(()=>$2(()=>import(\`./${keybindsSettingsAsset}\`),[],import.meta.url)),appearance:`,
+      );
+    }
+
+    return applyLinuxKeybindOverridesRuntimePatch(patchedSource);
+  }
 
   if (!patchedSource.includes(`${keybindsSettingsAsset}`)) {
     const routePattern = /var ([A-Za-z_$][\w$]*)=\{"general-settings":(?=\(0,[A-Za-z_$][\w$]*\.lazy\))/;
