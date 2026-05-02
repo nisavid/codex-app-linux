@@ -11,7 +11,7 @@ pub const GNOME_SHELL_INTROSPECT_BACKEND: &str = "gnome-shell-introspect";
 pub const GNOME_SHELL_EXTENSION_BACKEND: &str = "gnome-shell-extension";
 pub const GNOME_SHELL_EXTENSION_SERVICE: &str = "com.openai.Codex.WindowControl";
 pub const GNOME_SHELL_EXTENSION_OBJECT_PATH: &str = "/com/openai/Codex/WindowControl";
-pub const WINDOW_PERMISSION_HINT: &str = "Computer Use could not access a GNOME window list backend. Targeted window input requires session-bus access plus either GNOME Shell Introspect permission or the Codex GNOME Shell extension backend. Run setup_window_targeting to install the extension backend.";
+pub const WINDOW_PERMISSION_HINT: &str = "Computer Use could not access a GNOME window list backend. Targeted window input requires session-bus access plus either GNOME Shell Introspect permission or the Codex GNOME Shell extension backend. Run setup-window-targeting to install the extension backend.";
 const FOCUS_VERIFY_ATTEMPTS: usize = 6;
 const FOCUS_VERIFY_DELAY: Duration = Duration::from_millis(50);
 
@@ -312,15 +312,18 @@ pub fn resolve_window_target<'a>(
 
     if let Some(title) = normalized_target(target.title.as_deref()) {
         let title_lower = title.to_ascii_lowercase();
-        if let Some(window) = windows.iter().find(|window| {
-            window
-                .title
-                .as_deref()
-                .is_some_and(|value| value.to_ascii_lowercase().contains(&title_lower))
-        }) {
-            return Ok(window);
-        }
-        bail!("No window title contained {title}.");
+        return unique_window_match(
+            windows
+                .iter()
+                .filter(|window| {
+                    window
+                        .title
+                        .as_deref()
+                        .is_some_and(|value| value.to_ascii_lowercase().contains(&title_lower))
+                })
+                .collect(),
+            &format!("title containing {title}"),
+        );
     }
 
     bail!("Pass window_id, pid, app_id, wm_class, title, tty, terminal_pid, terminal_command, or terminal_cwd to target a window.");
@@ -811,6 +814,26 @@ mod tests {
         .unwrap();
 
         assert_eq!(matched.window_id, 2);
+    }
+
+    #[test]
+    fn title_target_reports_ambiguous_matches() {
+        let windows = vec![
+            window(1, "Codex - one", "codex.desktop", "Codex"),
+            window(2, "Codex - two", "codex.desktop", "Codex"),
+        ];
+
+        let error = resolve_window_target(
+            &windows,
+            &WindowTarget {
+                title: Some("Codex".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("title containing Codex matched multiple windows"));
     }
 
     #[test]

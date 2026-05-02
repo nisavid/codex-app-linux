@@ -497,7 +497,13 @@ fn select_action_index(actions: &[atspi::Action], requested_action: Option<&str>
         ));
     }
 
-    Ok(if actions.len() > 1 { 1 } else { 0 })
+    if actions.len() > 1 {
+        Ok(1)
+    } else {
+        Err(anyhow!(
+            "element exposes only one AT-SPI action; pass action_name or action_index to invoke it explicitly"
+        ))
+    }
 }
 
 fn optional_string(value: Option<String>) -> Option<String> {
@@ -584,5 +590,18 @@ mod tests {
         ];
 
         assert_eq!(select_action_index(&actions, None).unwrap(), 1);
+    }
+
+    #[test]
+    fn select_action_index_requires_explicit_single_action() {
+        let actions = vec![atspi::Action {
+            name: "click".to_string(),
+            description: String::new(),
+            keybinding: String::new(),
+        }];
+
+        let error = select_action_index(&actions, None).unwrap_err().to_string();
+
+        assert!(error.contains("only one AT-SPI action"));
     }
 }

@@ -27,7 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- Linux Computer Use UI patches are now opt in through
+- Linux Computer Use UI patches are now opt-in through
   `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` at build time or
   `~/.config/codex-app/settings.json` with
   `"codex-linux-computer-use-ui-enabled": true`, including smoke coverage for

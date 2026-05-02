@@ -367,7 +367,7 @@ fn windowing_report() -> WindowingReport {
     let note = if can_list_windows {
         "A GNOME window listing backend is available for list_windows, focused_window, and targeted input verification."
     } else {
-        "GNOME window listing is unavailable or denied. Computer Use can still use screenshots, AT-SPI, and global ydotool input, but targeted window input cannot be verified. Run setup_window_targeting to install the optional GNOME Shell extension backend."
+        "GNOME window listing is unavailable or denied. Computer Use can still use screenshots, AT-SPI, and global ydotool input, but targeted window input cannot be verified. Run setup-window-targeting to install the optional GNOME Shell extension backend."
     }
     .to_string();
 
@@ -436,9 +436,9 @@ fn readiness_report(
         "Run setup_accessibility to enable GNOME accessibility before element-aware actions."
             .to_string()
     } else if !can_query_windows {
-        "Run setup_window_targeting to install the Codex GNOME Shell extension backend, or enable GNOME Shell window introspection before using targeted keyboard input.".to_string()
+        "Run setup-window-targeting to install the Codex GNOME Shell extension backend, or enable GNOME Shell window introspection before using targeted keyboard input.".to_string()
     } else if !can_focus_windows {
-        "Run setup_window_targeting to install the Codex GNOME Shell extension backend before using exact window_id, title, or terminal-targeted input.".to_string()
+        "Run setup-window-targeting to install the Codex GNOME Shell extension backend before using exact window_id, title, or terminal-targeted input.".to_string()
     } else if !can_send_development_input {
         "Install and start ydotoold if development input fallback is needed.".to_string()
     } else {
@@ -741,7 +741,7 @@ mod tests {
         assert!(!readiness.can_focus_windows);
         assert!(readiness
             .recommended_next_step
-            .contains("setup_window_targeting"));
+            .contains("setup-window-targeting"));
         assert!(readiness
             .blockers
             .iter()

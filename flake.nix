@@ -116,7 +116,7 @@
               fi
 
               find "$install_dir" -maxdepth 1 -name "*.so*" -type f | while read -r so; do
-                patchelf --set-rpath "${electronLibPath}" "$so" 2>/dev/null || true
+                patchelf --set-rpath "$install_dir:${electronLibPath}" "$so" 2>/dev/null || true
               done
 
               echo "[NIX] Electron patched successfully"

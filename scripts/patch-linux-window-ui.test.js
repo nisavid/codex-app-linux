@@ -478,10 +478,13 @@ test("patches the current Computer Use gate without touching the Windows-interna
   assert.equal((patched.match(/installWhenMissing:!0,name:Ze/g) || []).length, 2);
 });
 
-test("fails hard when the Computer Use gate is recognizable but unpatchable", () => {
-  assert.throws(
-    () => applyLinuxComputerUsePluginGatePatch("var tn=`computer-use`;var x=[{name:tn,isEnabled:({features:e,platform:t})=>isMac(t)&&e.computerUse,migrate:wn}];"),
-    /Required Linux Computer Use plugin gate patch failed/,
+test("skips the Computer Use gate when it is recognizable but unpatchable", () => {
+  const source =
+    "var tn=`computer-use`;var x=[{name:tn,isEnabled:({features:e,platform:t})=>isMac(t)&&e.computerUse,migrate:wn}];";
+
+  assert.equal(
+    applyLinuxComputerUsePluginGatePatch(source),
+    source,
   );
 });
 

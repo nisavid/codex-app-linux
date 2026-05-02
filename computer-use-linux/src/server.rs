@@ -198,9 +198,7 @@ impl ComputerUseLinux {
                     ),
                 )
             };
-        if accessibility_error.is_none() {
-            self.cache_nodes(&accessibility_tree);
-        }
+        self.cache_nodes(&accessibility_tree);
         let mut message = if let Some(error) = &accessibility_error {
             format!("MCP registration is working, but AT-SPI tree extraction failed: {error}")
         } else if let Some(capture) = &screenshot {
@@ -311,7 +309,7 @@ impl ComputerUseLinux {
                 Err(_) => {}
             }
         }
-        let result = run_ydotool_sequence(&[
+        let result = run_ydotool_sequence_blocking(vec![
             absolute_mousemove_args(x, y),
             vec![
                 "click".to_string(),
@@ -319,7 +317,8 @@ impl ComputerUseLinux {
                 click_count,
                 button,
             ],
-        ]);
+        ])
+        .await;
         Json(action_result("click", result, received))
     }
 
@@ -524,7 +523,7 @@ impl ComputerUseLinux {
             sequence.push(absolute_mousemove_args(x, y));
         }
         sequence.push(wheel_mousemove_args(dx, dy));
-        let result = run_ydotool_sequence(&sequence);
+        let result = run_ydotool_sequence_blocking(sequence).await;
         Json(action_result("scroll", result, received))
     }
 
@@ -581,12 +580,13 @@ impl ComputerUseLinux {
                 Err(_) => {}
             }
         }
-        let result = run_ydotool_sequence(&[
+        let result = run_ydotool_sequence_blocking(vec![
             absolute_mousemove_args(params.start_x, params.start_y),
             vec!["click".to_string(), "0x40".to_string()],
             absolute_mousemove_args(params.end_x, params.end_y),
             vec!["click".to_string(), "0x80".to_string()],
-        ]);
+        ])
+        .await;
         Json(action_result("drag", result, received))
     }
 
@@ -1346,6 +1346,14 @@ fn wheel_mousemove_args(dx: i32, dy: i32) -> Vec<String> {
         dx.to_string(),
         dy.to_string(),
     ]
+}
+
+async fn run_ydotool_sequence_blocking(
+    commands: Vec<Vec<String>>,
+) -> std::result::Result<Vec<Output>, String> {
+    tokio::task::spawn_blocking(move || run_ydotool_sequence(&commands))
+        .await
+        .map_err(|error| format!("ydotool task failed: {error}"))?
 }
 
 fn run_ydotool_sequence(commands: &[Vec<String>]) -> std::result::Result<Vec<Output>, String> {

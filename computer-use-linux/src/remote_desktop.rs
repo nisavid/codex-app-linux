@@ -168,17 +168,27 @@ pub async fn drag(
     )
     .await?;
     tokio::time::sleep(Duration::from_millis(35)).await;
-    let (end_stream, end_x, end_y) = session.map_absolute_point(end_x, end_y)?;
-    notify_pointer_motion_absolute(&proxy, &session.session_handle, end_stream, end_x, end_y)
-        .await?;
-    tokio::time::sleep(Duration::from_millis(35)).await;
-    notify_pointer_button(
+    let drag_result = async {
+        let (end_stream, end_x, end_y) = session.map_absolute_point(end_x, end_y)?;
+        notify_pointer_motion_absolute(&proxy, &session.session_handle, end_stream, end_x, end_y)
+            .await?;
+        tokio::time::sleep(Duration::from_millis(35)).await;
+        Ok(())
+    }
+    .await;
+    let release_result = notify_pointer_button(
         &proxy,
         &session.session_handle,
         BTN_LEFT,
         POINTER_BUTTON_RELEASED,
     )
-    .await
+    .await;
+
+    match (drag_result, release_result) {
+        (Err(error), _) => Err(error),
+        (Ok(()), Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+    }
 }
 
 impl PortalPointerSession {
@@ -310,7 +320,7 @@ async fn select_monitor_sources(connection: &Connection, session: &OwnedObjectPa
         Value::from(last_path_component(&request_path)),
     );
     options.insert("types", Value::from(SOURCE_MONITOR));
-    options.insert("multiple", Value::from(false));
+    options.insert("multiple", Value::from(true));
     options.insert("cursor_mode", Value::from(CURSOR_MODE_HIDDEN));
 
     let handle: OwnedObjectPath = screencast_proxy
