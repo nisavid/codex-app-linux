@@ -5,7 +5,7 @@ last synced upstream ref. Use it during upstream syncs to preserve local
 contracts and keep divergence claims grounded in the actual upstream baseline.
 
 The current comparison baseline is upstream commit
-`1e981eaf8e38d966b6f0233e862bdf7bbadf5e4b` (2026-05-02). Claims below describe
+`fdb1c3c19d0562e65e5bfe67f6184bf558931168` (2026-05-02). Claims below describe
 the current tree's diff against that
 baseline, with current source files taking precedence over generated output.
 

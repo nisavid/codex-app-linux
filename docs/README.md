@@ -31,7 +31,6 @@ Use this index to choose the smallest document that matches your goal.
   records the incident analysis behind the current sync policy.
 - [Changelog](../CHANGELOG.md) tracks user-visible releases and packaging
   behavior changes.
-- [Contributors](../CONTRIBUTORS.md) records notable project contributions.
 
 ## Maintain Packaging Or Runtime Behavior
 
