@@ -25,7 +25,7 @@ the Nix flake.
 | Codex CLI preflight | Working | The launcher and updater find or install `@openai/codex` when host tools allow it. |
 | Tray, warm start, and Linux keybinds | Working with desktop variance | Desktop-environment support can vary, especially around tray and window behavior. |
 | Browser annotations | Working where upstream support is enabled | Uses the bundled browser resources shipped with the generated app. |
-| Linux Computer Use | Packaged; UI controls opt-in | Uses upstream Linux Computer Use support with local packaging/manifest compatibility fixes; requires host accessibility/input support and OpenAI account-side rollout. |
+| Linux Computer Use | Packaged; UI controls opt-in | Uses upstream Linux Computer Use support with local packaging/manifest compatibility fixes; requires host accessibility/input support. |
 | NixOS flake | Working with pinned DMG hash | The fixed-output hash can temporarily lag after OpenAI republishes the DMG. |
 | OpenAI server-gated features | Gated by account and rollout | Installing this fork cannot bypass upstream feature flags or account policy. |
 
@@ -241,7 +241,9 @@ os.replace(tmp, path)
 PY
 ```
 
-This local opt-in does not bypass OpenAI account-side feature gates.
+This local opt-in only controls Linux UI patching in the generated app. It does
+not bypass OpenAI account policy, server-side availability, or host accessibility
+and input prerequisites.
 
 ## Updates
 

@@ -138,7 +138,13 @@ The ASAR patch step currently:
   targeted patch no longer matches;
 - defaults Linux `opaqueWindows` to `true` only when the user has no explicit
   saved preference, which makes the app's `Translucent sidebar` default off on
-  Linux.
+  Linux;
+- applies the Linux Computer Use plugin manifest gate by default so the packaged
+  backend can register on Linux;
+- applies the Linux Computer Use UI patches only when
+  `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` is set at build time or
+  `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/settings.json` contains
+  `"codex-linux-computer-use-ui-enabled": true`.
 
 ## Updater Boundary
 
