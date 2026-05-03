@@ -50,6 +50,7 @@ pending package.
 | `Error: write EPIPE` | Run `./codex-app/start.sh` directly instead of piping output. |
 | Blank window | Check whether port `5175` is already in use: `ss -tlnp \| grep 5175`. |
 | `ERR_CONNECTION_REFUSED` on `:5175` | Confirm `python3` works and port `5175` is free. The launcher serves the extracted webview bundle locally before Electron starts. |
+| `webview bundle is missing or empty` | Regenerate the app with `./install.sh` or `make build-app`; the generated app must contain `content/webview/index.html`. |
 | Stuck on the Codex logo splash | Check `~/.cache/codex-app/launcher.log`. Another process may be serving port `5175`, or `content/webview/` may be incomplete. |
 | `CODEX_CLI_PATH` error | Install the CLI with `npm i -g @openai/codex` or `npm i -g --prefix ~/.local @openai/codex`. If you intentionally use another install, set `CODEX_CLI_PATH=/path/to/codex` for one launch or add `cli_path = "/path/to/codex"` to `~/.config/codex-app-updater/config.toml`. |
 | Electron hangs while the CLI is outdated | Re-run the launcher, then inspect `~/.cache/codex-app/launcher.log` and `~/.local/state/codex-app-updater/service.log`. The CLI preflight is best-effort, uses a 1-hour registry lookup cooldown, falls back to `npm install -g --prefix ~/.local` when global install fails, and warns instead of blocking when automatic refresh fails. |

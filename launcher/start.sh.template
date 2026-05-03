@@ -941,7 +941,8 @@ ensure_webview_server() {
     local stop_status
 
     if [ ! -d "$WEBVIEW_DIR" ] || [ ! "$(ls -A "$WEBVIEW_DIR" 2>/dev/null)" ]; then
-        return 0
+        notify_error "$CODEX_LINUX_APP_DISPLAY_NAME webview bundle is missing or empty at $WEBVIEW_DIR. Regenerate the app before launching."
+        exit 1
     fi
 
     if adopt_existing_webview_server; then

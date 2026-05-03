@@ -389,6 +389,47 @@ PLIST
     assert_contains "$install_dir/codex-app-version.env" "CODEX_APP_BUNDLE_VERSION=2312"
 }
 
+test_installer_copies_webview_into_generated_app() {
+    info "Checking webview extraction target"
+    local workspace="$TMP_DIR/webview-extraction-target"
+    local fake_app_dir="$workspace/Codex.app"
+    local install_dir="$workspace/codex-app"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$fake_app_dir" "$install_dir"
+
+    CODEX_INSTALLER_SOURCE_ONLY=1 \
+    CODEX_INSTALL_DIR="$install_dir" \
+    FAKE_APP_DIR="$fake_app_dir" \
+    bash -c '
+        source "$1"
+
+        check_deps() { :; }
+        assert_install_target_not_running() { :; }
+        prepare_install() { mkdir -p "$INSTALL_DIR"; }
+        get_dmg() { printf "%s\n" "$WORK_DIR/Codex.dmg"; }
+        extract_dmg() { printf "%s\n" "$FAKE_APP_DIR"; }
+        detect_electron_version() { :; }
+        write_app_version_metadata() { :; }
+        patch_asar() {
+            mkdir -p "$WORK_DIR/app-extracted/webview/assets"
+            printf "%s\n" "<title>Codex</title><div class=\"startup-loader\"></div>" > "$WORK_DIR/app-extracted/webview/index.html"
+            printf "%s\n" "asset" > "$WORK_DIR/app-extracted/webview/assets/app-test.js"
+        }
+        download_electron() { :; }
+        install_app() { :; }
+        install_bundled_plugin_resources() { :; }
+        create_start_script() { :; }
+
+        main
+    ' _ "$REPO_DIR/install.sh" >"$output_log" 2>&1
+
+    assert_contains "$output_log" "Webview files copied"
+    assert_file_exists "$install_dir/content/webview/index.html"
+    assert_file_exists "$install_dir/content/webview/assets/app-test.js"
+    [ ! -e "$fake_app_dir/content/webview/index.html" ] || fail "Webview was copied into the temporary DMG app instead of the generated app"
+}
+
 test_installer_inspect_mode_does_not_write_install_metadata() {
     info "Checking inspect mode does not write install metadata"
     local workspace="$TMP_DIR/inspect-no-install-metadata"
@@ -516,6 +557,7 @@ PLIST
 test_launcher_template_sanity() {
     info "Checking launcher template markers"
     assert_contains "$REPO_DIR/install.sh" 'DEFAULT_CODEX_WEBVIEW_PORT=5175'
+    assert_contains "$REPO_DIR/install.sh" 'extract_webview "$INSTALL_DIR"'
     assert_contains "$REPO_DIR/install.sh" "inspect_rebuild_candidate"
     assert_contains "$REPO_DIR/scripts/lib/install-helpers.sh" "--inspect"
     assert_contains "$REPO_DIR/scripts/lib/install-helpers.sh" "--report-dir"
@@ -601,6 +643,8 @@ if "stop_stale_webview_server" not in ensure_body:
     raise SystemExit("ensure_webview_server must clear stale deleted webview servers before treating the port as foreign")
 if "Keeping the live app untouched" not in ensure_body:
     raise SystemExit("ensure_webview_server must not stop a live app server when validation fails")
+if "webview bundle is missing or empty" not in ensure_body:
+    raise SystemExit("ensure_webview_server must fail fast when the extracted webview bundle is missing")
 PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" "warm_start_ipc_sent"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "launcher_phase"
@@ -1878,6 +1922,7 @@ main() {
     test_upstream_build_app_workflow_tracks_dmg_metadata
     test_installer_detects_electron_version_from_plist
     test_installer_writes_package_version_from_app_plist
+    test_installer_copies_webview_into_generated_app
     test_installer_inspect_mode_does_not_write_install_metadata
     test_rebuild_report_tolerates_bad_patch_json
     test_rebuild_report_records_missing_patch_json
