@@ -221,13 +221,17 @@ install:
 		fi; \
 		echo "[make] Installing $$pkg"; \
 		sudo pacman -U --noconfirm "$$pkg"; \
-	elif [ "$$format" = "rpm" ] && command -v dnf >/dev/null 2>&1; then \
+	elif [ "$$format" = "rpm" ] && { command -v dnf5 >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1; }; then \
 		rpm="$${RPM:-$$(ls -1 $(RPM_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
 		if [ -z "$$rpm" ]; then \
 			echo "[make] No RPM package found. Run 'make rpm' first." >&2; exit 1; \
 		fi; \
 		echo "[make] Installing $$rpm"; \
-		sudo dnf install -y "$$rpm"; \
+		if command -v dnf5 >/dev/null 2>&1; then \
+			sudo dnf5 install -y "$$rpm"; \
+		else \
+			sudo dnf install -y "$$rpm"; \
+		fi; \
 	elif [ "$$format" = "rpm" ] && command -v zypper >/dev/null 2>&1; then \
 		rpm="$${RPM:-$$(ls -1 $(RPM_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
 		if [ -z "$$rpm" ]; then \

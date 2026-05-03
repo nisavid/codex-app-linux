@@ -1652,7 +1652,7 @@ fn should_keep_accessibility_node(node: &AccessibilityNode) -> bool {
     matches!(
         node.role.as_str(),
         "page tab" | "menu item" | "menu" | "list item" | "tree item"
-    ) && !is_sentinel_or_missing_bounds(node.bounds.as_ref())
+    ) && !is_missing_bounds(node.bounds.as_ref())
 }
 
 fn is_actionable_accessibility_node(node: &AccessibilityNode) -> bool {
@@ -1669,7 +1669,7 @@ fn has_non_empty_text(value: Option<&str>) -> bool {
     value.map(str::trim).is_some_and(|value| !value.is_empty())
 }
 
-fn is_sentinel_or_missing_bounds(bounds: Option<&Bounds>) -> bool {
+fn is_missing_bounds(bounds: Option<&Bounds>) -> bool {
     bounds.is_none()
 }
 

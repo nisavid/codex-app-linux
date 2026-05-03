@@ -904,6 +904,59 @@ function findDynamicTrayStartupCall(source, setupFn, startIndex) {
   return startupRegex.exec(source);
 }
 
+function isLikelyModuleScopeOffset(source, offset) {
+  if (offset < 0 || offset > source.length) {
+    return false;
+  }
+
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+  for (let index = 0; index < offset; index += 1) {
+    const char = source[index];
+    if (quote != null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === "\"" || char === "'" || char === "`") {
+      quote = char;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth = Math.max(0, depth - 1);
+    }
+  }
+
+  return depth === 0;
+}
+
+function hasNearbyModuleScopeQuitGuard(source, electronRequireIndex) {
+  const quitGuardNeedle = "let codexLinuxQuitInProgress=!1";
+  let searchIndex = 0;
+  while (true) {
+    const quitGuardIndex = source.indexOf(quitGuardNeedle, searchIndex);
+    if (quitGuardIndex === -1) {
+      return false;
+    }
+
+    if (
+      isLikelyModuleScopeOffset(source, quitGuardIndex) &&
+      (quitGuardIndex < electronRequireIndex || quitGuardIndex - electronRequireIndex < 1000)
+    ) {
+      return true;
+    }
+
+    searchIndex = quitGuardIndex + quitGuardNeedle.length;
+  }
+}
+
 function applyLinuxQuitGuardPatch(currentSource) {
   let patchedSource = currentSource;
 
@@ -914,12 +967,7 @@ function applyLinuxQuitGuardPatch(currentSource) {
     "let codexLinuxQuitInProgress=!1,codexLinuxMarkQuitInProgress=()=>{codexLinuxQuitInProgress=!0},codexLinuxIsQuitInProgress=()=>codexLinuxQuitInProgress===!0;";
 
   const electronRequireIndex = patchedSource.indexOf("require(`electron`)");
-  const quitGuardIndex = patchedSource.indexOf("let codexLinuxQuitInProgress=!1");
-  if (
-    electronRequireIndex !== -1 &&
-    quitGuardIndex !== -1 &&
-    (quitGuardIndex < electronRequireIndex || quitGuardIndex - electronRequireIndex < 1000)
-  ) {
+  if (electronRequireIndex !== -1 && hasNearbyModuleScopeQuitGuard(patchedSource, electronRequireIndex)) {
     return patchedSource;
   }
 
@@ -1337,12 +1385,12 @@ function applyLinuxComputerUseInstallFlowPatch(currentSource) {
 
 function applyBrowserUseNodeReplApprovalPatch(currentSource) {
   const approvalPatch =
-    "startup_timeout_sec:120,tools:{js:{approval_mode:`approve`}},env:{";
+    "command:i.nodeReplPath,args:[],startup_timeout_sec:120,tools:{js:{approval_mode:`approve`}},env:{";
   if (currentSource.includes(approvalPatch)) {
     return currentSource;
   }
 
-  const needle = "startup_timeout_sec:120,env:{";
+  const needle = "command:i.nodeReplPath,args:[],startup_timeout_sec:120,env:{";
   if (!currentSource.includes(needle)) {
     console.warn(
       "WARN: Could not find Browser Use node_repl config insertion point — skipping node_repl approval patch",

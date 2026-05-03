@@ -186,6 +186,20 @@ test("adds the Linux quit guard after the Electron import as a fallback", () => 
   );
 });
 
+test("does not treat a nested quit guard as the module-scope Linux quit guard", () => {
+  const source =
+    "function boot(){let codexLinuxQuitInProgress=!1,codexLinuxIsQuitInProgress=()=>!0;}let n=require(`electron`);n=e.gr(n);";
+
+  const patched = applyPatchTwice(applyLinuxQuitGuardPatch, source);
+
+  assert.match(patched, /let n=require\(`electron`\);n=e\.gr\(n\);let codexLinuxQuitInProgress=!1/);
+  assert.equal(
+    patched.match(/let codexLinuxQuitInProgress=!1/g)?.length ?? 0,
+    2,
+    "nested stale guard plus module-scope guard should be present exactly once each",
+  );
+});
+
 test("adds the Linux quit guard when only the Electron require is recognizable", () => {
   const source =
     "const e=require(`./app-session.js`);this.windowManager=require(`electron`);class WindowManager{}";
@@ -887,6 +901,22 @@ test("auto-approves the app-provided Browser Use node_repl bridge", () => {
 
   assert.match(patched, /tools:\{js:\{approval_mode:`approve`\}\}/);
   assert.match(patched, /env:\{\[dt\]:l,\[ft\]:i\.nodePath/);
+});
+
+test("only auto-approves the Browser Use node_repl bridge", () => {
+  const source =
+    "return{other:{command:`node`,startup_timeout_sec:120,env:{FOO:`bar`}},[`mcp_servers.${pt}`]:{command:i.nodeReplPath,args:[],startup_timeout_sec:120,env:{[dt]:l,[ft]:i.nodePath}}}";
+
+  const patched = applyPatchTwice(applyBrowserUseNodeReplApprovalPatch, source);
+
+  assert.match(
+    patched,
+    /other:\{command:`node`,startup_timeout_sec:120,env:\{FOO:`bar`\}\}/,
+  );
+  assert.match(
+    patched,
+    /command:i\.nodeReplPath,args:\[\],startup_timeout_sec:120,tools:\{js:\{approval_mode:`approve`\}\},env:\{\[dt\]:l,\[ft\]:i\.nodePath/,
+  );
 });
 
 function withIsolatedHome(body) {

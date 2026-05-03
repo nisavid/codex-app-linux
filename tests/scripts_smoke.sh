@@ -679,6 +679,9 @@ PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" "sync_browser_use_bundled_plugin_cache"
     assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" 'codex-app/browser-use'
     assert_not_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" 'codex-desktop/browser-use'
+    assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" '--connect-timeout 10 --max-time 300 --retry 3 --retry-all-errors'
+    assert_contains "$REPO_DIR/Makefile" 'command -v dnf5'
+    assert_contains "$REPO_DIR/Makefile" 'sudo dnf5 install -y "$$rpm"'
     assert_contains "$REPO_DIR/launcher/start.sh.template" "is_interactive_terminal"
     assert_contains "$REPO_DIR/updater/src/app.rs" "kdialog"
     assert_contains "$REPO_DIR/updater/src/app.rs" "zenity"
@@ -810,7 +813,7 @@ test_browser_use_node_repl_fallback_runtime() {
         WORK_DIR="$workspace/work"
         ARCH="$(uname -m)"
         ICON_SOURCE="$workspace/missing-icon.png"
-        CODEX_APP_ID="codex-desktop"
+        CODEX_APP_ID="codex-app"
         XDG_CACHE_HOME="$workspace/xdg-cache"
         CODEX_NODE_REPL_PATH=
         CODEX_LINUX_NODE_REPL_SOURCE=

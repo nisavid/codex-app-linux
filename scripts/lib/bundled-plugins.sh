@@ -177,7 +177,7 @@ install_node_repl_from_primary_runtime_archive() {
     mkdir -p "$cache_dir" "$extract_dir"
     if [ ! -f "$archive" ]; then
         info "Downloading Browser Use node_repl fallback runtime..."
-        if ! curl -L --fail --progress-bar -o "$archive.part" "$url"; then
+        if ! curl -L --fail --connect-timeout 10 --max-time 300 --retry 3 --retry-all-errors --progress-bar -o "$archive.part" "$url"; then
             rm -f "$archive.part"
             warn "Failed to download Browser Use node_repl fallback runtime"
             return 1
