@@ -47,10 +47,6 @@ if [ -z "$$format" ]; then \
 		format="rpm"; \
 	elif command -v dpkg-deb >/dev/null 2>&1; then \
 		format="deb"; \
-	elif command -v dnf5 >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1 || command -v zypper >/dev/null 2>&1 || command -v rpm >/dev/null 2>&1; then \
-		format="rpm"; \
-	elif command -v pacman >/dev/null 2>&1; then \
-		format="pacman"; \
 	fi; \
 fi; \
 printf '%s\n' "$$format"
