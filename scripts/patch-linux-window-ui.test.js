@@ -442,6 +442,25 @@ test("adds Linux launch actions when captured window identifiers contain dollar 
   );
 });
 
+test("declares the Linux quit guard before top-level tray references", () => {
+  const source = `${mainBundlePrefix}${trayBundleFixture()}${currentLaunchActionBundleFixture()}`;
+
+  const patched = applyPatchTwice(patchMainBundleSource, source, null);
+
+  const declarationIndex = patched.indexOf("let codexLinuxQuitInProgress=!1");
+  const trayReferenceIndex = patched.indexOf(
+    "process.platform===`linux`&&!codexLinuxIsQuitInProgress()&&this.setLinuxTrayContextMenu?.()",
+  );
+  assert.notEqual(declarationIndex, -1, "quit guard declaration was not inserted");
+  assert.notEqual(trayReferenceIndex, -1, "top-level tray reference was not patched");
+  assert(declarationIndex < trayReferenceIndex, "quit guard must be module-scoped before tray references");
+  assert.equal(
+    patched.match(/let codexLinuxQuitInProgress=!1/g)?.length ?? 0,
+    1,
+    "full main-bundle patch should declare quit state exactly once",
+  );
+});
+
 test("skips the launch-action patch without throwing when upstream startup architecture changes", () => {
   const source = [
     "async function Sg(){",

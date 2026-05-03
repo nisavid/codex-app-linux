@@ -1256,9 +1256,10 @@ test_linux_single_instance_patch_smoke() {
     mkdir -p "$workspace"
     bundle_body="$(cat <<'JS'
 let S=globalThis.__codexSmoke;
-let n={app:{whenReady(){return Promise.resolve()},quit(){S.quitCount++},requestSingleInstanceLock(){S.lockCount++;return true},on(e,t){S.appHandlers[e]=t},off(e,t){S.offHandlers[e]=t}}};
+function require(e){if(e===`electron`)return{app:{whenReady(){return Promise.resolve()},quit(){S.quitCount++},requestSingleInstanceLock(){S.lockCount++;return true},on(e,t){S.appHandlers[e]=t},off(e,t){S.offHandlers[e]=t}}};if(e===`node:path`)return{default:{dirname(e){S.dirnameCalls.push(e);return `/tmp`}}};if(e===`node:fs`)return{mkdirSync(...e){S.mkdirSyncCalls.push(e)},rmSync(...e){S.rmSyncCalls.push(e)}};throw new Error(`unexpected require ${e}`)}
+let n=require(`electron`),i=require(`node:path`),o=require(`node:fs`);
 let t={Er(){return {info(){}}},jn:class{add(e){S.disposables.push(e)}}};
-let i={default:{dirname(e){S.dirnameCalls.push(e);return `/tmp`}}},o={mkdirSync(...e){S.mkdirSyncCalls.push(e)},rmSync(...e){S.rmSyncCalls.push(e)}},u={default:{createServer(e){S.createServerCalls++;S.socketConnectionHandler=e;return S.socketServer}}};
+let u={default:{createServer(e){S.createServerCalls++;S.socketConnectionHandler=e;return S.socketServer}}};
 async function uT(){let k=new t.jn;t.Er().info(`Launching app`,{safe:{agentRunId:process.env.CODEX_ELECTRON_AGENT_RUN_ID?.trim()||null}});let A=Date.now();await n.app.whenReady();let w=(...e)=>{S.traceCalls.push(e)},M={globalState:S.globalState,repoRoot:`/tmp/codex-smoke`},z=`local`,R={deepLinks:{queueProcessArgs(e){S.queueArgs.push(e);return Array.isArray(e)&&e.some(e=>{let t=String(e);return t.startsWith(`codex://`)||t.startsWith(`codex-browser-sidebar://`)})},flushPendingDeepLinks(){S.flushPendingDeepLinksCalls++;return Promise.resolve()}},navigateToRoute(e,t){S.navigateCalls.push({windowId:e.id,path:t})}},P={windowManager:{sendMessageToWindow(e,t){S.messages.push({windowId:e.id,message:t})}},hotkeyWindowLifecycleManager:{hide(){S.hideCalls++},show(){S.showCalls++;return S.hotkeyWindowShowResult},ensureHotkeyWindowController(){S.ensureHotkeyWindowControllerCalls++;return S.hotkeyWindowController}},getPrimaryWindow(){return S.primaryWindow},createFreshLocalWindow(e){S.createFreshLocalWindowCalls.push(e);return S.createdWindow},ensureHostWindow(e){S.ensureHostWindowCalls.push(e);return S.primaryWindow??S.createdWindow}},g={reportNonFatal(e,t){S.errors.push({error:String(e),meta:t})}},l=e=>{S.initialHandler=e},re=e=>{S.focusCalls.push(e.id);e.isMinimized()&&e.restore(),e.show(),e.focus()},ie=async()=>{S.ieCalls++;try{P.hotkeyWindowLifecycleManager.hide();let e=P.getPrimaryWindow(`local`)??await P.createFreshLocalWindow(`/`);if(e==null)return;re(e)}catch(e){g.reportNonFatal(e instanceof Error?e:`Failed to open window on second instance`,{kind:`second-instance-open-window-failed`})}};l(e=>{R.deepLinks.queueProcessArgs(e)||ie()});let ae=async(e,t)=>{P.hotkeyWindowLifecycleManager.hide();let n=P.getPrimaryWindow(z),r=n??await P.createFreshLocalWindow(e);r!=null&&(n!=null&&t.navigateExistingWindow&&R.navigateToRoute(r,e),re(r))},oe=async()=>{S.trayStartupCalls++};let E=process.platform===`win32`;E&&oe();let me=await P.ensureHostWindow(z);me&&re(me),w(`local window ensured`,A,{hostId:z,localWindowVisible:me?.isVisible()??!1}),A=Date.now(),await R.deepLinks.flushPendingDeepLinks()}
 JS
 )"
@@ -1760,12 +1761,20 @@ function extractConst(name) {
 }
 
 function extractCurrentLaunchActionPatch(source) {
-  const match = source.match(/let (?:codexLinux[A-Za-z_$][\w$]*=.*?,)*ae=async\(e,t\)=>\{P\.hotkeyWindowLifecycleManager\.hide\(\);.*?;let oe=async\(\)=>\{/);
+  const match = source.match(/let (?:codexLinux[A-Za-z_$][\w$]*=[^;]*?,)*[A-Za-z_$][\w$]*=async\(e,t\)=>\{[A-Za-z_$][\w$]*\.hotkeyWindowLifecycleManager\.hide\(\);.*?(?:;let|,)[A-Za-z_$][\w$]*=async\(\)=>\{/);
   assert(match, "Could not extract current launch-action patch from smoke bundle");
   return match[0];
 }
 
 const currentPatch = extractCurrentLaunchActionPatch(currentSource);
+const quitGuardIndex = currentSource.indexOf("let codexLinuxQuitInProgress=!1");
+const trayQuitReferenceIndex = currentSource.indexOf("process.platform===`linux`&&!codexLinuxIsQuitInProgress()&&this.setLinuxTrayContextMenu?.()");
+assert(quitGuardIndex !== -1, "patched bundle did not include the Linux quit guard declaration");
+if (trayQuitReferenceIndex !== -1) {
+  assert(quitGuardIndex < trayQuitReferenceIndex, "Linux quit guard must be declared before top-level tray code references it");
+}
+assert(quitGuardIndex < currentSource.indexOf("codexLinuxHandleLaunchActionArgs"), "Linux quit guard must be declared before launch-action helpers reference it");
+
 const startupPrewarmNeedle = "codexLinuxPrewarmHotkeyWindow(),A=Date.now(),await R.deepLinks.flushPendingDeepLinks()";
 const startupPrewarmPattern = /codexLinuxPrewarmHotkeyWindow\(\).*?await R\.deepLinks\.flushPendingDeepLinks\(\)/;
 const variants = [
