@@ -6,8 +6,8 @@
 
 # ---- Extract webview files ----
 extract_webview() {
-    local app_dir="$1"
-    local target_webview="$app_dir/content/webview"
+    local install_dir="$1"
+    local target_webview="$install_dir/content/webview"
     mkdir -p "$target_webview"
 
     # Webview files are inside the extracted asar at webview/

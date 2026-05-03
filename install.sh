@@ -104,7 +104,7 @@ main() {
     write_app_version_metadata "$app_dir"
     patch_asar "$app_dir"
     download_electron
-    extract_webview "$app_dir"
+    extract_webview "$INSTALL_DIR"
     install_app
     install_bundled_plugin_resources "$app_dir"
     create_start_script

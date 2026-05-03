@@ -47,6 +47,24 @@ assert_occurrence_count() {
     [ "$actual" = "$expected" ] || fail "Expected '$pattern' to appear $expected times in $path, found $actual"
 }
 
+make_fake_browser_use_upstream_app() {
+    local app_dir="$1"
+    local resources_dir="$app_dir/Contents/Resources"
+    mkdir -p \
+        "$resources_dir/plugins/openai-bundled/.agents/plugins" \
+        "$resources_dir/plugins/openai-bundled/plugins/browser-use/.codex-plugin" \
+        "$resources_dir/plugins/openai-bundled/plugins/browser-use/scripts"
+    cat > "$resources_dir/plugins/openai-bundled/.agents/plugins/marketplace.json" <<'JSON'
+{"plugins":[{"name":"browser-use","source":{"source":"local","path":"./plugins/browser-use"},"policy":{"installation":"AVAILABLE"}}]}
+JSON
+    cat > "$resources_dir/plugins/openai-bundled/plugins/browser-use/.codex-plugin/plugin.json" <<'JSON'
+{"name":"browser-use","version":"0.1.0-alpha1"}
+JSON
+    cat > "$resources_dir/plugins/openai-bundled/plugins/browser-use/scripts/browser-client.mjs" <<'JS'
+class Wm{async fetchBlocked(t){let n=await MT(t.endpoint,{method:"GET"});if(!n.ok)throw new Error(Rt(`Browser Use cannot determine if ${t.displayUrl} is allowed. Please try again later or use another source.`));let r=await n.json();return R7(r)}}export function setupAtlasRuntime() {}
+JS
+}
+
 make_fake_app() {
     local app_dir="$1"
     mkdir -p "$app_dir"
@@ -371,6 +389,47 @@ PLIST
     assert_contains "$install_dir/codex-app-version.env" "CODEX_APP_BUNDLE_VERSION=2312"
 }
 
+test_installer_copies_webview_into_generated_app() {
+    info "Checking webview extraction target"
+    local workspace="$TMP_DIR/webview-extraction-target"
+    local fake_app_dir="$workspace/Codex.app"
+    local install_dir="$workspace/codex-app"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$fake_app_dir" "$install_dir"
+
+    CODEX_INSTALLER_SOURCE_ONLY=1 \
+    CODEX_INSTALL_DIR="$install_dir" \
+    FAKE_APP_DIR="$fake_app_dir" \
+    bash -c '
+        source "$1"
+
+        check_deps() { :; }
+        assert_install_target_not_running() { :; }
+        prepare_install() { mkdir -p "$INSTALL_DIR"; }
+        get_dmg() { printf "%s\n" "$WORK_DIR/Codex.dmg"; }
+        extract_dmg() { printf "%s\n" "$FAKE_APP_DIR"; }
+        detect_electron_version() { :; }
+        write_app_version_metadata() { :; }
+        patch_asar() {
+            mkdir -p "$WORK_DIR/app-extracted/webview/assets"
+            printf "%s\n" "<title>Codex</title><div class=\"startup-loader\"></div>" > "$WORK_DIR/app-extracted/webview/index.html"
+            printf "%s\n" "asset" > "$WORK_DIR/app-extracted/webview/assets/app-test.js"
+        }
+        download_electron() { :; }
+        install_app() { :; }
+        install_bundled_plugin_resources() { :; }
+        create_start_script() { :; }
+
+        main
+    ' _ "$REPO_DIR/install.sh" >"$output_log" 2>&1
+
+    assert_contains "$output_log" "Webview files copied"
+    assert_file_exists "$install_dir/content/webview/index.html"
+    assert_file_exists "$install_dir/content/webview/assets/app-test.js"
+    [ ! -e "$fake_app_dir/content/webview/index.html" ] || fail "Webview was copied into the temporary DMG app instead of the generated app"
+}
+
 test_installer_inspect_mode_does_not_write_install_metadata() {
     info "Checking inspect mode does not write install metadata"
     local workspace="$TMP_DIR/inspect-no-install-metadata"
@@ -498,6 +557,7 @@ PLIST
 test_launcher_template_sanity() {
     info "Checking launcher template markers"
     assert_contains "$REPO_DIR/install.sh" 'DEFAULT_CODEX_WEBVIEW_PORT=5175'
+    assert_contains "$REPO_DIR/install.sh" 'extract_webview "$INSTALL_DIR"'
     assert_contains "$REPO_DIR/install.sh" "inspect_rebuild_candidate"
     assert_contains "$REPO_DIR/scripts/lib/install-helpers.sh" "--inspect"
     assert_contains "$REPO_DIR/scripts/lib/install-helpers.sh" "--report-dir"
@@ -537,8 +597,10 @@ adopt_body = source.split("adopt_existing_webview_server() {", 1)[1].split("ensu
 ensure_body = source.split("ensure_webview_server() {", 1)[1].split("wait_for_webview_server", 1)[0]
 gui_prompt_body = source.split("run_gui_cli_prompt() {", 1)[1].split("prompt_install_missing_cli() {", 1)[0]
 background_preflight_body = source.split("run_cli_preflight_background() {", 1)[1].split("is_interactive_terminal() {", 1)[0]
-if 'if RUNNING_APP_PID="$(find_running_app_pid)"; then' not in detect_body:
-    raise SystemExit("detect_warm_start must record a running app even when warm start is disabled")
+if 'RUNNING_APP_PID="$(find_running_app_pid)"' not in detect_body:
+    raise SystemExit("detect_warm_start must record a pid-file running app even when warm start is disabled")
+if '[ -S "$LAUNCH_ACTION_SOCKET" ] && RUNNING_APP_PID="$(discover_running_app_pid)"' not in detect_body:
+    raise SystemExit("detect_warm_start must only use the expensive running-app scan when the launch socket exists")
 if not re.search(r'if ! linux_setting_enabled "codex-linux-warm-start-enabled" 1; then.*?return 0', detect_body, re.S):
     raise SystemExit("detect_warm_start must not fail when warm start is disabled")
 if "preserving liveness marker for second-instance handoff" not in detect_body:
@@ -581,6 +643,8 @@ if "stop_stale_webview_server" not in ensure_body:
     raise SystemExit("ensure_webview_server must clear stale deleted webview servers before treating the port as foreign")
 if "Keeping the live app untouched" not in ensure_body:
     raise SystemExit("ensure_webview_server must not stop a live app server when validation fails")
+if "webview bundle is missing or empty" not in ensure_body:
+    raise SystemExit("ensure_webview_server must fail fast when the extracted webview bundle is missing")
 PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" "warm_start_ipc_sent"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "launcher_phase"
@@ -612,6 +676,16 @@ PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" "CODEX_APP_UPDATER_PATH"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "resolve_app_updater_path"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "run_app_updater"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "sync_browser_use_bundled_plugin_cache"
+    assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" 'codex-app/browser-use'
+    assert_not_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" 'codex-desktop/browser-use'
+    assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" '--connect-timeout 10 --max-time 300 --retry 3 --retry-all-errors'
+    assert_contains "$REPO_DIR/Makefile" 'command -v dnf5'
+    assert_contains "$REPO_DIR/Makefile" 'command -v rpm'
+    assert_contains "$REPO_DIR/Makefile" 'sudo dnf5 install -y "$$rpm"'
+    assert_not_contains "$REPO_DIR/Makefile" 'command -v rpmbuild'
+    assert_contains "$REPO_DIR/Makefile" 'sudo apt install -y "$$deb_abs"'
+    assert_contains "$REPO_DIR/Makefile" 'sudo apt-get -f install -y'
     assert_contains "$REPO_DIR/launcher/start.sh.template" "is_interactive_terminal"
     assert_contains "$REPO_DIR/updater/src/app.rs" "kdialog"
     assert_contains "$REPO_DIR/updater/src/app.rs" "zenity"
@@ -708,6 +782,63 @@ test_side_by_side_launcher_identity() {
     ln -s "$app_dir/start.sh" "$bin_dir/codex-cua-lab"
     XDG_CACHE_HOME="$workspace/cache" XDG_STATE_HOME="$workspace/state" "$bin_dir/codex-cua-lab" --help >"$symlink_help_log"
     assert_contains "$symlink_help_log" "Launches the Codex CUA Lab app."
+}
+
+test_browser_use_node_repl_fallback_runtime() {
+    info "Checking Browser Use node_repl fallback runtime"
+    if [ "$(uname -m)" != "x86_64" ]; then
+        info "Skipping x86_64-only Browser Use fallback runtime test"
+        return 0
+    fi
+
+    local workspace="$TMP_DIR/browser-use-node-repl-fallback"
+    local app_dir="$workspace/Codex.app"
+    local install_dir="$workspace/install"
+    local archive_root="$workspace/archive-root"
+    local archive="$workspace/runtime.tar.xz"
+    local output_log="$workspace/output.log"
+    local archive_sha
+
+    mkdir -p "$workspace" "$install_dir/resources" "$archive_root/codex-primary-runtime/dependencies/bin"
+    make_fake_browser_use_upstream_app "$app_dir"
+
+    # Simulate the current upstream DMG shape: node_repl exists, but it is not a Linux ELF.
+    printf '\xfe\xed\xfa\xcf' > "$app_dir/Contents/Resources/node_repl"
+    chmod +x "$app_dir/Contents/Resources/node_repl"
+
+    cp /bin/true "$archive_root/codex-primary-runtime/dependencies/bin/node_repl"
+    chmod 0755 "$archive_root/codex-primary-runtime/dependencies/bin/node_repl"
+    tar -cJf "$archive" -C "$archive_root" codex-primary-runtime
+    archive_sha="$(sha256sum "$archive" | awk '{print $1}')"
+
+    (
+        SCRIPT_DIR="$REPO_DIR"
+        INSTALL_DIR="$install_dir"
+        WORK_DIR="$workspace/work"
+        ARCH="$(uname -m)"
+        ICON_SOURCE="$workspace/missing-icon.png"
+        CODEX_APP_ID="codex-app"
+        XDG_CACHE_HOME="$workspace/xdg-cache"
+        CODEX_NODE_REPL_PATH=
+        CODEX_LINUX_NODE_REPL_SOURCE=
+        CODEX_BROWSER_USE_RUNTIME_CACHE_DIR="$workspace/cache"
+        CODEX_BROWSER_USE_NODE_REPL_RUNTIME_URL="file://$archive"
+        CODEX_BROWSER_USE_NODE_REPL_RUNTIME_SHA256="$archive_sha"
+        mkdir -p "$WORK_DIR"
+        warn() { echo "[WARN] $*" >&2; }
+        info() { echo "[INFO] $*" >&2; }
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/bundled-plugins.sh"
+        stage_linux_computer_use_plugin() { return 1; }
+        install_bundled_plugin_resources "$app_dir"
+    ) >"$output_log" 2>&1
+
+    assert_file_exists "$install_dir/resources/node_repl"
+    assert_file_exists "$install_dir/resources/plugins/openai-bundled/plugins/browser-use/scripts/browser-client.mjs"
+    cmp -s /bin/true "$install_dir/resources/node_repl" || fail "Expected fallback node_repl to come from the runtime archive"
+    assert_contains "$install_dir/resources/plugins/openai-bundled/plugins/browser-use/scripts/browser-client.mjs" "codexLinuxSiteStatusAllowlistFallback"
+    assert_contains "$output_log" "Browser Use node_repl runtime is not a Linux executable for x86_64; skipping"
+    assert_contains "$output_log" "Downloading Browser Use node_repl fallback runtime"
 }
 
 make_fake_extracted_asar() {
@@ -1134,9 +1265,10 @@ test_linux_single_instance_patch_smoke() {
     mkdir -p "$workspace"
     bundle_body="$(cat <<'JS'
 let S=globalThis.__codexSmoke;
-let n={app:{whenReady(){return Promise.resolve()},quit(){S.quitCount++},requestSingleInstanceLock(){S.lockCount++;return true},on(e,t){S.appHandlers[e]=t},off(e,t){S.offHandlers[e]=t}}};
+function require(e){if(e===`electron`)return{app:{whenReady(){return Promise.resolve()},quit(){S.quitCount++},requestSingleInstanceLock(){S.lockCount++;return true},on(e,t){S.appHandlers[e]=t},off(e,t){S.offHandlers[e]=t}}};if(e===`node:path`)return{default:{dirname(e){S.dirnameCalls.push(e);return `/tmp`}}};if(e===`node:fs`)return{mkdirSync(...e){S.mkdirSyncCalls.push(e)},rmSync(...e){S.rmSyncCalls.push(e)}};throw new Error(`unexpected require ${e}`)}
+let n=require(`electron`),i=require(`node:path`),o=require(`node:fs`);
 let t={Er(){return {info(){}}},jn:class{add(e){S.disposables.push(e)}}};
-let i={default:{dirname(e){S.dirnameCalls.push(e);return `/tmp`}}},o={mkdirSync(...e){S.mkdirSyncCalls.push(e)},rmSync(...e){S.rmSyncCalls.push(e)}},u={default:{createServer(e){S.createServerCalls++;S.socketConnectionHandler=e;return S.socketServer}}};
+let u={default:{createServer(e){S.createServerCalls++;S.socketConnectionHandler=e;return S.socketServer}}};
 async function uT(){let k=new t.jn;t.Er().info(`Launching app`,{safe:{agentRunId:process.env.CODEX_ELECTRON_AGENT_RUN_ID?.trim()||null}});let A=Date.now();await n.app.whenReady();let w=(...e)=>{S.traceCalls.push(e)},M={globalState:S.globalState,repoRoot:`/tmp/codex-smoke`},z=`local`,R={deepLinks:{queueProcessArgs(e){S.queueArgs.push(e);return Array.isArray(e)&&e.some(e=>{let t=String(e);return t.startsWith(`codex://`)||t.startsWith(`codex-browser-sidebar://`)})},flushPendingDeepLinks(){S.flushPendingDeepLinksCalls++;return Promise.resolve()}},navigateToRoute(e,t){S.navigateCalls.push({windowId:e.id,path:t})}},P={windowManager:{sendMessageToWindow(e,t){S.messages.push({windowId:e.id,message:t})}},hotkeyWindowLifecycleManager:{hide(){S.hideCalls++},show(){S.showCalls++;return S.hotkeyWindowShowResult},ensureHotkeyWindowController(){S.ensureHotkeyWindowControllerCalls++;return S.hotkeyWindowController}},getPrimaryWindow(){return S.primaryWindow},createFreshLocalWindow(e){S.createFreshLocalWindowCalls.push(e);return S.createdWindow},ensureHostWindow(e){S.ensureHostWindowCalls.push(e);return S.primaryWindow??S.createdWindow}},g={reportNonFatal(e,t){S.errors.push({error:String(e),meta:t})}},l=e=>{S.initialHandler=e},re=e=>{S.focusCalls.push(e.id);e.isMinimized()&&e.restore(),e.show(),e.focus()},ie=async()=>{S.ieCalls++;try{P.hotkeyWindowLifecycleManager.hide();let e=P.getPrimaryWindow(`local`)??await P.createFreshLocalWindow(`/`);if(e==null)return;re(e)}catch(e){g.reportNonFatal(e instanceof Error?e:`Failed to open window on second instance`,{kind:`second-instance-open-window-failed`})}};l(e=>{R.deepLinks.queueProcessArgs(e)||ie()});let ae=async(e,t)=>{P.hotkeyWindowLifecycleManager.hide();let n=P.getPrimaryWindow(z),r=n??await P.createFreshLocalWindow(e);r!=null&&(n!=null&&t.navigateExistingWindow&&R.navigateToRoute(r,e),re(r))},oe=async()=>{S.trayStartupCalls++};let E=process.platform===`win32`;E&&oe();let me=await P.ensureHostWindow(z);me&&re(me),w(`local window ensured`,A,{hostId:z,localWindowVisible:me?.isVisible()??!1}),A=Date.now(),await R.deepLinks.flushPendingDeepLinks()}
 JS
 )"
@@ -1638,12 +1770,20 @@ function extractConst(name) {
 }
 
 function extractCurrentLaunchActionPatch(source) {
-  const match = source.match(/let (?:codexLinux[A-Za-z_$][\w$]*=.*?,)*ae=async\(e,t\)=>\{P\.hotkeyWindowLifecycleManager\.hide\(\);.*?;let oe=async\(\)=>\{/);
+  const match = source.match(/let (?:codexLinux[A-Za-z_$][\w$]*=[^;]*?,)*[A-Za-z_$][\w$]*=async\(e,t\)=>\{[A-Za-z_$][\w$]*\.hotkeyWindowLifecycleManager\.hide\(\);.*?(?:;let|,)[A-Za-z_$][\w$]*=async\(\)=>\{/);
   assert(match, "Could not extract current launch-action patch from smoke bundle");
   return match[0];
 }
 
 const currentPatch = extractCurrentLaunchActionPatch(currentSource);
+const quitGuardIndex = currentSource.indexOf("let codexLinuxQuitInProgress=!1");
+const trayQuitReferenceIndex = currentSource.indexOf("process.platform===`linux`&&!codexLinuxIsQuitInProgress()&&this.setLinuxTrayContextMenu?.()");
+assert(quitGuardIndex !== -1, "patched bundle did not include the Linux quit guard declaration");
+if (trayQuitReferenceIndex !== -1) {
+  assert(quitGuardIndex < trayQuitReferenceIndex, "Linux quit guard must be declared before top-level tray code references it");
+}
+assert(quitGuardIndex < currentSource.indexOf("codexLinuxHandleLaunchActionArgs"), "Linux quit guard must be declared before launch-action helpers reference it");
+
 const startupPrewarmNeedle = "codexLinuxPrewarmHotkeyWindow(),A=Date.now(),await R.deepLinks.flushPendingDeepLinks()";
 const startupPrewarmPattern = /codexLinuxPrewarmHotkeyWindow\(\).*?await R\.deepLinks\.flushPendingDeepLinks\(\)/;
 const variants = [
@@ -1800,10 +1940,12 @@ main() {
     test_upstream_build_app_workflow_tracks_dmg_metadata
     test_installer_detects_electron_version_from_plist
     test_installer_writes_package_version_from_app_plist
+    test_installer_copies_webview_into_generated_app
     test_installer_inspect_mode_does_not_write_install_metadata
     test_rebuild_report_tolerates_bad_patch_json
     test_rebuild_report_records_missing_patch_json
     test_installer_keeps_electron_fallback_for_bad_metadata
+    test_browser_use_node_repl_fallback_runtime
     test_launcher_template_sanity
     test_user_local_installer_uses_xdg_data_home
     test_side_by_side_launcher_identity
