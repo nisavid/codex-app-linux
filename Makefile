@@ -266,8 +266,13 @@ install:
 			fi; \
 		fi; \
 		if [ "$$installed" -eq 0 ]; then \
-			sudo dpkg -i "$$deb"; \
-			if command -v apt-get >/dev/null 2>&1; then \
+			if ! sudo dpkg -i "$$deb"; then \
+				if command -v apt-get >/dev/null 2>&1; then \
+					sudo apt-get -f install -y; \
+				else \
+					exit 1; \
+				fi; \
+			elif command -v apt-get >/dev/null 2>&1; then \
 				sudo apt-get -f install -y; \
 			fi; \
 		fi; \

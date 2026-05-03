@@ -1609,6 +1609,12 @@ fn compact_accessibility_tree(nodes: Vec<AccessibilityNode>) -> Vec<Accessibilit
             .and_then(|old_parent| old_to_new.get(old_parent as usize).copied().flatten());
     }
 
+    let compacted_depths = compacted
+        .iter()
+        .enumerate()
+        .map(|(index, _)| compacted_node_depth(index, &compacted))
+        .collect::<Vec<_>>();
+
     let child_counts = compacted.iter().filter_map(|node| node.parent_index).fold(
         vec![0_i32; compacted.len()],
         |mut counts, parent_index| {
@@ -1618,10 +1624,28 @@ fn compact_accessibility_tree(nodes: Vec<AccessibilityNode>) -> Vec<Accessibilit
     );
 
     for (index, node) in compacted.iter_mut().enumerate() {
+        node.depth = compacted_depths[index];
         node.child_count = child_counts[index];
     }
 
     compacted
+}
+
+fn compacted_node_depth(index: usize, nodes: &[AccessibilityNode]) -> u32 {
+    let mut depth = 0;
+    let mut parent_index = nodes[index].parent_index;
+    let mut hops = 0;
+
+    while let Some(parent) = parent_index.and_then(|parent| nodes.get(parent as usize)) {
+        depth += 1;
+        parent_index = parent.parent_index;
+        hops += 1;
+        if hops >= nodes.len() {
+            break;
+        }
+    }
+
+    depth
 }
 
 fn nearest_kept_parent(
@@ -2322,6 +2346,9 @@ mod tests {
         assert_eq!(compacted[1].role, "frame");
         assert_eq!(compacted[2].role, "button");
         assert_eq!(compacted[2].parent_index, Some(1));
+        assert_eq!(compacted[0].depth, 0);
+        assert_eq!(compacted[1].depth, 1);
+        assert_eq!(compacted[2].depth, 2);
         assert_eq!(compacted[1].child_count, 1);
     }
 
