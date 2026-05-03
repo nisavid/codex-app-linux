@@ -677,6 +677,8 @@ PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" "resolve_app_updater_path"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "run_app_updater"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "sync_browser_use_bundled_plugin_cache"
+    assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" 'codex-app/browser-use'
+    assert_not_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" 'codex-desktop/browser-use'
     assert_contains "$REPO_DIR/launcher/start.sh.template" "is_interactive_terminal"
     assert_contains "$REPO_DIR/updater/src/app.rs" "kdialog"
     assert_contains "$REPO_DIR/updater/src/app.rs" "zenity"

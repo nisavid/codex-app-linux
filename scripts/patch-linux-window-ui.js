@@ -947,10 +947,6 @@ function applyLinuxQuitGuardPatch(currentSource) {
     return `${quitGuardSuffix}${patchedSource}`;
   }
 
-  if (patchedSource.includes("require(`electron`)") && patchedSource.includes("require(`node:path`)")) {
-    console.warn("WARN: Could not find Linux quit guard insertion point — skipping explicit quit-state patch");
-  }
-
   return patchedSource;
 }
 
