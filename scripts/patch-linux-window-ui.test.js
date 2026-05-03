@@ -17,6 +17,7 @@ const {
   applyLinuxComputerUseInstallFlowPatch,
   applyLinuxComputerUsePluginGatePatch,
   applyLinuxComputerUseRendererAvailabilityPatch,
+  applyBrowserUseNodeReplApprovalPatch,
   applyLinuxAppUpdaterBridgePatch,
   applyLinuxAppUpdaterMenuPatch,
   applyLinuxFileManagerPatch,
@@ -183,6 +184,18 @@ test("adds the Linux quit guard after the Electron import as a fallback", () => 
     1,
     "quit state should be declared exactly once",
   );
+});
+
+test("adds the Linux quit guard when only the Electron require is recognizable", () => {
+  const source =
+    "const e=require(`./app-session.js`);this.windowManager=require(`electron`);class WindowManager{}";
+
+  const patched = applyPatchTwice(applyLinuxQuitGuardPatch, source);
+
+  assert.match(patched, /^let codexLinuxQuitInProgress=!1/);
+  assert.match(patched, /codexLinuxMarkQuitInProgress=\(\)=>\{codexLinuxQuitInProgress=!0\}/);
+  assert.match(patched, /codexLinuxIsQuitInProgress=\(\)=>codexLinuxQuitInProgress===!0/);
+  assert.equal((patched.match(/codexLinuxQuitInProgress=!1/g) ?? []).length, 1);
 });
 
 test("adds Linux menu hiding next to Windows removeMenu calls", () => {
@@ -845,6 +858,16 @@ test("allows Computer Use install flow on Linux", () => {
     patched,
     /re=!ne\.isLoading&&ne\.enabled\|\|navigator\.userAgent\.includes\(`Linux`\)/,
   );
+});
+
+test("auto-approves the app-provided Browser Use node_repl bridge", () => {
+  const source =
+    "return{[`mcp_servers.${pt}`]:{command:i.nodeReplPath,args:[],startup_timeout_sec:120,env:{[dt]:l,[ft]:i.nodePath}}}";
+
+  const patched = applyPatchTwice(applyBrowserUseNodeReplApprovalPatch, source);
+
+  assert.match(patched, /tools:\{js:\{approval_mode:`approve`\}\}/);
+  assert.match(patched, /env:\{\[dt\]:l,\[ft\]:i\.nodePath/);
 });
 
 function withIsolatedHome(body) {

@@ -19,6 +19,42 @@ PACMAN_GLOB := $(CURDIR)/dist/$(PACMAN_PACKAGE_NAME)-[0-9]*.pkg.tar.*
 
 .DEFAULT_GOAL := help
 
+NATIVE_PKG_FORMAT_CMD = format=""; \
+os_release_token_match() { \
+	local expected token; \
+	for token in $${ID:-} $${ID_LIKE:-}; do \
+		for expected in "$$@"; do \
+			if [ "$$token" = "$$expected" ]; then \
+				return 0; \
+			fi; \
+		done; \
+	done; \
+	return 1; \
+}; \
+if [ -r /etc/os-release ]; then . /etc/os-release; \
+	if os_release_token_match arch archlinux manjaro endeavouros artix; then \
+		format="pacman"; \
+	elif os_release_token_match fedora rhel centos rocky almalinux ol sles suse opensuse; then \
+		format="rpm"; \
+	elif os_release_token_match debian ubuntu linuxmint pop elementary zorin; then \
+		format="deb"; \
+	fi; \
+fi; \
+if [ -z "$$format" ]; then \
+	if command -v pacman >/dev/null 2>&1 && ! command -v dpkg-deb >/dev/null 2>&1; then \
+		format="pacman"; \
+	elif command -v rpmbuild >/dev/null 2>&1 && ! command -v dpkg-deb >/dev/null 2>&1; then \
+		format="rpm"; \
+	elif command -v dpkg-deb >/dev/null 2>&1; then \
+		format="deb"; \
+	elif command -v rpmbuild >/dev/null 2>&1; then \
+		format="rpm"; \
+	elif command -v pacman >/dev/null 2>&1; then \
+		format="pacman"; \
+	fi; \
+fi; \
+printf '%s\n' "$$format"
+
 .PHONY: help check test build-updater update rebuild rebuild-install inspect-upstream build-app rebuild-next run-app build-dev-app run-dev-app deb rpm pacman package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
 
 help:
@@ -151,12 +187,13 @@ pacman: build-updater
 
 package: build-updater
 	@echo "[make] Building native package (auto-detecting distro)"
-	@if command -v makepkg >/dev/null 2>&1 && ! command -v dpkg-deb >/dev/null 2>&1; then \
+	@format="$$( $(NATIVE_PKG_FORMAT_CMD) )"; \
+	if [ "$$format" = "pacman" ]; then \
 		PACKAGE_NAME="$(PACMAN_PACKAGE_NAME)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-pacman.sh; \
-	elif command -v dpkg-deb >/dev/null 2>&1; then \
-		PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-deb.sh; \
-	elif command -v rpmbuild >/dev/null 2>&1; then \
+	elif [ "$$format" = "rpm" ]; then \
 		PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-rpm.sh; \
+	elif [ "$$format" = "deb" ]; then \
+		PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-deb.sh; \
 	else \
 		echo "[make] No supported packaging tool found. Install dpkg-dev (Debian), rpm-build (Fedora), or pacman (Arch)." >&2; \
 		exit 1; \
@@ -176,21 +213,22 @@ release-gate:
 
 install:
 	@echo "[make] Installing latest native package"
-	@if command -v pacman >/dev/null 2>&1 && ! command -v dpkg >/dev/null 2>&1; then \
+	@format="$$( $(NATIVE_PKG_FORMAT_CMD) )"; \
+	if [ "$$format" = "pacman" ]; then \
 		pkg="$${PKG:-$$(ls -1 $(PACMAN_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
 		if [ -z "$$pkg" ]; then \
 			echo "[make] No pacman package found. Run 'make pacman' first." >&2; exit 1; \
 		fi; \
 		echo "[make] Installing $$pkg"; \
 		sudo pacman -U --noconfirm "$$pkg"; \
-	elif command -v dpkg >/dev/null 2>&1; then \
-		deb="$${DEB:-$$(ls -1 $(DEB_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
-		if [ -z "$$deb" ]; then \
-			echo "[make] No Debian package found. Run 'make deb' first." >&2; exit 1; \
+	elif [ "$$format" = "rpm" ] && command -v dnf >/dev/null 2>&1; then \
+		rpm="$${RPM:-$$(ls -1 $(RPM_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
+		if [ -z "$$rpm" ]; then \
+			echo "[make] No RPM package found. Run 'make rpm' first." >&2; exit 1; \
 		fi; \
-		echo "[make] Installing $$deb"; \
-		sudo dpkg -i "$$deb"; \
-	elif command -v zypper >/dev/null 2>&1; then \
+		echo "[make] Installing $$rpm"; \
+		sudo dnf install -y "$$rpm"; \
+	elif [ "$$format" = "rpm" ] && command -v zypper >/dev/null 2>&1; then \
 		rpm="$${RPM:-$$(ls -1 $(RPM_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
 		if [ -z "$$rpm" ]; then \
 			echo "[make] No RPM package found. Run 'make rpm' first." >&2; exit 1; \
@@ -205,13 +243,20 @@ install:
 		case "$$rpm" in "$$dist_dir"/*.rpm) set -- "$$@" --allow-unsigned-rpm ;; esac; \
 		echo "[make] Installing $$rpm"; \
 		sudo zypper "$$@" install -y "$$rpm"; \
-	elif command -v rpm >/dev/null 2>&1; then \
+	elif [ "$$format" = "rpm" ]; then \
 		rpm="$${RPM:-$$(ls -1 $(RPM_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
 		if [ -z "$$rpm" ]; then \
 			echo "[make] No RPM package found. Run 'make rpm' first." >&2; exit 1; \
 		fi; \
 		echo "[make] Installing $$rpm"; \
 		sudo rpm -Uvh "$$rpm"; \
+	elif [ "$$format" = "deb" ]; then \
+		deb="$${DEB:-$$(ls -1 $(DEB_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
+		if [ -z "$$deb" ]; then \
+			echo "[make] No Debian package found. Run 'make deb' first." >&2; exit 1; \
+		fi; \
+		echo "[make] Installing $$deb"; \
+		sudo dpkg -i "$$deb"; \
 	else \
 		echo "[make] No supported package manager found (dpkg, rpm, zypper, or pacman)." >&2; exit 1; \
 	fi

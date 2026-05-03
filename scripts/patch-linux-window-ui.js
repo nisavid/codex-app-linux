@@ -937,6 +937,10 @@ function applyLinuxQuitGuardPatch(currentSource) {
     return patchedSource.replace(matchedPrefix, `${matchedPrefix}${quitGuardSuffix}`);
   }
 
+  if (patchedSource.includes("require(`electron`)")) {
+    return `${quitGuardSuffix}${patchedSource}`;
+  }
+
   if (patchedSource.includes("require(`electron`)") && patchedSource.includes("require(`node:path`)")) {
     console.warn("WARN: Could not find Linux quit guard insertion point — skipping explicit quit-state patch");
   }
@@ -1327,6 +1331,24 @@ function applyLinuxComputerUseInstallFlowPatch(currentSource) {
   }
 
   return currentSource;
+}
+
+function applyBrowserUseNodeReplApprovalPatch(currentSource) {
+  const approvalPatch =
+    "startup_timeout_sec:120,tools:{js:{approval_mode:`approve`}},env:{";
+  if (currentSource.includes(approvalPatch)) {
+    return currentSource;
+  }
+
+  const needle = "startup_timeout_sec:120,env:{";
+  if (!currentSource.includes(needle)) {
+    console.warn(
+      "WARN: Could not find Browser Use node_repl config insertion point — skipping node_repl approval patch",
+    );
+    return currentSource;
+  }
+
+  return currentSource.replace(needle, approvalPatch);
 }
 
 function applyBrowserAnnotationScreenshotPatch(currentSource) {
@@ -1815,6 +1837,7 @@ function patchMainBundleSource(source, iconAsset) {
     patched = applyLinuxComputerUseFeaturePatch(patched);
   }
   patched = applyLinuxComputerUsePluginGatePatch(patched);
+  patched = applyBrowserUseNodeReplApprovalPatch(patched);
   patched = applyLinuxAppUpdaterMenuPatch(patched);
   patched = applyLinuxTrayCloseSettingPatch(patched);
   patched = applyLinuxSettingsPersistencePatch(patched);
@@ -2086,6 +2109,7 @@ module.exports = {
   applyLinuxComputerUseFeaturePatch,
   applyLinuxComputerUseRendererAvailabilityPatch,
   applyLinuxComputerUseInstallFlowPatch,
+  applyBrowserUseNodeReplApprovalPatch,
   applyLinuxAppUpdaterBridgePatch,
   applyLinuxAppUpdaterMenuPatch,
   patchLinuxAppUpdaterBridge,
