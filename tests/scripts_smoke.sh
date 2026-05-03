@@ -681,7 +681,11 @@ PY
     assert_not_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" 'codex-desktop/browser-use'
     assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" '--connect-timeout 10 --max-time 300 --retry 3 --retry-all-errors'
     assert_contains "$REPO_DIR/Makefile" 'command -v dnf5'
+    assert_contains "$REPO_DIR/Makefile" 'command -v rpm'
     assert_contains "$REPO_DIR/Makefile" 'sudo dnf5 install -y "$$rpm"'
+    assert_not_contains "$REPO_DIR/Makefile" 'command -v rpmbuild'
+    assert_contains "$REPO_DIR/Makefile" 'sudo apt install -y "$$deb_abs"'
+    assert_contains "$REPO_DIR/Makefile" 'sudo apt-get -f install -y'
     assert_contains "$REPO_DIR/launcher/start.sh.template" "is_interactive_terminal"
     assert_contains "$REPO_DIR/updater/src/app.rs" "kdialog"
     assert_contains "$REPO_DIR/updater/src/app.rs" "zenity"

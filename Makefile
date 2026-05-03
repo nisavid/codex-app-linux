@@ -43,11 +43,11 @@ fi; \
 if [ -z "$$format" ]; then \
 	if command -v pacman >/dev/null 2>&1 && ! command -v dpkg-deb >/dev/null 2>&1; then \
 		format="pacman"; \
-	elif command -v rpmbuild >/dev/null 2>&1 && ! command -v dpkg-deb >/dev/null 2>&1; then \
+	elif { command -v dnf5 >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1 || command -v zypper >/dev/null 2>&1 || command -v rpm >/dev/null 2>&1; } && ! command -v dpkg-deb >/dev/null 2>&1; then \
 		format="rpm"; \
 	elif command -v dpkg-deb >/dev/null 2>&1; then \
 		format="deb"; \
-	elif command -v rpmbuild >/dev/null 2>&1; then \
+	elif command -v dnf5 >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1 || command -v zypper >/dev/null 2>&1 || command -v rpm >/dev/null 2>&1; then \
 		format="rpm"; \
 	elif command -v pacman >/dev/null 2>&1; then \
 		format="pacman"; \
@@ -260,7 +260,21 @@ install:
 			echo "[make] No Debian package found. Run 'make deb' first." >&2; exit 1; \
 		fi; \
 		echo "[make] Installing $$deb"; \
-		sudo dpkg -i "$$deb"; \
+		installed=0; \
+		if command -v apt >/dev/null 2>&1; then \
+			deb_abs="$$(readlink -f "$$deb")"; \
+			if sudo apt install -y "$$deb_abs"; then \
+				installed=1; \
+			else \
+				echo "[make] apt install failed; falling back to dpkg -i" >&2; \
+			fi; \
+		fi; \
+		if [ "$$installed" -eq 0 ]; then \
+			sudo dpkg -i "$$deb"; \
+			if command -v apt-get >/dev/null 2>&1; then \
+				sudo apt-get -f install -y; \
+			fi; \
+		fi; \
 	else \
 		echo "[make] No supported package manager found (dpkg, rpm, zypper, or pacman)." >&2; exit 1; \
 	fi
