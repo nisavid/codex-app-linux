@@ -6,6 +6,8 @@
 
 Run OpenAI Codex on Linux.
 
+Before opening a pull request, read [CONTRIBUTING.md](CONTRIBUTING.md).
+
 The official Codex app is published for macOS. This project adapts the
 upstream `Codex.dmg` into a Linux Electron app, then gives you a few practical
 ways to run it: directly from a checkout, through a native package, or through
@@ -22,6 +24,7 @@ the Nix flake.
 | Standard Codex app UI | Working | Built from the upstream macOS DMG and patched to launch under Linux Electron. |
 | Native Linux packages | Working | Builds `.deb`, `.rpm`, and pacman packages under the `codex-app` identity and install layout. |
 | Local updater | Working | Native packages install `codex-app-updater`, adapted from upstream update-manager work to check DMGs and rebuild local packages. |
+| Managed Node.js runtime | Working | Generated apps and native packages bundle the Node runtime used by Browser Use, CLI install/update, and updater rebuilds. |
 | Codex CLI preflight | Working | The launcher and updater find or install `@openai/codex` when host tools allow it. |
 | Tray, warm start, and Linux keybinds | Working with desktop variance | Desktop-environment support can vary, especially around tray and window behavior. |
 | Browser annotations | Working where upstream support is enabled | Uses the bundled browser resources shipped with the generated app. |
@@ -83,8 +86,13 @@ the `devel_basis` pattern.
 macOS bundle for Linux, rebuilds native modules, downloads a Linux Electron
 runtime, and writes `codex-app/start.sh`.
 
-On first launch, the app can install the Codex CLI if it is missing and `npm` is
-available. To install the CLI yourself:
+The generated app bundles a managed Linux Node.js runtime. You do not need a
+distro `nodejs` or `npm` package for normal installs, Browser Use, Codex CLI
+install/update, or local auto-update rebuilds. Existing `nvm`, asdf, Volta, or
+system Node installs remain valid optional user tooling.
+
+On first launch, the app can install the Codex CLI if it is missing. To install
+the CLI yourself:
 
 ```bash
 npm i -g @openai/codex
@@ -153,6 +161,10 @@ Native packages are named `codex-app`. They declare replacement metadata for
 the older `codex-desktop` package name where the package format supports it.
 The installed launcher is `/usr/bin/codex-app`, and the app lives under
 `/opt/codex-app`.
+
+Native packages bundle the managed Node.js runtime used by the launcher, Browser
+Use, Codex CLI install/update flow, and local auto-update rebuilds. They do not
+hard-depend on distro `nodejs` or `npm`.
 
 Before publishing packages, run the release gate with a trusted upstream DMG
 hash. Set `CODEX_RELEASE_GPG_KEY` to produce detached signatures, and set
@@ -259,7 +271,7 @@ Native packages install `codex-app-updater`, a `systemd --user` service that
 checks for newer upstream DMGs, rebuilds the matching Linux package locally, and
 uses `pkexec` only for the final package install step.
 
-Current updater crate version: `0.6.2`.
+Current updater crate version: `0.7.0`.
 
 Useful service commands after installing a native package:
 
@@ -271,6 +283,16 @@ codex-app-updater status --json
 
 The packaged launcher also starts the user service on a best-effort basis when
 you open the app.
+
+If a rebuilt update installs but the previous retained package was better,
+close Codex App and run:
+
+```bash
+codex-app-updater rollback
+```
+
+Rollback uses the last retained known-good package and refuses to run when no
+rollback package is available.
 
 ## Troubleshooting
 

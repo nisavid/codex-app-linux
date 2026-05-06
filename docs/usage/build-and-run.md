@@ -7,15 +7,19 @@ package from this repository.
 
 You need:
 
-- Node.js 20 or newer;
-- `npm` and `npx`;
 - `python3`;
 - `7z` or `7zz`;
 - `curl`;
 - `unzip`;
+- `tar`;
 - `make`;
 - `g++` or equivalent C++ build tooling;
 - Rust and `cargo` for `codex-app-updater`.
+
+The installer downloads and bundles a managed Linux Node.js runtime for the
+generated app, Browser Use, Codex CLI install/update flow, and updater rebuilds.
+System `node`, `npm`, and `npx` remain useful for development and tests, but
+normal app and package builds do not depend on distro Node.js packages.
 
 The dependency helper supports `apt`, `dnf5`, `dnf`, and `pacman`:
 
@@ -24,7 +28,7 @@ bash scripts/install-deps.sh
 ```
 
 The generated launcher can install `@openai/codex` on first run when the CLI is
-missing and `npm` is available. To install it before launching:
+missing. To install it before launching:
 
 ```bash
 npm i -g @openai/codex
@@ -64,8 +68,9 @@ Run the dependency helper:
 bash scripts/install-deps.sh
 ```
 
-It installs Node.js, npm, Python, 7z, curl, build tools, and bootstraps Rust
-through `rustup` if `cargo` is missing.
+It installs Python, 7z, curl, build tools, optional system Node.js/npm
+development tooling, and bootstraps Rust through `rustup` if `cargo` is
+missing.
 
 ### Arch Linux
 
@@ -78,7 +83,7 @@ bash scripts/install-deps.sh
 Or install the system packages directly:
 
 ```bash
-sudo pacman -S --needed nodejs npm python p7zip curl unzip zstd base-devel
+sudo pacman -S --needed python p7zip curl unzip zstd base-devel
 ```
 
 Install Rust through `rustup` if `cargo` is still missing:
@@ -329,12 +334,13 @@ that public key. `make install` installs the newest built native package.
 The build flow is:
 
 1. extract `Codex.dmg` with `7z` or `7zz`;
-2. extract and patch `app.asar`;
-3. rebuild native Node.js modules for Linux;
-4. download a Linux Electron runtime;
-5. write `codex-app/start.sh`;
-6. optionally package `codex-app/` as a Debian, RPM, or pacman package;
-7. when installed from a native package, run `codex-app-updater` as a
+2. download or reuse the managed Linux Node.js runtime;
+3. extract and patch `app.asar`;
+4. rebuild native Node.js modules for Linux;
+5. download a Linux Electron runtime;
+6. write `codex-app/start.sh`;
+7. optionally package `codex-app/` as a Debian, RPM, or pacman package;
+8. when installed from a native package, run `codex-app-updater` as a
    `systemd --user` service for local update checks and package rebuilds.
 
 The macOS Codex app is an Electron application. Most of the app bundle is

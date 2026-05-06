@@ -96,13 +96,25 @@ render_packaged_runtime_helper() {
 }
 
 validate_app_payload_source() {
+    local app_root
     local link
+    local link_dir
+    local resolved_target
     local target
 
+    app_root="$(realpath -m "$APP_DIR")"
     while IFS= read -r -d '' link; do
         target="$(readlink "$link")" || error "Failed to read symlink: $link"
+        link_dir="$(dirname "$link")"
         case "$target" in
-        /*|../|../*|*/..|*/../*|..)
+        /*) resolved_target="$(realpath -m "$target")" ;;
+        *) resolved_target="$(realpath -m "$link_dir/$target")" ;;
+        esac
+
+        case "$resolved_target" in
+        "$app_root"|"$app_root"/*)
+            ;;
+        *)
             error "Unsafe symlink in app payload: $link -> $target"
             ;;
         esac
@@ -191,6 +203,7 @@ stage_common_package_files() {
 stage_update_builder_bundle() {
     local root="$1"
     local update_builder_root="$root/usr/lib/$PACKAGE_NAME/update-builder"
+    local node_runtime_source="$APP_DIR/resources/node-runtime"
 
     mkdir -p \
         "$update_builder_root/scripts" \
@@ -228,6 +241,11 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/packaging/linux/codex-app-updater.prerm" "$update_builder_root/packaging/linux/codex-app-updater.prerm"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postrm" "$update_builder_root/packaging/linux/codex-app-updater.postrm"
     cp "$REPO_DIR/assets/codex.png" "$update_builder_root/assets/codex.png"
+    if [ -d "$node_runtime_source" ]; then
+        cp -a "$node_runtime_source" "$update_builder_root/node-runtime"
+    else
+        error "Missing managed Node.js runtime: $node_runtime_source. Run ./install.sh first."
+    fi
 }
 
 write_launcher_stub() {

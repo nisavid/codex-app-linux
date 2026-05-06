@@ -1260,12 +1260,15 @@ mod tests {
 
     #[test]
     fn reconcile_if_present_persists_failed_status_when_preflight_fails() -> Result<()> {
+        let _env_guard = env_lock();
         let temp = tempdir()?;
         let paths = test_runtime_paths(temp.path());
         paths.ensure_dirs()?;
 
         let codex_path = temp.path().join("codex");
         write_executable_script(&codex_path, "#!/bin/sh\nexit 42\n")?;
+        let original_codex_cli_path = std::env::var_os("CODEX_CLI_PATH");
+        std::env::remove_var("CODEX_CLI_PATH");
 
         let mut state = PersistedState::new(true);
         state.cli_path = Some(codex_path.clone());
@@ -1273,7 +1276,11 @@ mod tests {
         state.cli_status = CliStatus::UpToDate;
 
         let config = test_runtime_config(&paths);
-        let error = reconcile_if_present(&config, &mut state, &paths).unwrap_err();
+        let result = reconcile_if_present(&config, &mut state, &paths);
+        if let Some(cli_path) = original_codex_cli_path {
+            std::env::set_var("CODEX_CLI_PATH", cli_path);
+        }
+        let error = result.unwrap_err();
 
         assert!(error.to_string().contains("exited with exit status: 42"));
         assert_eq!(state.cli_path.as_deref(), Some(codex_path.as_path()));

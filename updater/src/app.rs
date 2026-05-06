@@ -5,7 +5,7 @@ use crate::{
     cli::{Cli, Commands},
     codex_cli,
     config::{RuntimeConfig, RuntimePaths},
-    install, liveness, logging, notify,
+    install, install_rollback, liveness, logging, notify, rollback,
     state::{CliStatus, PersistedState, UpdateStatus},
     upstream,
 };
@@ -67,9 +67,13 @@ pub async fn run(cli: Cli) -> Result<()> {
         } => run_prompt_install_cli(&config, &mut state, &paths, cli_path, print_path),
         Commands::Status { json } => run_status(&config, &mut state, &paths, json),
         Commands::InstallReady => run_install_ready(&config, &mut state, &paths).await,
+        Commands::Rollback => rollback::run(&config, &mut state, &paths).await,
         Commands::InstallDeb { path } => install::install_deb(&path),
         Commands::InstallRpm { path } => install::install_rpm(&path),
         Commands::InstallPacman { path } => install::install_pacman(&path),
+        Commands::InstallRollbackDeb { path } => install_rollback::install_deb(&path),
+        Commands::InstallRollbackRpm { path } => install_rollback::install_rpm(&path),
+        Commands::InstallRollbackPacman { path } => install_rollback::install_pacman(&path),
     }
 }
 
@@ -300,6 +304,17 @@ fn run_status(
             "candidate_version: {}",
             state.candidate_version.as_deref().unwrap_or("none")
         );
+        println!(
+            "last_known_good_version: {}",
+            state.last_known_good_version.as_deref().unwrap_or("none")
+        );
+        println!(
+            "rollback_blocked_candidate_version: {}",
+            state
+                .rollback_blocked_candidate_version
+                .as_deref()
+                .unwrap_or("none")
+        );
         println!("cli_status: {:?}", state.cli_status);
         println!(
             "cli_installed_version: {}",
@@ -521,14 +536,14 @@ async fn run_check_cycle(
     state: &mut PersistedState,
     paths: &RuntimePaths,
 ) -> Result<()> {
-    reconcile_cli_if_present_best_effort(config, state, paths, "check cycle");
-
-    let retrying_failed_update = state.status == UpdateStatus::Failed;
-
     if update_install_is_pending(&state.status) {
         info!("skipping upstream check because an update is already pending");
         return Ok(());
     }
+
+    reconcile_cli_if_present_best_effort(config, state, paths, "check cycle");
+
+    let retrying_failed_update = state.status == UpdateStatus::Failed;
 
     let Some(_check_lock) = try_acquire_check_lock(paths)? else {
         return Ok(());
@@ -565,6 +580,26 @@ async fn run_check_cycle(
         let downloaded =
             upstream::download_dmg(&client, &config.dmg_url, &downloads_dir, Utc::now()).await?;
 
+        if state
+            .rollback_blocked_candidate_version
+            .as_deref()
+            .is_some_and(|blocked| {
+                installed_version_satisfies_candidate(blocked, &downloaded.candidate_version)
+            })
+        {
+            state.status = UpdateStatus::Idle;
+            state.error_message = Some(format!(
+                "Candidate {} was rolled back and will not be reinstalled automatically",
+                downloaded.candidate_version
+            ));
+            persist_state(paths, state)?;
+            info!(
+                candidate_version = %downloaded.candidate_version,
+                "skipping candidate blocked by rollback"
+            );
+            return Ok(());
+        }
+
         if state.dmg_sha256.as_deref() == Some(downloaded.sha256.as_str())
             && !retrying_failed_update
         {
@@ -575,6 +610,7 @@ async fn run_check_cycle(
             return Ok(());
         }
 
+        rollback::record_current_package_as_known_good(state);
         state.status = UpdateStatus::UpdateDetected;
         state.candidate_version = Some(downloaded.candidate_version);
         state.dmg_sha256 = Some(downloaded.sha256);
@@ -1048,6 +1084,7 @@ async fn trigger_install(
         state.status = UpdateStatus::Installed;
         state.installed_version = install::installed_package_version();
         state.candidate_version = None;
+        state.rollback_blocked_candidate_version = None;
         state.error_message = None;
         state.notified_events.clear();
         persist_state(paths, state)?;
