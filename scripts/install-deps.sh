@@ -256,7 +256,7 @@ install_zypper() {
     info "Detected openSUSE (zypper)"
     sudo zypper --non-interactive install \
         nodejs-default npm-default python3 \
-        p7zip-full curl unzip
+        p7zip-full curl unzip coreutils tar
     sudo zypper --non-interactive install -t pattern devel_basis
 }
 
@@ -401,12 +401,12 @@ case "$DISTRO" in
     *)
         error "Unsupported package manager. Install manually:
   # Debian/Ubuntu: install Node.js 20+ with npm/npx from NodeSource, nvm, or another compatible source, then:
-  sudo apt install python3 p7zip-full curl unzip build-essential                   # Debian/Ubuntu
-  sudo dnf install nodejs npm python3 7zip curl unzip @development-tools            # Fedora 41+ (dnf5)
-  sudo dnf install nodejs npm python3 p7zip p7zip-plugins curl unzip                # Fedora <41 (dnf)
+  sudo apt install python3 p7zip-full curl unzip coreutils tar build-essential       # Debian/Ubuntu
+  sudo dnf install nodejs npm python3 7zip curl unzip coreutils tar @development-tools # Fedora 41+ (dnf5)
+  sudo dnf install nodejs npm python3 p7zip p7zip-plugins curl unzip coreutils tar   # Fedora <41 (dnf)
     && sudo dnf groupinstall 'Development Tools'
-  sudo pacman -S nodejs npm python p7zip curl unzip zstd base-devel                 # Arch
-  sudo zypper install nodejs-default npm-default python3 p7zip-full curl unzip      # openSUSE
+  sudo pacman -S nodejs npm python p7zip curl unzip coreutils tar zstd base-devel    # Arch
+  sudo zypper install nodejs-default npm-default python3 p7zip-full curl unzip coreutils tar # openSUSE
     && sudo zypper install -t pattern devel_basis"
         ;;
 esac

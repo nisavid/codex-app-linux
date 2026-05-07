@@ -79,8 +79,8 @@ make run-app
 
 `scripts/install-deps.sh` supports Debian/Ubuntu, Fedora, openSUSE, and Arch
 Linux hosts. On openSUSE it uses non-interactive `zypper` to install
-`nodejs-default`, `npm-default`, `python3`, `p7zip-full`, `curl`, `unzip`, and
-the `devel_basis` pattern.
+`nodejs-default`, `npm-default`, `python3`, `p7zip-full`, `curl`, `unzip`,
+`coreutils`, `tar`, and the `devel_basis` pattern.
 
 `make build-app` downloads or reuses `Codex.dmg`, extracts the app, patches the
 macOS bundle for Linux, rebuilds native modules, downloads a Linux Electron
@@ -91,8 +91,9 @@ distro `nodejs` or `npm` package for normal installs, Browser Use, Codex CLI
 install/update, or local auto-update rebuilds. Existing `nvm`, asdf, Volta, or
 system Node installs remain valid optional user tooling.
 
-On first launch, the app can install the Codex CLI if it is missing. To install
-the CLI yourself:
+On first launch, the app can install the Codex CLI if it is missing, using the
+bundled managed runtime. If you already have an `npm` command on your shell
+`PATH`, you can install the CLI yourself:
 
 ```bash
 npm i -g @openai/codex

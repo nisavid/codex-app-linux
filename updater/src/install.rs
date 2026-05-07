@@ -537,7 +537,7 @@ fn zypper_install_command(path: &Path) -> Result<Command> {
     let mut command = Command::new(program);
     command
         .current_dir(parent)
-        .args(["--non-interactive", "--no-gpg-checks", "install", "-y"])
+        .args(["--non-interactive", "install", "--allow-unsigned-rpm", "-y"])
         .arg(format!("./{file_name}"));
     Ok(command)
 }
@@ -876,8 +876,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "--non-interactive",
-                "--no-gpg-checks",
                 "install",
+                "--allow-unsigned-rpm",
                 "-y",
                 "./codex.rpm"
             ]
