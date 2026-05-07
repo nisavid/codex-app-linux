@@ -10,9 +10,11 @@ case "$MANAGED_NODE_VERSION" in
     *) MANAGED_NODE_VERSION="v$MANAGED_NODE_VERSION" ;;
 esac
 MANAGED_NODE_MIN_VERSION="22.22.0"
-MANAGED_NODE_MIN_MAJOR=22
-MANAGED_NODE_MIN_MINOR=22
-MANAGED_NODE_MIN_PATCH=0
+MANAGED_NODE_MIN_MAJOR="${MANAGED_NODE_MIN_VERSION%%.*}"
+_managed_node_min_rest="${MANAGED_NODE_MIN_VERSION#*.}"
+MANAGED_NODE_MIN_MINOR="${_managed_node_min_rest%%.*}"
+MANAGED_NODE_MIN_PATCH="${_managed_node_min_rest#*.}"
+unset _managed_node_min_rest
 
 managed_node_arch() {
     case "$ARCH" in

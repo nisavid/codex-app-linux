@@ -579,7 +579,11 @@ fn pacman_install_command(path: &Path) -> Command {
 
 fn updater_binary_for_privileged_install() -> Result<PathBuf> {
     let installed = PathBuf::from(INSTALLED_UPDATER_BINARY);
-    let metadata = fs::metadata(&installed).with_context(|| {
+    validate_installed_updater_binary(&installed)
+}
+
+fn validate_installed_updater_binary(installed: &Path) -> Result<PathBuf> {
+    let metadata = fs::metadata(installed).with_context(|| {
         format!(
             "Privileged install requires the installed updater binary at {}",
             installed.display()
@@ -595,7 +599,7 @@ fn updater_binary_for_privileged_install() -> Result<PathBuf> {
         "Installed updater binary must be root-owned and not group/world-writable: {}",
         installed.display()
     );
-    Ok(installed)
+    Ok(installed.to_path_buf())
 }
 
 fn deb_package_version(path: &Path) -> Result<String> {
@@ -829,11 +833,13 @@ mod tests {
 
     #[test]
     fn rejects_uninstalled_updater_path_for_pkexec() {
-        if !Path::new(INSTALLED_UPDATER_BINARY).exists() {
-            let error = updater_binary_for_privileged_install()
-                .expect_err("missing installed updater should be rejected");
-            assert!(error.to_string().contains("installed updater binary"));
-        }
+        let temp = tempfile::tempdir().expect("tempdir");
+        let missing = temp.path().join("missing-codex-app-updater");
+
+        let error = validate_installed_updater_binary(&missing)
+            .expect_err("missing installed updater should be rejected");
+
+        assert!(error.to_string().contains("installed updater binary"));
     }
 
     #[test]

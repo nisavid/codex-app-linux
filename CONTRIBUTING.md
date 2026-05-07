@@ -173,6 +173,10 @@ cargo test -p codex-app-updater
 bash tests/scripts_smoke.sh
 ```
 
+If your change affects generated app output, the installer, ASAR patcher,
+package builders, package payload, updater rebuild flow, or bundled runtime
+helpers, also run `./install.sh` or `make build-app` before pushing.
+
 If your change affects packaging, also run the relevant package builds:
 
 ```bash
@@ -236,7 +240,8 @@ This repository has explicit versioning expectations for the updater crate.
 
 If you change the updater crate version:
 
-- update the relevant documentation such as `README.md` and `AGENTS.md`
+- update the relevant documentation such as `README.md`, `AGENTS.md`, and
+  `docs/maintainers/package-runtime-maintenance.md`
 - ensure the version bump matches the real user-facing impact
 
 If you are not sure which version bump is appropriate, ask in the issue or pull request before finalizing the change.
