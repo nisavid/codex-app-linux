@@ -1075,7 +1075,7 @@ async fn trigger_install(
     );
 
     let current_exe = std::env::current_exe().context("Failed to resolve updater binary path")?;
-    let output = install::pkexec_command(&current_exe, package_path)
+    let output = install::pkexec_command(&current_exe, package_path)?
         .output()
         .context("Failed to launch pkexec for update installation")?;
     let status = output.status;

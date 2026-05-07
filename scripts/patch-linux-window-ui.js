@@ -1201,10 +1201,11 @@ function applyLinuxSingleInstancePatch(currentSource) {
   const secondInstanceHandlerExistingPatch =
     "let codexLinuxSecondInstanceHandler=(e,t)=>{R.deepLinks.queueProcessArgs(t)||ie()};process.platform===`linux`&&(n.app.on(`second-instance`,codexLinuxSecondInstanceHandler),k.add(()=>{n.app.off(`second-instance`,codexLinuxSecondInstanceHandler)})),l(e=>{R.deepLinks.queueProcessArgs(e)||ie()});let ae=";
   const secondInstanceHandlerPatch =
-    "let codexLinuxSecondInstanceHandler=(e,t)=>{(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())?void 0:R.deepLinks.queueProcessArgs(t)||ie()},codexLinuxBeforeQuitHandler=()=>{typeof codexLinuxMarkQuitInProgress===`function`&&codexLinuxMarkQuitInProgress()};process.platform===`linux`&&(n.app.on(`before-quit`,codexLinuxBeforeQuitHandler),k.add(()=>{n.app.off(`before-quit`,codexLinuxBeforeQuitHandler)}),n.app.on(`second-instance`,codexLinuxSecondInstanceHandler),k.add(()=>{n.app.off(`second-instance`,codexLinuxSecondInstanceHandler)})),l(e=>{R.deepLinks.queueProcessArgs(e)||ie()});let ae=";
+    "let codexLinuxSecondInstanceHandler=(e,t)=>{(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())?void 0:R.deepLinks.queueProcessArgs(t)||ie()},codexLinuxBeforeQuitHandler=()=>{typeof codexLinuxMarkQuitInProgress===`function`&&codexLinuxMarkQuitInProgress()};process.platform===`linux`&&(n.app.on(`before-quit`,codexLinuxBeforeQuitHandler),k.add(()=>{n.app.off(`before-quit`,codexLinuxBeforeQuitHandler)}),n.app.on(`second-instance`,codexLinuxSecondInstanceHandler),k.add(()=>{n.app.off(`second-instance`,codexLinuxSecondInstanceHandler)})),l(e=>{(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())?void 0:R.deepLinks.queueProcessArgs(e)||ie()});let ae=";
   if (
     patchedSource.includes("codexLinuxBeforeQuitHandler=()=>{typeof codexLinuxMarkQuitInProgress===`function`&&codexLinuxMarkQuitInProgress()}") &&
-    patchedSource.includes("(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())?void 0:R.deepLinks.queueProcessArgs(t)||ie()")
+    patchedSource.includes("(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())?void 0:R.deepLinks.queueProcessArgs(t)||ie()") &&
+    patchedSource.includes("l(e=>{(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())?void 0:R.deepLinks.queueProcessArgs(e)||ie()})")
   ) {
     // Already patched.
   } else if (patchedSource.includes(secondInstanceHandlerExistingPatch)) {
@@ -1689,6 +1690,8 @@ function applyLinuxLaunchActionArgsPatch(currentSource) {
 
   const launchActionNeedle =
     "let codexLinuxSecondInstanceHandler=(e,t)=>{R.deepLinks.queueProcessArgs(t)||ie()};process.platform===`linux`&&(n.app.on(`second-instance`,codexLinuxSecondInstanceHandler),k.add(()=>{n.app.off(`second-instance`,codexLinuxSecondInstanceHandler)})),l(e=>{R.deepLinks.queueProcessArgs(e)||ie()});let ae=async(e,t)=>{P.hotkeyWindowLifecycleManager.hide();let n=P.getPrimaryWindow(z),r=n??await P.createFreshLocalWindow(e);r!=null&&(n!=null&&t.navigateExistingWindow&&R.navigateToRoute(r,e),re(r))},oe=async()=>{";
+  const launchActionNeedleWithQuitGuard =
+    "let codexLinuxSecondInstanceHandler=(e,t)=>{(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())?void 0:R.deepLinks.queueProcessArgs(t)||ie()},codexLinuxBeforeQuitHandler=()=>{typeof codexLinuxMarkQuitInProgress===`function`&&codexLinuxMarkQuitInProgress()};process.platform===`linux`&&(n.app.on(`before-quit`,codexLinuxBeforeQuitHandler),k.add(()=>{n.app.off(`before-quit`,codexLinuxBeforeQuitHandler)}),n.app.on(`second-instance`,codexLinuxSecondInstanceHandler),k.add(()=>{n.app.off(`second-instance`,codexLinuxSecondInstanceHandler)})),l(e=>{(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())?void 0:R.deepLinks.queueProcessArgs(e)||ie()});let ae=async(e,t)=>{P.hotkeyWindowLifecycleManager.hide();let n=P.getPrimaryWindow(z),r=n??await P.createFreshLocalWindow(e);r!=null&&(n!=null&&t.navigateExistingWindow&&R.navigateToRoute(r,e),re(r))},oe=async()=>{";
   const oldLaunchActionPatch =
     "let ae=async(e,t)=>{P.hotkeyWindowLifecycleManager.hide();let n=P.getPrimaryWindow(z),r=n??await P.createFreshLocalWindow(e);r!=null&&(n!=null&&t.navigateExistingWindow&&R.navigateToRoute(r,e),re(r))},codexLinuxOpenQuickChat=async()=>{P.hotkeyWindowLifecycleManager.hide();let e=P.getPrimaryWindow(z),t=e??await P.createFreshLocalWindow(`/`);t!=null&&(P.windowManager.sendMessageToWindow(t,{type:`new-quick-chat`}),re(t))},codexLinuxHandleLaunchActionArgs=async e=>Array.isArray(e)&&e.includes(`--quick-chat`)?(await codexLinuxOpenQuickChat(),!0):Array.isArray(e)&&e.includes(`--new-chat`)?(await ae(`/`,{navigateExistingWindow:!0}),!0):!1,codexLinuxHandleLaunchActionArgsFallback=(e,t)=>{codexLinuxHandleLaunchActionArgs(e).then(e=>{e||t()}).catch(e=>{g.reportNonFatal(e instanceof Error?e:`Failed to handle Linux launch action`,{kind:`linux-launch-action-failed`}),t()})},codexLinuxSecondInstanceHandler=(e,t)=>{codexLinuxHandleLaunchActionArgsFallback(t,()=>{R.deepLinks.queueProcessArgs(t)||ie()})};process.platform===`linux`&&(n.app.on(`second-instance`,codexLinuxSecondInstanceHandler),k.add(()=>{n.app.off(`second-instance`,codexLinuxSecondInstanceHandler)})),l(e=>{codexLinuxHandleLaunchActionArgsFallback(e,()=>{R.deepLinks.queueProcessArgs(e)||ie()})});let oe=async()=>{";
   const deepLinkFirstLaunchActionPatch =
@@ -1753,6 +1756,7 @@ function applyLinuxLaunchActionArgsPatch(currentSource) {
     patchedSource.includes("codexLinuxIsQuitInProgress=()=>codexLinuxQuitInProgress===!0") &&
     patchedSource.includes("codexLinuxGetSetting=e=>") &&
     patchedSource.includes("codexLinuxGetHotkeyWindowController=()=>") &&
+    patchedSource.includes("codexLinuxHandleLaunchActionArgs=async e=>") &&
     patchedSource.includes("codexLinuxPrewarmHotkeyWindow=()=>") &&
     patchedSource.includes("codexLinuxStartLaunchActionSocket=()=>") &&
     patchedSource.includes("n.app.on(`before-quit`,codexLinuxBeforeQuitHandler)") &&
@@ -1779,6 +1783,8 @@ function applyLinuxLaunchActionArgsPatch(currentSource) {
     patchedSource = patchedSource.replace(freshWindowLaunchActionPatch, launchActionPatch);
   } else if (patchedSource.includes(launchActionNeedle)) {
     patchedSource = patchedSource.replace(launchActionNeedle, launchActionPatch);
+  } else if (patchedSource.includes(launchActionNeedleWithQuitGuard)) {
+    patchedSource = patchedSource.replace(launchActionNeedleWithQuitGuard, launchActionPatch);
   } else {
     const semanticLaunchActionPatch = applySemanticLinuxLaunchActionArgsPatch(patchedSource);
     if (semanticLaunchActionPatch !== patchedSource) {

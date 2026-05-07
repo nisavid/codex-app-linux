@@ -15,7 +15,7 @@ use std::{
 use tokio::process::Command;
 use tracing::info;
 
-const REQUIRED_BUNDLE_FILES: [(&str, &str); 12] = [
+const REQUIRED_BUNDLE_FILES: [(&str, &str); 13] = [
     ("Cargo.toml", "Cargo.toml"),
     ("Cargo.lock", "Cargo.lock"),
     ("computer-use-linux", "computer-use-linux"),
@@ -32,6 +32,7 @@ const REQUIRED_BUNDLE_FILES: [(&str, &str); 12] = [
         "scripts/patch-linux-window-ui.js",
     ),
     ("scripts/lib", "scripts/lib"),
+    ("node-runtime", "node-runtime"),
     ("packaging/linux", "packaging/linux"),
     ("assets/codex.png", "assets/codex.png"),
 ];
@@ -69,13 +70,13 @@ pub async fn build_update(
     dmg_path: &Path,
 ) -> Result<BuildArtifacts> {
     let workspace = BuilderWorkspace::prepare(&config.workspace_root, candidate_version)?;
-    let build_path = build_command_path(&config.builder_bundle_root);
 
     state.status = UpdateStatus::PreparingWorkspace;
     state.artifact_paths.workspace_dir = Some(workspace.workspace_dir.clone());
     state.save(&paths.state_file)?;
 
     copy_builder_bundle(&config.builder_bundle_root, &workspace.bundle_dir)?;
+    let build_path = build_command_path(&workspace.bundle_dir);
 
     state.status = UpdateStatus::PatchingApp;
     state.save(&paths.state_file)?;
@@ -85,7 +86,7 @@ pub async fn build_update(
             .env("CODEX_INSTALL_DIR", &workspace.app_dir)
             .env(
                 "CODEX_MANAGED_NODE_SOURCE",
-                config.builder_bundle_root.join("node-runtime"),
+                workspace.bundle_dir.join("node-runtime"),
             )
             .env("PATH", &build_path)
             .current_dir(&workspace.bundle_dir),
@@ -529,6 +530,7 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         fs::create_dir_all(bundle_root.join("launcher"))?;
         fs::create_dir_all(bundle_root.join("packaging/linux"))?;
         fs::create_dir_all(bundle_root.join("assets"))?;
+        fs::create_dir_all(bundle_root.join("node-runtime/bin"))?;
         write_fake_computer_use_bundle(&bundle_root)?;
         fs::write(
             bundle_root.join("launcher/start.sh.template"),
@@ -626,6 +628,7 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
             bundle_root.join("scripts/lib/node-runtime.sh"),
             b"#!/bin/bash\n",
         )?;
+        fs::write(bundle_root.join("node-runtime/bin/node"), b"node")?;
 
         let paths = RuntimePaths {
             config_file: temp.path().join("config/config.toml"),
@@ -691,6 +694,7 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         fs::create_dir_all(source_root.join("launcher"))?;
         fs::create_dir_all(source_root.join("packaging/linux"))?;
         fs::create_dir_all(source_root.join("assets"))?;
+        fs::create_dir_all(source_root.join("node-runtime/bin"))?;
         write_fake_computer_use_bundle(&source_root)?;
         fs::write(source_root.join("install.sh"), b"#!/bin/bash\n")?;
         fs::write(
@@ -710,6 +714,7 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
             source_root.join("scripts/lib/node-runtime.sh"),
             b"#!/bin/bash\n",
         )?;
+        fs::write(source_root.join("node-runtime/bin/node"), b"node")?;
         fs::write(
             source_root.join("packaging/linux/control"),
             b"Package: codex\n",
@@ -734,6 +739,7 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         assert!(destination_root
             .join("scripts/lib/node-runtime.sh")
             .exists());
+        assert!(destination_root.join("node-runtime/bin/node").exists());
         assert!(!destination_root.join("scripts/build-rpm.sh").exists());
         assert!(!destination_root.join("scripts/build-pacman.sh").exists());
         Ok(())

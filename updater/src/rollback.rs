@@ -72,6 +72,8 @@ async fn trigger_rollback(
     let blocked_candidate = state.candidate_version.clone().or_else(|| {
         (state.installed_version != "unknown").then(|| state.installed_version.clone())
     });
+    let previous_status = state.status.clone();
+    let previous_error_message = state.error_message.clone();
 
     state.status = UpdateStatus::Installing;
     state.error_message = None;
@@ -83,7 +85,7 @@ async fn trigger_rollback(
     );
 
     let current_exe = std::env::current_exe().context("Failed to resolve updater binary path")?;
-    let output = install_rollback::pkexec_command(&current_exe, package_path)
+    let output = install_rollback::pkexec_command(&current_exe, package_path)?
         .output()
         .context("Failed to launch pkexec for rollback")?;
     let status = output.status;
@@ -115,6 +117,17 @@ async fn trigger_rollback(
         message.push_str(&stderr);
     }
 
+    if pkexec_authentication_was_not_obtained(&status) {
+        state.status = previous_status;
+        state.error_message = previous_error_message;
+        state.save(&paths.state_file)?;
+        let _ = notify::send(
+            "Codex rollback cancelled",
+            "Authentication was not completed. No package was installed.",
+        );
+        return Err(anyhow::anyhow!(message));
+    }
+
     state.mark_failed(message.clone());
     state.save(&paths.state_file)?;
     let _ = notify::send(
@@ -122,6 +135,10 @@ async fn trigger_rollback(
         "The previous package could not be installed. Check the updater log for details.",
     );
     Err(anyhow::anyhow!(message))
+}
+
+fn pkexec_authentication_was_not_obtained(status: &std::process::ExitStatus) -> bool {
+    matches!(status.code(), Some(126 | 127))
 }
 
 fn summarize_command_output(output: &[u8]) -> Option<String> {
@@ -299,5 +316,20 @@ mod tests {
 
         assert!(summary.len() < output.len());
         assert!(summary.ends_with("... [truncated]"));
+    }
+
+    #[test]
+    fn pkexec_authentication_failures_are_retryable() {
+        use std::os::unix::process::ExitStatusExt;
+
+        assert!(pkexec_authentication_was_not_obtained(
+            &std::process::ExitStatus::from_raw(126 << 8)
+        ));
+        assert!(pkexec_authentication_was_not_obtained(
+            &std::process::ExitStatus::from_raw(127 << 8)
+        ));
+        assert!(!pkexec_authentication_was_not_obtained(
+            &std::process::ExitStatus::from_raw(1 << 8)
+        ));
     }
 }

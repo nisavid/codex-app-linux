@@ -3,6 +3,8 @@
 use crate::install::PackageKind;
 use anyhow::{Context, Result};
 use std::{
+    fs,
+    os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -80,8 +82,15 @@ pub fn install_pacman(path: &Path) -> Result<()> {
     run_install(&mut command).context("pacman rollback install failed")
 }
 
-pub fn pkexec_command(current_exe: &Path, package_path: &Path) -> Command {
-    let updater_binary = updater_binary_for_privileged_install(current_exe);
+pub fn pkexec_command(_current_exe: &Path, package_path: &Path) -> Result<Command> {
+    let updater_binary = updater_binary_for_privileged_install()?;
+    Ok(pkexec_command_with_updater_binary(
+        &updater_binary,
+        package_path,
+    ))
+}
+
+fn pkexec_command_with_updater_binary(updater_binary: &Path, package_path: &Path) -> Command {
     let subcommand = match PackageKind::from_path(package_path) {
         PackageKind::Rpm => "install-rollback-rpm",
         PackageKind::Deb => "install-rollback-deb",
@@ -270,13 +279,25 @@ fn package_file_name(path: &Path, label: &str) -> Result<String> {
         .into_owned())
 }
 
-fn updater_binary_for_privileged_install(current_exe: &Path) -> PathBuf {
+fn updater_binary_for_privileged_install() -> Result<PathBuf> {
     let installed = PathBuf::from(INSTALLED_UPDATER_BINARY);
-    if installed.is_file() {
-        installed
-    } else {
-        current_exe.to_path_buf()
-    }
+    let metadata = fs::metadata(&installed).with_context(|| {
+        format!(
+            "Privileged rollback requires the installed updater binary at {}",
+            installed.display()
+        )
+    })?;
+    anyhow::ensure!(
+        metadata.is_file(),
+        "Installed updater binary is not a regular file: {}",
+        installed.display()
+    );
+    anyhow::ensure!(
+        metadata.uid() == 0 && metadata.permissions().mode() & 0o022 == 0,
+        "Installed updater binary must be root-owned and not group/world-writable: {}",
+        installed.display()
+    );
+    Ok(installed)
 }
 
 fn program_path(candidates: &[&str], fallback: &str) -> PathBuf {
@@ -395,7 +416,7 @@ mod tests {
 
     #[test]
     fn builds_pkexec_command_for_privileged_rollback() {
-        let command = pkexec_command(
+        let command = pkexec_command_with_updater_binary(
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.rpm"),
         );
