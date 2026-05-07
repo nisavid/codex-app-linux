@@ -112,7 +112,10 @@ node_toolchain_compatible() {
 copy_node_runtime() {
     local source_dir="$1"
     local destination_dir="$2"
+    local parent_dir
+    local runtime_name
     local tmp_dir
+    local old_dir
 
     node_toolchain_compatible "$source_dir" || return 1
 
@@ -120,12 +123,23 @@ copy_node_runtime() {
         return 0
     fi
 
-    tmp_dir="$(dirname "$destination_dir")/.node-runtime.tmp.$$"
-    rm -rf "$tmp_dir"
+    parent_dir="$(dirname "$destination_dir")"
+    runtime_name="$(basename "$destination_dir")"
+    tmp_dir="$parent_dir/.$runtime_name.tmp.$$"
+    old_dir="$parent_dir/.$runtime_name.old.$$"
+    rm -rf "$tmp_dir" "$old_dir"
     mkdir -p "$tmp_dir"
     cp -a "$source_dir/." "$tmp_dir/"
-    rm -rf "$destination_dir"
-    mv "$tmp_dir" "$destination_dir"
+    if [ -e "$destination_dir" ] || [ -L "$destination_dir" ]; then
+        mv "$destination_dir" "$old_dir"
+    fi
+    if ! mv "$tmp_dir" "$destination_dir"; then
+        if [ -e "$old_dir" ] || [ -L "$old_dir" ]; then
+            mv "$old_dir" "$destination_dir"
+        fi
+        return 1
+    fi
+    rm -rf "$old_dir"
 }
 
 probe_node_runtime() {
@@ -177,7 +191,11 @@ download_managed_node_runtime() {
                 --retry-connrefused \
                 -o "$archive.part" "$url"; then
                 rm -f "$archive.part"
-                error "Failed to download managed Node.js $MANAGED_NODE_VERSION runtime from $url"
+                if [ "$attempt" -lt 3 ]; then
+                    warn "Failed to download managed Node.js $MANAGED_NODE_VERSION runtime from $url; retrying"
+                    continue
+                fi
+                error "Failed to download managed Node.js $MANAGED_NODE_VERSION runtime from $url after $attempt attempts"
             fi
             mv "$archive.part" "$archive"
         else

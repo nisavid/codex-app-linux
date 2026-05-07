@@ -50,14 +50,12 @@ pub async fn run(
     };
 
     if !package_path.exists() {
+        let message = format!("Rollback package is missing: {}", package_path.display());
         state.last_known_good_version = None;
         state.artifact_paths.rollback_package_path = None;
-        state.mark_failed(format!(
-            "Rollback package is missing: {}",
-            package_path.display()
-        ));
+        state.error_message = Some(message.clone());
         state.save(&paths.state_file)?;
-        println!("Rollback package is missing: {}", package_path.display());
+        println!("{message}");
         return Ok(());
     }
 
@@ -173,6 +171,7 @@ fn apply_successful_rollback_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{RuntimeConfig, RuntimePaths};
     use crate::state::{ArtifactPaths, PersistedState};
     use anyhow::Result;
 
@@ -231,6 +230,47 @@ mod tests {
 
         assert_eq!(state.last_known_good_version, None);
         assert_eq!(state.artifact_paths.rollback_package_path, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn missing_rollback_package_clears_metadata_without_failed_status() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config.toml"),
+            state_file: temp.path().join("state.json"),
+            log_file: temp.path().join("service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        let config = RuntimeConfig {
+            dmg_url: "https://example.invalid/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 0,
+            check_interval_hours: 24,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("workspace"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("codex-app"),
+            cli_path: None,
+        };
+        let missing = temp.path().join("missing.deb");
+        let mut state = PersistedState::new(true);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.last_known_good_version = Some("2026.05.02.120000".to_string());
+        state.artifact_paths.rollback_package_path = Some(missing);
+
+        run(&config, &mut state, &paths).await?;
+
+        assert_eq!(state.status, UpdateStatus::ReadyToInstall);
+        assert_eq!(state.last_known_good_version, None);
+        assert_eq!(state.artifact_paths.rollback_package_path, None);
+        assert!(state
+            .error_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Rollback package is missing")));
         Ok(())
     }
 
