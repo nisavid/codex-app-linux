@@ -107,9 +107,11 @@ validate_app_payload_source() {
         target="$(readlink "$link")" || error "Failed to read symlink: $link"
         link_dir="$(dirname "$link")"
         case "$target" in
-        /*) resolved_target="$(realpath -m "$target")" ;;
+        /*) error "Absolute symlinks are not allowed in app payload: $link -> $target" ;;
         *) resolved_target="$(realpath -m "$link_dir/$target")" ;;
         esac
+
+        [ -e "$resolved_target" ] || error "Broken symlink in app payload: $link -> $target"
 
         case "$resolved_target" in
         "$app_root"|"$app_root"/*)

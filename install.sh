@@ -82,7 +82,6 @@ main() {
         check_deps
         assert_install_target_not_running
         prepare_install
-        ensure_managed_node_runtime "$INSTALL_DIR/resources/node-runtime"
     fi
 
     local dmg_path=""
@@ -92,6 +91,10 @@ main() {
         info "Using provided DMG: $dmg_path"
     else
         dmg_path=$(get_dmg)
+    fi
+
+    if [ "$INSPECT_ONLY" -ne 1 ]; then
+        ensure_managed_node_runtime "$INSTALL_DIR/resources/node-runtime"
     fi
 
     local app_dir

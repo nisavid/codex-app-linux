@@ -38,6 +38,14 @@ assert_not_contains() {
     fi
 }
 
+assert_not_matches() {
+    local path="$1"
+    local pattern="$2"
+    if grep -Eq -- "$pattern" "$path"; then
+        fail "Did not expect pattern '$pattern' in $path"
+    fi
+}
+
 assert_occurrence_count() {
     local path="$1"
     local pattern="$2"
@@ -743,10 +751,10 @@ PY
     assert_contains "$REPO_DIR/scripts/install-deps.sh" "signed-by="
     assert_contains "$REPO_DIR/scripts/install-deps.sh" "https://deb.nodesource.com/node_"
     assert_contains "$REPO_DIR/scripts/lib/install-helpers.sh" "7z or 7zz"
-    assert_not_contains "$REPO_DIR/packaging/linux/control" "Depends:.*nodejs"
-    assert_not_contains "$REPO_DIR/packaging/linux/control" "Depends:.*npm"
-    assert_not_contains "$REPO_DIR/packaging/linux/codex-app.spec" "Requires:.*nodejs"
-    assert_not_contains "$REPO_DIR/packaging/linux/codex-app.spec" "Requires:.*npm"
+    assert_not_matches "$REPO_DIR/packaging/linux/control" "Depends:.*nodejs"
+    assert_not_matches "$REPO_DIR/packaging/linux/control" "Depends:.*npm"
+    assert_not_matches "$REPO_DIR/packaging/linux/codex-app.spec" "Requires:.*nodejs"
+    assert_not_matches "$REPO_DIR/packaging/linux/codex-app.spec" "Requires:.*npm"
     assert_not_contains "$REPO_DIR/packaging/linux/PKGBUILD.template" "'nodejs>=20'"
     assert_contains "$REPO_DIR/packaging/linux/PKGBUILD.template" "optional override for the bundled managed Node.js runtime"
     assert_contains "$REPO_DIR/scripts/lib/node-runtime.sh" "MANAGED_NODE_VERSION"

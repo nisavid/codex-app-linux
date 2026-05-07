@@ -9,6 +9,8 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use tracing::error;
 
+const COMMAND_OUTPUT_SUMMARY_LIMIT: usize = 4096;
+
 /// Retains the currently installed package as the rollback target, when known.
 pub fn record_current_package_as_known_good(state: &mut PersistedState) {
     if state.installed_version == "unknown" {
@@ -48,6 +50,8 @@ pub async fn run(
     };
 
     if !package_path.exists() {
+        state.last_known_good_version = None;
+        state.artifact_paths.rollback_package_path = None;
         state.mark_failed(format!(
             "Rollback package is missing: {}",
             package_path.display()
@@ -65,11 +69,9 @@ async fn trigger_rollback(
     paths: &RuntimePaths,
     package_path: &Path,
 ) -> Result<()> {
-    let blocked_candidate = if state.installed_version == "unknown" {
-        state.candidate_version.clone()
-    } else {
-        Some(state.installed_version.clone())
-    };
+    let blocked_candidate = state.candidate_version.clone().or_else(|| {
+        (state.installed_version != "unknown").then(|| state.installed_version.clone())
+    });
 
     state.status = UpdateStatus::Installing;
     state.error_message = None;
@@ -126,6 +128,9 @@ fn summarize_command_output(output: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(output).trim().to_string();
     if text.is_empty() {
         None
+    } else if text.chars().count() > COMMAND_OUTPUT_SUMMARY_LIMIT {
+        let summary: String = text.chars().take(COMMAND_OUTPUT_SUMMARY_LIMIT).collect();
+        Some(format!("{summary}... [truncated]"))
     } else {
         Some(text)
     }
@@ -257,5 +262,42 @@ mod tests {
             Some("2026.05.04.131500")
         );
         Ok(())
+    }
+
+    #[test]
+    fn successful_rollback_blocks_pending_candidate_version() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let rollback_path = temp.path().join("known-good.deb");
+        std::fs::write(&rollback_path, b"old")?;
+
+        let mut state = PersistedState::new(true);
+        state.installed_version = "2026.05.02.120000".to_string();
+        state.candidate_version = Some("2026.05.04.131500+badcafe0".to_string());
+        state.artifact_paths.rollback_package_path = Some(rollback_path.clone());
+
+        let blocked_candidate = state.candidate_version.clone().or_else(|| {
+            (state.installed_version != "unknown").then(|| state.installed_version.clone())
+        });
+        apply_successful_rollback_state(
+            &mut state,
+            "2026.05.02.120000".to_string(),
+            &rollback_path,
+            blocked_candidate,
+        );
+
+        assert_eq!(
+            state.rollback_blocked_candidate_version.as_deref(),
+            Some("2026.05.04.131500+badcafe0")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn command_output_summary_is_bounded() {
+        let output = vec![b'x'; COMMAND_OUTPUT_SUMMARY_LIMIT + 32];
+        let summary = summarize_command_output(&output).expect("summary");
+
+        assert!(summary.len() < output.len());
+        assert!(summary.ends_with("... [truncated]"));
     }
 }

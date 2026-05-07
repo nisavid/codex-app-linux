@@ -164,26 +164,43 @@ download_managed_node_runtime() {
     extracted_root="$extract_dir/node-$MANAGED_NODE_VERSION-linux-$node_arch"
 
     mkdir -p "$cache_dir" "$extract_dir"
-    if [ ! -f "$archive" ]; then
-        info "Downloading managed Node.js $MANAGED_NODE_VERSION runtime..."
-        if ! curl -L --fail --progress-bar -o "$archive.part" "$url"; then
-            rm -f "$archive.part"
-            error "Failed to download managed Node.js runtime from $url"
+    local verified=0
+    local attempt
+    for attempt in 1 2 3; do
+        if [ ! -f "$archive" ]; then
+            info "Downloading managed Node.js $MANAGED_NODE_VERSION runtime from $url (attempt $attempt)..."
+            if ! curl -L --fail --progress-bar \
+                --connect-timeout 10 \
+                --max-time 300 \
+                --retry 3 \
+                --retry-delay 2 \
+                --retry-connrefused \
+                -o "$archive.part" "$url"; then
+                rm -f "$archive.part"
+                error "Failed to download managed Node.js $MANAGED_NODE_VERSION runtime from $url"
+            fi
+            mv "$archive.part" "$archive"
+        else
+            info "Using cached managed Node.js runtime: $archive"
         fi
-        mv "$archive.part" "$archive"
-    else
-        info "Using cached managed Node.js runtime: $archive"
-    fi
 
-    if ! printf '%s  %s\n' "$expected_sha" "$archive" | sha256sum -c - >/dev/null 2>&1; then
-        rm -f "$archive"
-        error "Managed Node.js runtime checksum mismatch; removed cached archive"
-    fi
+        if printf '%s  %s\n' "$expected_sha" "$archive" | sha256sum -c - >/dev/null 2>&1; then
+            verified=1
+            break
+        fi
+
+        warn "Managed Node.js $MANAGED_NODE_VERSION runtime checksum mismatch for $archive; re-downloading from $url"
+        rm -f "$archive" "$archive.part"
+    done
+    [ "$verified" -eq 1 ] || error "Managed Node.js $MANAGED_NODE_VERSION runtime checksum mismatch after re-download attempts from $url"
 
     rm -rf "$extract_dir"
     mkdir -p "$extract_dir"
     tar -xJf "$archive" -C "$extract_dir"
-    [ -d "$extracted_root" ] || error "Managed Node.js archive did not contain expected directory: node-$MANAGED_NODE_VERSION-linux-$node_arch"
+    [ -d "$extracted_root" ] || {
+        rm -rf "$extract_dir"
+        error "Managed Node.js archive from $url did not contain expected directory: node-$MANAGED_NODE_VERSION-linux-$node_arch"
+    }
     copy_node_runtime "$extracted_root" "$destination_dir" || error "Managed Node.js runtime is not compatible"
 }
 

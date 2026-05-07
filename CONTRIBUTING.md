@@ -273,12 +273,15 @@ If a reviewer raises uncertainty about versioning, compatibility, packaging, or 
 
 ## Commit Quality
 
-Make commits intentional and readable.
+Make commits intentional and readable. Conventional Commits must be used for
+all commits, using the format described by the
+[Conventional Commits specification](https://www.conventionalcommits.org/).
+Use examples in this repository as the local style guide; CI and maintainer
+review may reject commits that do not follow the format.
 
-- prefer clear commit messages
+- use Conventional Commits for all commits
 - keep commits focused and reviewable
 - avoid mixing formatting-only noise with functional changes unless necessary
-- if your workflow uses conventional commits, apply them consistently
 
 ## Documentation Expectations
 

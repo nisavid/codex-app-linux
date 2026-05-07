@@ -32,6 +32,8 @@ jobs:
           bash -n scripts/build-deb.sh
           bash -n scripts/build-rpm.sh
           bash -n scripts/build-pacman.sh
+          bash -n tests/fixtures/create-packaged-app-fixture.sh
+          bash -n tests/scripts_smoke.sh
           bash -n launcher/start.sh.template
           bash -n scripts/lib/*.sh
           bash -n packaging/linux/codex-app-updater-user-service.sh
