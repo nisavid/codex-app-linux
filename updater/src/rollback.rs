@@ -70,6 +70,7 @@ async fn trigger_rollback(
     let blocked_candidate = state.candidate_version.clone().or_else(|| {
         (state.installed_version != "unknown").then(|| state.installed_version.clone())
     });
+    let blocked_dmg_sha256 = state.dmg_sha256.clone();
     let previous_status = state.status.clone();
     let previous_error_message = state.error_message.clone();
 
@@ -82,8 +83,7 @@ async fn trigger_rollback(
         "Installing the last retained known-good package.",
     );
 
-    let current_exe = std::env::current_exe().context("Failed to resolve updater binary path")?;
-    let output = install_rollback::pkexec_command(&current_exe, package_path)?
+    let output = install_rollback::pkexec_command(package_path)?
         .output()
         .context("Failed to launch pkexec for rollback")?;
     let status = output.status;
@@ -94,6 +94,7 @@ async fn trigger_rollback(
             install::installed_package_version(),
             package_path,
             blocked_candidate,
+            blocked_dmg_sha256,
         );
         state.save(&paths.state_file)?;
         println!("Rolled back Codex App to {}.", state.installed_version);
@@ -156,6 +157,7 @@ fn apply_successful_rollback_state(
     installed_version: String,
     package_path: &Path,
     blocked_candidate: Option<String>,
+    blocked_dmg_sha256: Option<String>,
 ) {
     state.status = UpdateStatus::Installed;
     state.installed_version = installed_version.clone();
@@ -164,6 +166,7 @@ fn apply_successful_rollback_state(
     state.artifact_paths.rollback_package_path = Some(package_path.to_path_buf());
     state.last_known_good_version = Some(installed_version);
     state.rollback_blocked_candidate_version = blocked_candidate;
+    state.rollback_blocked_dmg_sha256 = blocked_dmg_sha256;
     state.error_message = None;
     state.notified_events.clear();
 }
@@ -285,6 +288,7 @@ mod tests {
         let mut state = PersistedState::new(true);
         state.installed_version = "2026.05.04.131500".to_string();
         state.candidate_version = Some("2026.05.04.131500+badcafe0".to_string());
+        state.dmg_sha256 = Some("badcafe0".repeat(8));
         state.status = UpdateStatus::Installing;
         state.artifact_paths = ArtifactPaths {
             dmg_path: None,
@@ -298,6 +302,7 @@ mod tests {
             "2026.05.02.120000".to_string(),
             &rollback_path,
             Some("2026.05.04.131500".to_string()),
+            Some("badcafe0".repeat(8)),
         );
 
         assert_eq!(state.status, UpdateStatus::Installed);
@@ -318,6 +323,10 @@ mod tests {
             state.rollback_blocked_candidate_version.as_deref(),
             Some("2026.05.04.131500")
         );
+        assert_eq!(
+            state.rollback_blocked_dmg_sha256.as_deref(),
+            Some("badcafe0badcafe0badcafe0badcafe0badcafe0badcafe0badcafe0badcafe0")
+        );
         Ok(())
     }
 
@@ -330,21 +339,28 @@ mod tests {
         let mut state = PersistedState::new(true);
         state.installed_version = "2026.05.02.120000".to_string();
         state.candidate_version = Some("2026.05.04.131500+badcafe0".to_string());
+        state.dmg_sha256 = Some("badcafe0".repeat(8));
         state.artifact_paths.rollback_package_path = Some(rollback_path.clone());
 
         let blocked_candidate = state.candidate_version.clone().or_else(|| {
             (state.installed_version != "unknown").then(|| state.installed_version.clone())
         });
+        let blocked_dmg_sha256 = state.dmg_sha256.clone();
         apply_successful_rollback_state(
             &mut state,
             "2026.05.02.120000".to_string(),
             &rollback_path,
             blocked_candidate,
+            blocked_dmg_sha256,
         );
 
         assert_eq!(
             state.rollback_blocked_candidate_version.as_deref(),
             Some("2026.05.04.131500+badcafe0")
+        );
+        assert_eq!(
+            state.rollback_blocked_dmg_sha256.as_deref(),
+            Some("badcafe0badcafe0badcafe0badcafe0badcafe0badcafe0badcafe0badcafe0")
         );
         Ok(())
     }

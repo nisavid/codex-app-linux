@@ -88,7 +88,7 @@ pub fn install_pacman(path: &Path) -> Result<()> {
     run_install(&mut command).context("pacman rollback install failed")
 }
 
-pub fn pkexec_command(_current_exe: &Path, package_path: &Path) -> Result<Command> {
+pub fn pkexec_command(package_path: &Path) -> Result<Command> {
     let updater_binary = updater_binary_for_privileged_install()?;
     Ok(pkexec_command_with_updater_binary(
         &updater_binary,

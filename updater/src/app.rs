@@ -315,6 +315,13 @@ fn run_status(
                 .as_deref()
                 .unwrap_or("none")
         );
+        println!(
+            "rollback_blocked_dmg_sha256: {}",
+            state
+                .rollback_blocked_dmg_sha256
+                .as_deref()
+                .unwrap_or("none")
+        );
         println!("cli_status: {:?}", state.cli_status);
         println!(
             "cli_installed_version: {}",
@@ -580,13 +587,11 @@ async fn run_check_cycle(
         let downloaded =
             upstream::download_dmg(&client, &config.dmg_url, &downloads_dir, Utc::now()).await?;
 
-        if state
-            .rollback_blocked_candidate_version
-            .as_deref()
-            .is_some_and(|blocked| {
-                installed_version_satisfies_candidate(blocked, &downloaded.candidate_version)
-            })
-        {
+        if candidate_is_blocked_by_rollback(
+            state,
+            &downloaded.candidate_version,
+            &downloaded.sha256,
+        ) {
             state.status = UpdateStatus::Idle;
             state.error_message = Some(format!(
                 "Candidate {} was rolled back and will not be reinstalled automatically",
@@ -1060,6 +1065,23 @@ fn maybe_send_notification(enabled: bool, summary: &str, body: &str) {
     }
 }
 
+fn candidate_is_blocked_by_rollback(
+    state: &PersistedState,
+    candidate_version: &str,
+    dmg_sha256: &str,
+) -> bool {
+    state
+        .rollback_blocked_dmg_sha256
+        .as_deref()
+        .is_some_and(|blocked| blocked == dmg_sha256)
+        || state
+            .rollback_blocked_candidate_version
+            .as_deref()
+            .is_some_and(|blocked| {
+                installed_version_satisfies_candidate(blocked, candidate_version)
+            })
+}
+
 async fn trigger_install(
     state: &mut PersistedState,
     paths: &RuntimePaths,
@@ -1074,8 +1096,7 @@ async fn trigger_install(
         "Applying the locally rebuilt Linux package.",
     );
 
-    let current_exe = std::env::current_exe().context("Failed to resolve updater binary path")?;
-    let output = install::pkexec_command(&current_exe, package_path)?
+    let output = install::pkexec_command(package_path)?
         .output()
         .context("Failed to launch pkexec for update installation")?;
     let status = output.status;
@@ -1085,6 +1106,7 @@ async fn trigger_install(
         state.installed_version = install::installed_package_version();
         state.candidate_version = None;
         state.rollback_blocked_candidate_version = None;
+        state.rollback_blocked_dmg_sha256 = None;
         state.error_message = None;
         state.notified_events.clear();
         persist_state(paths, state)?;
@@ -1889,6 +1911,35 @@ mod tests {
             compare_generated_versions("26.429.20946", "26.428.10000"),
             Some(std::cmp::Ordering::Greater)
         );
+    }
+
+    #[test]
+    fn rollback_block_prefers_stable_dmg_hash() {
+        let mut state = PersistedState::new(true);
+        state.rollback_blocked_dmg_sha256 = Some("badcafe0".repeat(8));
+
+        assert!(candidate_is_blocked_by_rollback(
+            &state,
+            "2026.05.07.091500+fresh123",
+            &"badcafe0".repeat(8),
+        ));
+        assert!(!candidate_is_blocked_by_rollback(
+            &state,
+            "2026.05.07.091500+fresh123",
+            &"feedface".repeat(8),
+        ));
+    }
+
+    #[test]
+    fn rollback_block_keeps_candidate_version_fallback() {
+        let mut state = PersistedState::new(true);
+        state.rollback_blocked_candidate_version = Some("2026.05.06.120000+badcafe0".to_string());
+
+        assert!(candidate_is_blocked_by_rollback(
+            &state,
+            "2026.05.06.120000+fresh123",
+            &"feedface".repeat(8),
+        ));
     }
 
     #[tokio::test]

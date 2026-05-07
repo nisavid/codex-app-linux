@@ -81,6 +81,8 @@ pub struct PersistedState {
     #[serde(default)]
     pub rollback_blocked_candidate_version: Option<String>,
     #[serde(default)]
+    pub rollback_blocked_dmg_sha256: Option<String>,
+    #[serde(default)]
     pub cli_path: Option<PathBuf>,
     #[serde(default)]
     pub cli_installed_version: Option<String>,
@@ -115,6 +117,7 @@ impl PersistedState {
             auto_install_on_app_exit,
             last_known_good_version: None,
             rollback_blocked_candidate_version: None,
+            rollback_blocked_dmg_sha256: None,
             cli_path: None,
             cli_installed_version: None,
             cli_latest_version: None,

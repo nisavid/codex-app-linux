@@ -195,7 +195,7 @@ $(dependency_help)"
 
 check_deps() {
     local missing=()
-    for cmd in python3 curl sha256sum unzip tar; do
+    for cmd in python3 curl realpath sha256sum unzip tar; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
     if ! command -v 7zz &>/dev/null && ! command -v 7z &>/dev/null; then
