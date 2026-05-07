@@ -22,10 +22,12 @@ Or install manually:
   sudo apt install python3 p7zip-full curl unzip coreutils tar build-essential       # Debian/Ubuntu
   sudo dnf install python3 7zip curl unzip coreutils tar @development-tools          # Fedora 41+ (dnf5)
   sudo dnf install python3 p7zip p7zip-plugins curl unzip coreutils tar              # Fedora <41 (dnf)
-    && sudo dnf groupinstall 'Development Tools'
+  sudo dnf groupinstall 'Development Tools'                                          # Fedora <41 (dnf)
   sudo pacman -S python p7zip curl unzip coreutils tar zstd base-devel              # Arch
   sudo zypper install python3 p7zip-full curl unzip coreutils tar                    # openSUSE
-    && sudo zypper install -t pattern devel_basis
+  sudo zypper install -t pattern devel_basis                                         # openSUSE
+
+Inspect mode also requires Node.js 20+ with node and npx on PATH.
 EOF
 }
 
