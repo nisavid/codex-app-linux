@@ -1,6 +1,6 @@
 //! Explicit rollback package installation helpers.
 
-use crate::install::PackageKind;
+use crate::install::{stage_package_for_privileged_install, PackageKind};
 use anyhow::{Context, Result};
 use std::{
     fs,
@@ -34,15 +34,17 @@ pub fn install_deb(path: &Path) -> Result<()> {
         "Debian rollback package not found: {}",
         path.display()
     );
-    ensure_deb_package_identity(path)?;
+    let staged = stage_package_for_privileged_install(path)?;
+    let staged_path = staged.path();
+    ensure_deb_package_identity(staged_path)?;
 
     if program_exists(APT_CANDIDATES, "apt") {
-        let mut command = apt_command(path)?;
+        let mut command = apt_command(staged_path)?;
         run_install(&mut command).context("apt rollback install failed")?;
         return Ok(());
     }
 
-    let mut command = dpkg_command(path);
+    let mut command = dpkg_command(staged_path);
     run_install(&mut command).context("dpkg rollback install failed")
 }
 
@@ -52,21 +54,23 @@ pub fn install_rpm(path: &Path) -> Result<()> {
         "RPM rollback package not found: {}",
         path.display()
     );
-    ensure_rpm_package_identity(path)?;
+    let staged = stage_package_for_privileged_install(path)?;
+    let staged_path = staged.path();
+    ensure_rpm_package_identity(staged_path)?;
 
     if let Some(dnf) = first_available_program(DNF_CANDIDATES, &["dnf", "dnf5"]) {
-        let mut command = dnf_command(&dnf, path)?;
+        let mut command = dnf_command(&dnf, staged_path)?;
         run_install(&mut command).context("dnf rollback install failed")?;
         return Ok(());
     }
 
     if program_exists(ZYPPER_CANDIDATES, "zypper") {
-        let mut command = zypper_command(path)?;
+        let mut command = zypper_command(staged_path)?;
         run_install(&mut command).context("zypper rollback install failed")?;
         return Ok(());
     }
 
-    let mut command = rpm_command(path);
+    let mut command = rpm_command(staged_path);
     run_install(&mut command).context("rpm rollback install failed")
 }
 
@@ -76,9 +80,11 @@ pub fn install_pacman(path: &Path) -> Result<()> {
         "Pacman rollback package not found: {}",
         path.display()
     );
-    ensure_pacman_package_identity(path)?;
+    let staged = stage_package_for_privileged_install(path)?;
+    let staged_path = staged.path();
+    ensure_pacman_package_identity(staged_path)?;
 
-    let mut command = pacman_command(path);
+    let mut command = pacman_command(staged_path);
     run_install(&mut command).context("pacman rollback install failed")
 }
 

@@ -300,18 +300,18 @@ fn run_install(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
-struct StagedPackage {
+pub(crate) struct StagedPackage {
     _dir: PrivateStagingDir,
     path: PathBuf,
 }
 
 impl StagedPackage {
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 }
 
-fn stage_package_for_privileged_install(path: &Path) -> Result<StagedPackage> {
+pub(crate) fn stage_package_for_privileged_install(path: &Path) -> Result<StagedPackage> {
     let file_name = path
         .file_name()
         .with_context(|| format!("Package path has no file name: {}", path.display()))?;
