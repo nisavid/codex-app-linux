@@ -419,6 +419,20 @@ test("adds Linux launch actions through current setSecondInstanceArgsHandler bun
   );
 });
 
+test("keeps semantic Linux launch-action fallback valid after comma expressions", () => {
+  const source = currentLaunchActionBundleFixture().replace(
+    "l(e=>{z.deepLinks.queueProcessArgs(e)||oe()});",
+    "E&&ce(),l(e=>{z.deepLinks.queueProcessArgs(e)||oe()});",
+  );
+
+  const launchPatched = applyPatchTwice(applyLinuxLaunchActionArgsPatch, source);
+  const patched = applyPatchTwice(applyLinuxHotkeyWindowPrewarmPatch, launchPatched);
+
+  assert.doesNotMatch(patched, /,let codexLinuxGetSetting/);
+  assert.match(patched, /process\.platform===`linux`&&codexLinuxPrewarmHotkeyWindow\(\)/);
+  assert.doesNotThrow(() => new Function(patched));
+});
+
 test("adds Linux launch actions when captured window identifiers contain dollar signs", () => {
   const source = currentLaunchActionBundleFixture().replace(
     "let se=async(e,t)=>{M.hotkeyWindowLifecycleManager.hide();let n=M.getPrimaryWindow(B),r=n??await M.createFreshLocalWindow(e);r!=null&&(R.desktopNotificationManager.dismissByNavigationPath(e),n!=null&&t.navigateExistingWindow&&z.navigateToRoute(r,e),ae(r))};",
