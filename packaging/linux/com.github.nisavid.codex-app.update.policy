@@ -42,4 +42,40 @@
     <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/codex-app-updater</annotate>
     <annotate key="org.freedesktop.policykit.exec.argv1">install-pacman</annotate>
   </action>
+
+  <action id="com.github.nisavid.codex-app.update.rollback-deb">
+    <description>Roll back a Codex App update</description>
+    <message>Authentication is required to roll back the Codex App update.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/codex-app-updater</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">install-rollback-deb</annotate>
+  </action>
+
+  <action id="com.github.nisavid.codex-app.update.rollback-rpm">
+    <description>Roll back a Codex App update</description>
+    <message>Authentication is required to roll back the Codex App update.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/codex-app-updater</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">install-rollback-rpm</annotate>
+  </action>
+
+  <action id="com.github.nisavid.codex-app.update.rollback-pacman">
+    <description>Roll back a Codex App update</description>
+    <message>Authentication is required to roll back the Codex App update.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/codex-app-updater</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">install-rollback-pacman</annotate>
+  </action>
 </policyconfig>

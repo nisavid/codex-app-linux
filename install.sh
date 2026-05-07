@@ -28,6 +28,7 @@ ICON_SOURCE="$SCRIPT_DIR/assets/codex.png"
 
 # ---- Source library helpers ----
 . "$SCRIPT_DIR/scripts/lib/install-helpers.sh"
+. "$SCRIPT_DIR/scripts/lib/node-runtime.sh"
 . "$SCRIPT_DIR/scripts/lib/process-detection.sh"
 . "$SCRIPT_DIR/scripts/lib/dmg.sh"
 . "$SCRIPT_DIR/scripts/lib/native-modules.sh"
@@ -90,6 +91,10 @@ main() {
         info "Using provided DMG: $dmg_path"
     else
         dmg_path=$(get_dmg)
+    fi
+
+    if [ "$INSPECT_ONLY" -ne 1 ]; then
+        ensure_managed_node_runtime "$INSTALL_DIR/resources/node-runtime"
     fi
 
     local app_dir

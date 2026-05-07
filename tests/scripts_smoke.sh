@@ -38,6 +38,14 @@ assert_not_contains() {
     fi
 }
 
+assert_not_matches() {
+    local path="$1"
+    local pattern="$2"
+    if grep -Eq -- "$pattern" "$path"; then
+        fail "Did not expect pattern '$pattern' in $path"
+    fi
+}
+
 assert_occurrence_count() {
     local path="$1"
     local pattern="$2"
@@ -67,13 +75,8 @@ JS
 
 make_fake_app() {
     local app_dir="$1"
-    mkdir -p "$app_dir"
-    cat > "$app_dir/start.sh" <<'SCRIPT'
-#!/bin/bash
-exit 0
-SCRIPT
+    "$REPO_DIR/tests/fixtures/create-packaged-app-fixture.sh" "$app_dir"
     echo "CODEX_APP_PACKAGE_VERSION=26.429.20946" > "$app_dir/codex-app-version.env"
-    chmod +x "$app_dir/start.sh"
 }
 
 make_stub_bin_dir() {
@@ -139,14 +142,17 @@ SCRIPT
     assert_file_exists "$pkg_root/DEBIAN/prerm"
     assert_file_exists "$pkg_root/DEBIAN/postrm"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/package-common.sh"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/node-runtime.sh"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-update-bridge-patch.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/patch-report.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/rebuild-report.sh"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/node-runtime/bin/node"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/computer-use-linux/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/updater/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/plugins/openai-bundled/plugins/computer-use/.mcp.json"
     assert_file_exists "$pkg_root/usr/lib/codex-app/packaged-runtime.sh"
+    assert_file_exists "$pkg_root/opt/codex-app/resources/node-runtime/bin/node"
 }
 
 test_deb_builder_respects_package_identity() {
@@ -207,6 +213,8 @@ SCRIPT
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Exec=/usr/bin/codex-app-updater check-now"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Exec=/usr/bin/codex-app-updater install-ready"
     assert_not_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "codex-cua-lab-updater"
+    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "StartupWMClass=codex-cua-lab"
+    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "X-GNOME-WMClass=codex-cua-lab"
     assert_contains "$pkg_root/usr/lib/codex-cua-lab/packaged-runtime.sh" 'CHROME_DESKTOP="codex-cua-lab.desktop"'
 }
 
@@ -407,6 +415,7 @@ test_installer_copies_webview_into_generated_app() {
         check_deps() { :; }
         assert_install_target_not_running() { :; }
         prepare_install() { mkdir -p "$INSTALL_DIR"; }
+        ensure_managed_node_runtime() { :; }
         get_dmg() { printf "%s\n" "$WORK_DIR/Codex.dmg"; }
         extract_dmg() { printf "%s\n" "$FAKE_APP_DIR"; }
         detect_electron_version() { :; }
@@ -552,6 +561,45 @@ PLIST
     assert_contains "$output_log" "Ignoring invalid Electron version from DMG: not-a-version"
     assert_contains "$output_log" "Could not auto-detect Electron version; using fallback 41.3.0"
     [ "$(tail -n 1 "$output_log")" = "41.3.0" ] || fail "Expected fallback Electron version 41.3.0, got: $(cat "$output_log")"
+}
+
+test_managed_node_runtime_source_install() {
+    info "Checking managed Node.js runtime source install"
+    local workspace="$TMP_DIR/managed-node-runtime"
+    local source_dir="$workspace/source"
+    local install_dir="$workspace/install"
+
+    mkdir -p "$source_dir/bin" "$install_dir/resources"
+    for binary in node npm npx; do
+        cat > "$source_dir/bin/$binary" <<'SCRIPT'
+#!/bin/bash
+case "$(basename "$0")" in
+    node) echo v22.22.2 ;;
+    *) echo 10.9.7 ;;
+esac
+SCRIPT
+        chmod +x "$source_dir/bin/$binary"
+    done
+
+    (
+        SCRIPT_DIR="$REPO_DIR"
+        WORK_DIR="$workspace/work"
+        ARCH="x86_64"
+        CODEX_MANAGED_NODE_SOURCE="$source_dir"
+        mkdir -p "$WORK_DIR"
+        info() { echo "[INFO] $*" >&2; }
+        warn() { echo "[WARN] $*" >&2; }
+        error() { echo "[ERROR] $*" >&2; exit 1; }
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/node-runtime.sh"
+        ensure_managed_node_runtime "$install_dir/resources/node-runtime"
+        command -v node
+        node -v
+    ) > "$workspace/output.log" 2>&1
+
+    assert_file_exists "$install_dir/resources/node-runtime/bin/node"
+    assert_contains "$workspace/output.log" "$install_dir/resources/node-runtime/bin/node"
+    assert_contains "$workspace/output.log" "v22.22.2"
 }
 
 test_launcher_template_sanity() {
@@ -703,9 +751,18 @@ PY
     assert_contains "$REPO_DIR/scripts/install-deps.sh" "signed-by="
     assert_contains "$REPO_DIR/scripts/install-deps.sh" "https://deb.nodesource.com/node_"
     assert_contains "$REPO_DIR/scripts/lib/install-helpers.sh" "7z or 7zz"
-    assert_contains "$REPO_DIR/packaging/linux/control" "nodejs (>= 20)"
-    assert_contains "$REPO_DIR/packaging/linux/codex-app.spec" "nodejs >= 20"
-    assert_contains "$REPO_DIR/packaging/linux/PKGBUILD.template" "nodejs>=20"
+    assert_not_matches "$REPO_DIR/packaging/linux/control" "Depends:.*nodejs"
+    assert_not_matches "$REPO_DIR/packaging/linux/control" "Depends:.*npm"
+    assert_not_matches "$REPO_DIR/packaging/linux/codex-app.spec" "Requires:.*nodejs"
+    assert_not_matches "$REPO_DIR/packaging/linux/codex-app.spec" "Requires:.*npm"
+    assert_not_contains "$REPO_DIR/packaging/linux/PKGBUILD.template" "'nodejs>=20'"
+    assert_contains "$REPO_DIR/packaging/linux/PKGBUILD.template" "optional override for the bundled managed Node.js runtime"
+    assert_contains "$REPO_DIR/scripts/lib/node-runtime.sh" "MANAGED_NODE_VERSION"
+    assert_contains "$REPO_DIR/scripts/lib/package-common.sh" "node-runtime"
+    assert_contains "$REPO_DIR/tests/fixtures/create-packaged-app-fixture.sh" "resources/node-runtime/bin"
+    assert_contains "$REPO_DIR/.github/workflows/ci.yml" "tests/fixtures/create-packaged-app-fixture.sh codex-app"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "MANAGED_NODE_BIN_DIR"
+    assert_contains "$REPO_DIR/updater/src/builder.rs" "managed_node_bin_dirs"
     assert_contains "$REPO_DIR/scripts/build-rpm.sh" "stage_common_package_files"
     assert_contains "$REPO_DIR/scripts/build-rpm.sh" "PACKAGED_RUNTIME_SOURCE"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
@@ -992,14 +1049,14 @@ JS
     assert_contains "$extracted/.vite/build/main-test.js" 'process.platform!==`win32`&&process.platform!==`darwin`&&process.platform!==`linux`?null:'
     assert_contains "$extracted/.vite/build/main-test.js" 'nativeImage.createFromPath(process.resourcesPath+`/../content/webview/assets/app-test.png`)'
     assert_contains "$extracted/.vite/build/main-test.js" '(process.platform===`win32`||process.platform===`linux`)&&f===`local`'
-    assert_contains "$extracted/.vite/build/main-test.js" '!this.isAppQuitting&&!codexLinuxIsQuitInProgress()'
+    assert_contains "$extracted/.vite/build/main-test.js" '!this.isAppQuitting&&!(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())'
     assert_contains "$extracted/.vite/build/main-test.js" 'setLinuxTrayContextMenu(){let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems())'
     assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&this.setLinuxTrayContextMenu(),this.tray.on(`click`'
     assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`?this.openNativeTrayMenu():this.onTrayButtonClick()'
-    assert_contains "$extracted/.vite/build/main-test.js" 'openNativeTrayMenu(){if(process.platform===`linux`&&codexLinuxIsQuitInProgress())return;'
+    assert_contains "$extracted/.vite/build/main-test.js" 'openNativeTrayMenu(){if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress()))return;'
     assert_contains "$extracted/.vite/build/main-test.js" 'let e=process.platform===`linux`&&this.setLinuxTrayContextMenu?this.setLinuxTrayContextMenu():n.Menu.buildFromTemplate'
     assert_contains "$extracted/.vite/build/main-test.js" 'if(process.platform===`linux`)return;e.once(`menu-will-show`'
-    assert_contains "$extracted/.vite/build/main-test.js" 'this.trayMenuThreads=e.trayMenuThreads,process.platform===`linux`&&!codexLinuxIsQuitInProgress()&&this.setLinuxTrayContextMenu?.()'
+    assert_contains "$extracted/.vite/build/main-test.js" 'this.trayMenuThreads=e.trayMenuThreads,process.platform===`linux`&&!(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())&&this.setLinuxTrayContextMenu?.()'
     assert_contains "$extracted/.vite/build/main-test.js" '(E||process.platform===`linux`&&(typeof codexLinuxIsTrayEnabled!==`function`||codexLinuxIsTrayEnabled()))&&oe();'
     assert_not_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&this.tray.setContextMenu?.(e),this.tray.popUpContextMenu(e)'
     assert_not_contains "$output_log" 'WARN: Could not find tray'
@@ -1034,6 +1091,32 @@ function registerCloseHandler({ quitInProgress = false, isAppQuitting = false, t
   return { handler, state };
 }
 
+function runCloseWithoutHelper({ trayEnabled = true, isAppQuitting = false } = {}) {
+  const event = {
+    prevented: false,
+    preventDefault() {
+      this.prevented = true;
+    },
+  };
+  const state = { hideCalls: 0 };
+  const controller = {
+    isAppQuitting,
+    options: { canHideLastLocalWindowToTray: () => trayEnabled },
+    persistPrimaryWindowBounds() {},
+    getPrimaryWindows() {
+      return [];
+    },
+  };
+  const factory = new Function(
+    "process",
+    "state",
+    `return function(){const v=true;const f=\`local\`;const k={handlers:{},on(event,handler){this.handlers[event]=handler},hide(){state.hideCalls+=1}};${closeSnippet};return k.handlers.close;};`,
+  );
+  const handler = factory({ platform: "linux" }, state).call(controller);
+  handler(event);
+  return { event, state };
+}
+
 function runClose(options) {
   const event = {
     prevented: false,
@@ -1060,6 +1143,11 @@ result = runClose({ trayEnabled: true, quitInProgress: false, isAppQuitting: tru
 if (result.event.prevented || result.state.hideCalls !== 0) {
   throw new Error("app.quit close should not hide to tray when upstream quit flag is already set");
 }
+
+result = runCloseWithoutHelper({ trayEnabled: true, isAppQuitting: false });
+if (!result.event.prevented || result.state.hideCalls !== 1) {
+  throw new Error("Linux close should still hide to tray when the quit helper is unavailable");
+}
 NODE
 
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
@@ -1069,11 +1157,11 @@ NODE
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'setLinuxTrayContextMenu(){' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&this.setLinuxTrayContextMenu(),this.tray.on(`click`' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`?this.openNativeTrayMenu():this.onTrayButtonClick()' '1'
-    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxIsQuitInProgress()' '3'
-    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'openNativeTrayMenu(){if(process.platform===`linux`&&codexLinuxIsQuitInProgress())return;' '1'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress()' '3'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'openNativeTrayMenu(){if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress()))return;' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'let e=process.platform===`linux`&&this.setLinuxTrayContextMenu?this.setLinuxTrayContextMenu():n.Menu.buildFromTemplate' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'if(process.platform===`linux`)return;e.once(`menu-will-show`' '1'
-    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&!codexLinuxIsQuitInProgress()&&this.setLinuxTrayContextMenu?.()' '1'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&!(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())&&this.setLinuxTrayContextMenu?.()' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&(typeof codexLinuxIsTrayEnabled!==`function`||codexLinuxIsTrayEnabled()))&&oe' '1'
 }
 
@@ -1724,14 +1812,14 @@ NODE
 
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
     assert_occurrence_count "$extracted/.vite/build/main-test.js" '!n.app.requestSingleInstanceLock()' '1'
-    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxBeforeQuitHandler=()=>{codexLinuxMarkQuitInProgress()}' '1'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxBeforeQuitHandler=()=>{typeof codexLinuxMarkQuitInProgress===`function`&&codexLinuxMarkQuitInProgress()}' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'n.app.on(`before-quit`,codexLinuxBeforeQuitHandler)' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxSecondInstanceHandler' '3'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxQuitInProgress=!1' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxIsQuitInProgress=()=>codexLinuxQuitInProgress===!0' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxHandleLaunchActionArgs=' '1'
-    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxHandleLaunchActionArgs=async e=>codexLinuxIsQuitInProgress()?!0:' '1'
-    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxHandleLaunchActionArgsFallback=(e,t)=>{if(codexLinuxIsQuitInProgress())return;' '1'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxHandleLaunchActionArgs=async e=>(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())?!0:' '1'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxHandleLaunchActionArgsFallback=(e,t)=>{if(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())return;' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'e.includes(`--new-chat`)' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'e.includes(`--quick-chat`)' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'e.includes(`--prompt-chat`)' '1'
@@ -1770,9 +1858,13 @@ function extractConst(name) {
 }
 
 function extractCurrentLaunchActionPatch(source) {
-  const match = source.match(/let (?:codexLinux[A-Za-z_$][\w$]*=[^;]*?,)*[A-Za-z_$][\w$]*=async\(e,t\)=>\{[A-Za-z_$][\w$]*\.hotkeyWindowLifecycleManager\.hide\(\);.*?(?:;let|,)[A-Za-z_$][\w$]*=async\(\)=>\{/);
-  assert(match, "Could not extract current launch-action patch from smoke bundle");
-  return match[0];
+  const settingsIndex = source.indexOf("codexLinuxGetSetting=");
+  const statementIndex = source.lastIndexOf(";let ", settingsIndex);
+  const start = statementIndex === -1 ? source.lastIndexOf("let ", settingsIndex) : statementIndex + 1;
+  const endNeedle = ";let oe=async()=>{";
+  const end = source.indexOf(endNeedle, start);
+  assert(start !== -1 && end !== -1, "Could not extract current launch-action patch from smoke bundle");
+  return source.slice(start, end + endNeedle.length);
 }
 
 const currentPatch = extractCurrentLaunchActionPatch(currentSource);
@@ -1945,6 +2037,7 @@ main() {
     test_rebuild_report_tolerates_bad_patch_json
     test_rebuild_report_records_missing_patch_json
     test_installer_keeps_electron_fallback_for_bad_metadata
+    test_managed_node_runtime_source_install
     test_browser_use_node_repl_fallback_runtime
     test_launcher_template_sanity
     test_user_local_installer_uses_xdg_data_home

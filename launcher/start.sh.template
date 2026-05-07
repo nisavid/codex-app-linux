@@ -20,6 +20,16 @@ PACKAGED_RUNTIME_HELPER="/usr/lib/$CODEX_LINUX_APP_ID/packaged-runtime.sh"
 if [ ! -f "$PACKAGED_RUNTIME_HELPER" ]; then
     PACKAGED_RUNTIME_HELPER="$SCRIPT_DIR/.codex-linux/codex-packaged-runtime.sh"
 fi
+LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$CODEX_LINUX_APP_ID"
+LOG_FILE="$LOG_DIR/launcher.log"
+APP_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$CODEX_LINUX_APP_ID"
+APP_SETTINGS_FILE="$APP_CONFIG_DIR/settings.json"
+APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_LINUX_APP_ID"
+APP_PID_FILE="$APP_STATE_DIR/app.pid"
+WEBVIEW_PID_FILE="$APP_STATE_DIR/webview.pid"
+LAUNCH_ACTION_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$APP_STATE_DIR}/$CODEX_LINUX_APP_ID"
+LAUNCH_ACTION_SOCKET="$LAUNCH_ACTION_RUNTIME_DIR/launch-action.sock"
+MANAGED_NODE_BIN_DIR="$SCRIPT_DIR/resources/node-runtime/bin"
 APP_NOTIFICATION_ICON_NAME="$CODEX_LINUX_APP_ID"
 APP_NOTIFICATION_ICON_BUNDLE="$SCRIPT_DIR/.codex-linux/$APP_NOTIFICATION_ICON_NAME.png"
 APP_NOTIFICATION_ICON_SYSTEM="/usr/share/icons/hicolor/256x256/apps/$APP_NOTIFICATION_ICON_NAME.png"
@@ -123,8 +133,13 @@ import_graphical_env_entry() {
 
     [ "$entry" != "$name" ] || return 0
 
+    # SOMMELIER_VERSION / SOMMELIER_VM_IDENTIFIER are imported here so the
+    # ChromeOS / Crostini auto-X11 fallback in set_electron_defaults sees
+    # them on app-launcher paths where they may only be present in the
+    # systemd --user manager environment (and not in the spawned process's
+    # initial env).
     case "$name" in
-        DISPLAY|WAYLAND_DISPLAY|XDG_SESSION_TYPE|XDG_CURRENT_DESKTOP|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|DESKTOP_SESSION|XAUTHORITY)
+        DISPLAY|WAYLAND_DISPLAY|XDG_SESSION_TYPE|XDG_CURRENT_DESKTOP|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|DESKTOP_SESSION|XAUTHORITY|SOMMELIER_VERSION|SOMMELIER_VM_IDENTIFIER)
             if [ -z "${!name:-}" ]; then
                 export "$entry"
             fi
@@ -184,6 +199,20 @@ discover_graphical_env_from_processes() {
 }
 
 hydrate_graphical_session_env() {
+    if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+        # Display vars are already present, but the ChromeOS / Crostini
+        # auto-X11 fallback in set_electron_defaults also needs
+        # SOMMELIER_VERSION. On some app-launcher paths the spawned
+        # process inherits DISPLAY / WAYLAND_DISPLAY but not the Sommelier
+        # markers (those live only in the systemd --user manager env). Try
+        # one user-manager import in that case so the whitelisted
+        # SOMMELIER_VERSION / SOMMELIER_VM_IDENTIFIER get hydrated.
+        if [ -z "${SOMMELIER_VERSION:-}" ]; then
+            import_graphical_env_from_systemd_user >/dev/null 2>&1 || true
+        fi
+        return 0
+    fi
+
     import_graphical_env_from_systemd_user && return 0
     discover_graphical_env_from_processes && return 0
     return 0
@@ -273,6 +302,16 @@ export_packaged_runtime_env() {
     fi
 }
 
+prepend_managed_node_runtime_to_path() {
+    [ -x "$MANAGED_NODE_BIN_DIR/node" ] || return 0
+
+    case ":$PATH:" in
+        *":$MANAGED_NODE_BIN_DIR:"*) ;;
+        *) export PATH="$MANAGED_NODE_BIN_DIR:$PATH" ;;
+    esac
+    export CODEX_MANAGED_NODE_RUNTIME_DIR="$SCRIPT_DIR/resources/node-runtime"
+}
+
 browser_use_plugin_version() {
     local plugin_json="$1"
 
@@ -340,12 +379,18 @@ resolve_browser_use_runtime_env() {
     fi
 
     if [ -z "${CODEX_BROWSER_USE_NODE_PATH:-}" ]; then
-        if [ -x "$SCRIPT_DIR/resources/node" ]; then
+        if [ -x "$MANAGED_NODE_BIN_DIR/node" ]; then
+            export CODEX_BROWSER_USE_NODE_PATH="$MANAGED_NODE_BIN_DIR/node"
+        elif [ -x "$SCRIPT_DIR/resources/node" ]; then
             export CODEX_BROWSER_USE_NODE_PATH="$SCRIPT_DIR/resources/node"
         elif command -v node >/dev/null 2>&1; then
             CODEX_BROWSER_USE_NODE_PATH="$(command -v node)"
             export CODEX_BROWSER_USE_NODE_PATH
         fi
+    fi
+
+    if [ -z "${NODE_REPL_NODE_PATH:-}" ] && [ -n "${CODEX_BROWSER_USE_NODE_PATH:-}" ]; then
+        export NODE_REPL_NODE_PATH="$CODEX_BROWSER_USE_NODE_PATH"
     fi
 
     if [ -z "${CODEX_NODE_REPL_PATH:-}" ]; then
@@ -1073,6 +1118,27 @@ set_electron_defaults() {
         esac
         shift
     done
+
+    # ChromeOS / Crostini (Sommelier) auto-fallback to X11.
+    #
+    # On a Crostini Linux container the default Wayland session is provided by
+    # Sommelier (see SOMMELIER_VERSION/SOMMELIER_VM_IDENTIFIER, exported by
+    # cros-garcon for both terminal and app-menu launches). With the default
+    # Electron path (--ozone-platform-hint=auto) Electron picks the Wayland
+    # backend, reaches `window ready-to-show`, but the window never surfaces in
+    # the ChromeOS shell — leaving the launcher icon spinning indefinitely with
+    # no visible app. Forcing X11 (proxied by sommelier-x to ChromeOS) is the
+    # documented workaround. Skip this only when the operator explicitly chose
+    # a platform via --x11 / --wayland / --ozone-platform=*.
+    #
+    # See https://github.com/ilysenko/codex-desktop-linux/issues/95.
+    if [ -z "$ELECTRON_OZONE_PLATFORM" ] \
+        && [ "$ELECTRON_OZONE_HINT" = "auto" ] \
+        && [ -n "${SOMMELIER_VERSION:-}" ]; then
+        ELECTRON_OZONE_PLATFORM="x11"
+        ELECTRON_OZONE_HINT=""
+        echo "Detected Sommelier (SOMMELIER_VERSION=$SOMMELIER_VERSION); forcing --ozone-platform=x11 (Wayland windows are not visible under ChromeOS Crostini)"
+    fi
 }
 
 build_electron_launch_args() {
@@ -1173,6 +1239,7 @@ launch_electron() {
 hydrate_graphical_session_env
 configure_side_by_side_app_env
 load_packaged_runtime_helper
+prepend_managed_node_runtime_to_path
 register_url_scheme_handlers
 clear_stale_pid_file
 detect_warm_start
@@ -1242,5 +1309,6 @@ fi
 resolve_browser_use_runtime_env
 
 echo "Using CODEX_CLI_PATH=${CODEX_CLI_PATH:-warm-start-skip}"
+echo "Using managed Node.js runtime=${CODEX_MANAGED_NODE_RUNTIME_DIR:-$SCRIPT_DIR/resources/node-runtime}"
 
 launch_electron "$@"

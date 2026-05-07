@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 #[cfg(unix)]
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::{
     env, fmt, fs, io,
     path::{Path, PathBuf},
@@ -265,8 +265,15 @@ pub fn install_pacman(path: &Path) -> Result<()> {
 }
 
 /// Builds the `pkexec` command used for privileged package installation.
-pub fn pkexec_command(current_exe: &Path, package_path: &Path) -> Command {
-    let updater_binary = updater_binary_for_privileged_install(current_exe);
+pub fn pkexec_command(package_path: &Path) -> Result<Command> {
+    let updater_binary = updater_binary_for_privileged_install()?;
+    Ok(pkexec_command_with_updater_binary(
+        &updater_binary,
+        package_path,
+    ))
+}
+
+fn pkexec_command_with_updater_binary(updater_binary: &Path, package_path: &Path) -> Command {
     let subcommand = match PackageKind::from_path(package_path) {
         PackageKind::Rpm => "install-rpm",
         PackageKind::Deb => "install-deb",
@@ -293,18 +300,18 @@ fn run_install(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
-struct StagedPackage {
+pub(crate) struct StagedPackage {
     _dir: PrivateStagingDir,
     path: PathBuf,
 }
 
 impl StagedPackage {
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 }
 
-fn stage_package_for_privileged_install(path: &Path) -> Result<StagedPackage> {
+pub(crate) fn stage_package_for_privileged_install(path: &Path) -> Result<StagedPackage> {
     let file_name = path
         .file_name()
         .with_context(|| format!("Package path has no file name: {}", path.display()))?;
@@ -530,7 +537,7 @@ fn zypper_install_command(path: &Path) -> Result<Command> {
     let mut command = Command::new(program);
     command
         .current_dir(parent)
-        .args(["--non-interactive", "--no-gpg-checks", "install", "-y"])
+        .args(["--non-interactive", "install", "--allow-unsigned-rpm", "-y"])
         .arg(format!("./{file_name}"));
     Ok(command)
 }
@@ -570,13 +577,29 @@ fn pacman_install_command(path: &Path) -> Command {
     command
 }
 
-fn updater_binary_for_privileged_install(current_exe: &Path) -> PathBuf {
+fn updater_binary_for_privileged_install() -> Result<PathBuf> {
     let installed = PathBuf::from(INSTALLED_UPDATER_BINARY);
-    if installed.is_file() {
-        installed
-    } else {
-        current_exe.to_path_buf()
-    }
+    validate_installed_updater_binary(&installed)
+}
+
+fn validate_installed_updater_binary(installed: &Path) -> Result<PathBuf> {
+    let metadata = fs::metadata(installed).with_context(|| {
+        format!(
+            "Privileged install requires the installed updater binary at {}",
+            installed.display()
+        )
+    })?;
+    anyhow::ensure!(
+        metadata.is_file(),
+        "Installed updater binary is not a regular file: {}",
+        installed.display()
+    );
+    anyhow::ensure!(
+        metadata.uid() == 0 && metadata.permissions().mode() & 0o022 == 0,
+        "Installed updater binary must be root-owned and not group/world-writable: {}",
+        installed.display()
+    );
+    Ok(installed.to_path_buf())
 }
 
 fn deb_package_version(path: &Path) -> Result<String> {
@@ -766,7 +789,7 @@ mod tests {
 
     #[test]
     fn builds_pkexec_command_for_privileged_deb_install() {
-        let command = pkexec_command(
+        let command = pkexec_command_with_updater_binary(
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.deb"),
         );
@@ -788,7 +811,7 @@ mod tests {
 
     #[test]
     fn builds_pkexec_command_for_privileged_rpm_install() {
-        let command = pkexec_command(
+        let command = pkexec_command_with_updater_binary(
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.rpm"),
         );
@@ -809,15 +832,14 @@ mod tests {
     }
 
     #[test]
-    fn prefers_installed_updater_path_for_pkexec() {
-        let selected =
-            updater_binary_for_privileged_install(Path::new("/tmp/codex-app-updater-old"));
-        let expected = if Path::new("/usr/bin/codex-app-updater").is_file() {
-            PathBuf::from("/usr/bin/codex-app-updater")
-        } else {
-            PathBuf::from("/tmp/codex-app-updater-old")
-        };
-        assert_eq!(selected, expected);
+    fn rejects_uninstalled_updater_path_for_pkexec() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let missing = temp.path().join("missing-codex-app-updater");
+
+        let error = validate_installed_updater_binary(&missing)
+            .expect_err("missing installed updater should be rejected");
+
+        assert!(error.to_string().contains("installed updater binary"));
     }
 
     #[test]
@@ -860,8 +882,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "--non-interactive",
-                "--no-gpg-checks",
                 "install",
+                "--allow-unsigned-rpm",
                 "-y",
                 "./codex.rpm"
             ]
@@ -1013,7 +1035,7 @@ mod tests {
 
     #[test]
     fn builds_pkexec_command_for_privileged_pacman_install() {
-        let command = pkexec_command(
+        let command = pkexec_command_with_updater_binary(
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.pkg.tar.zst"),
         );

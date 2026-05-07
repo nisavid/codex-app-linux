@@ -9,8 +9,6 @@ license=('MIT')
 provides=('__PACKAGE_PROVIDES__')
 conflicts=('__PACKAGE_CONFLICTS__')
 depends=(
-    'nodejs>=20'
-    'npm'
     'python'
     'p7zip'
     'polkit'
@@ -42,6 +40,8 @@ depends=(
     'pango'
 )
 optdepends=(
+    'nodejs>=22.22.0: optional override for the bundled managed Node.js runtime'
+    'npm: optional override for Codex CLI install/update flows'
     'zenity: GTK dialog fallback when the Codex CLI is missing'
     'kdialog: KDE dialog fallback when the Codex CLI is missing'
 )

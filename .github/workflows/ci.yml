@@ -32,6 +32,8 @@ jobs:
           bash -n scripts/build-deb.sh
           bash -n scripts/build-rpm.sh
           bash -n scripts/build-pacman.sh
+          bash -n tests/fixtures/create-packaged-app-fixture.sh
+          bash -n tests/scripts_smoke.sh
           bash -n launcher/start.sh.template
           bash -n scripts/lib/*.sh
           bash -n packaging/linux/codex-app-updater-user-service.sh
@@ -80,10 +82,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf codex-app dist
-          mkdir -p codex-app/content/webview
-          printf '%s\n' '#!/bin/bash' 'echo "codex desktop fixture"' > codex-app/start.sh
-          chmod +x codex-app/start.sh
-          printf '%s\n' '<!doctype html><title>Codex fixture</title>' > codex-app/content/webview/index.html
+          tests/fixtures/create-packaged-app-fixture.sh codex-app
 
       - name: Build Debian package
         run: PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-deb.sh
@@ -123,10 +122,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf codex-app dist
-          mkdir -p codex-app/content/webview
-          printf '%s\n' '#!/bin/bash' 'echo "codex desktop fixture"' > codex-app/start.sh
-          chmod +x codex-app/start.sh
-          printf '%s\n' '<!doctype html><title>Codex fixture</title>' > codex-app/content/webview/index.html
+          tests/fixtures/create-packaged-app-fixture.sh codex-app
 
       - name: Build RPM package
         run: PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-rpm.sh
@@ -172,10 +168,7 @@ jobs:
               runuser -u builder -- bash -lc '"'"'
                 set -euo pipefail
                 rm -rf codex-app dist
-                mkdir -p codex-app/content/webview
-                printf "%s\n" "#!/bin/bash" "echo \"codex desktop fixture\"" > codex-app/start.sh
-                chmod +x codex-app/start.sh
-                printf "%s\n" "<!doctype html><title>Codex fixture</title>" > codex-app/content/webview/index.html
+                tests/fixtures/create-packaged-app-fixture.sh codex-app
 
                 cargo build --release -p codex-app-updater
                 PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-pacman.sh

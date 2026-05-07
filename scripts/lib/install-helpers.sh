@@ -19,14 +19,15 @@ Run the helper to install them automatically:
   bash scripts/install-deps.sh
 
 Or install manually:
-  # Debian/Ubuntu: install Node.js 20+ with npm/npx from NodeSource, nvm, or another compatible source, then:
-  sudo apt install python3 p7zip-full curl unzip build-essential                   # Debian/Ubuntu
-  sudo dnf install nodejs npm python3 7zip curl unzip @development-tools            # Fedora 41+ (dnf5)
-  sudo dnf install nodejs npm python3 p7zip p7zip-plugins curl unzip                # Fedora <41 (dnf)
-    && sudo dnf groupinstall 'Development Tools'
-  sudo pacman -S nodejs npm python p7zip curl unzip zstd base-devel                 # Arch
-  sudo zypper install nodejs-default npm-default python3 p7zip-full curl unzip      # openSUSE
-    && sudo zypper install -t pattern devel_basis
+  sudo apt install python3 p7zip-full curl unzip coreutils tar build-essential       # Debian/Ubuntu
+  sudo dnf install python3 7zip curl unzip coreutils tar @development-tools          # Fedora 41+ (dnf5)
+  sudo dnf install python3 p7zip p7zip-plugins curl unzip coreutils tar              # Fedora <41 (dnf)
+  sudo dnf groupinstall 'Development Tools'                                          # Fedora <41 (dnf)
+  sudo pacman -S python p7zip curl unzip coreutils tar zstd base-devel              # Arch
+  sudo zypper install python3 p7zip-full curl unzip coreutils tar                    # openSUSE
+  sudo zypper install -t pattern devel_basis                                         # openSUSE
+
+Inspect mode also requires Node.js 20+ with node and npx on PATH.
 EOF
 }
 
@@ -194,7 +195,7 @@ $(dependency_help)"
 
 check_deps() {
     local missing=()
-    for cmd in node npm npx python3 curl unzip; do
+    for cmd in python3 curl realpath sha256sum unzip tar; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
     if ! command -v 7zz &>/dev/null && ! command -v 7z &>/dev/null; then
@@ -205,8 +206,6 @@ check_deps() {
 $(dependency_help)"
     fi
 
-    check_node_version
-
     if ! command -v make &>/dev/null || ! command -v g++ &>/dev/null; then
         error "Build tools (make, g++) required:
 $(dependency_help)"
@@ -214,5 +213,5 @@ $(dependency_help)"
 
     select_seven_zip_cmd
 
-    info "All dependencies found (using $SEVEN_ZIP_CMD)"
+    info "All system dependencies found (using $SEVEN_ZIP_CMD)"
 }
