@@ -68,9 +68,9 @@ Run the dependency helper:
 bash scripts/install-deps.sh
 ```
 
-It installs Python, 7z, curl, build tools, optional system Node.js/npm
-development tooling, and bootstraps Rust through `rustup` if `cargo` is
-missing.
+It installs Python, 7z, curl, build tools, verifies or installs the Node.js/npm
+development toolchain required by the helper workflow, and bootstraps Rust
+through `rustup` if `cargo` is missing.
 
 ### Arch Linux
 
