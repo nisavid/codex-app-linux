@@ -278,7 +278,11 @@ test("adds Linux tray support including the platform guard", () => {
     patched,
     /this\.trayMenuThreads=e\.trayMenuThreads,process\.platform===`linux`&&!\(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress\(\)\)&&this\.setLinuxTrayContextMenu\?\.\(\)/,
   );
-  assert.match(patched, /\(E\|\|process\.platform===`linux`&&codexLinuxIsTrayEnabled\(\)\)&&oe\(\);/);
+  assert.match(
+    patched,
+    /\(E\|\|process\.platform===`linux`&&\(typeof codexLinuxIsTrayEnabled!==`function`\|\|codexLinuxIsTrayEnabled\(\)\)\)&&oe\(\);/,
+  );
+  assert.doesNotMatch(patched, /process\.platform===`linux`&&codexLinuxIsTrayEnabled\(\)/);
 });
 
 test("adds Linux tray support for current minified window and startup identifiers", () => {
@@ -296,7 +300,10 @@ test("adds Linux tray support for current minified window and startup identifier
     /\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&f===`local`&&!this\.isAppQuitting&&!\(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress\(\)\)/,
   );
   assert.match(patched, /e\.preventDefault\(\),j\.hide\(\);return/);
-  assert.match(patched, /\(E\|\|process\.platform===`linux`&&codexLinuxIsTrayEnabled\(\)\)&&ce\$\(\);/);
+  assert.match(
+    patched,
+    /\(E\|\|process\.platform===`linux`&&\(typeof codexLinuxIsTrayEnabled!==`function`\|\|codexLinuxIsTrayEnabled\(\)\)\)&&ce\$\(\);/,
+  );
 });
 
 test("scopes dynamic tray startup matching to the tray initializer", () => {
@@ -311,7 +318,10 @@ test("scopes dynamic tray startup matching to the tray initializer", () => {
 
   assert.match(patched, /U&&startOther\(\);/);
   assert.doesNotMatch(patched, /\(U\|\|process\.platform===`linux`&&codexLinuxIsTrayEnabled\(\)\)&&startOther\(\);/);
-  assert.match(patched, /\(E\|\|process\.platform===`linux`&&codexLinuxIsTrayEnabled\(\)\)&&ce\$\(\);/);
+  assert.match(
+    patched,
+    /\(E\|\|process\.platform===`linux`&&\(typeof codexLinuxIsTrayEnabled!==`function`\|\|codexLinuxIsTrayEnabled\(\)\)\)&&ce\$\(\);/,
+  );
 });
 
 test("scopes close-to-tray already-patched detection to the handler", () => {
@@ -714,6 +724,19 @@ test("patches the current Computer Use gate without touching the Windows-interna
   assert.match(patched, /name:Ze,isEnabled:\(\{features:e,platform:t\}\)=>\(t===`darwin`\|\|t===`linux`\)&&e\.computerUse,migrate:Qn/);
   assert.match(patched, /t\.C\.isInternal\(e\)&&r===`win32`&&n\.computerUse/);
   assert.equal((patched.match(/installWhenMissing:!0,name:Ze/g) || []).length, 2);
+});
+
+test("patches Computer Use gates that use isAvailable descriptors", () => {
+  const source = [
+    "var lt=`browser-use`,ut=`chrome`,dt=`chrome-internal`,ft=`computer-use`,pt=`latex-tectonic`;",
+    "var Kr=[{forceReload:!0,installWhenMissing:!0,name:lt,isAvailable:({features:e})=>e.inAppBrowserUseAllowed,migrate:rr},{name:ft,isAvailable:({features:e,platform:t})=>t===`darwin`&&e.computerUse,migrate:vr},{installWhenMissing:!0,name:ft,isAvailable:({buildFlavor:e,features:n,platform:r})=>t.T.isInternal(e)&&r===`win32`&&n.computerUse},{name:pt,isAvailable:()=>!0}];",
+  ].join("");
+
+  const patched = applyPatchTwice(applyLinuxComputerUsePluginGatePatch, source);
+
+  assert.match(patched, /name:ft,isAvailable:\(\{features:e,platform:t\}\)=>\(t===`darwin`\|\|t===`linux`\)&&e\.computerUse,migrate:vr/);
+  assert.match(patched, /t\.T\.isInternal\(e\)&&r===`win32`&&n\.computerUse/);
+  assert.equal((patched.match(/installWhenMissing:!0,name:ft/g) || []).length, 2);
 });
 
 test("fails hard when the Computer Use gate is recognizable but unpatchable", () => {
