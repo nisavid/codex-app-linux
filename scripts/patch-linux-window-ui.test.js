@@ -734,7 +734,7 @@ test("adds Keybinds settings route after upstream minified variable drift", () =
 
   assert.match(
     patched,
-    /var i_e=\{keybinds:\(0,Z\.lazy\)\(\(\)=>s\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\)/,
+    /var i_e=\{keybinds:\(0,Z\.lazy\)\(\(\)=>s\(\(\)=>import\("\.\/keybinds-settings-linux\.js"\)/,
   );
   assert.doesNotMatch(patched, /typeof Ct==/);
   assert.match(patched, /var Kge=\{keybinds:xh,"general-settings":xh,/);
@@ -753,10 +753,10 @@ test("captures Keybinds settings route helper aliases after minifier renames", (
 
   assert.match(
     patched,
-    /var i_e=\{keybinds:\(0,R\.lazy\)\(\(\)=>u\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\)/,
+    /var i_e=\{keybinds:\(0,R\.lazy\)\(\(\)=>u\(\(\)=>import\("\.\/keybinds-settings-linux\.js"\)/,
   );
   assert.doesNotMatch(patched, /Z\.lazy/);
-  assert.doesNotMatch(patched, /s\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\)/);
+  assert.doesNotMatch(patched, /s\(\(\)=>import\("\.\/keybinds-settings-linux\.js"\)/);
 });
 
 test("disables the upstream app sunset gate in the Linux wrapper webview", () => {

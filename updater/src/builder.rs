@@ -879,16 +879,9 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         fs::create_dir_all(&cargo_bin)?;
         fs::write(cargo_bin.join("cargo"), b"bin")?;
 
-        let original_home = std::env::var_os("HOME");
-        std::env::set_var("HOME", &home_dir);
+        let _home_guard = crate::test_util::EnvVarGuard::set("HOME", &home_dir);
 
         let path = build_command_path(Path::new("/tmp/missing-codex-builder"));
-
-        if let Some(home) = original_home {
-            std::env::set_var("HOME", home);
-        } else {
-            std::env::remove_var("HOME");
-        }
 
         let directories = std::env::split_paths(&path).collect::<Vec<_>>();
         assert!(directories.iter().any(|dir| dir == &cargo_bin));

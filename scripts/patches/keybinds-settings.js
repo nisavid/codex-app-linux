@@ -5,13 +5,13 @@ const path = require("node:path");
 const {
   findImportedAsset,
   findRequiredWebviewAsset,
+  keybindsSettingsAsset,
+  linuxKeybindOverridesKey,
   linuxSettingsKeys,
 } = require("./shared.js");
 
 // Keybind settings are transactional: either all dependent webview assets are
 // updated together, or the patch logs a warning and leaves the app usable.
-const keybindsSettingsAsset = "keybinds-settings-linux.js";
-const linuxKeybindOverridesKey = "codex-linux-keybind-overrides";
 const defaultShortcuts = {
   newThread: "CmdOrCtrl+N",
   quickChat: "CmdOrCtrl+Shift+K",
@@ -29,6 +29,13 @@ const defaultShortcuts = {
   toggleBrowserPanel: "CmdOrCtrl+Shift+B",
   toggleDiffPanel: "CmdOrCtrl+Shift+D",
 };
+
+function requireBundleIdentifier(value, label) {
+  if (!/^[A-Za-z_$][\w$]*$/.test(value)) {
+    throw new Error(`Required Keybinds settings patch failed: invalid ${label} identifier`);
+  }
+  return value;
+}
 
 function buildKeybindsSettingsSource({
   chunkAsset,
@@ -344,9 +351,13 @@ function applyKeybindsSettingsIndexPatch(currentSource) {
     if (routeMatch == null) {
       throw new Error("Required Keybinds settings patch failed: could not add keybinds route");
     }
+    const routeMapVar = requireBundleIdentifier(routeMatch[1], "route map");
+    const lazyModuleVar = requireBundleIdentifier(routeMatch[2], "lazy module");
+    const importHelperVar = requireBundleIdentifier(routeMatch[3], "import helper");
+    const keybindsImportPath = JSON.stringify(`./${keybindsSettingsAsset}`);
     patchedSource = patchedSource.replace(
       routePattern,
-      `var ${routeMatch[1]}={keybinds:(0,${routeMatch[2]}.lazy)(()=>${routeMatch[3]}(()=>import(\`./${keybindsSettingsAsset}\`),[],import.meta.url)),"general-settings":(0,${routeMatch[2]}.lazy)(()=>${routeMatch[3]}(`,
+      `var ${routeMapVar}={keybinds:(0,${lazyModuleVar}.lazy)(()=>${importHelperVar}(()=>import(${keybindsImportPath}),[],import.meta.url)),"general-settings":(0,${lazyModuleVar}.lazy)(()=>${importHelperVar}(`,
     );
   }
 

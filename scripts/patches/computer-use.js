@@ -2,9 +2,15 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-
-const COMPUTER_USE_UI_ENV_VAR = "CODEX_LINUX_ENABLE_COMPUTER_USE_UI";
-const COMPUTER_USE_UI_SETTINGS_KEY = "codex-linux-computer-use-ui-enabled";
+const {
+  CLOSE_GATE_PREFIX_LOOKBACK,
+  COMPUTER_USE_UI_ENV_VAR,
+  COMPUTER_USE_UI_SETTINGS_KEY,
+  DIRECT_HANDLER_PROXIMITY,
+  HANDLER_PREFIX_LOOKBACK,
+  TRAY_GUARD_LOOKAHEAD,
+  linuxSettingsKeys,
+} = require("./shared.js");
 
 // Computer Use has two postures: the bundled plugin gate is default-on Linux
 // platform glue; the visible UI gates remain opt-in because they bypass rollout
@@ -46,21 +52,6 @@ function computerUseUiSettingsPath(env) {
       : null;
   return configHome == null ? null : path.join(configHome, "codex-app", "settings.json");
 }
-
-// Lookback/lookahead windows used when searching for the nearest minified
-// identifier or surrounding context around a regex anchor in the bundle.
-// Sized empirically to the typical distance between a feature's anchor and
-// the helper aliases it depends on.
-const TRAY_GUARD_LOOKAHEAD = 1200;
-const CLOSE_GATE_PREFIX_LOOKBACK = 8000;
-const HANDLER_PREFIX_LOOKBACK = 12000;
-const DIRECT_HANDLER_PROXIMITY = 1200;
-
-const linuxSettingsKeys = {
-  promptWindow: "codex-linux-prompt-window-enabled",
-  systemTray: "codex-linux-system-tray-enabled",
-  warmStart: "codex-linux-warm-start-enabled",
-};
 
 function parseDestructuredParamAliases(paramsText) {
   const aliases = Object.create(null);

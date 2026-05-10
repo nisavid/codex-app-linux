@@ -266,6 +266,8 @@ function findDisposableVar(prefix) {
 
 module.exports = {
   CLOSE_GATE_PREFIX_LOOKBACK,
+  COMPUTER_USE_UI_ENV_VAR,
+  COMPUTER_USE_UI_SETTINGS_KEY,
   DIRECT_HANDLER_PROXIMITY,
   HANDLER_PREFIX_LOOKBACK,
   TRAY_GUARD_LOOKAHEAD,
@@ -280,6 +282,8 @@ module.exports = {
   findMatchingBrace,
   findRequiredWebviewAsset,
   inferModuleAlias,
+  keybindsSettingsAsset,
+  linuxKeybindOverridesKey,
   linuxSettingsKeys,
   patchAssetFiles,
   readDirectoryNames,

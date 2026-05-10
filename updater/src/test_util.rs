@@ -16,3 +16,26 @@ pub(crate) fn env_lock() -> MutexGuard<'static, ()> {
         .lock()
         .unwrap_or_else(|err| err.into_inner())
 }
+
+pub(crate) struct EnvVarGuard {
+    key: &'static str,
+    original: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    pub(crate) fn set<K: Into<std::ffi::OsString>>(key: &'static str, value: K) -> Self {
+        let original = std::env::var_os(key);
+        std::env::set_var(key, value.into());
+        Self { key, original }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        if let Some(value) = &self.original {
+            std::env::set_var(self.key, value);
+        } else {
+            std::env::remove_var(self.key);
+        }
+    }
+}
