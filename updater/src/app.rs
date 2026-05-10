@@ -1724,24 +1724,17 @@ mod tests {
         };
         paths.ensure_dirs()?;
 
-        let original_display = std::env::var_os("DISPLAY");
-        let original_wayland_display = std::env::var_os("WAYLAND_DISPLAY");
-        let original_dbus_session_bus_address = std::env::var_os("DBUS_SESSION_BUS_ADDRESS");
-        let original_xdg_runtime_dir = std::env::var_os("XDG_RUNTIME_DIR");
-        let original_path = std::env::var_os("PATH");
-        let original_home = std::env::var_os("HOME");
-        let original_nvm_dir = std::env::var_os("NVM_DIR");
-        let original_skip_system_cli_lookup =
-            std::env::var_os("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP");
-
-        std::env::remove_var("DISPLAY");
-        std::env::remove_var("WAYLAND_DISPLAY");
-        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
-        std::env::remove_var("XDG_RUNTIME_DIR");
-        std::env::set_var("PATH", temp.path().join("missing-bin"));
-        std::env::set_var("HOME", temp.path());
-        std::env::remove_var("NVM_DIR");
-        std::env::set_var("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+        let _display_guard = crate::test_util::EnvVarGuard::remove("DISPLAY");
+        let _wayland_display_guard = crate::test_util::EnvVarGuard::remove("WAYLAND_DISPLAY");
+        let _dbus_session_bus_address_guard =
+            crate::test_util::EnvVarGuard::remove("DBUS_SESSION_BUS_ADDRESS");
+        let _xdg_runtime_dir_guard = crate::test_util::EnvVarGuard::remove("XDG_RUNTIME_DIR");
+        let _path_guard =
+            crate::test_util::EnvVarGuard::set("PATH", temp.path().join("missing-bin"));
+        let _home_guard = crate::test_util::EnvVarGuard::set("HOME", temp.path());
+        let _nvm_dir_guard = crate::test_util::EnvVarGuard::remove("NVM_DIR");
+        let _skip_system_cli_lookup_guard =
+            crate::test_util::EnvVarGuard::set("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
 
         let invalid_cli_path = temp.path().join("codex.txt");
         std::fs::write(&invalid_cli_path, b"not executable")?;
@@ -1762,47 +1755,6 @@ mod tests {
         };
 
         let outcome = prompt_install_cli(&config, &mut state, &paths, None)?;
-
-        if let Some(value) = original_display {
-            std::env::set_var("DISPLAY", value);
-        } else {
-            std::env::remove_var("DISPLAY");
-        }
-        if let Some(value) = original_wayland_display {
-            std::env::set_var("WAYLAND_DISPLAY", value);
-        } else {
-            std::env::remove_var("WAYLAND_DISPLAY");
-        }
-        if let Some(value) = original_dbus_session_bus_address {
-            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", value);
-        } else {
-            std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
-        }
-        if let Some(value) = original_xdg_runtime_dir {
-            std::env::set_var("XDG_RUNTIME_DIR", value);
-        } else {
-            std::env::remove_var("XDG_RUNTIME_DIR");
-        }
-        if let Some(value) = original_path {
-            std::env::set_var("PATH", value);
-        } else {
-            std::env::remove_var("PATH");
-        }
-        if let Some(value) = original_home {
-            std::env::set_var("HOME", value);
-        } else {
-            std::env::remove_var("HOME");
-        }
-        if let Some(value) = original_nvm_dir {
-            std::env::set_var("NVM_DIR", value);
-        } else {
-            std::env::remove_var("NVM_DIR");
-        }
-        if let Some(value) = original_skip_system_cli_lookup {
-            std::env::set_var("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", value);
-        } else {
-            std::env::remove_var("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP");
-        }
 
         assert_eq!(outcome, PromptInstallCliOutcome::NoBackend);
         Ok(())

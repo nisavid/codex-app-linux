@@ -126,7 +126,9 @@ main() {
 
     # Seed the Nix store so the build can reuse the DMG that was already downloaded
     # for hashing instead of fetching the same 300MB artifact again.
-    nix-store --add-fixed sha256 "$UPSTREAM_DMG_PATH" >/dev/null
+    if ! nix-store --add-fixed sha256 "$UPSTREAM_DMG_PATH" >/dev/null; then
+        echo "Warning: failed to seed Codex.dmg into the Nix store; continuing with normal fetch path." >&2
+    fi
 
     if run_nix_build "$BUILD_LOG"; then
         echo "Nix build succeeded with the current payload outputHash."

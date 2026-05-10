@@ -519,36 +519,9 @@ sync_chrome_bundled_plugin_cache() {
 
     cache_root="$codex_home/plugins/cache/openai-bundled/chrome"
     cache_plugin="$cache_root/$version"
-    cache_host="$cache_plugin/extension-host/linux/$extension_arch/extension-host"
-    cache_client="$cache_plugin/scripts/browser-client.mjs"
-    cache_install_manifest="$cache_plugin/scripts/installManifest.mjs"
-
-    if [ -f "$cache_plugin/.codex-plugin/plugin.json" ] && \
-        [ -f "$cache_host" ] && \
-        [ -f "$cache_client" ] && \
-        [ -f "$cache_install_manifest" ] && \
-        cmp -s "$plugin_json" "$cache_plugin/.codex-plugin/plugin.json" && \
-        cmp -s "$source_host" "$cache_host" && \
-        cmp -s "$source_client" "$cache_client" && \
-        cmp -s "$source_install_manifest" "$cache_install_manifest"; then
+    if [ -d "$cache_plugin" ] && \
+        diff -qr --exclude='*:com.apple.*' "$source_plugin" "$cache_plugin" >/dev/null 2>&1; then
         needs_copy=0
-    fi
-
-    if [ "$needs_copy" -eq 0 ]; then
-        local relative
-        for relative in \
-            scripts/check-extension-installed.js \
-            scripts/check-native-host-manifest.js \
-            scripts/chrome-is-running.js \
-            scripts/extension-id.json \
-            scripts/installed-browsers.js \
-            scripts/open-chrome-window.js; do
-            [ -f "$source_plugin/$relative" ] || continue
-            if [ ! -f "$cache_plugin/$relative" ] || ! cmp -s "$source_plugin/$relative" "$cache_plugin/$relative"; then
-                needs_copy=1
-                break
-            fi
-        done
     fi
 
     if [ "$needs_copy" -eq 1 ]; then

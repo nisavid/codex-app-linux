@@ -192,7 +192,9 @@ fn i3_socket_path() -> Option<PathBuf> {
             Some((modified, entry.path()))
         })
         .collect::<Vec<_>>();
-    sockets.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    sockets.sort_by_key(|(modified, _)| {
+        std::cmp::Reverse(modified.unwrap_or(std::time::SystemTime::UNIX_EPOCH))
+    });
     sockets.into_iter().map(|(_, path)| path).next()
 }
 
