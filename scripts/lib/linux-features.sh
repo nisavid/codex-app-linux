@@ -7,6 +7,7 @@
 run_linux_feature_stage_hooks() {
     local app_dir="${1:-}"
     local feature_helper="$SCRIPT_DIR/scripts/lib/linux-features.js"
+    local hooks_dir=""
     local hooks_file=""
     local feature_id
     local hook_path
@@ -16,7 +17,9 @@ run_linux_feature_stage_hooks() {
         return 0
     }
 
-    hooks_file="$(mktemp "${WORK_DIR:-/tmp}/codex-linux-feature-hooks.XXXXXX")" || return 1
+    hooks_dir="${WORK_DIR:-/tmp}"
+    [ -d "$hooks_dir" ] || hooks_dir="/tmp"
+    hooks_file="$(mktemp "$hooks_dir/codex-linux-feature-hooks.XXXXXX")" || return 1
     if ! node "$feature_helper" --stage-hooks >"$hooks_file"; then
         warn "Linux feature stage hook enumeration failed"
         rm -f "$hooks_file"

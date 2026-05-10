@@ -61,6 +61,10 @@ jobs:
             [ -f "$file" ] || continue
             node --check "$file"
           done
+          feature_tests=(linux-features/*/test.js)
+          if [ -e "${feature_tests[0]}" ]; then
+            node --test "${feature_tests[@]}"
+          fi
           node --check scripts/ci/validate-patch-report.js
 
       - name: Check Rust formatting
