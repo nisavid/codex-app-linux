@@ -429,8 +429,10 @@ fn known_cli_locations() -> Vec<PathBuf> {
         candidates.push(home.join(".local/share/pnpm/codex"));
         candidates.push(home.join(".local/bin/codex"));
     }
-    candidates.push(PathBuf::from("/usr/local/bin/codex"));
-    candidates.push(PathBuf::from("/usr/bin/codex"));
+    if include_system_cli_locations() {
+        candidates.push(PathBuf::from("/usr/local/bin/codex"));
+        candidates.push(PathBuf::from("/usr/bin/codex"));
+    }
     candidates
 }
 
@@ -447,6 +449,18 @@ fn parse_node_version_dir(name: &str) -> Option<(u64, u64, u64)> {
         .parse()
         .ok()?;
     Some((major, minor, patch))
+}
+
+fn include_system_cli_locations() -> bool {
+    #[cfg(test)]
+    {
+        std::env::var_os("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP").is_none()
+    }
+
+    #[cfg(not(test))]
+    {
+        true
+    }
 }
 
 fn mark_cli_missing(state: &mut PersistedState) {
@@ -1091,10 +1105,13 @@ mod tests {
         let original_path = std::env::var_os("PATH");
         let original_nvm_dir = std::env::var_os("NVM_DIR");
         let original_codex_cli_path = std::env::var_os("CODEX_CLI_PATH");
+        let original_skip_system_cli_lookup =
+            std::env::var_os("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP");
         std::env::set_var("HOME", temp.path());
         std::env::set_var("PATH", temp.path().join("missing-bin"));
         std::env::remove_var("NVM_DIR");
         std::env::remove_var("CODEX_CLI_PATH");
+        std::env::set_var("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
 
         let missing_path = temp.path().join("missing-codex");
         let mut state = PersistedState::new(true);
@@ -1125,6 +1142,11 @@ mod tests {
         } else {
             std::env::remove_var("CODEX_CLI_PATH");
         }
+        if let Some(value) = original_skip_system_cli_lookup {
+            std::env::set_var("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", value);
+        } else {
+            std::env::remove_var("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP");
+        }
 
         assert_eq!(state.cli_path, None);
         assert_eq!(state.cli_installed_version, None);
@@ -1147,10 +1169,13 @@ mod tests {
         let original_path = std::env::var_os("PATH");
         let original_nvm_dir = std::env::var_os("NVM_DIR");
         let original_codex_cli_path = std::env::var_os("CODEX_CLI_PATH");
+        let original_skip_system_cli_lookup =
+            std::env::var_os("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP");
         std::env::set_var("HOME", temp.path());
         std::env::set_var("PATH", temp.path().join("missing-bin"));
         std::env::remove_var("NVM_DIR");
         std::env::remove_var("CODEX_CLI_PATH");
+        std::env::set_var("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
 
         let mut state = PersistedState::new(true);
         let config = test_runtime_config(&paths);
@@ -1175,6 +1200,11 @@ mod tests {
             std::env::set_var("CODEX_CLI_PATH", cli_path);
         } else {
             std::env::remove_var("CODEX_CLI_PATH");
+        }
+        if let Some(value) = original_skip_system_cli_lookup {
+            std::env::set_var("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", value);
+        } else {
+            std::env::remove_var("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP");
         }
 
         assert_eq!(state.cli_path, None);

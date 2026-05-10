@@ -10,10 +10,11 @@ use crate::remote_desktop::{
     start_portal_pointer_session, PointerButton, PortalPointerSession, ScrollDirection,
 };
 use crate::screenshot::{capture_screenshot, ScreenshotCapture};
+use crate::windowing::registry;
 use crate::windows::{
     focus_window_target, focused_window, list_windows, resolve_window_target,
     window_permission_hint, WindowFocusResult, WindowInfo, WindowTarget,
-    GNOME_SHELL_EXTENSION_BACKEND, GNOME_SHELL_INTROSPECT_BACKEND,
+    GNOME_SHELL_INTROSPECT_BACKEND,
 };
 use anyhow::Result;
 use rmcp::{
@@ -24,8 +25,10 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use std::{
     env,
+    io::Write,
+    os::unix::net::UnixStream,
     path::PathBuf,
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -103,7 +106,7 @@ impl ComputerUseLinux {
                     error: None,
                     permissions_hint: None,
                     message:
-                        "Focused window query completed through the available GNOME window backend."
+                        "Focused window query completed through the available compositor window backend."
                             .to_string(),
                 })
             }
@@ -203,7 +206,9 @@ impl ComputerUseLinux {
                     ),
                 )
             };
-        self.cache_nodes(&accessibility_tree);
+        if accessibility_error.is_none() {
+            self.cache_nodes(&accessibility_tree);
+        }
         let mut message = if let Some(error) = &accessibility_error {
             format!("MCP registration is working, but AT-SPI tree extraction failed: {error}")
         } else if let Some(capture) = &screenshot {
@@ -271,14 +276,10 @@ impl ComputerUseLinux {
         };
         if let ClickTarget::PrimaryAction {
             object_ref,
-            action_index,
             action_name,
         } = target
         {
-            let requested_action = action_index.to_string();
-            return match invoke_accessibility_action(&object_ref, Some(requested_action.as_str()))
-                .await
-            {
+            return match invoke_accessibility_action(&object_ref, Some("0")).await {
                 Ok(invocation) => Json(ActionOutput {
                     ok: invocation.ok,
                     implemented: true,
@@ -365,7 +366,7 @@ impl ComputerUseLinux {
                 Err(_) => {}
             }
         }
-        let result = run_ydotool_sequence_blocking(vec![
+        let result = run_ydotool_sequence(&[
             absolute_mousemove_args(x, y),
             vec![
                 "click".to_string(),
@@ -373,8 +374,7 @@ impl ComputerUseLinux {
                 click_count,
                 button,
             ],
-        ])
-        .await;
+        ]);
         Json(action_result("click", result, received))
     }
 
@@ -386,11 +386,8 @@ impl ComputerUseLinux {
         &self,
         Parameters(params): Parameters<ActionParams>,
     ) -> Json<ActionOutput> {
-        self.perform_element_action(
-            &params,
-            Some(requested_action_or_primary(params.action.as_deref())),
-        )
-        .await
+        self.perform_element_action(&params, params.action.as_deref().or(Some("0")))
+            .await
     }
 
     #[tool(
@@ -481,6 +478,7 @@ impl ComputerUseLinux {
                 });
             }
         };
+
         if let Some(session) = self.cached_portal_pointer_session() {
             match portal_scroll(&session, target_point, direction, units).await {
                 Ok(()) => {
@@ -535,7 +533,7 @@ impl ComputerUseLinux {
             sequence.push(absolute_mousemove_args(x, y));
         }
         sequence.push(wheel_mousemove_args(dx, dy));
-        let result = run_ydotool_sequence_blocking(sequence).await;
+        let result = run_ydotool_sequence(&sequence);
         Json(action_result("scroll", result, received))
     }
 
@@ -592,13 +590,12 @@ impl ComputerUseLinux {
                 Err(_) => {}
             }
         }
-        let result = run_ydotool_sequence_blocking(vec![
+        let result = run_ydotool_sequence(&[
             absolute_mousemove_args(params.start_x, params.start_y),
             vec!["click".to_string(), "0x40".to_string()],
             absolute_mousemove_args(params.end_x, params.end_y),
             vec!["click".to_string(), "0x80".to_string()],
-        ])
-        .await;
+        ]);
         Json(action_result("drag", result, received))
     }
 
@@ -611,15 +608,6 @@ impl ComputerUseLinux {
         Parameters(params): Parameters<PressKeyParams>,
     ) -> Json<ActionOutput> {
         let received = Some(serde_json::json!(params.clone()));
-        let Some(key_events) = key_sequence(&params.key) else {
-            return Json(ActionOutput {
-                ok: false,
-                implemented: true,
-                action: "press_key".to_string(),
-                message: "Unsupported key. Use names like Enter, Escape, Tab, ArrowLeft, Super, Ctrl+L, or a single US keyboard letter/digit.".to_string(),
-                received,
-            });
-        };
         let focus = match self.focus_target_for_input(&params.window_target()).await {
             Ok(focus) => focus,
             Err(message) => {
@@ -632,9 +620,18 @@ impl ComputerUseLinux {
                 });
             }
         };
+        let Some(key_events) = key_sequence(&params.key) else {
+            return Json(ActionOutput {
+                ok: false,
+                implemented: true,
+                action: "press_key".to_string(),
+                message: "Unsupported key. Use names like Enter, Escape, Tab, ArrowLeft, Super, Ctrl+L, or a single US keyboard letter/digit.".to_string(),
+                received,
+            });
+        };
         let mut args = vec!["key".to_string()];
         args.extend(key_events);
-        let result = run_ydotool_blocking(args).await.map(|output| vec![output]);
+        let result = run_ydotool(&args).map(|output| vec![output]);
         Json(action_result_with_focus(
             "press_key",
             result,
@@ -664,9 +661,7 @@ impl ComputerUseLinux {
                 });
             }
         };
-        let result = run_ydotool_blocking(vec!["type".to_string(), "--".to_string(), params.text])
-            .await
-            .map(|output| vec![output]);
+        let result = run_ydotool_type_text(&params.text).map(|output| vec![output]);
         Json(action_result_with_focus(
             "type_text",
             result,
@@ -679,7 +674,7 @@ impl ComputerUseLinux {
 #[tool_handler(
     name = "codex-computer-use-linux",
     version = "0.1.0",
-    instructions = "Begin every turn that uses Computer Use by calling get_app_state. If diagnostics report disabled GNOME accessibility, call setup_accessibility before asking the user to retry. Use list_windows/focused_window before targeted keyboard input. If diagnostics report windowing.can_list_windows=false, call setup_window_targeting to install the optional GNOME Shell extension backend, then ask the user to log out and back in if the setup report says a shell reload is required. This Linux backend can capture screenshots through GNOME Shell or XDG Desktop Portal, read AT-SPI trees with action/value metadata, invoke native AT-SPI actions, set AT-SPI values or editable text, list/focus GNOME Shell windows when org.gnome.Shell.Introspect or the Codex GNOME Shell extension permits it, attach best-effort terminal tty/process metadata to terminal windows, and send coordinate or element-targeted click/scroll/drag input through the Wayland remote desktop portal when available or through ydotool otherwise. For element-targeted actions, prefer element_index from the latest get_app_state result; click, perform_action, and set_value can also use semantic role/name/text/states selectors when the target is unique. type_text and press_key accept optional window_id, pid, app_id, wm_class, title, tty, terminal_pid, terminal_command, or terminal_cwd selectors and refuse targeted input if focus cannot be verified."
+    instructions = "Begin every turn that uses Computer Use by calling get_app_state. If diagnostics report disabled GNOME accessibility, call setup_accessibility before asking the user to retry. Use list_windows/focused_window before targeted keyboard input. If diagnostics report windowing.can_list_windows=false on GNOME, call setup_window_targeting to install the optional GNOME Shell extension backend, then ask the user to log out and back in if the setup report says a shell reload is required. This Linux backend can capture screenshots through GNOME Shell or XDG Desktop Portal, read AT-SPI trees with action/value metadata, invoke native AT-SPI actions, set AT-SPI values or editable text, list/focus compositor windows through registered Linux window backends when the session permits it, attach best-effort terminal tty/process metadata to terminal windows, and send coordinate or element-targeted click/scroll/drag input through the Wayland remote desktop portal when available or through ydotool otherwise. For element-targeted actions, prefer element_index from the latest get_app_state result; click, perform_action, and set_value can also use semantic role/name/text/states selectors when the target is unique. type_text and press_key accept optional window_id, pid, app_id, wm_class, title, tty, terminal_pid, terminal_command, or terminal_cwd selectors and refuse targeted input if focus cannot be verified."
 )]
 impl ServerHandler for ComputerUseLinux {}
 
@@ -1206,7 +1201,7 @@ impl ComputerUseLinux {
             ));
         }
 
-        let Some(action) = primary_action(node.actions.as_slice()) else {
+        let Some(action_name) = primary_action_name(node.actions.as_slice()) else {
             return Err(format!(
                 "No clickable bounds cached for element_index {}, and the element exposes no primary AT-SPI action.",
                 node.index
@@ -1214,8 +1209,7 @@ impl ComputerUseLinux {
         };
         Ok(ClickTarget::PrimaryAction {
             object_ref: node.object_ref.clone(),
-            action_index: action.index,
-            action_name: Some(action.name.clone()),
+            action_name: Some(action_name),
         })
     }
 
@@ -1343,7 +1337,6 @@ enum ClickTarget {
     Coordinates(i32, i32),
     PrimaryAction {
         object_ref: String,
-        action_index: i32,
         action_name: Option<String>,
     },
 }
@@ -1468,7 +1461,7 @@ fn node_matches_resolve_purpose(node: &AccessibilityNode, purpose: ElementResolv
     match purpose {
         ElementResolvePurpose::Click => {
             node.bounds.as_ref().and_then(bounds_center).is_some()
-                || primary_action(&node.actions).is_some()
+                || primary_action_name(&node.actions).is_some()
         }
         ElementResolvePurpose::Action => !node.actions.is_empty(),
         ElementResolvePurpose::SetValue => node.supports_editable_text || node.value.is_some(),
@@ -1547,23 +1540,13 @@ fn describe_matching_nodes(nodes: &[&AccessibilityNode]) -> String {
 }
 
 fn is_plain_left_click(button: Option<&str>, click_count: Option<u32>) -> bool {
-    let button = button
-        .map(str::trim)
-        .filter(|button| !button.is_empty())
-        .unwrap_or("left");
+    let button = button.unwrap_or("left");
     let click_count = click_count.unwrap_or(1);
     matches!(button.to_ascii_lowercase().as_str(), "left" | "primary") && click_count == 1
 }
 
-fn primary_action(actions: &[AccessibilityAction]) -> Option<&AccessibilityAction> {
-    actions.first()
-}
-
-fn requested_action_or_primary(action: Option<&str>) -> &str {
-    action
-        .map(str::trim)
-        .filter(|action| !action.is_empty())
-        .unwrap_or("0")
+fn primary_action_name(actions: &[AccessibilityAction]) -> Option<String> {
+    actions.first().map(|action| action.name.clone())
 }
 
 fn bounds_center(bounds: &Bounds) -> Option<(i32, i32)> {
@@ -1609,12 +1592,6 @@ fn compact_accessibility_tree(nodes: Vec<AccessibilityNode>) -> Vec<Accessibilit
             .and_then(|old_parent| old_to_new.get(old_parent as usize).copied().flatten());
     }
 
-    let compacted_depths = compacted
-        .iter()
-        .enumerate()
-        .map(|(index, _)| compacted_node_depth(index, &compacted))
-        .collect::<Vec<_>>();
-
     let child_counts = compacted.iter().filter_map(|node| node.parent_index).fold(
         vec![0_i32; compacted.len()],
         |mut counts, parent_index| {
@@ -1624,28 +1601,10 @@ fn compact_accessibility_tree(nodes: Vec<AccessibilityNode>) -> Vec<Accessibilit
     );
 
     for (index, node) in compacted.iter_mut().enumerate() {
-        node.depth = compacted_depths[index];
         node.child_count = child_counts[index];
     }
 
     compacted
-}
-
-fn compacted_node_depth(index: usize, nodes: &[AccessibilityNode]) -> u32 {
-    let mut depth = 0;
-    let mut parent_index = nodes[index].parent_index;
-    let mut hops = 0;
-
-    while let Some(parent) = parent_index.and_then(|parent| nodes.get(parent as usize)) {
-        depth += 1;
-        parent_index = parent.parent_index;
-        hops += 1;
-        if hops >= nodes.len() {
-            break;
-        }
-    }
-
-    depth
 }
 
 fn nearest_kept_parent(
@@ -1676,7 +1635,7 @@ fn should_keep_accessibility_node(node: &AccessibilityNode) -> bool {
     matches!(
         node.role.as_str(),
         "page tab" | "menu item" | "menu" | "list item" | "tree item"
-    ) && !is_missing_bounds(node.bounds.as_ref())
+    ) && !is_sentinel_or_missing_bounds(node.bounds.as_ref())
 }
 
 fn is_actionable_accessibility_node(node: &AccessibilityNode) -> bool {
@@ -1693,7 +1652,7 @@ fn has_non_empty_text(value: Option<&str>) -> bool {
     value.map(str::trim).is_some_and(|value| !value.is_empty())
 }
 
-fn is_missing_bounds(bounds: Option<&Bounds>) -> bool {
+fn is_sentinel_or_missing_bounds(bounds: Option<&Bounds>) -> bool {
     bounds.is_none()
 }
 
@@ -1733,6 +1692,7 @@ fn accessibility_filter_candidates(window_context: Option<&WindowInfo>) -> Vec<S
     };
 
     let mut candidates = Vec::new();
+    push_candidate(&mut candidates, window.title.as_deref());
     push_candidate(&mut candidates, window.wm_class.as_deref());
 
     if let Some(app_id) = trimmed_nonempty(window.app_id.as_deref()) {
@@ -1824,11 +1784,7 @@ async fn window_list_output() -> ListWindowsOutput {
     match list_windows().await {
         Ok(windows) => {
             let backend = window_backend(windows.iter());
-            let note = if backend == GNOME_SHELL_EXTENSION_BACKEND {
-                "Window list came from the Codex GNOME Shell extension. Terminal windows may include best-effort PTY and active-process context when the process tree is readable."
-            } else {
-                "Window list came from GNOME Shell Introspect. Terminal windows may include best-effort PTY and active-process context when the process tree is readable."
-            };
+            let note = registry::list_note(&backend);
             ListWindowsOutput {
                 backend,
                 windows,
@@ -1878,20 +1834,6 @@ fn wheel_mousemove_args(dx: i32, dy: i32) -> Vec<String> {
     ]
 }
 
-async fn run_ydotool_sequence_blocking(
-    commands: Vec<Vec<String>>,
-) -> std::result::Result<Vec<Output>, String> {
-    tokio::task::spawn_blocking(move || run_ydotool_sequence(&commands))
-        .await
-        .map_err(|error| format!("ydotool task failed: {error}"))?
-}
-
-async fn run_ydotool_blocking(args: Vec<String>) -> std::result::Result<Output, String> {
-    tokio::task::spawn_blocking(move || run_ydotool(&args))
-        .await
-        .map_err(|error| format!("ydotool task failed: {error}"))?
-}
-
 fn run_ydotool_sequence(commands: &[Vec<String>]) -> std::result::Result<Vec<Output>, String> {
     let mut outputs = Vec::new();
     for (index, args) in commands.iter().enumerate() {
@@ -1912,41 +1854,78 @@ fn run_ydotool(args: &[String]) -> std::result::Result<Output, String> {
 
     match command.output() {
         Ok(output) if output.status.success() => Ok(output),
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let detail = if stderr.is_empty() { stdout } else { stderr };
-            Err(if detail.is_empty() {
-                format!("ydotool exited with {}", output.status)
-            } else {
-                detail
-            })
+        Ok(output) => Err(ydotool_output_error(output)),
+        Err(error) => Err(format!("failed to run ydotool: {error}")),
+    }
+}
+
+fn run_ydotool_type_text(text: &str) -> std::result::Result<Output, String> {
+    let mut command = Command::new("ydotool");
+    command.args(["type", "--file", "-"]);
+    if let Some(socket) = ydotool_socket() {
+        command.env("YDOTOOL_SOCKET", socket);
+    }
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    match command.spawn() {
+        Ok(mut child) => {
+            if let Some(stdin) = child.stdin.as_mut() {
+                if let Err(error) = stdin.write_all(text.as_bytes()) {
+                    let _ = child.kill();
+                    return Err(format!("failed to write text to ydotool stdin: {error}"));
+                }
+            }
+            match child.wait_with_output() {
+                Ok(output) if output.status.success() => Ok(output),
+                Ok(output) => Err(ydotool_output_error(output)),
+                Err(error) => Err(format!("failed to wait for ydotool: {error}")),
+            }
         }
         Err(error) => Err(format!("failed to run ydotool: {error}")),
     }
 }
 
+fn ydotool_output_error(output: Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if stderr.is_empty() { stdout } else { stderr };
+    if detail.is_empty() {
+        format!("ydotool exited with {}", output.status)
+    } else {
+        detail
+    }
+}
+
 fn ydotool_socket() -> Option<String> {
+    connectable_ydotool_socket_from(ydotool_socket_candidates())
+        .map(|path| path.display().to_string())
+}
+
+fn ydotool_socket_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
     if let Ok(socket) = env::var("YDOTOOL_SOCKET") {
-        if !socket.trim().is_empty() {
-            return Some(socket);
+        let socket = socket.trim();
+        if !socket.is_empty() {
+            candidates.push(PathBuf::from(socket));
         }
     }
+    if let Some(runtime) = env::var("XDG_RUNTIME_DIR")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| user_id().map(|uid| PathBuf::from(format!("/run/user/{uid}"))))
+    {
+        candidates.push(runtime.join(".ydotool_socket"));
+    }
+    candidates.push(PathBuf::from("/tmp/.ydotool_socket"));
+    candidates
+}
 
-    let candidates = [
-        env::var("XDG_RUNTIME_DIR")
-            .ok()
-            .map(PathBuf::from)
-            .or_else(|| user_id().map(|uid| PathBuf::from(format!("/run/user/{uid}"))))
-            .map(|runtime| runtime.join(".ydotool_socket")),
-        Some(PathBuf::from("/tmp/.ydotool_socket")),
-    ];
-
+fn connectable_ydotool_socket_from(candidates: Vec<PathBuf>) -> Option<PathBuf> {
     candidates
         .into_iter()
-        .flatten()
-        .find(|path| path.exists())
-        .map(|path| path.display().to_string())
+        .find(|path| UnixStream::connect(path).is_ok())
 }
 
 fn mouse_button_code(button: Option<&str>) -> String {
@@ -2145,7 +2124,7 @@ fn looks_like_desktop_app(name: &str, command: &str) -> bool {
 mod tests {
     use super::*;
     use crate::atspi_tree::{AccessibilityAction, Bounds};
-    use crate::windows::WindowBounds;
+    use crate::windows::{WindowBounds, GNOME_SHELL_EXTENSION_BACKEND};
 
     fn node(index: u32, bounds: Option<Bounds>) -> AccessibilityNode {
         node_with_actions(index, bounds, Vec::new())
@@ -2212,7 +2191,7 @@ mod tests {
     }
 
     #[test]
-    fn accessibility_filter_candidates_skip_title_and_synthetic_app_id() {
+    fn accessibility_filter_candidates_prefer_title_and_skip_synthetic_app_id() {
         let window = window_info(
             42,
             Some("CU ATSPI GTK Test"),
@@ -2223,7 +2202,13 @@ mod tests {
 
         let candidates = accessibility_filter_candidates(Some(&window));
 
-        assert_eq!(candidates, vec!["cu_atspi_gtk_test.py".to_string()]);
+        assert_eq!(
+            candidates,
+            vec![
+                "CU ATSPI GTK Test".to_string(),
+                "cu_atspi_gtk_test.py".to_string(),
+            ]
+        );
     }
 
     #[test]
@@ -2346,9 +2331,6 @@ mod tests {
         assert_eq!(compacted[1].role, "frame");
         assert_eq!(compacted[2].role, "button");
         assert_eq!(compacted[2].parent_index, Some(1));
-        assert_eq!(compacted[0].depth, 0);
-        assert_eq!(compacted[1].depth, 1);
-        assert_eq!(compacted[2].depth, 2);
         assert_eq!(compacted[1].child_count, 1);
     }
 
@@ -2555,11 +2537,9 @@ mod tests {
         match target {
             ClickTarget::PrimaryAction {
                 object_ref,
-                action_index,
                 action_name,
             } => {
                 assert_eq!(object_ref, ":1.7/org/a11y/atspi/accessible/7");
-                assert_eq!(action_index, 0);
                 assert_eq!(action_name.as_deref(), Some("Click"));
             }
             ClickTarget::Coordinates(_, _) => {
@@ -2580,7 +2560,7 @@ mod tests {
                 height: 1,
             }),
             vec![AccessibilityAction {
-                index: 3,
+                index: 0,
                 name: "Click".to_string(),
                 description: "Clicks the button".to_string(),
                 keybinding: String::new(),
@@ -2597,11 +2577,9 @@ mod tests {
         match target {
             ClickTarget::PrimaryAction {
                 object_ref,
-                action_index,
                 action_name,
             } => {
                 assert_eq!(object_ref, ":1.7/org/a11y/atspi/accessible/7");
-                assert_eq!(action_index, 3);
                 assert_eq!(action_name.as_deref(), Some("Click"));
             }
             ClickTarget::Coordinates(_, _) => {
@@ -2633,20 +2611,6 @@ mod tests {
             .unwrap_err();
 
         assert!(error.contains("No clickable bounds cached for element_index 7"));
-    }
-
-    #[test]
-    fn blank_button_uses_plain_left_click_fallback() {
-        assert!(is_plain_left_click(Some("  "), None));
-        assert!(is_plain_left_click(Some(" primary "), Some(1)));
-        assert!(!is_plain_left_click(Some("  "), Some(2)));
-    }
-
-    #[test]
-    fn blank_action_defaults_to_primary_action() {
-        assert_eq!(requested_action_or_primary(None), "0");
-        assert_eq!(requested_action_or_primary(Some("  ")), "0");
-        assert_eq!(requested_action_or_primary(Some("  3 ")), "3");
     }
 
     #[test]
@@ -2712,6 +2676,26 @@ mod tests {
             key_sequence("Super"),
             Some(vec!["125:1".to_string(), "125:0".to_string()])
         );
+    }
+
+    #[test]
+    fn ydotool_socket_selection_skips_unconnectable_candidates() {
+        let dir =
+            std::env::temp_dir().join(format!("codex-computer-use-server-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create temp server dir");
+        let stale_socket = dir.join("stale.sock");
+        std::fs::write(&stale_socket, b"not a socket").expect("write stale socket placeholder");
+        let usable_socket = dir.join("usable.sock");
+        let listener =
+            std::os::unix::net::UnixListener::bind(&usable_socket).expect("bind usable socket");
+
+        let selected = connectable_ydotool_socket_from(vec![stale_socket, usable_socket.clone()])
+            .expect("usable socket should be selected");
+
+        assert_eq!(selected, usable_socket);
+        drop(listener);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

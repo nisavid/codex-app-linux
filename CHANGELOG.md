@@ -5,6 +5,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The Chrome native-messaging host now evicts stale browser clients when a newer Codex browser client connects, preventing old Node REPL sessions from repeatedly reattaching CDP and driving extension service-worker CPU.
+- The bundled Chrome plugin is now auto-installed during app startup, matching Browser Use, so the plugin page no longer falls back to an install button after restart when the Linux native host is already staged.
+
+## [0.7.1] - 2026-05-06
+
+### Fixed
+
+- Local auto-update rebuilds and package builds now find the Rust toolchain reliably when `cargo` is installed via `rustup` under `~/.cargo/bin`, even if the `codex-update-manager` user service or packaging scripts inherit a reduced `PATH`.
+
+### Added
+
+- Regression coverage for the build-environment fix: updater path construction now has a unit test for `~/.cargo/bin`, and packaging helpers resolve `cargo` through the same fallback path used by Linux Computer Use staging.
+
 ## [0.7.0] - 2026-05-04
 
 ### Added
