@@ -117,30 +117,38 @@ pub fn backend_can_exact_focus(id: &str) -> bool {
 
 pub async fn list_windows() -> Result<Vec<WindowInfo>> {
     let mut errors = Vec::new();
+    let mut saw_empty_success = false;
     for backend in BACKEND_ORDER {
-        if let Some(windows) =
-            usable_backend_windows(*backend, list_windows_for(*backend).await, &mut errors)
-        {
-            return Ok(windows);
+        match usable_backend_windows(*backend, list_windows_for(*backend).await, &mut errors) {
+            BackendWindowResult::Windows(windows) => return Ok(windows),
+            BackendWindowResult::Empty => saw_empty_success = true,
+            BackendWindowResult::Unavailable => {}
         }
     }
+    if saw_empty_success {
+        return Ok(Vec::new());
+    }
     Err(anyhow!(errors.join("; ")))
+}
+
+#[derive(Debug)]
+enum BackendWindowResult {
+    Windows(Vec<WindowInfo>),
+    Empty,
+    Unavailable,
 }
 
 fn usable_backend_windows(
     backend: BackendKind,
     result: Result<Vec<WindowInfo>>,
     errors: &mut Vec<String>,
-) -> Option<Vec<WindowInfo>> {
+) -> BackendWindowResult {
     match result {
-        Ok(windows) if !windows.is_empty() => Some(windows),
-        Ok(_) => {
-            errors.push(format!("{} returned no windows", backend.failure_label()));
-            None
-        }
+        Ok(windows) if !windows.is_empty() => BackendWindowResult::Windows(windows),
+        Ok(_) => BackendWindowResult::Empty,
         Err(error) => {
             errors.push(format!("{} failed: {error:#}", backend.failure_label()));
-            None
+            BackendWindowResult::Unavailable
         }
     }
 }
@@ -247,32 +255,37 @@ mod tests {
     fn skips_empty_backend_results_so_later_backends_can_answer() {
         let mut errors = Vec::new();
 
-        assert!(
-            usable_backend_windows(BackendKind::GnomeIntrospect, Ok(Vec::new()), &mut errors,)
-                .is_none()
-        );
+        assert!(matches!(
+            usable_backend_windows(BackendKind::GnomeIntrospect, Ok(Vec::new()), &mut errors,),
+            BackendWindowResult::Empty
+        ));
+        assert!(errors.is_empty());
 
-        let windows = usable_backend_windows(
+        let result = usable_backend_windows(
             BackendKind::Kwin,
             Ok(vec![window(KWIN_BACKEND)]),
             &mut errors,
-        )
-        .expect("non-empty backend result should be accepted");
+        );
 
+        let BackendWindowResult::Windows(windows) = result else {
+            panic!("non-empty backend result should be accepted");
+        };
         assert_eq!(windows[0].backend, KWIN_BACKEND);
-        assert_eq!(errors, vec!["GNOME Shell Introspect returned no windows"]);
+        assert!(errors.is_empty());
     }
 
     #[test]
     fn records_backend_failures_with_registry_labels() {
         let mut errors = Vec::new();
 
-        assert!(usable_backend_windows(
-            BackendKind::Kwin,
-            Err(anyhow!("loadScript failed")),
-            &mut errors,
-        )
-        .is_none());
+        assert!(matches!(
+            usable_backend_windows(
+                BackendKind::Kwin,
+                Err(anyhow!("loadScript failed")),
+                &mut errors,
+            ),
+            BackendWindowResult::Unavailable
+        ));
 
         assert_eq!(errors, vec!["KWin failed: loadScript failed"]);
     }

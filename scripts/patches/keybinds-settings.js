@@ -12,6 +12,23 @@ const {
 // updated together, or the patch logs a warning and leaves the app usable.
 const keybindsSettingsAsset = "keybinds-settings-linux.js";
 const linuxKeybindOverridesKey = "codex-linux-keybind-overrides";
+const defaultShortcuts = {
+  newThread: "CmdOrCtrl+N",
+  quickChat: "CmdOrCtrl+Shift+K",
+  newThreadAlt: "CmdOrCtrl+Shift+N",
+  openFolder: "CmdOrCtrl+O",
+  settings: "CmdOrCtrl+,",
+  openCommandMenu: "CmdOrCtrl+K",
+  openCommandMenuAlt: "CmdOrCtrl+Shift+P",
+  searchChats: "CmdOrCtrl+Shift+F",
+  searchFiles: "CmdOrCtrl+P",
+  findInThread: "CmdOrCtrl+F",
+  toggleSidebar: "CmdOrCtrl+B",
+  toggleTerminal: "Ctrl+`",
+  toggleFileTreePanel: "CmdOrCtrl+Shift+E",
+  toggleBrowserPanel: "CmdOrCtrl+Shift+B",
+  toggleDiffPanel: "CmdOrCtrl+Shift+D",
+};
 
 function buildKeybindsSettingsSource({
   chunkAsset,
@@ -32,23 +49,6 @@ function buildKeybindsSettingsSource({
   const reactImport = reactAsset === jsxRuntimeAsset
     ? `import{${reactExportName} as __reactFactory,t as __jsxFactory}from"./${jsxRuntimeAsset}";`
     : `import{${reactExportName} as __reactFactory}from"./${reactAsset}";import{t as __jsxFactory}from"./${jsxRuntimeAsset}";`;
-  const defaultShortcuts = {
-    newThread: "CmdOrCtrl+N",
-    quickChat: "CmdOrCtrl+Shift+K",
-    newThreadAlt: "CmdOrCtrl+Shift+N",
-    openFolder: "CmdOrCtrl+O",
-    settings: "CmdOrCtrl+,",
-    openCommandMenu: "CmdOrCtrl+K",
-    openCommandMenuAlt: "CmdOrCtrl+Shift+P",
-    searchChats: "CmdOrCtrl+Shift+F",
-    searchFiles: "CmdOrCtrl+P",
-    findInThread: "CmdOrCtrl+F",
-    toggleSidebar: "CmdOrCtrl+B",
-    toggleTerminal: "Ctrl+`",
-    toggleFileTreePanel: "CmdOrCtrl+Shift+E",
-    toggleBrowserPanel: "CmdOrCtrl+Shift+B",
-    toggleDiffPanel: "CmdOrCtrl+Shift+D",
-  };
   const keybindGroups = [
     {
       title: "Core",
@@ -323,7 +323,7 @@ function applyKeybindsSettingsSharedPatch(currentSource) {
 }
 
 function applyLinuxKeybindOverridesRuntimePatch(currentSource) {
-  const runtimePatch = `;function codexLinuxKeybindOverridesRuntime(){try{if(typeof window=="undefined")return;let storageKey=${JSON.stringify(linuxKeybindOverridesKey)},defaultMap=typeof Ct=="object"&&Ct?Ct:{},overrides={};function loadOverrides(){try{let value=JSON.parse(localStorage.getItem(storageKey)||"{}");overrides=value&&typeof value=="object"&&!Array.isArray(value)?value:{}}catch{overrides={}}}function isShortcutCaptureTarget(event){let target=event.target;return target instanceof Element&&target.closest("[data-codex-keybind-input]")!=null}function normalizeKeyName(key){let map={Space:" ",Esc:"Escape",Up:"ArrowUp",Down:"ArrowDown",Left:"ArrowLeft",Right:"ArrowRight",Plus:"+",Comma:",",Period:".",Slash:"/"};return map[key]??(/^.$/.test(key)?key.toUpperCase():key)}function parseAccelerator(accelerator){if(typeof accelerator!="string"||accelerator.trim().length===0)return null;let isMac=/Mac/.test(navigator.platform||""),parts=accelerator.split("+").map(part=>part.trim()).filter(Boolean),parsed={ctrl:false,alt:false,shift:false,meta:false,key:null};for(let part of parts){switch(part){case"CmdOrCtrl":isMac?parsed.meta=true:parsed.ctrl=true;break;case"Command":case"Cmd":case"Meta":case"Super":case"Win":parsed.meta=true;break;case"Control":case"Ctrl":parsed.ctrl=true;break;case"Alt":case"Option":parsed.alt=true;break;case"Shift":parsed.shift=true;break;default:parsed.key=normalizeKeyName(part);break}}return parsed.key?parsed:null}function matches(event,parsed){return event.ctrlKey===parsed.ctrl&&event.altKey===parsed.alt&&event.shiftKey===parsed.shift&&event.metaKey===parsed.meta&&normalizeKeyName(event.key)===parsed.key}function dispatchHost(message){if(typeof E=="object"&&E&&typeof E.dispatchHostMessage=="function"){E.dispatchHostMessage(message);return true}return false}function dispatchElectron(type,params={}){if(typeof E=="object"&&E&&typeof E.dispatchMessage=="function"){E.dispatchMessage(type,params);return true}return false}function knownAction(id){return typeof defaultMap[id]=="string"||/^thread[1-9]$/.test(id)||["openBrowserTab","reloadBrowserPage","hardReloadBrowserPage","dictation"].includes(id)}function hostActionType(id){switch(id){case"newThread":case"newThreadAlt":return"new-chat";case"quickChat":return"new-quick-chat";case"toggleSidebar":return"toggle-sidebar";case"toggleTerminal":return"toggle-terminal";case"toggleBrowserPanel":return"toggle-browser-panel";case"toggleDiffPanel":return"toggle-diff-panel";case"findInThread":return"find-in-thread";case"navigateBack":return"navigate-back";case"navigateForward":return"navigate-forward";case"previousThread":return"previous-thread";case"nextThread":return"next-thread";case"copyConversationPath":return"copy-conversation-path";case"toggleThreadPin":return"toggle-thread-pin";case"renameThread":return"rename-thread";case"archiveThread":return"archive-thread";case"copyWorkingDirectory":return"copy-working-directory";case"copySessionId":return"copy-session-id";case"copyDeeplink":return"copy-deeplink";case"toggleFileTreePanel":return"toggle-file-tree-panel";default:return null}}function runAction(id){if(!knownAction(id))return false;if(/^thread[1-9]$/.test(id))return dispatchHost({type:"go-to-thread-index",index:Number(id.slice(6))-1});switch(id){case"openCommandMenu":case"openCommandMenuAlt":return dispatchHost({type:"command-menu",query:""});case"searchChats":return dispatchHost({type:"chat-search-command-menu"});case"searchFiles":return dispatchHost({type:"file-search-command-menu"});case"openFolder":return dispatchElectron("electron-create-new-workspace-root-option",{});case"settings":return dispatchElectron("show-settings",{section:"general-settings"});case"openBrowserTab":return dispatchHost({type:"browser-sidebar-command",command:{type:"new-tab"}});case"reloadBrowserPage":return dispatchHost({type:"browser-sidebar-command",command:{type:"reload"}});case"hardReloadBrowserPage":return dispatchHost({type:"browser-sidebar-command",command:{type:"hard-reload"}});case"dictation":return dispatchElectron("global-dictation-start",{});default:{let type=hostActionType(id);return type?dispatchHost({type}):false}}}loadOverrides();window.addEventListener("storage",event=>{event.key===storageKey&&loadOverrides()});window.addEventListener("codex-linux-keybind-overrides-changed",loadOverrides);window.addEventListener("keydown",event=>{if(event.defaultPrevented||event.repeat||isShortcutCaptureTarget(event))return;for(let[id,accelerator]of Object.entries(overrides)){if(!knownAction(id)||typeof accelerator!="string"||accelerator.trim().length===0||accelerator.trim()===(defaultMap[id]||""))continue;let parsed=parseAccelerator(accelerator);if(parsed&&matches(event,parsed)&&runAction(id)){event.preventDefault();event.stopPropagation();break}}},true)}catch{}}codexLinuxKeybindOverridesRuntime();`;
+  const runtimePatch = `;function codexLinuxKeybindOverridesRuntime(){try{if(typeof window=="undefined")return;let storageKey=${JSON.stringify(linuxKeybindOverridesKey)},defaultMap=${JSON.stringify(defaultShortcuts)},overrides={};function loadOverrides(){try{let value=JSON.parse(localStorage.getItem(storageKey)||"{}");overrides=value&&typeof value=="object"&&!Array.isArray(value)?value:{}}catch{overrides={}}}function isShortcutCaptureTarget(event){let target=event.target;return target instanceof Element&&target.closest("[data-codex-keybind-input]")!=null}function normalizeKeyName(key){let map={Space:" ",Esc:"Escape",Up:"ArrowUp",Down:"ArrowDown",Left:"ArrowLeft",Right:"ArrowRight",Plus:"+",Comma:",",Period:".",Slash:"/"};return map[key]??(/^.$/.test(key)?key.toUpperCase():key)}function parseAccelerator(accelerator){if(typeof accelerator!="string"||accelerator.trim().length===0)return null;let isMac=/Mac/.test(navigator.platform||""),parts=accelerator.split("+").map(part=>part.trim()).filter(Boolean),parsed={ctrl:false,alt:false,shift:false,meta:false,key:null};for(let part of parts){switch(part){case"CmdOrCtrl":isMac?parsed.meta=true:parsed.ctrl=true;break;case"Command":case"Cmd":case"Meta":case"Super":case"Win":parsed.meta=true;break;case"Control":case"Ctrl":parsed.ctrl=true;break;case"Alt":case"Option":parsed.alt=true;break;case"Shift":parsed.shift=true;break;default:parsed.key=normalizeKeyName(part);break}}return parsed.key?parsed:null}function matches(event,parsed){return event.ctrlKey===parsed.ctrl&&event.altKey===parsed.alt&&event.shiftKey===parsed.shift&&event.metaKey===parsed.meta&&normalizeKeyName(event.key)===parsed.key}function dispatchHost(message){if(typeof E=="object"&&E&&typeof E.dispatchHostMessage=="function"){E.dispatchHostMessage(message);return true}return false}function dispatchElectron(type,params={}){if(typeof E=="object"&&E&&typeof E.dispatchMessage=="function"){E.dispatchMessage(type,params);return true}return false}function knownAction(id){return typeof defaultMap[id]=="string"||/^thread[1-9]$/.test(id)||["openBrowserTab","reloadBrowserPage","hardReloadBrowserPage","dictation"].includes(id)}function hostActionType(id){switch(id){case"newThread":case"newThreadAlt":return"new-chat";case"quickChat":return"new-quick-chat";case"toggleSidebar":return"toggle-sidebar";case"toggleTerminal":return"toggle-terminal";case"toggleBrowserPanel":return"toggle-browser-panel";case"toggleDiffPanel":return"toggle-diff-panel";case"findInThread":return"find-in-thread";case"navigateBack":return"navigate-back";case"navigateForward":return"navigate-forward";case"previousThread":return"previous-thread";case"nextThread":return"next-thread";case"copyConversationPath":return"copy-conversation-path";case"toggleThreadPin":return"toggle-thread-pin";case"renameThread":return"rename-thread";case"archiveThread":return"archive-thread";case"copyWorkingDirectory":return"copy-working-directory";case"copySessionId":return"copy-session-id";case"copyDeeplink":return"copy-deeplink";case"toggleFileTreePanel":return"toggle-file-tree-panel";default:return null}}function runAction(id){if(!knownAction(id))return false;if(/^thread[1-9]$/.test(id))return dispatchHost({type:"go-to-thread-index",index:Number(id.slice(6))-1});switch(id){case"openCommandMenu":case"openCommandMenuAlt":return dispatchHost({type:"command-menu",query:""});case"searchChats":return dispatchHost({type:"chat-search-command-menu"});case"searchFiles":return dispatchHost({type:"file-search-command-menu"});case"openFolder":return dispatchElectron("electron-create-new-workspace-root-option",{});case"settings":return dispatchElectron("show-settings",{section:"general-settings"});case"openBrowserTab":return dispatchHost({type:"browser-sidebar-command",command:{type:"new-tab"}});case"reloadBrowserPage":return dispatchHost({type:"browser-sidebar-command",command:{type:"reload"}});case"hardReloadBrowserPage":return dispatchHost({type:"browser-sidebar-command",command:{type:"hard-reload"}});case"dictation":return dispatchElectron("global-dictation-start",{});default:{let type=hostActionType(id);return type?dispatchHost({type}):false}}}loadOverrides();window.addEventListener("storage",event=>{event.key===storageKey&&loadOverrides()});window.addEventListener("codex-linux-keybind-overrides-changed",loadOverrides);window.addEventListener("keydown",event=>{if(event.defaultPrevented||event.repeat||isShortcutCaptureTarget(event))return;for(let[id,accelerator]of Object.entries(overrides)){if(!knownAction(id)||typeof accelerator!="string"||accelerator.trim().length===0||accelerator.trim()===(defaultMap[id]||""))continue;let parsed=parseAccelerator(accelerator);if(parsed&&matches(event,parsed)&&runAction(id)){event.preventDefault();event.stopPropagation();break}}},true)}catch{}}codexLinuxKeybindOverridesRuntime();`;
 
   const runtimeMarker = ";function codexLinuxKeybindOverridesRuntime()";
   const existingRuntimeIndex = currentSource.indexOf(runtimeMarker);
@@ -338,13 +338,15 @@ function applyKeybindsSettingsIndexPatch(currentSource) {
   let patchedSource = currentSource;
 
   if (!patchedSource.includes(`${keybindsSettingsAsset}`)) {
-    const routePattern = /var ([A-Za-z_$][\w$]*)=\{"general-settings":(?=\(0,[A-Za-z_$][\w$]*\.lazy\))/;
-    if (!routePattern.test(patchedSource)) {
+    const routePattern =
+      /var ([A-Za-z_$][\w$]*)=\{"general-settings":\(0,([A-Za-z_$][\w$]*)\.lazy\)\(\(\)=>([A-Za-z_$][\w$]*)\(/;
+    const routeMatch = patchedSource.match(routePattern);
+    if (routeMatch == null) {
       throw new Error("Required Keybinds settings patch failed: could not add keybinds route");
     }
     patchedSource = patchedSource.replace(
       routePattern,
-      `var $1={keybinds:(0,Z.lazy)(()=>s(()=>import(\`./${keybindsSettingsAsset}\`),[],import.meta.url)),"general-settings":`,
+      `var ${routeMatch[1]}={keybinds:(0,${routeMatch[2]}.lazy)(()=>${routeMatch[3]}(()=>import(\`./${keybindsSettingsAsset}\`),[],import.meta.url)),"general-settings":(0,${routeMatch[2]}.lazy)(()=>${routeMatch[3]}(`,
     );
   }
 

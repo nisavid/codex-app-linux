@@ -736,12 +736,27 @@ test("adds Keybinds settings route after upstream minified variable drift", () =
     patched,
     /var i_e=\{keybinds:\(0,Z\.lazy\)\(\(\)=>s\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\)/,
   );
+  assert.doesNotMatch(patched, /typeof Ct==/);
   assert.match(patched, /var Kge=\{keybinds:xh,"general-settings":xh,/);
   assert.match(patched, /qge=\[`general-settings`,`keybinds`,`appearance`/);
   assert.match(patched, /slugs:\[`general-settings`,`keybinds`,`appearance`/);
   assert.match(patched, /case`keybinds`:return l===`electron`/);
   assert.match(patched, /case`keybinds`:k=!1;break bb0;/);
   assert.match(patched, /codexLinuxKeybindOverridesRuntime/);
+});
+
+test("captures Keybinds settings route helper aliases after minifier renames", () => {
+  const fixture = keybindsIndexBundleFixture()
+    .replaceAll("Z.lazy", "R.lazy")
+    .replaceAll("s(()=>import", "u(()=>import");
+  const patched = applyPatchTwice(applyKeybindsSettingsIndexPatch, fixture);
+
+  assert.match(
+    patched,
+    /var i_e=\{keybinds:\(0,R\.lazy\)\(\(\)=>u\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\)/,
+  );
+  assert.doesNotMatch(patched, /Z\.lazy/);
+  assert.doesNotMatch(patched, /s\(\(\)=>import\(`\.\/keybinds-settings-linux\.js`\)/);
 });
 
 test("disables the upstream app sunset gate in the Linux wrapper webview", () => {
