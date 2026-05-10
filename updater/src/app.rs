@@ -293,9 +293,7 @@ fn run_status(
     paths: &RuntimePaths,
     json: bool,
 ) -> Result<()> {
-    if let Err(error) = codex_cli::reconcile_if_present(config, state, paths) {
-        tracing::warn!(?error, "unable to reconcile Codex CLI status");
-    }
+    codex_cli::refresh_status(config, state, paths)?;
     complete_pending_install_if_already_installed(state, paths)?;
 
     if json {
