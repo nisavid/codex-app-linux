@@ -206,6 +206,8 @@ impl ComputerUseLinux {
             };
         if accessibility_error.is_none() {
             self.cache_nodes(&accessibility_tree);
+        } else {
+            self.clear_cached_nodes();
         }
         let mut message = if let Some(error) = &accessibility_error {
             format!("MCP registration is working, but AT-SPI tree extraction failed: {error}")
@@ -387,8 +389,24 @@ impl ComputerUseLinux {
         &self,
         Parameters(params): Parameters<ActionParams>,
     ) -> Json<ActionOutput> {
-        self.perform_element_action(&params, params.action.as_deref().or(Some("0")))
-            .await
+        let default_action = if params.action.is_none() {
+            self.resolve_cached_node(
+                params.element_index,
+                &params.selector(),
+                ElementResolvePurpose::Action,
+            )
+            .ok()
+            .and_then(|node| {
+                primary_action(node.actions.as_slice()).map(|action| action.index.to_string())
+            })
+        } else {
+            None
+        };
+        self.perform_element_action(
+            &params,
+            params.action.as_deref().or(default_action.as_deref()),
+        )
+        .await
     }
 
     #[tool(
@@ -1156,6 +1174,12 @@ impl ComputerUseLinux {
         if let Ok(mut cached) = self.last_nodes.lock() {
             cached.clear();
             cached.extend_from_slice(nodes);
+        }
+    }
+
+    fn clear_cached_nodes(&self) {
+        if let Ok(mut cached) = self.last_nodes.lock() {
+            cached.clear();
         }
     }
 

@@ -34,7 +34,7 @@ Targets:
 
 Environment:
   CI_CONTAINER_ENGINE=docker|podman
-  CI_PACKAGE_VERSION=2026.04.28.000000+local
+  CI_PACKAGE_VERSION=<opt-in override; normally read from the DMG CFBundleShortVersionString>
   CI_DMG_PATH=/path/to/Codex.dmg
   CI_SKIP_PULL=1
   CI_CACHE_DIR=/path/to/cache

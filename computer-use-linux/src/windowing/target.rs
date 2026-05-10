@@ -114,6 +114,7 @@ pub fn resolve_window_target<'a>(
         let matches = windows
             .iter()
             .filter(|window| window.pid == Some(pid))
+            .filter(|window| window_matches_secondary_target(window, target))
             .collect::<Vec<_>>();
         return unique_window_match(matches, &format!("pid {pid}"));
     }

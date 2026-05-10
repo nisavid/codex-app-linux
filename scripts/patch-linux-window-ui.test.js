@@ -1162,11 +1162,11 @@ test("reports missing required Chrome plugin auto-install gate as upstream valid
     captureWarns(() => patchExtractedApp(tempRoot, { report }));
 
     const pluginGatePatch = report.patches.find((patch) => patch.name === "linux-chrome-plugin-auto-install");
-    assert.equal(pluginGatePatch.status, "skipped-optional");
+    assert.equal(pluginGatePatch.status, "failed-required");
     assert.match(pluginGatePatch.reason, /Could not find Chrome plugin gate literal/);
     assert.ok(
       validateReport(report, "upstream-build").some((failure) =>
-        failure.startsWith("linux-chrome-plugin-auto-install: skipped-optional"),
+        failure.startsWith("linux-chrome-plugin-auto-install: failed-required"),
       ),
     );
   } finally {
@@ -1205,11 +1205,11 @@ test("reports missing required Computer Use plugin gate as upstream validation f
     captureWarns(() => patchExtractedApp(tempRoot, { report }));
 
     const pluginGatePatch = report.patches.find((patch) => patch.name === "linux-computer-use-plugin-gate");
-    assert.equal(pluginGatePatch.status, "skipped-optional");
+    assert.equal(pluginGatePatch.status, "failed-required");
     assert.match(pluginGatePatch.reason, /Could not find Computer Use plugin gate literal/);
     assert.ok(
       validateReport(report, "upstream-build").some((failure) =>
-        failure.startsWith("linux-computer-use-plugin-gate: skipped-optional"),
+        failure.startsWith("linux-computer-use-plugin-gate: failed-required"),
       ),
     );
   } finally {
@@ -1324,9 +1324,10 @@ test("detects Chrome extension installation from Linux browser profiles", () => 
   );
   assert.match(
     patched,
-    /if\(t===`linux`\)\{let t=codexLinuxChromeCommand\(\)\?\?n\(\);if\(t==null\)throw Error\(`Google Chrome, Brave, or Chromium is not installed`\);await r\(t,\[cm\(e\)\]\);return\}/,
+    /if\(t===`linux`\)\{let o=codexLinuxChromeExtensionCommands\(\{extensionId:e,homeDir:process\.env\.HOME\?\?``,platform:t\}\),t=codexLinuxChromeCommand\(o\)\?\?n\(\);if\(t==null\)throw Error\(`Google Chrome, Brave, or Chromium is not installed`\);await r\(t,\[cm\(e\)\]\);return\}/,
   );
   assert.match(patched, /process\.env\.PATH\?\?``/);
+  assert.match(patched, /commands:\[`google-chrome-beta`,`google-chrome`,`google-chrome-stable`\]/);
   assert.doesNotMatch(patched, /function codexLinuxChromeCommand\(\)\{for\(let e of\[[^\]]+\]\)\{let t=Rp/);
 });
 
@@ -1338,6 +1339,7 @@ test("detects Chrome extension installation after upstream minifier renames", ()
 
   assert.match(patched, /function codexLinuxChromeProfileRoots/);
   assert.match(patched, /let r=um\(e\);for\(let e of codexLinuxChromeProfileRoots/);
+  assert.match(patched, /function codexLinuxChromeExtensionCommands/);
   assert.match(patched, /function om\(\{extensionId:e,homeDir:t=\(0,r\.homedir\)\(\)/);
   assert.match(patched, /c=dm\(\{homeDir:t,localAppDataDir:n,platform:a\}\)/);
   assert.match(
@@ -1347,7 +1349,7 @@ test("detects Chrome extension installation after upstream minifier renames", ()
   assert.match(patched, /await r\(rm,\[`-b`,nm,am\(e\)\]\)/);
   assert.match(
     patched,
-    /if\(t===`linux`\)\{let t=codexLinuxChromeCommand\(\)\?\?n\(\);if\(t==null\)throw Error\(`Google Chrome, Brave, or Chromium is not installed`\);await r\(t,\[am\(e\)\]\);return\}/,
+    /if\(t===`linux`\)\{let o=codexLinuxChromeExtensionCommands\(\{extensionId:e,homeDir:process\.env\.HOME\?\?``,platform:t\}\),t=codexLinuxChromeCommand\(o\)\?\?n\(\);if\(t==null\)throw Error\(`Google Chrome, Brave, or Chromium is not installed`\);await r\(t,\[am\(e\)\]\);return\}/,
   );
 });
 

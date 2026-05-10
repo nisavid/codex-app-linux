@@ -458,6 +458,7 @@ impl Dispatch<ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1, ()> fo
             ext_foreign_toplevel_handle_v1::Event::Closed => {
                 app_data.records[index].foreign = None;
                 app_data.records[index].cosmic = None;
+                app_data.records[index].identifier = None;
             }
             _ => unreachable!(),
         }

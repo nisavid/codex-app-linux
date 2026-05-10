@@ -62,7 +62,6 @@ function buildKeybindsSettingsSource({
         { id: "openCommandMenuAlt", label: "Command menu alternate", description: "Alternate shortcut for the command menu." },
         { id: "searchChats", label: "Search chats", description: "Search existing chats." },
         { id: "searchFiles", label: "Search files", description: "Search files in the current workspace." },
-        { id: "newWindow", label: "New window", description: "Open a new app window." },
       ],
     },
     {
@@ -100,14 +99,11 @@ function buildKeybindsSettingsSource({
         { id: "hardReloadBrowserPage", label: "Hard reload browser page", description: "Hard reload the active browser page." },
         { id: "toggleBrowserPanel", label: "Toggle browser panel", description: "Show or hide the browser panel." },
         { id: "toggleDiffPanel", label: "Toggle review panel", description: "Show or hide the review panel." },
-        { id: "openThreadOverlay", label: "Open thread switcher", description: "Open the thread switcher." },
-        { id: "openAvatarOverlay", label: "Open account menu", description: "Open the account menu." },
       ],
     },
     {
       title: "System",
       actions: [
-        { id: "toggleTraceRecording", label: "Toggle trace recording", description: "Start or stop trace recording." },
         { id: "dictation", label: "Dictation", description: "Start dictation." },
       ],
     },

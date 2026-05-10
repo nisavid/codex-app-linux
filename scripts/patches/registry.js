@@ -316,10 +316,14 @@ function applyMainBundlePatches(source, context, report) {
     const result = captureWarnings(() => patch.apply(patched, context));
     patched = result.value;
     warnings.push(...result.warnings);
+    const status =
+      patch.ciPolicy === REQUIRED_UPSTREAM && patched === before && result.warnings.length > 0
+        ? "failed-required"
+        : patchStatusFromChange(patched !== before, result.warnings);
     recordPatch(
       report,
       patch.name,
-      patchStatusFromChange(patched !== before, result.warnings),
+      status,
       result.warnings[0] ?? null,
     );
   }

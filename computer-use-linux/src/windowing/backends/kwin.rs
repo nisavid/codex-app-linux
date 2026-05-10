@@ -22,6 +22,7 @@ const KWIN_CALLBACK_OBJECT_PATH_PREFIX: &str = "/com/openai/Codex/KWinWindowQuer
 const KWIN_CALLBACK_INTERFACE: &str = "com.openai.Codex.KWinWindowQuery";
 
 pub fn probe() -> BackendProbe {
+    hydrate_session_bus_env();
     let check = gdbus_introspect_contains(
         "org.kde.KWin",
         "/Scripting",
