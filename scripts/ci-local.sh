@@ -4,8 +4,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-DEFAULT_CI_PACKAGE_VERSION="2026.04.28.000000+local"
-CI_PACKAGE_VERSION="${CI_PACKAGE_VERSION:-$DEFAULT_CI_PACKAGE_VERSION}"
+CI_PACKAGE_VERSION="${CI_PACKAGE_VERSION:-}"
 CI_CACHE_DIR="${CI_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/codex-app-linux-ci}"
 
 IMAGE_UBUNTU_24="${CI_IMAGE_UBUNTU_24:-docker.io/library/ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b}"
@@ -140,8 +139,6 @@ run_container_job() {
         -e "CI_IMAGE_KEY=$image_key"
         -e "CI_HOST_UID=$(id -u)"
         -e "CI_HOST_GID=$(id -g)"
-        -e "CI_PACKAGE_VERSION=$CI_PACKAGE_VERSION"
-        -e "PACKAGE_VERSION=$CI_PACKAGE_VERSION"
         -e "CARGO_TERM_COLOR=${CARGO_TERM_COLOR:-always}"
         -e "UPSTREAM_DMG_URL=${UPSTREAM_DMG_URL:-https://persistent.oaistatic.com/codex-app-prod/Codex.dmg}"
         -e "UPSTREAM_DMG_PATH=${UPSTREAM_DMG_PATH:-/tmp/codex-upstream-ci/Codex.dmg}"
@@ -149,6 +146,12 @@ run_container_job() {
         -v "$CI_CACHE_DIR:/ci-cache"
         -w /work
     )
+    if [ -n "$CI_PACKAGE_VERSION" ]; then
+        args+=(
+            -e "CI_PACKAGE_VERSION=$CI_PACKAGE_VERSION"
+            -e "PACKAGE_VERSION=$CI_PACKAGE_VERSION"
+        )
+    fi
 
     if [ -n "${CI_DMG_PATH:-}" ]; then
         args+=(-e "CI_DMG_PATH=$CI_DMG_PATH")

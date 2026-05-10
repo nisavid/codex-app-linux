@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- Local auto-update rebuilds and package builds now find the Rust toolchain reliably when `cargo` is installed via `rustup` under `~/.cargo/bin`, even if the `codex-update-manager` user service or packaging scripts inherit a reduced `PATH`.
+- Local auto-update rebuilds and package builds now find the Rust toolchain reliably when `cargo` is installed via `rustup` under `~/.cargo/bin`, even if the `codex-app-updater` user service or packaging scripts inherit a reduced `PATH`.
 
 ### Added
 

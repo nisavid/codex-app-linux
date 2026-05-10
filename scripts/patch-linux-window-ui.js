@@ -106,7 +106,19 @@ function main() {
   }
 
   const report = reportJson == null ? null : createPatchReport();
-  patchExtractedApp(extractedDir, { report });
+  try {
+    patchExtractedApp(extractedDir, { report });
+  } catch (error) {
+    if (report != null) {
+      report.patches.push({
+        name: "patch-linux-window-ui",
+        status: "failed-required",
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      writePatchReport(reportJson, report);
+    }
+    throw error;
+  }
   writePatchReport(reportJson, report);
 }
 

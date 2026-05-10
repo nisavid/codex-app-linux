@@ -79,7 +79,7 @@ pub(crate) fn parse_i3_tree(json: &str) -> Result<Vec<WindowInfo>> {
 }
 
 pub fn activate_window(window_id: u64) -> Result<()> {
-    let selector = format!(r#"[id="0x{window_id:x}"] focus"#);
+    let selector = format!(r#"[id="{window_id}"] focus"#);
     let output = i3_msg_command()
         .arg(&selector)
         .output()

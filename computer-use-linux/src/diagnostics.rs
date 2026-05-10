@@ -138,7 +138,7 @@ pub fn doctor_report() -> DoctorReport {
     let platform = platform_report();
     let portals = portal_report();
     let accessibility = accessibility_report();
-    let windowing = windowing_report(&platform);
+    let windowing = windowing_report();
     let input = input_report();
     let readiness = readiness_report(&platform, &accessibility, &windowing, &input);
 
@@ -352,7 +352,7 @@ fn accessibility_report() -> AccessibilityReport {
     }
 }
 
-fn windowing_report(platform: &PlatformReport) -> WindowingReport {
+fn windowing_report() -> WindowingReport {
     let probes = registry::probe_backends();
     let backend_check = |id: &str| {
         probes
@@ -374,19 +374,29 @@ fn windowing_report(platform: &PlatformReport) -> WindowingReport {
     let can_focus_apps = probes.iter().any(|probe| probe.can_focus_apps);
     let can_focus_windows = probes.iter().any(|probe| probe.can_focus_windows);
     let note = if can_list_windows {
-        if cosmic_helper.ok && is_cosmic_wayland_platform(platform) {
-            "A COSMIC Wayland window backend is available for list_windows, focused_window, and targeted input verification."
-        } else if kwin.ok {
-            "A KWin/Plasma window backend is available for list_windows, focused_window, and targeted input verification."
-        } else if hyprland.ok {
-            "A Hyprland window backend is available for list_windows, focused_window, and targeted input verification."
-        } else {
-            "A GNOME window listing backend is available for list_windows, focused_window, and targeted input verification."
-        }
+        let available = probes
+            .iter()
+            .filter(|probe| probe.can_list_windows)
+            .map(|probe| {
+                registry::descriptor(probe.id)
+                    .map(|descriptor| descriptor.failure_label)
+                    .unwrap_or(probe.id)
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "Window listing is available through {available} for list_windows, focused_window, and targeted input verification."
+        )
     } else {
-        "Window listing is unavailable or denied. Computer Use can still use screenshots, AT-SPI, and global ydotool input, but targeted window input cannot be verified. On GNOME, run setup_window_targeting to install the optional GNOME Shell extension backend. On COSMIC, ensure the bundled COSMIC helper is present and can connect to the session. On KDE/Plasma, ensure KWin exposes org.kde.KWin scripting on the session bus. On Hyprland, ensure hyprctl is available in the session."
-    }
-    .to_string();
+        let hints = registry::descriptors()
+            .iter()
+            .map(|descriptor| descriptor.missing_hint)
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!(
+            "Window listing is unavailable or denied. Computer Use can still use screenshots, AT-SPI, and global ydotool input, but targeted window input cannot be verified. {hints}"
+        )
+    };
 
     WindowingReport {
         gnome_shell_introspect,

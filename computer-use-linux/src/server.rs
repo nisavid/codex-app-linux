@@ -25,14 +25,12 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use std::{
     env,
-    io::Write,
     os::unix::net::UnixStream,
     path::PathBuf,
     process::{Command, Output, Stdio},
     sync::{Arc, Mutex},
-    thread,
-    time::Duration,
 };
+use tokio::{io::AsyncWriteExt, process::Command as TokioCommand, time::sleep};
 
 #[derive(Clone, Default)]
 pub struct ComputerUseLinux {
@@ -277,9 +275,11 @@ impl ComputerUseLinux {
         if let ClickTarget::PrimaryAction {
             object_ref,
             action_name,
+            action_index,
         } = target
         {
-            return match invoke_accessibility_action(&object_ref, Some("0")).await {
+            let action_index = action_index.to_string();
+            return match invoke_accessibility_action(&object_ref, Some(&action_index)).await {
                 Ok(invocation) => Json(ActionOutput {
                     ok: invocation.ok,
                     implemented: true,
@@ -374,7 +374,8 @@ impl ComputerUseLinux {
                 click_count,
                 button,
             ],
-        ]);
+        ])
+        .await;
         Json(action_result("click", result, received))
     }
 
@@ -533,7 +534,7 @@ impl ComputerUseLinux {
             sequence.push(absolute_mousemove_args(x, y));
         }
         sequence.push(wheel_mousemove_args(dx, dy));
-        let result = run_ydotool_sequence(&sequence);
+        let result = run_ydotool_sequence(&sequence).await;
         Json(action_result("scroll", result, received))
     }
 
@@ -595,7 +596,8 @@ impl ComputerUseLinux {
             vec!["click".to_string(), "0x40".to_string()],
             absolute_mousemove_args(params.end_x, params.end_y),
             vec!["click".to_string(), "0x80".to_string()],
-        ]);
+        ])
+        .await;
         Json(action_result("drag", result, received))
     }
 
@@ -631,7 +633,7 @@ impl ComputerUseLinux {
         };
         let mut args = vec!["key".to_string()];
         args.extend(key_events);
-        let result = run_ydotool(&args).map(|output| vec![output]);
+        let result = run_ydotool(&args).await.map(|output| vec![output]);
         Json(action_result_with_focus(
             "press_key",
             result,
@@ -661,7 +663,9 @@ impl ComputerUseLinux {
                 });
             }
         };
-        let result = run_ydotool_type_text(&params.text).map(|output| vec![output]);
+        let result = run_ydotool_type_text(&params.text)
+            .await
+            .map(|output| vec![output]);
         Json(action_result_with_focus(
             "type_text",
             result,
@@ -1201,7 +1205,7 @@ impl ComputerUseLinux {
             ));
         }
 
-        let Some(action_name) = primary_action_name(node.actions.as_slice()) else {
+        let Some(action) = primary_action(node.actions.as_slice()) else {
             return Err(format!(
                 "No clickable bounds cached for element_index {}, and the element exposes no primary AT-SPI action.",
                 node.index
@@ -1209,7 +1213,8 @@ impl ComputerUseLinux {
         };
         Ok(ClickTarget::PrimaryAction {
             object_ref: node.object_ref.clone(),
-            action_name: Some(action_name),
+            action_name: Some(action.name.clone()),
+            action_index: action.index,
         })
     }
 
@@ -1338,6 +1343,7 @@ enum ClickTarget {
     PrimaryAction {
         object_ref: String,
         action_name: Option<String>,
+        action_index: i32,
     },
 }
 
@@ -1545,8 +1551,12 @@ fn is_plain_left_click(button: Option<&str>, click_count: Option<u32>) -> bool {
     matches!(button.to_ascii_lowercase().as_str(), "left" | "primary") && click_count == 1
 }
 
+fn primary_action(actions: &[AccessibilityAction]) -> Option<&AccessibilityAction> {
+    actions.first()
+}
+
 fn primary_action_name(actions: &[AccessibilityAction]) -> Option<String> {
-    actions.first().map(|action| action.name.clone())
+    primary_action(actions).map(|action| action.name.clone())
 }
 
 fn bounds_center(bounds: &Bounds) -> Option<(i32, i32)> {
@@ -1653,7 +1663,12 @@ fn has_non_empty_text(value: Option<&str>) -> bool {
 }
 
 fn is_sentinel_or_missing_bounds(bounds: Option<&Bounds>) -> bool {
-    bounds.is_none()
+    bounds.is_none_or(|bounds| {
+        bounds.width <= 0
+            || bounds.height <= 0
+            || bounds.x <= i32::MIN / 2
+            || bounds.y <= i32::MIN / 2
+    })
 }
 
 fn select_accessibility_object_ref(
@@ -1834,33 +1849,35 @@ fn wheel_mousemove_args(dx: i32, dy: i32) -> Vec<String> {
     ]
 }
 
-fn run_ydotool_sequence(commands: &[Vec<String>]) -> std::result::Result<Vec<Output>, String> {
+async fn run_ydotool_sequence(
+    commands: &[Vec<String>],
+) -> std::result::Result<Vec<Output>, String> {
     let mut outputs = Vec::new();
     for (index, args) in commands.iter().enumerate() {
-        outputs.push(run_ydotool(args)?);
+        outputs.push(run_ydotool(args).await?);
         if index + 1 < commands.len() {
-            thread::sleep(Duration::from_millis(35));
+            sleep(std::time::Duration::from_millis(35)).await;
         }
     }
     Ok(outputs)
 }
 
-fn run_ydotool(args: &[String]) -> std::result::Result<Output, String> {
-    let mut command = Command::new("ydotool");
+async fn run_ydotool(args: &[String]) -> std::result::Result<Output, String> {
+    let mut command = TokioCommand::new("ydotool");
     command.args(args);
     if let Some(socket) = ydotool_socket() {
         command.env("YDOTOOL_SOCKET", socket);
     }
 
-    match command.output() {
+    match command.output().await {
         Ok(output) if output.status.success() => Ok(output),
         Ok(output) => Err(ydotool_output_error(output)),
         Err(error) => Err(format!("failed to run ydotool: {error}")),
     }
 }
 
-fn run_ydotool_type_text(text: &str) -> std::result::Result<Output, String> {
-    let mut command = Command::new("ydotool");
+async fn run_ydotool_type_text(text: &str) -> std::result::Result<Output, String> {
+    let mut command = TokioCommand::new("ydotool");
     command.args(["type", "--file", "-"]);
     if let Some(socket) = ydotool_socket() {
         command.env("YDOTOOL_SOCKET", socket);
@@ -1872,12 +1889,12 @@ fn run_ydotool_type_text(text: &str) -> std::result::Result<Output, String> {
     match command.spawn() {
         Ok(mut child) => {
             if let Some(stdin) = child.stdin.as_mut() {
-                if let Err(error) = stdin.write_all(text.as_bytes()) {
-                    let _ = child.kill();
+                if let Err(error) = stdin.write_all(text.as_bytes()).await {
+                    let _ = child.kill().await;
                     return Err(format!("failed to write text to ydotool stdin: {error}"));
                 }
             }
-            match child.wait_with_output() {
+            match child.wait_with_output().await {
                 Ok(output) if output.status.success() => Ok(output),
                 Ok(output) => Err(ydotool_output_error(output)),
                 Err(error) => Err(format!("failed to wait for ydotool: {error}")),
@@ -2538,9 +2555,11 @@ mod tests {
             ClickTarget::PrimaryAction {
                 object_ref,
                 action_name,
+                action_index,
             } => {
                 assert_eq!(object_ref, ":1.7/org/a11y/atspi/accessible/7");
                 assert_eq!(action_name.as_deref(), Some("Click"));
+                assert_eq!(action_index, 0);
             }
             ClickTarget::Coordinates(_, _) => {
                 panic!("expected AT-SPI primary-action fallback")
@@ -2578,9 +2597,11 @@ mod tests {
             ClickTarget::PrimaryAction {
                 object_ref,
                 action_name,
+                action_index,
             } => {
                 assert_eq!(object_ref, ":1.7/org/a11y/atspi/accessible/7");
                 assert_eq!(action_name.as_deref(), Some("Click"));
+                assert_eq!(action_index, 0);
             }
             ClickTarget::Coordinates(_, _) => {
                 panic!("expected AT-SPI primary-action fallback")

@@ -57,6 +57,10 @@ jobs:
           for file in scripts/patches/*.js; do
             node --check "$file"
           done
+          for file in linux-features/*/patch.js; do
+            [ -f "$file" ] || continue
+            node --check "$file"
+          done
           node --check scripts/ci/validate-patch-report.js
 
       - name: Check Rust formatting

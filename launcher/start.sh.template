@@ -460,6 +460,8 @@ text = json.dumps(manifest, separators=(",", ":"))
 
 for relative in (
     ".config/google-chrome/NativeMessagingHosts",
+    ".config/google-chrome-beta/NativeMessagingHosts",
+    ".config/google-chrome-unstable/NativeMessagingHosts",
     ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts",
     ".config/chromium/NativeMessagingHosts",
 ):

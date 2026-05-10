@@ -125,7 +125,7 @@ function findImportedAsset(webviewAssetsDir, importerAsset, description) {
 
 function requireName(source, moduleName) {
   const escaped = moduleName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = source.match(new RegExp(`([A-Za-z_$][\\w$]*)=require\\(\`${escaped}\`\\)`));
+  const match = source.match(new RegExp(`([A-Za-z_$][\\w$]*)=require\\((['"\`])${escaped}\\2\\)`));
   return match?.[1] ?? null;
 }
 
@@ -170,11 +170,12 @@ function findCallBlock(source, marker) {
   if (blockStart === -1 || blockEnd === -1) {
     return null;
   }
+  const end = blockEnd + "});".length;
 
   return {
     start: blockStart,
-    end: blockEnd + "});".length,
-    text: source.slice(blockStart, blockEnd + "});".length),
+    end,
+    text: source.slice(blockStart, end),
   };
 }
 

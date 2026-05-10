@@ -154,23 +154,19 @@ fn probe() -> Result<ProbeOutput> {
     let windows = snapshot.windows();
     let can_activate = snapshot.can_activate_windows();
     Ok(ProbeOutput {
-        ok: !windows.is_empty(),
-        can_list_windows: !windows.is_empty(),
+        ok: true,
+        can_list_windows: true,
         can_activate_windows: can_activate,
-        detail: if !windows.is_empty() {
-            if can_activate {
-                format!(
-                    "COSMIC foreign toplevel listing is available and activation is supported for {} window(s).",
-                    windows.len()
-                )
-            } else {
-                format!(
-                    "COSMIC foreign toplevel listing is available for {} window(s), but activation support is incomplete.",
-                    windows.len()
-                )
-            }
+        detail: if can_activate {
+            format!(
+                "COSMIC foreign toplevel listing is available and activation is supported for {} window(s).",
+                windows.len()
+            )
         } else {
-            "COSMIC foreign toplevel listing is unavailable in this session.".to_string()
+            format!(
+                "COSMIC foreign toplevel listing is available for {} window(s), but activation support is incomplete.",
+                windows.len()
+            )
         },
     })
 }

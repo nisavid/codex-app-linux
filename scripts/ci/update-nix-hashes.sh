@@ -100,7 +100,10 @@ run_nix_build() {
     local log_path="$1"
     rm -f "$log_path"
     set +e
-    nix build .#codex-app --no-link --print-build-logs 2>&1 | tee "$log_path"
+    (
+        cd "$REPO_DIR" || exit 1
+        nix build .#codex-app --no-link --print-build-logs
+    ) 2>&1 | tee "$log_path"
     local status="${PIPESTATUS[0]}"
     set -e
     return "$status"

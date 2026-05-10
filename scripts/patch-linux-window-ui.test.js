@@ -784,7 +784,9 @@ test("adds Linux package updater behind the existing app updater manager", () =>
   assert.match(patched, /grep -q "\^status: WaitingForAppExit"/);
   assert.match(patched, /status: Installing/);
   assert.match(patched, /grep -q "\^status: Installed"/);
-  assert.match(patched, /\/usr\/bin\/codex-app >\/dev\/null 2>&1 &/);
+  assert.match(patched, /process\.env\.CODEX_APP_LAUNCHER_PATH\|\|`\/usr\/bin\/codex-app`/);
+  assert.match(patched, /\("\$2" >\/dev\/null 2>&1 &\);exit 0/);
+  assert.match(patched, /done;exit 1/);
   assert.match(patched, /detached:!0,stdio:`ignore`/);
   assert.match(patched, /codexLinuxInstallAfterQuit\(\);let e=setTimeout/);
   assert.match(patched, /t\.app\?\.quit\?\.\(\)/);
@@ -973,7 +975,9 @@ test("migrates an already-patched Linux updater bridge to relaunch after install
   const migrated = applyLinuxAppUpdaterBridgePatch(oldPatched);
 
   assert.match(migrated, /grep -q "\^status: Installed"/);
-  assert.match(migrated, /\/usr\/bin\/codex-app >\/dev\/null 2>&1 &/);
+  assert.match(migrated, /process\.env\.CODEX_APP_LAUNCHER_PATH\|\|`\/usr\/bin\/codex-app`/);
+  assert.match(migrated, /\("\$2" >\/dev\/null 2>&1 &\);exit 0/);
+  assert.match(migrated, /done;exit 1/);
 });
 
 test("enables the existing app update menu on Linux", () => {

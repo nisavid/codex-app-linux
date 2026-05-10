@@ -298,7 +298,7 @@ install_dnf5() {
     info "Detected RPM-based distro (dnf5)"
     # dnf5: 7zip provides /usr/bin/7z; @development-tools is the group syntax
     sudo dnf install -y \
-        python3 7zip curl unzip \
+        nodejs npm python3 7zip curl unzip \
         @development-tools
 }
 

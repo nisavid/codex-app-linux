@@ -7,10 +7,10 @@ use serde::Deserialize;
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    sync::mpsc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::time::{sleep, timeout};
+use tokio::sync::mpsc;
+use tokio::time::timeout;
 use zbus::Proxy;
 
 pub const KWIN_BACKEND: &str = "kwin";
@@ -110,7 +110,7 @@ where
         .to_string();
     let plugin_name = temporary_kwin_plugin_name();
     let callback_object_path = format!("{KWIN_CALLBACK_OBJECT_PATH_PREFIX}/{plugin_name}");
-    let (sender, receiver) = mpsc::channel();
+    let (sender, mut receiver) = mpsc::unbounded_channel();
     connection
         .object_server()
         .at(callback_object_path.as_str(), KwinWindowCallback { sender })
@@ -148,15 +148,9 @@ where
             .context("KWin start failed after loading the temporary script")?;
 
         timeout(KWIN_SCRIPT_TIMEOUT, async move {
-            loop {
-                match receiver.try_recv() {
-                    Ok(json) => return Ok(json),
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        bail!("KWin temporary script callback disconnected before returning data");
-                    }
-                    Err(mpsc::TryRecvError::Empty) => sleep(Duration::from_millis(20)).await,
-                }
-            }
+            receiver.recv().await.ok_or_else(|| {
+                anyhow::anyhow!("KWin temporary script callback disconnected before returning data")
+            })
         })
         .await
         .context("KWin temporary script did not return data before timeout")?
@@ -189,7 +183,7 @@ where
 }
 
 struct KwinWindowCallback {
-    sender: mpsc::Sender<String>,
+    sender: mpsc::UnboundedSender<String>,
 }
 
 #[zbus::interface(name = "com.openai.Codex.KWinWindowQuery")]

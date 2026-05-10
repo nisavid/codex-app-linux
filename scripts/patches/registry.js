@@ -282,7 +282,12 @@ function createMainBundleContext(iconAsset) {
 
 function recordAssetPatch(report, name, patchResult, warnings) {
   if (patchResult.matched === 0) {
-    recordPatch(report, name, "skipped-optional", warnings[0] ?? "no matching bundle found");
+    recordPatch(
+      report,
+      name,
+      patchResult.required ? "failed-required" : "skipped-optional",
+      warnings[0] ?? "no matching bundle found",
+    );
     return;
   }
 
@@ -384,7 +389,7 @@ function patchExtractedApp(extractedDir, options = {}) {
     const { value: result, warnings } = captureWarnings(() =>
       patchAssetFiles(extractedDir, patch.pattern, patch.apply, webviewMissingWarning(extractedDir, patch)),
     );
-    recordAssetPatch(report, patch.name, result, warnings);
+    recordAssetPatch(report, patch.name, { ...result, required: patch.ciPolicy === REQUIRED_UPSTREAM }, warnings);
   }
 
   if (isComputerUseUiEnabled()) {
@@ -392,7 +397,7 @@ function patchExtractedApp(extractedDir, options = {}) {
       const { value: result, warnings } = captureWarnings(() =>
         patchAssetFiles(extractedDir, patch.pattern, patch.apply, webviewMissingWarning(extractedDir, patch)),
       );
-      recordAssetPatch(report, patch.name, result, warnings);
+      recordAssetPatch(report, patch.name, { ...result, required: patch.ciPolicy === REQUIRED_UPSTREAM }, warnings);
     }
   }
 

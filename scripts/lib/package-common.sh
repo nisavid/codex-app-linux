@@ -157,7 +157,7 @@ find_cargo_command() {
         return 0
     fi
 
-    if [ -x "$HOME/.cargo/bin/cargo" ]; then
+    if [ -n "${HOME-}" ] && [ -x "$HOME/.cargo/bin/cargo" ]; then
         echo "$HOME/.cargo/bin/cargo"
         return 0
     fi

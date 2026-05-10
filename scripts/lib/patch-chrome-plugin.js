@@ -19,17 +19,17 @@ function patchFile(filePath, patches) {
 
   let changed = false;
   for (const { label, oldText, newText, alreadyText = newText } of patches) {
-    if (source.includes(newText) || source.includes(alreadyText)) {
-      console.log(`${path.basename(filePath)} already patched: ${label}`);
-      continue;
-    }
-
-    if (!source.includes(oldText)) {
+    const matchIndex = source.indexOf(oldText);
+    if (matchIndex === -1) {
+      if (source.includes(newText) || source.includes(alreadyText)) {
+        console.log(`${path.basename(filePath)} already patched: ${label}`);
+        continue;
+      }
       warn(`${path.basename(filePath)} missing patch target for ${label}`);
       continue;
     }
 
-    source = source.replace(oldText, newText);
+    source = `${source.slice(0, matchIndex)}${newText}${source.slice(matchIndex + oldText.length)}`;
     changed = true;
     console.log(`Patched ${path.basename(filePath)}: ${label}`);
   }
@@ -48,20 +48,25 @@ function patchFileFirstMatch(filePath, { label, oldTexts, newText, alreadyText =
     return;
   }
 
-  if (source.includes(newText) || source.includes(alreadyText)) {
-    console.log(`${path.basename(filePath)} already patched: ${label}`);
-    return;
-  }
-
   const match = oldTexts
     .map((candidate) => typeof candidate === "string" ? { oldText: candidate, newText } : candidate)
-    .find((candidate) => source.includes(candidate.oldText));
+    .map((candidate) => ({ ...candidate, index: source.indexOf(candidate.oldText) }))
+    .find((candidate) => candidate.index !== -1);
   if (!match) {
+    if (source.includes(newText) || source.includes(alreadyText)) {
+      console.log(`${path.basename(filePath)} already patched: ${label}`);
+      return;
+    }
     warn(`${path.basename(filePath)} missing patch target for ${label}`);
     return;
   }
 
-  fs.writeFileSync(filePath, source.replace(match.oldText, match.newText ?? newText), "utf8");
+  const replacement = match.newText ?? newText;
+  fs.writeFileSync(
+    filePath,
+    `${source.slice(0, match.index)}${replacement}${source.slice(match.index + match.oldText.length)}`,
+    "utf8",
+  );
   console.log(`Patched ${path.basename(filePath)}: ${label}`);
 }
 

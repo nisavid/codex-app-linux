@@ -50,15 +50,43 @@ function readReport(reportPath) {
 
 function validateReport(report, profile) {
   const requiredNames = requiredPatchNamesForProfile(profile);
-  const patchesByName = new Map(report.patches.map((patch) => [patch.name, patch]));
+  const entriesByName = new Map();
   const failures = [];
 
+  for (const [index, patch] of report.patches.entries()) {
+    if (patch == null || typeof patch !== "object") {
+      failures.push(`patch[${index}]: malformed patch entry`);
+      continue;
+    }
+    if (typeof patch.name !== "string" || patch.name.length === 0) {
+      failures.push(`patch[${index}]: missing patch name`);
+      continue;
+    }
+    if (typeof patch.status !== "string" || patch.status.length === 0) {
+      failures.push(`${patch.name}: missing patch status`);
+    }
+    if (!entriesByName.has(patch.name)) {
+      entriesByName.set(patch.name, []);
+    }
+    entriesByName.get(patch.name).push(patch);
+  }
+
+  for (const [name, entries] of entriesByName) {
+    if (entries.length > 1) {
+      failures.push(`${name}: duplicate patch entries`);
+    }
+  }
+
   for (const name of requiredNames) {
-    const patch = patchesByName.get(name);
-    if (patch == null) {
+    const patches = entriesByName.get(name);
+    if (patches == null) {
       failures.push(`${name}: missing from patch report`);
       continue;
     }
+    if (patches.length !== 1 || typeof patches[0].status !== "string") {
+      continue;
+    }
+    const patch = patches[0];
     if (!SUCCESS_STATUSES.has(patch.status)) {
       failures.push(`${name}: ${patch.status}${patch.reason ? ` (${patch.reason})` : ""}`);
     }

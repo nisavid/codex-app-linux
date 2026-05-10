@@ -106,7 +106,7 @@ pub fn list_note(id: &str) -> &'static str {
         .map(|descriptor| descriptor.list_note)
         .unwrap_or_else(|| {
             descriptor(GNOME_SHELL_INTROSPECT_BACKEND)
-                .unwrap()
+                .expect("GNOME_SHELL_INTROSPECT_BACKEND must exist in DESCRIPTORS")
                 .list_note
         })
 }

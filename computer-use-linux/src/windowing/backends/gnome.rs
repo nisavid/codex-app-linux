@@ -13,6 +13,8 @@ pub const GNOME_SHELL_EXTENSION_SERVICE: &str = "com.openai.Codex.WindowControl"
 pub const GNOME_SHELL_EXTENSION_OBJECT_PATH: &str = "/com/openai/Codex/WindowControl";
 
 pub fn probe_extension() -> BackendProbe {
+    hydrate_session_bus_env();
+
     let check = gdbus_call_check(
         "com.openai.Codex.WindowControl",
         "/com/openai/Codex/WindowControl",
@@ -30,6 +32,8 @@ pub fn probe_extension() -> BackendProbe {
 }
 
 pub fn probe_introspect() -> BackendProbe {
+    hydrate_session_bus_env();
+
     let list = gdbus_call_check(
         "org.gnome.Shell",
         "/org/gnome/Shell/Introspect",
@@ -93,6 +97,8 @@ pub async fn list_extension_windows() -> Result<Vec<WindowInfo>> {
 }
 
 pub(crate) async fn focus_app(app_id: &str) -> Result<()> {
+    hydrate_session_bus_env();
+
     let connection = zbus::Connection::session()
         .await
         .context("failed to connect to session bus")?;
