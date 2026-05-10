@@ -25,10 +25,11 @@ Targets:
   deb                        Build and inspect the Debian package
   rpm                        Build and inspect the RPM package
   pacman                     Build and inspect the pacman package
-  install-deps               Test install-deps on Ubuntu 22.04, Ubuntu 24.04, and Debian 12
+  install-deps               Test install-deps on Ubuntu 22.04, Ubuntu 24.04, Debian 12, and Fedora 42
   install-deps:ubuntu-22.04  Test install-deps on one apt image
   install-deps:ubuntu-24.04  Test install-deps on one apt image
   install-deps:debian-12     Test install-deps on one apt image
+  install-deps:fedora-42     Test install-deps on one dnf5 image
   nix                        Run the heavy Nix flake build checks
   upstream                   Build the app against the upstream DMG
 
@@ -195,6 +196,7 @@ run_target() {
             run_target install-deps:ubuntu-22.04
             run_target install-deps:ubuntu-24.04
             run_target install-deps:debian-12
+            run_target install-deps:fedora-42
             ;;
         install-deps:ubuntu-22.04)
             run_container_job install-deps ubuntu-22.04
@@ -204,6 +206,9 @@ run_target() {
             ;;
         install-deps:debian-12)
             run_container_job install-deps debian-12
+            ;;
+        install-deps:fedora-42)
+            run_container_job install-deps fedora-42
             ;;
         *)
             usage >&2

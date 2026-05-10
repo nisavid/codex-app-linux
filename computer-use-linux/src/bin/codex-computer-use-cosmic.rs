@@ -98,6 +98,7 @@ impl ToplevelRecord {
 struct AppData {
     toplevel_info: Option<zcosmic_toplevel_info_v1::ZcosmicToplevelInfoV1>,
     toplevel_manager: Option<zcosmic_toplevel_manager_v1::ZcosmicToplevelManagerV1>,
+    foreign_toplevel_list: Option<ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1>,
     seats: Vec<wl_seat::WlSeat>,
     capabilities:
         Vec<WEnum<zcosmic_toplevel_manager_v1::ZcosmicToplelevelManagementCapabilitiesV1>>,
@@ -248,13 +249,19 @@ impl Snapshot {
             }
         });
         if snapshot.app_data.toplevel_info.is_some() {
-            let _ = globals
+            snapshot.app_data.foreign_toplevel_list = globals
                 .bind::<ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1, _, _>(
                     &qh,
                     1..=1,
                     (),
                 )
                 .ok();
+        }
+        if snapshot.app_data.toplevel_info.is_none() {
+            bail!("COSMIC toplevel info protocol not advertised");
+        }
+        if snapshot.app_data.foreign_toplevel_list.is_none() {
+            bail!("COSMIC foreign toplevel list protocol not advertised");
         }
         snapshot.prime()?;
         Ok(snapshot)
@@ -346,11 +353,14 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for AppData {
         {
             match interface.as_str() {
                 "ext_foreign_toplevel_list_v1" => {
-                    registry.bind::<ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1, _, _>(
-                        name,
-                        1,
-                        qh,
-                        (),
+                    app_data.foreign_toplevel_list = Some(
+                        registry
+                            .bind::<ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1, _, _>(
+                                name,
+                                1,
+                                qh,
+                                (),
+                            ),
                     );
                 }
                 "zcosmic_toplevel_info_v1" => {

@@ -95,7 +95,18 @@ pub fn resolve_window_target<'a>(
     target: &WindowTarget,
 ) -> Result<&'a WindowInfo> {
     if let Some(window_id) = target.window_id {
-        return resolve_window_id_target(windows, window_id);
+        if !window_matches_secondary_target_selector_present(target) {
+            return resolve_window_id_target(windows, window_id);
+        }
+        let matches = windows
+            .iter()
+            .filter(|window| {
+                window.window_id == window_id
+                    || window_id_matches_json_number(window.window_id, window_id)
+            })
+            .filter(|window| window_matches_secondary_target(window, target))
+            .collect::<Vec<_>>();
+        return unique_window_match(matches, &format!("window_id {window_id}"));
     }
 
     if target.has_terminal_target() {
@@ -196,6 +207,14 @@ fn window_matches_secondary_target(window: &WindowInfo, target: &WindowTarget) -
         && optional_exact_match(&window.wm_class, target.wm_class.as_deref())
         && optional_title_match(&window.title, target.title.as_deref())
         && (!target.has_terminal_target() || window_matches_terminal_target(window, target))
+}
+
+fn window_matches_secondary_target_selector_present(target: &WindowTarget) -> bool {
+    target.pid.is_some()
+        || normalized_target(target.app_id.as_deref()).is_some()
+        || normalized_target(target.wm_class.as_deref()).is_some()
+        || normalized_target(target.title.as_deref()).is_some()
+        || target.has_terminal_target()
 }
 
 fn window_id_matches_json_number(actual: u64, requested: u64) -> bool {

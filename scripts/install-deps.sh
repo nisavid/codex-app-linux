@@ -298,7 +298,7 @@ install_dnf5() {
     info "Detected RPM-based distro (dnf5)"
     # dnf5: 7zip provides /usr/bin/7z; @development-tools is the group syntax.
     # Node.js is provided by install.sh's managed runtime on Fedora 41+.
-    sudo dnf install -y \
+    sudo dnf5 install -y \
         python3 7zip curl unzip \
         @development-tools
 }
@@ -337,7 +337,7 @@ install_gui_prompt_helper() {
             sudo apt-get install -y "$package"
             ;;
         dnf5)
-            sudo dnf install -y "$package"
+            sudo dnf5 install -y "$package"
             ;;
         dnf)
             sudo dnf install -y "$package"

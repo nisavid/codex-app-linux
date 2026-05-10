@@ -634,9 +634,8 @@ sync_computer_use_bundled_plugin_cache() {
     cache_backend="$cache_plugin/bin/codex-computer-use-linux"
     cache_cosmic_helper="$cache_plugin/bin/codex-computer-use-cosmic"
 
-    if [ -f "$cache_backend" ] && [ -f "$cache_cosmic_helper" ] && \
-        cmp -s "$source_backend" "$cache_backend" && \
-        cmp -s "$source_cosmic_helper" "$cache_cosmic_helper"; then
+    if [ -d "$cache_plugin" ] && \
+        diff -qr --exclude='*:com.apple.*' "$source_plugin" "$cache_plugin" >/dev/null 2>&1; then
         return 0
     fi
 

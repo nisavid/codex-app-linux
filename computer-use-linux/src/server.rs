@@ -29,8 +29,15 @@ use std::{
     path::PathBuf,
     process::{Command, Output, Stdio},
     sync::{Arc, Mutex},
+    time::Duration,
 };
-use tokio::{io::AsyncWriteExt, process::Command as TokioCommand, time::sleep};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::{Child as TokioChild, Command as TokioCommand},
+    time::{sleep, timeout},
+};
+
+const YDOTOOL_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Default)]
 pub struct ComputerUseLinux {
@@ -389,7 +396,11 @@ impl ComputerUseLinux {
         &self,
         Parameters(params): Parameters<ActionParams>,
     ) -> Json<ActionOutput> {
-        let default_action = if params.action.is_none() {
+        let requested_action = params
+            .action
+            .as_deref()
+            .filter(|action| !action.trim().is_empty());
+        let default_action = if requested_action.is_none() {
             self.resolve_cached_node(
                 params.element_index,
                 &params.selector(),
@@ -402,11 +413,8 @@ impl ComputerUseLinux {
         } else {
             None
         };
-        self.perform_element_action(
-            &params,
-            params.action.as_deref().or(default_action.as_deref()),
-        )
-        .await
+        self.perform_element_action(&params, requested_action.or(default_action.as_deref()))
+            .await
     }
 
     #[tool(
@@ -1880,7 +1888,7 @@ async fn run_ydotool_sequence(
     for (index, args) in commands.iter().enumerate() {
         outputs.push(run_ydotool(args).await?);
         if index + 1 < commands.len() {
-            sleep(std::time::Duration::from_millis(35)).await;
+            sleep(Duration::from_millis(35)).await;
         }
     }
     Ok(outputs)
@@ -1892,10 +1900,15 @@ async fn run_ydotool(args: &[String]) -> std::result::Result<Output, String> {
     if let Some(socket) = ydotool_socket() {
         command.env("YDOTOOL_SOCKET", socket);
     }
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
 
-    match command.output().await {
-        Ok(output) if output.status.success() => Ok(output),
-        Ok(output) => Err(ydotool_output_error(output)),
+    match command.spawn() {
+        Ok(child) => match wait_for_ydotool_output(child).await {
+            Ok(output) if output.status.success() => Ok(output),
+            Ok(output) => Err(ydotool_output_error(output)),
+            Err(error) => Err(error),
+        },
         Err(error) => Err(format!("failed to run ydotool: {error}")),
     }
 }
@@ -1912,20 +1925,48 @@ async fn run_ydotool_type_text(text: &str) -> std::result::Result<Output, String
 
     match command.spawn() {
         Ok(mut child) => {
-            if let Some(stdin) = child.stdin.as_mut() {
+            if let Some(mut stdin) = child.stdin.take() {
                 if let Err(error) = stdin.write_all(text.as_bytes()).await {
                     let _ = child.kill().await;
                     return Err(format!("failed to write text to ydotool stdin: {error}"));
                 }
             }
-            match child.wait_with_output().await {
-                Ok(output) if output.status.success() => Ok(output),
-                Ok(output) => Err(ydotool_output_error(output)),
-                Err(error) => Err(format!("failed to wait for ydotool: {error}")),
+            let output = wait_for_ydotool_output(child).await?;
+            if output.status.success() {
+                Ok(output)
+            } else {
+                Err(ydotool_output_error(output))
             }
         }
         Err(error) => Err(format!("failed to run ydotool: {error}")),
     }
+}
+
+async fn wait_for_ydotool_output(mut child: TokioChild) -> std::result::Result<Output, String> {
+    let status = match timeout(YDOTOOL_TIMEOUT, child.wait()).await {
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(format!(
+                "ydotool timed out after {}s",
+                YDOTOOL_TIMEOUT.as_secs()
+            ));
+        }
+        Ok(result) => result.map_err(|error| format!("failed to wait for ydotool: {error}"))?,
+    };
+
+    let mut stdout = Vec::new();
+    if let Some(mut pipe) = child.stdout.take() {
+        let _ = pipe.read_to_end(&mut stdout).await;
+    }
+    let mut stderr = Vec::new();
+    if let Some(mut pipe) = child.stderr.take() {
+        let _ = pipe.read_to_end(&mut stderr).await;
+    }
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn ydotool_output_error(output: Output) -> String {

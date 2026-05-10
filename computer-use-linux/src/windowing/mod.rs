@@ -238,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_target_by_window_id_first() {
+    fn resolves_target_by_window_id_and_secondary_selectors() {
         let windows = vec![
             window(1, "Codex", "codex.desktop", "Codex"),
             window(2, "Ghostty", "com.mitchellh.ghostty.desktop", "Ghostty"),
@@ -248,13 +248,24 @@ mod tests {
             &windows,
             &WindowTarget {
                 window_id: Some(2),
-                title: Some("Codex".to_string()),
+                title: Some("Ghostty".to_string()),
                 ..Default::default()
             },
         )
         .unwrap();
 
         assert_eq!(matched.window_id, 2);
+
+        let err = resolve_window_target(
+            &windows,
+            &WindowTarget {
+                window_id: Some(2),
+                title: Some("Codex".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("No window matched window_id 2"));
     }
 
     #[test]
