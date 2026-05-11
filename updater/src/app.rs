@@ -11,7 +11,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, Utc};
-use fs4::fs_std::FileExt;
+use fs4::{FileExt, TryLockError};
 use reqwest::Client;
 use std::{
     ffi::OsString,
@@ -158,13 +158,13 @@ fn try_acquire_check_lock(paths: &RuntimePaths) -> Result<Option<CheckLock>> {
         .open(&lock_path)
         .with_context(|| format!("Failed to open {}", lock_path.display()))?;
 
-    match file.try_lock_exclusive() {
-        Ok(true) => {}
-        Ok(false) => {
+    match FileExt::try_lock(&file) {
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => {
             info!("skipping upstream check because another check is already active");
             return Ok(None);
         }
-        Err(error) => {
+        Err(TryLockError::Error(error)) => {
             return Err(error).with_context(|| format!("Failed to lock {}", lock_path.display()));
         }
     }
