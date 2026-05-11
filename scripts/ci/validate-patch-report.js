@@ -7,6 +7,7 @@ const {
 } = require("../patches/registry.js");
 
 const SUCCESS_STATUSES = new Set(["applied", "already-applied"]);
+const KNOWN_PROFILES = new Set(["upstream-build"]);
 
 function usage() {
   return "Usage: validate-patch-report.js <patch-report.json> [--profile upstream-build]";
@@ -34,6 +35,9 @@ function parseArgs(argv) {
 
   if (positional.length !== 1) {
     throw new Error(usage());
+  }
+  if (!KNOWN_PROFILES.has(profile)) {
+    throw new Error(`Unknown patch validation profile: ${profile}`);
   }
 
   return { profile, reportPath: positional[0] };
@@ -119,6 +123,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  KNOWN_PROFILES,
   SUCCESS_STATUSES,
   readReport,
   validateReport,
