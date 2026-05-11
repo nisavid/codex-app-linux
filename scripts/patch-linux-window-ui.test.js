@@ -39,6 +39,7 @@ const {
   patchLinuxAppUpdaterBridge,
   createPatchReport,
   resolveDesktopName,
+  resolveKeybindsSettingsAsset,
 } = require("./patch-linux-window-ui.js");
 
 const mainBundlePrefix =
@@ -142,6 +143,35 @@ function keyboardShortcutsIndexBundleFixture() {
     "switch(e.slug){case`keyboard-shortcuts`:return d===`electron`&&h}",
     "switch(M.slug){case`keyboard-shortcuts`:P=d===`electron`&&g;break bb0;}",
   ].join("");
+}
+
+function writeMinimalKeybindsSettingsAssets(tempRoot, overrides = {}) {
+  const assetsDir = path.join(tempRoot, "webview", "assets");
+  fs.mkdirSync(assetsDir, { recursive: true });
+  const names = {
+    chunkAsset: "chunk-test.js",
+    reactAsset: "react-test.js",
+    jsxRuntimeAsset: "jsx-runtime-test.js",
+    vscodeApiAsset: "vscode-api-test.js",
+    hotkeySettingsAsset: "general-settings-test.js",
+    toggleAsset: "toggle-test.js",
+    settingsRowAsset: "settings-row-test.js",
+    settingsLayoutAsset: "settings-content-layout-test.js",
+    ...overrides,
+  };
+
+  fs.writeFileSync(path.join(assetsDir, names.chunkAsset), "");
+  fs.writeFileSync(
+    path.join(assetsDir, names.reactAsset),
+    `import{s}from"./${names.chunkAsset}";react.transitional.element`,
+  );
+  fs.writeFileSync(path.join(assetsDir, names.jsxRuntimeAsset), "react.transitional.element");
+  fs.writeFileSync(path.join(assetsDir, names.vscodeApiAsset), "vscode://codex");
+  fs.writeFileSync(path.join(assetsDir, names.hotkeySettingsAsset), "hotkey-window-hotkey-state");
+  fs.writeFileSync(path.join(assetsDir, names.toggleAsset), "");
+  fs.writeFileSync(path.join(assetsDir, names.settingsRowAsset), "");
+  fs.writeFileSync(path.join(assetsDir, names.settingsLayoutAsset), "");
+  return names;
 }
 
 function appUpdaterBundleFixture() {
@@ -614,6 +644,59 @@ test("uses upstream Keyboard Shortcuts settings surface when available", () => {
   assert.match(patched, /"keyboard-shortcuts":ue/);
   assert.match(patched, /`keyboard-shortcuts`/);
   assert.match(patched, /codexLinuxKeybindOverridesRuntime/);
+});
+
+test("rejects unsafe Keybinds settings asset names before source generation", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-keybind-asset-name-test-"));
+  try {
+    writeMinimalKeybindsSettingsAssets(tempRoot, {
+      reactAsset: 'react-test";globalThis.__codexInjected=1;.js',
+    });
+
+    assert.throws(
+      () => resolveKeybindsSettingsAsset(tempRoot),
+      /unsafe React asset/,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("rejects unsafe imported React shared chunk asset names", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-keybind-asset-name-test-"));
+  try {
+    const names = writeMinimalKeybindsSettingsAssets(tempRoot);
+    fs.writeFileSync(path.join(tempRoot, "webview", "outside.js"), "");
+    fs.writeFileSync(
+      path.join(tempRoot, "webview", "assets", names.reactAsset),
+      'import{s}from"./../outside.js";react.transitional.element',
+    );
+
+    assert.throws(
+      () => resolveKeybindsSettingsAsset(tempRoot),
+      /unsafe React shared chunk asset/,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("builds Keybinds settings source from safe asset names", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-keybind-asset-name-test-"));
+  try {
+    const names = writeMinimalKeybindsSettingsAssets(tempRoot);
+
+    const keybindsAsset = resolveKeybindsSettingsAsset(tempRoot);
+
+    assert.equal(keybindsAsset.filePath, path.join(tempRoot, "webview", "assets", "keybinds-settings-linux.js"));
+    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.chunkAsset}"`));
+    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.reactAsset}"`));
+    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.jsxRuntimeAsset}"`));
+    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.vscodeApiAsset}"`));
+    assert.match(keybindsAsset.source, /\/\/# sourceMappingURL=keybinds-settings-linux\.js\.map\n$/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("does not duplicate upstream Keyboard Shortcuts settings metadata", () => {
