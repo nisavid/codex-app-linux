@@ -374,7 +374,6 @@ sync_browser_use_bundled_plugin_cache() {
     local version
     local cache_root
     local cache_plugin
-    local cache_client
     local cache_parent
     local tmp_plugin
     local marketplace_root
@@ -392,9 +391,9 @@ sync_browser_use_bundled_plugin_cache() {
 
     cache_root="$codex_home/plugins/cache/openai-bundled/browser-use"
     cache_plugin="$cache_root/$version"
-    cache_client="$cache_plugin/scripts/browser-client.mjs"
 
-    if [ -f "$cache_client" ] && cmp -s "$source_client" "$cache_client"; then
+    if [ -d "$cache_plugin" ] && \
+        diff -qr --exclude='*:com.apple.*' "$source_plugin" "$cache_plugin" >/dev/null 2>&1; then
         return 0
     fi
 

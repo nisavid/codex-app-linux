@@ -850,6 +850,7 @@ PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
     assert_contains "$REPO_DIR/launcher/start.sh.template" ".config/chromium/NativeMessagingHosts"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "diff -qr --exclude='*:com.apple.*'"
+    assert_not_contains "$REPO_DIR/launcher/start.sh.template" 'cmp -s "$source_client" "$cache_client"'
     assert_contains "$REPO_DIR/launcher/start.sh.template" ".tmp/bundled-marketplaces/openai-bundled"
     assert_contains "$REPO_DIR/launcher/start.sh.template" ".agents/plugins/marketplace.json"
     assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" "stage_chrome_plugin_from_upstream"

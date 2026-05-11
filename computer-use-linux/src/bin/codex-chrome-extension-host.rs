@@ -692,6 +692,20 @@ fn file_len(path: &Path) -> io::Result<u64> {
     Ok(fs::metadata(path)?.len())
 }
 
+fn rollout_file_name_matches_session(path: &Path, session_id: &str) -> bool {
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if !(file_name.ends_with(".jsonl") || file_name.ends_with(".json")) {
+        return false;
+    }
+
+    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return false;
+    };
+    stem == session_id || stem.ends_with(&format!("-{session_id}"))
+}
+
 fn find_rollout_path(root: &Path, session_id: &str) -> Option<PathBuf> {
     let mut stack = vec![(root.to_path_buf(), 0_usize)];
     let mut best: Option<(SystemTime, PathBuf)> = None;
@@ -717,11 +731,7 @@ fn find_rollout_path(root: &Path, session_id: &str) -> Option<PathBuf> {
                 continue;
             }
 
-            let file_name = entry.file_name();
-            let file_name = file_name.to_string_lossy();
-            if !file_name.contains(session_id)
-                || !(file_name.ends_with(".jsonl") || file_name.ends_with(".json"))
-            {
+            if !rollout_file_name_matches_session(&path, session_id) {
                 continue;
             }
 
@@ -880,6 +890,19 @@ mod tests {
         fs::write(&path, "{}\n").unwrap();
 
         assert_eq!(find_rollout_path(&root, "session-1"), Some(path));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rollout_path_requires_exact_session_id_suffix() {
+        let root = unique_test_dir("codex-rollout-exact-session");
+        fs::create_dir_all(&root).unwrap();
+        let substring_path = root.join("rollout-session-10.jsonl");
+        let exact_path = root.join("rollout-session-1.jsonl");
+        fs::write(&substring_path, "{}\n").unwrap();
+        fs::write(&exact_path, "{}\n").unwrap();
+
+        assert_eq!(find_rollout_path(&root, "session-1"), Some(exact_path));
         fs::remove_dir_all(root).unwrap();
     }
 
