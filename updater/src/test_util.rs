@@ -17,6 +17,7 @@ pub(crate) fn env_lock() -> MutexGuard<'static, ()> {
         .unwrap_or_else(|err| err.into_inner())
 }
 
+#[must_use = "EnvVarGuard restores the environment variable when dropped"]
 pub(crate) struct EnvVarGuard {
     key: &'static str,
     original: Option<std::ffi::OsString>,

@@ -431,7 +431,7 @@ try:
     data = json.loads(extension_id_json.read_text(encoding="utf-8"))
     extension_id = data.get("extensionId")
     host_name = data.get("extensionHostName")
-except OSError:
+except (OSError, json.JSONDecodeError):
     pass
 
 if extension_id is None or host_name is None:

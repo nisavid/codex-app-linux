@@ -430,7 +430,7 @@ function patchExtractedApp(extractedDir, options = {}) {
     report,
     "package-desktop-name",
     desktopName == null
-      ? "skipped-optional"
+      ? "failed-required"
       : previousPackageJson !== nextPackageJson ? "applied" : "already-applied",
     desktopName == null ? "package.json not found" : null,
   );

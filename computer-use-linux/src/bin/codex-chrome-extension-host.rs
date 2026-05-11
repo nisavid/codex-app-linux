@@ -697,7 +697,9 @@ fn find_rollout_path(root: &Path, session_id: &str) -> Option<PathBuf> {
     let mut best: Option<(SystemTime, PathBuf)> = None;
 
     while let Some((dir, depth)) = stack.pop() {
-        let entries = fs::read_dir(&dir).ok()?;
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let Ok(file_type) = entry.file_type() else {
