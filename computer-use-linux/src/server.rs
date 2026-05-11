@@ -396,24 +396,8 @@ impl ComputerUseLinux {
         &self,
         Parameters(params): Parameters<ActionParams>,
     ) -> Json<ActionOutput> {
-        let requested_action = params
-            .action
-            .as_deref()
-            .filter(|action| !action.trim().is_empty());
-        let default_action = if requested_action.is_none() {
-            self.resolve_cached_node(
-                params.element_index,
-                &params.selector(),
-                ElementResolvePurpose::Action,
-            )
-            .ok()
-            .and_then(|node| {
-                primary_action(node.actions.as_slice()).map(|action| action.index.to_string())
-            })
-        } else {
-            None
-        };
-        self.perform_element_action(&params, requested_action.or(default_action.as_deref()))
+        let requested_action = requested_or_primary_action(params.action.as_deref());
+        self.perform_element_action(&params, Some(requested_action))
             .await
     }
 
@@ -1589,6 +1573,13 @@ fn primary_action(actions: &[AccessibilityAction]) -> Option<&AccessibilityActio
 
 fn primary_action_name(actions: &[AccessibilityAction]) -> Option<String> {
     primary_action(actions).map(|action| action.name.clone())
+}
+
+fn requested_or_primary_action(action: Option<&str>) -> &str {
+    action
+        .map(str::trim)
+        .filter(|action| !action.is_empty())
+        .unwrap_or("0")
 }
 
 fn bounds_center(bounds: &Bounds) -> Option<(i32, i32)> {
@@ -2790,6 +2781,16 @@ mod tests {
         assert_eq!(selected, usable_socket);
         drop(listener);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn perform_action_defaults_to_primary_action_index() {
+        assert_eq!(requested_or_primary_action(None), "0");
+        assert_eq!(requested_or_primary_action(Some("   ")), "0");
+        assert_eq!(
+            requested_or_primary_action(Some(" show-menu ")),
+            "show-menu"
+        );
     }
 
     #[test]
