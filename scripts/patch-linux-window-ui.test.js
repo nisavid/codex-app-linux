@@ -765,6 +765,22 @@ test("chooses the nearest globalState alias for close-to-tray settings", () => {
   assert.doesNotMatch(patched, /stale\.globalState\.get\(`codex-linux-system-tray-enabled`\)/);
 });
 
+test("warns instead of throwing when the close-to-tray setting shape drifts", () => {
+  const source = [
+    "let M=FM({buildFlavor:a,globalState:j.globalState,canHideLastLocalWindowToTray(){return O},disposables:k});",
+    "t.Mr().info(`Launching app`);",
+  ].join("");
+
+  const { value: patched, warnings } = captureWarns(() =>
+    applyLinuxTrayCloseSettingPatch(source),
+  );
+
+  assert.equal(patched, source);
+  assert.deepEqual(warnings, [
+    "WARN: Could not find Linux tray settings close gate needle — skipping tray setting patch",
+  ]);
+});
+
 test("allows bundled Computer Use on Linux as well as macOS", () => {
   const patched = applyPatchTwice(
     applyLinuxComputerUsePluginGatePatch,

@@ -20,6 +20,10 @@ use wayland_protocols::ext::foreign_toplevel_list::v1::client::{
 const HELP: &str = "codex-computer-use-cosmic\n\nUsage:\n  codex-computer-use-cosmic probe\n  codex-computer-use-cosmic list-windows\n  codex-computer-use-cosmic focused-window\n  codex-computer-use-cosmic activate-window --window-id <id>";
 const BACKEND: &str = "cosmic-wayland";
 const ACTIVATION_STATE_TTL: Duration = Duration::from_secs(5);
+const EXT_FOREIGN_TOPLEVEL_LIST_VERSION: u32 = 1;
+const ZCOSMIC_TOPLEVEL_INFO_VERSION: u32 = 3;
+const ZCOSMIC_TOPLEVEL_MANAGER_VERSION: u32 = 4;
+const WL_SEAT_VERSION: u32 = 9;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct WindowInfo {
@@ -348,7 +352,7 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for AppData {
         if let wl_registry::Event::Global {
             name,
             interface,
-            version: _,
+            version,
         } = event
         {
             match interface.as_str() {
@@ -357,7 +361,7 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for AppData {
                         registry
                             .bind::<ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1, _, _>(
                                 name,
-                                1,
+                                bind_global_version(version, EXT_FOREIGN_TOPLEVEL_LIST_VERSION),
                                 qh,
                                 (),
                             ),
@@ -367,7 +371,7 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for AppData {
                     app_data.toplevel_info = Some(
                         registry.bind::<zcosmic_toplevel_info_v1::ZcosmicToplevelInfoV1, _, _>(
                             name,
-                            3,
+                            bind_global_version(version, ZCOSMIC_TOPLEVEL_INFO_VERSION),
                             qh,
                             (),
                         ),
@@ -378,21 +382,28 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for AppData {
                         registry
                             .bind::<zcosmic_toplevel_manager_v1::ZcosmicToplevelManagerV1, _, _>(
                                 name,
-                                4,
+                                bind_global_version(version, ZCOSMIC_TOPLEVEL_MANAGER_VERSION),
                                 qh,
                                 (),
                             ),
                     );
                 }
                 "wl_seat" => {
-                    app_data
-                        .seats
-                        .push(registry.bind::<wl_seat::WlSeat, _, _>(name, 9, qh, ()));
+                    app_data.seats.push(registry.bind::<wl_seat::WlSeat, _, _>(
+                        name,
+                        bind_global_version(version, WL_SEAT_VERSION),
+                        qh,
+                        (),
+                    ));
                 }
                 _ => {}
             }
         }
     }
+}
+
+fn bind_global_version(advertised: u32, supported: u32) -> u32 {
+    advertised.min(supported).max(1)
 }
 
 impl Dispatch<ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1, ()> for AppData {
@@ -662,6 +673,13 @@ mod tests {
     #[test]
     fn stable_window_id_is_stable() {
         assert_eq!(stable_window_id("window-1"), stable_window_id("window-1"));
+    }
+
+    #[test]
+    fn bind_global_version_clamps_to_advertised_protocol_version() {
+        assert_eq!(bind_global_version(2, WL_SEAT_VERSION), 2);
+        assert_eq!(bind_global_version(12, WL_SEAT_VERSION), WL_SEAT_VERSION);
+        assert_eq!(bind_global_version(0, WL_SEAT_VERSION), 1);
     }
 
     #[test]

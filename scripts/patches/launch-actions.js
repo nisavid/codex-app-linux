@@ -88,7 +88,7 @@ function applyLinuxTrayCloseSettingPatch(currentSource) {
   }
 
   if (patchedSource.includes("canHideLastLocalWindowToTray") && patchedSource.includes("Launching app")) {
-    throw new Error("Required Linux tray settings patch failed: could not gate close-to-tray behavior");
+    console.warn("WARN: Could not find Linux tray settings close gate needle — skipping tray setting patch");
   }
 
   return patchedSource;
