@@ -307,6 +307,8 @@ function recordAssetPatch(report, name, patchResult, warnings) {
 function applyMainBundlePatches(source, context, report) {
   let patched = source;
   const warnings = [];
+  let requiredChanged = false;
+  let requiredFailureReason = null;
   const patches = [
     ...MAIN_BUNDLE_PATCHES,
     ...loadLinuxFeatureMainBundlePatches(),
@@ -321,6 +323,12 @@ function applyMainBundlePatches(source, context, report) {
     const result = captureWarnings(() => patch.apply(patched, context));
     patched = result.value;
     warnings.push(...result.warnings);
+    if (patch.ciPolicy === REQUIRED_UPSTREAM) {
+      requiredChanged ||= patched !== before;
+      if (patched === before && result.warnings.length > 0 && requiredFailureReason == null) {
+        requiredFailureReason = result.warnings[0];
+      }
+    }
     const status =
       patch.ciPolicy === REQUIRED_UPSTREAM && patched === before && result.warnings.length > 0
         ? "failed-required"
@@ -333,7 +341,7 @@ function applyMainBundlePatches(source, context, report) {
     );
   }
 
-  return { patchedSource: patched, warnings };
+  return { patchedSource: patched, warnings, requiredChanged, requiredFailureReason };
 }
 
 function patchMainBundleSource(source, iconAsset) {
@@ -367,15 +375,19 @@ function patchExtractedApp(extractedDir, options = {}) {
     const target = path.join(main.buildDir, main.mainBundle);
     const source = fs.readFileSync(target, "utf8");
     const context = createMainBundleContext(iconAsset);
-    const { patchedSource, warnings } = applyMainBundlePatches(source, context, report);
+    const { patchedSource, requiredChanged, requiredFailureReason } = applyMainBundlePatches(source, context, report);
     if (patchedSource !== source) {
       fs.writeFileSync(target, patchedSource, "utf8");
     }
+    const mainProcessStatus =
+      requiredFailureReason != null
+        ? "failed-required"
+        : patchStatusFromChange(requiredChanged, []);
     recordPatch(
       report,
       "main-process-ui",
-      patchStatusFromChange(patchedSource !== source, warnings),
-      warnings[0] ?? null,
+      mainProcessStatus,
+      requiredFailureReason,
     );
   }
 

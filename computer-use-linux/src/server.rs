@@ -38,6 +38,7 @@ use tokio::{
 };
 
 const YDOTOOL_TIMEOUT: Duration = Duration::from_secs(10);
+const YDOTOOL_TYPE_CHARS_PER_SECOND: u64 = 20;
 
 #[derive(Clone, Default)]
 pub struct ComputerUseLinux {
@@ -1922,7 +1923,8 @@ async fn run_ydotool_type_text(text: &str) -> std::result::Result<Output, String
                     return Err(format!("failed to write text to ydotool stdin: {error}"));
                 }
             }
-            let output = wait_for_ydotool_output(child).await?;
+            let output =
+                wait_for_ydotool_output_with_timeout(child, ydotool_type_timeout(text)).await?;
             if output.status.success() {
                 Ok(output)
             } else {
@@ -1933,13 +1935,20 @@ async fn run_ydotool_type_text(text: &str) -> std::result::Result<Output, String
     }
 }
 
-async fn wait_for_ydotool_output(mut child: TokioChild) -> std::result::Result<Output, String> {
-    let status = match timeout(YDOTOOL_TIMEOUT, child.wait()).await {
+async fn wait_for_ydotool_output(child: TokioChild) -> std::result::Result<Output, String> {
+    wait_for_ydotool_output_with_timeout(child, YDOTOOL_TIMEOUT).await
+}
+
+async fn wait_for_ydotool_output_with_timeout(
+    mut child: TokioChild,
+    timeout_duration: Duration,
+) -> std::result::Result<Output, String> {
+    let status = match timeout(timeout_duration, child.wait()).await {
         Err(_) => {
             let _ = child.kill().await;
             return Err(format!(
                 "ydotool timed out after {}s",
-                YDOTOOL_TIMEOUT.as_secs()
+                timeout_duration.as_secs()
             ));
         }
         Ok(result) => result.map_err(|error| format!("failed to wait for ydotool: {error}"))?,
@@ -1958,6 +1967,13 @@ async fn wait_for_ydotool_output(mut child: TokioChild) -> std::result::Result<O
         stdout,
         stderr,
     })
+}
+
+fn ydotool_type_timeout(text: &str) -> Duration {
+    let text_seconds = (text.chars().count() as u64)
+        .div_ceil(YDOTOOL_TYPE_CHARS_PER_SECOND)
+        .max(YDOTOOL_TIMEOUT.as_secs());
+    Duration::from_secs(text_seconds)
 }
 
 fn ydotool_output_error(output: Output) -> String {
@@ -2761,6 +2777,12 @@ mod tests {
             key_sequence("Super"),
             Some(vec!["125:1".to_string(), "125:0".to_string()])
         );
+    }
+
+    #[test]
+    fn ydotool_type_timeout_scales_with_text_length() {
+        assert_eq!(ydotool_type_timeout("short").as_secs(), 10);
+        assert!(ydotool_type_timeout(&"x".repeat(500)).as_secs() > 10);
     }
 
     #[test]
