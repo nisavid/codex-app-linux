@@ -32,7 +32,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     process::{Child as TokioChild, Command as TokioCommand},
     time::{sleep, timeout},
 };
@@ -1943,9 +1943,14 @@ async fn wait_for_ydotool_output_with_timeout(
     mut child: TokioChild,
     timeout_duration: Duration,
 ) -> std::result::Result<Output, String> {
+    let stdout_reader = read_child_pipe(child.stdout.take());
+    let stderr_reader = read_child_pipe(child.stderr.take());
     let status = match timeout(timeout_duration, child.wait()).await {
         Err(_) => {
             let _ = child.kill().await;
+            let _ = child.wait().await;
+            stdout_reader.abort();
+            stderr_reader.abort();
             return Err(format!(
                 "ydotool timed out after {}s",
                 timeout_duration.as_secs()
@@ -1953,19 +1958,25 @@ async fn wait_for_ydotool_output_with_timeout(
         }
         Ok(result) => result.map_err(|error| format!("failed to wait for ydotool: {error}"))?,
     };
-
-    let mut stdout = Vec::new();
-    if let Some(mut pipe) = child.stdout.take() {
-        let _ = pipe.read_to_end(&mut stdout).await;
-    }
-    let mut stderr = Vec::new();
-    if let Some(mut pipe) = child.stderr.take() {
-        let _ = pipe.read_to_end(&mut stderr).await;
-    }
+    let stdout = stdout_reader.await.unwrap_or_default();
+    let stderr = stderr_reader.await.unwrap_or_default();
     Ok(Output {
         status,
         stdout,
         stderr,
+    })
+}
+
+fn read_child_pipe<R>(pipe: Option<R>) -> tokio::task::JoinHandle<Vec<u8>>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut output = Vec::new();
+        if let Some(mut pipe) = pipe {
+            let _ = pipe.read_to_end(&mut output).await;
+        }
+        output
     })
 }
 
@@ -2783,6 +2794,24 @@ mod tests {
     fn ydotool_type_timeout_scales_with_text_length() {
         assert_eq!(ydotool_type_timeout("short").as_secs(), 10);
         assert!(ydotool_type_timeout(&"x".repeat(500)).as_secs() > 10);
+    }
+
+    #[tokio::test]
+    async fn ydotool_wait_drains_output_before_exit() {
+        let mut command = TokioCommand::new("sh");
+        command.args(["-c", "yes noisy | head -c 200000 >&2; exit 7"]);
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+
+        let output = wait_for_ydotool_output_with_timeout(
+            command.spawn().expect("spawn noisy child"),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("child should exit before timeout");
+
+        assert_eq!(output.status.code(), Some(7));
+        assert!(output.stderr.len() >= 100_000);
     }
 
     #[test]
