@@ -510,7 +510,7 @@ async fn text_from_proxies(
         None
     };
     let selection_count = text
-        .get_nselections()
+        .get_n_selections()
         .await
         .unwrap_or_default()
         .clamp(0, MAX_TEXT_SELECTIONS);

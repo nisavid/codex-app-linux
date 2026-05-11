@@ -342,7 +342,7 @@ test_upstream_build_app_workflow_tracks_dmg_metadata() {
     assert_file_exists "$workflow"
     assert_contains "$workflow" 'name: Upstream Build App'
     assert_contains "$workflow" 'UPSTREAM_DMG_URL: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg'
-    assert_contains "$workflow" 'actions/cache@v4'
+    assert_contains "$workflow" 'actions/cache@v5'
     assert_contains "$workflow" 'path: /tmp/codex-upstream-ci/Codex.dmg'
     assert_contains "$workflow" 'Last-Modified'
     assert_contains "$workflow" 'tolower($0) ~ /^last-modified:/'
