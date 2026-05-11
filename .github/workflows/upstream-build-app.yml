@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
 
@@ -137,7 +137,7 @@ jobs:
         run: make build-app DMG=/tmp/codex-upstream-ci/Codex.dmg
 
       - name: Upload upstream DMG metadata artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: upstream-dmg-metadata
           path: upstream-dmg-metadata.json
