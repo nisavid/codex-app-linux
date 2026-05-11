@@ -28,14 +28,14 @@ pub fn resolve_helper_binary() -> Result<PathBuf> {
         .filter(|value| !value.trim().is_empty())
     {
         let path = PathBuf::from(path);
-        if path.exists() {
+        if is_executable_file(&path) {
             return Ok(path);
         }
     }
 
     if let Ok(current_exe) = env::current_exe() {
         let sibling = current_exe.with_file_name(COSMIC_HELPER_BINARY);
-        if sibling.exists() {
+        if is_executable_file(&sibling) {
             return Ok(sibling);
         }
     }
@@ -120,7 +120,11 @@ fn command_path(binary: &str) -> Option<PathBuf> {
     let path = env::var_os("PATH")?;
     env::split_paths(&path)
         .map(|entry| entry.join(binary))
-        .find(|candidate| candidate.is_file() && is_executable(candidate))
+        .find(|candidate| is_executable_file(candidate))
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file() && is_executable(path)
 }
 
 fn is_executable(path: &Path) -> bool {

@@ -454,7 +454,7 @@ fn parse_node_version_dir(name: &str) -> Option<(u64, u64, u64)> {
 fn include_system_cli_locations() -> bool {
     #[cfg(test)]
     {
-        std::env::var_os("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP").is_none()
+        std::env::var_os("CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP").is_none()
     }
 
     #[cfg(not(test))]
@@ -1087,8 +1087,11 @@ mod tests {
         let _path_guard = EnvVarGuard::set(&_env_guard, "PATH", temp.path().join("missing-bin"));
         let _nvm_dir_guard = EnvVarGuard::remove(&_env_guard, "NVM_DIR");
         let _codex_cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
-        let _skip_system_cli_lookup_guard =
-            EnvVarGuard::set(&_env_guard, "CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+        let _skip_system_cli_lookup_guard = EnvVarGuard::set(
+            &_env_guard,
+            "CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP",
+            "1",
+        );
 
         let missing_path = temp.path().join("missing-codex");
         let mut state = PersistedState::new(true);
@@ -1120,8 +1123,11 @@ mod tests {
         let _path_guard = EnvVarGuard::set(&_env_guard, "PATH", temp.path().join("missing-bin"));
         let _nvm_dir_guard = EnvVarGuard::remove(&_env_guard, "NVM_DIR");
         let _codex_cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
-        let _skip_system_cli_lookup_guard =
-            EnvVarGuard::set(&_env_guard, "CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+        let _skip_system_cli_lookup_guard = EnvVarGuard::set(
+            &_env_guard,
+            "CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP",
+            "1",
+        );
 
         let mut state = PersistedState::new(true);
         let config = test_runtime_config(&paths);

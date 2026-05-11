@@ -1740,7 +1740,7 @@ mod tests {
         let _nvm_dir_guard = crate::test_util::EnvVarGuard::remove(&_env_guard, "NVM_DIR");
         let _skip_system_cli_lookup_guard = crate::test_util::EnvVarGuard::set(
             &_env_guard,
-            "CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP",
+            "CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP",
             "1",
         );
 

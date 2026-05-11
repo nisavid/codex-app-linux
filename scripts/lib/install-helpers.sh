@@ -20,7 +20,7 @@ Run the helper to install them automatically:
 
 Or install manually:
   sudo apt install python3 p7zip-full curl unzip coreutils tar build-essential       # Debian/Ubuntu
-  sudo dnf install python3 p7zip p7zip-plugins curl unzip coreutils tar gcc-c++ make @development-tools # Fedora 41+ (dnf5)
+  sudo dnf5 install python3 p7zip p7zip-plugins curl unzip coreutils tar gcc-c++ make @development-tools # Fedora 41+ (dnf5)
   sudo dnf install python3 p7zip p7zip-plugins curl unzip coreutils tar              # Fedora <41 (dnf)
   sudo dnf groupinstall 'Development Tools'                                          # Fedora <41 (dnf)
   sudo pacman -S python p7zip curl unzip coreutils tar zstd base-devel              # Arch

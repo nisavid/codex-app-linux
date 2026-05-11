@@ -63,7 +63,7 @@ jobs:
           done
           feature_tests=(linux-features/*/test.js)
           if [ -e "${feature_tests[0]}" ]; then
-            node --test "${feature_tests[@]}"
+            node --test --test-concurrency=1 "${feature_tests[@]}"
           fi
           node --check scripts/ci/validate-patch-report.js
 
