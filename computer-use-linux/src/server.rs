@@ -620,6 +620,15 @@ impl ComputerUseLinux {
         Parameters(params): Parameters<PressKeyParams>,
     ) -> Json<ActionOutput> {
         let received = Some(serde_json::json!(params.clone()));
+        let Some(key_events) = key_sequence(&params.key) else {
+            return Json(ActionOutput {
+                ok: false,
+                implemented: true,
+                action: "press_key".to_string(),
+                message: "Unsupported key. Use names like Enter, Escape, Tab, ArrowLeft, Super, Ctrl+L, or a single US keyboard letter/digit.".to_string(),
+                received,
+            });
+        };
         let focus = match self.focus_target_for_input(&params.window_target()).await {
             Ok(focus) => focus,
             Err(message) => {
@@ -631,15 +640,6 @@ impl ComputerUseLinux {
                     received,
                 });
             }
-        };
-        let Some(key_events) = key_sequence(&params.key) else {
-            return Json(ActionOutput {
-                ok: false,
-                implemented: true,
-                action: "press_key".to_string(),
-                message: "Unsupported key. Use names like Enter, Escape, Tab, ArrowLeft, Super, Ctrl+L, or a single US keyboard letter/digit.".to_string(),
-                received,
-            });
         };
         let mut args = vec!["key".to_string()];
         args.extend(key_events);
