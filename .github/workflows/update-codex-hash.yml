@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+      - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
 
       - name: Download upstream Codex.dmg
         run: curl -fL --retry 3 -o /tmp/Codex.dmg https://persistent.oaistatic.com/codex-app-prod/Codex.dmg
