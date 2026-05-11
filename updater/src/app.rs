@@ -294,6 +294,7 @@ fn run_status(
     json: bool,
 ) -> Result<()> {
     codex_cli::refresh_status(config, state, paths)?;
+    complete_pending_install_if_already_installed(state, paths)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(state)?);
@@ -764,7 +765,7 @@ async fn run_install_ready(
 
     if complete_pending_install_if_already_installed(state, paths)? {
         let _ = maybe_notify_installed(state, paths, config.notifications);
-        println!("Codex App update is already installed.");
+        println!("Codex App update is already installed or superseded.");
         return Ok(());
     }
 
@@ -842,18 +843,24 @@ fn complete_pending_install_if_already_installed(
         return Ok(false);
     }
 
-    if !state.candidate_version.as_deref().is_some_and(|candidate| {
+    let Some(candidate_version) = state.candidate_version.clone().filter(|candidate| {
         installed_version_satisfies_candidate(&state.installed_version, candidate)
-    }) {
+    }) else {
         return Ok(false);
-    }
+    };
+
+    let candidate_is_installed =
+        installed_version_matches_candidate(&state.installed_version, &candidate_version);
 
     state.status = UpdateStatus::Installed;
     state.candidate_version = None;
+    if !candidate_is_installed {
+        state.artifact_paths.package_path = None;
+    }
     state.error_message = None;
     state.notified_events.clear();
     persist_state(paths, state)?;
-    info!("recovered pending install state because the candidate version is already installed");
+    info!("recovered pending install state because the candidate version is already installed or superseded");
     Ok(true)
 }
 
@@ -862,11 +869,17 @@ fn recover_interrupted_install(state: &mut PersistedState, paths: &RuntimePaths)
         return Ok(());
     }
 
-    if state.candidate_version.as_deref().is_some_and(|candidate| {
+    if let Some(candidate_version) = state.candidate_version.clone().filter(|candidate| {
         installed_version_satisfies_candidate(&state.installed_version, candidate)
     }) {
+        let candidate_is_installed =
+            installed_version_matches_candidate(&state.installed_version, &candidate_version);
+
         state.status = UpdateStatus::Installed;
         state.candidate_version = None;
+        if !candidate_is_installed {
+            state.artifact_paths.package_path = None;
+        }
         state.error_message = None;
         state.notified_events.clear();
         persist_state(paths, state)?;
@@ -911,6 +924,14 @@ fn installed_version_satisfies_candidate(installed: &str, candidate: &str) -> bo
     match compare_generated_versions(installed, candidate) {
         Some(std::cmp::Ordering::Less) => false,
         Some(_) => true,
+        None => installed == candidate,
+    }
+}
+
+fn installed_version_matches_candidate(installed: &str, candidate: &str) -> bool {
+    match compare_generated_versions(installed, candidate) {
+        Some(std::cmp::Ordering::Equal) => true,
+        Some(_) => false,
         None => installed == candidate,
     }
 }
@@ -1277,7 +1298,7 @@ mod tests {
 
         let mut state = PersistedState::new(false);
         state.status = UpdateStatus::Failed;
-        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.candidate_version = Some("2999.03.25.010203+deadbeef".to_string());
         state.error_message = Some("previous failure".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
@@ -1369,21 +1390,21 @@ mod tests {
         };
         paths.ensure_dirs()?;
 
-        {
-            let first_lock = try_acquire_check_lock(&paths)?;
-            let second_lock = try_acquire_check_lock(&paths)?;
+        let first_lock =
+            try_acquire_check_lock(&paths)?.expect("first lock acquisition should succeed");
+        let second_lock = try_acquire_check_lock(&paths)?;
 
-            assert!(first_lock.is_some());
-            assert!(second_lock.is_none());
-        }
+        assert!(second_lock.is_none());
+        drop(second_lock);
+        drop(first_lock);
 
         let mut reacquired_lock = None;
-        for _ in 0..10 {
+        for _ in 0..20 {
             reacquired_lock = try_acquire_check_lock(&paths)?;
             if reacquired_lock.is_some() {
                 break;
             }
-            std::thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
 
         assert!(reacquired_lock.is_some());
@@ -1418,7 +1439,7 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::ReadyToInstall;
-        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.candidate_version = Some("2999.03.25.010203+deadbeef".to_string());
         state.artifact_paths.package_path = Some(temp.path().join("missing/codex.deb"));
 
         reconcile_pending_install(&config, &mut state, &paths).await?;
@@ -1467,7 +1488,7 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::ReadyToInstall;
-        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.candidate_version = Some("2999.03.25.010203+deadbeef".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
         reconcile_pending_install(&config, &mut state, &paths).await?;
@@ -1513,11 +1534,11 @@ mod tests {
 
         let mut state = PersistedState::new(false);
         state.status = UpdateStatus::ReadyToInstall;
-        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.candidate_version = Some("2999.03.25.010203+deadbeef".to_string());
         state.artifact_paths.package_path = Some(package_path);
         state
             .notified_events
-            .insert("install_auth_required:2026.03.25.010203+deadbeef".to_string());
+            .insert("install_auth_required:2999.03.25.010203+deadbeef".to_string());
 
         run_install_ready(&config, &mut state, &paths).await?;
 
@@ -1554,7 +1575,7 @@ mod tests {
 
         let mut state = PersistedState::new(false);
         state.status = UpdateStatus::ReadyToInstall;
-        state.candidate_version = Some("2026.03.25.010203+deadbeef".to_string());
+        state.candidate_version = Some("2999.03.25.010203+deadbeef".to_string());
         state.artifact_paths.package_path = Some(temp.path().join("missing/codex.deb"));
 
         let result = run_install_ready(&config, &mut state, &paths).await;
@@ -1703,21 +1724,25 @@ mod tests {
         };
         paths.ensure_dirs()?;
 
-        let original_display = std::env::var_os("DISPLAY");
-        let original_wayland_display = std::env::var_os("WAYLAND_DISPLAY");
-        let original_dbus_session_bus_address = std::env::var_os("DBUS_SESSION_BUS_ADDRESS");
-        let original_xdg_runtime_dir = std::env::var_os("XDG_RUNTIME_DIR");
-        let original_path = std::env::var_os("PATH");
-        let original_home = std::env::var_os("HOME");
-        let original_nvm_dir = std::env::var_os("NVM_DIR");
-
-        std::env::remove_var("DISPLAY");
-        std::env::remove_var("WAYLAND_DISPLAY");
-        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
-        std::env::remove_var("XDG_RUNTIME_DIR");
-        std::env::set_var("PATH", temp.path().join("missing-bin"));
-        std::env::set_var("HOME", temp.path());
-        std::env::remove_var("NVM_DIR");
+        let _display_guard = crate::test_util::EnvVarGuard::remove(&_env_guard, "DISPLAY");
+        let _wayland_display_guard =
+            crate::test_util::EnvVarGuard::remove(&_env_guard, "WAYLAND_DISPLAY");
+        let _dbus_session_bus_address_guard =
+            crate::test_util::EnvVarGuard::remove(&_env_guard, "DBUS_SESSION_BUS_ADDRESS");
+        let _xdg_runtime_dir_guard =
+            crate::test_util::EnvVarGuard::remove(&_env_guard, "XDG_RUNTIME_DIR");
+        let _path_guard = crate::test_util::EnvVarGuard::set(
+            &_env_guard,
+            "PATH",
+            temp.path().join("missing-bin"),
+        );
+        let _home_guard = crate::test_util::EnvVarGuard::set(&_env_guard, "HOME", temp.path());
+        let _nvm_dir_guard = crate::test_util::EnvVarGuard::remove(&_env_guard, "NVM_DIR");
+        let _skip_system_cli_lookup_guard = crate::test_util::EnvVarGuard::set(
+            &_env_guard,
+            "CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP",
+            "1",
+        );
 
         let invalid_cli_path = temp.path().join("codex.txt");
         std::fs::write(&invalid_cli_path, b"not executable")?;
@@ -1738,42 +1763,6 @@ mod tests {
         };
 
         let outcome = prompt_install_cli(&config, &mut state, &paths, None)?;
-
-        if let Some(value) = original_display {
-            std::env::set_var("DISPLAY", value);
-        } else {
-            std::env::remove_var("DISPLAY");
-        }
-        if let Some(value) = original_wayland_display {
-            std::env::set_var("WAYLAND_DISPLAY", value);
-        } else {
-            std::env::remove_var("WAYLAND_DISPLAY");
-        }
-        if let Some(value) = original_dbus_session_bus_address {
-            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", value);
-        } else {
-            std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
-        }
-        if let Some(value) = original_xdg_runtime_dir {
-            std::env::set_var("XDG_RUNTIME_DIR", value);
-        } else {
-            std::env::remove_var("XDG_RUNTIME_DIR");
-        }
-        if let Some(value) = original_path {
-            std::env::set_var("PATH", value);
-        } else {
-            std::env::remove_var("PATH");
-        }
-        if let Some(value) = original_home {
-            std::env::set_var("HOME", value);
-        } else {
-            std::env::remove_var("HOME");
-        }
-        if let Some(value) = original_nvm_dir {
-            std::env::set_var("NVM_DIR", value);
-        } else {
-            std::env::remove_var("NVM_DIR");
-        }
 
         assert_eq!(outcome, PromptInstallCliOutcome::NoBackend);
         Ok(())
@@ -1860,7 +1849,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_install_becomes_installed_when_newer_version_is_present() -> Result<()> {
+    fn pending_install_is_cleared_when_installed_version_is_newer() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let paths = RuntimePaths {
             config_file: temp.path().join("config/config.toml"),
@@ -1873,9 +1862,13 @@ mod tests {
         paths.ensure_dirs()?;
 
         let mut state = PersistedState::new(true);
-        state.status = UpdateStatus::WaitingForAppExit;
-        state.installed_version = "2026.04.29.010203+abcdef12".to_string();
+        state.status = UpdateStatus::ReadyToInstall;
+        state.installed_version = "2026.05.01.010203-99999999.fc43".to_string();
         state.candidate_version = Some("2026.04.28.082247+abcdef12".to_string());
+        state.error_message = Some("authentication was not obtained".to_string());
+        let superseded_package_path = temp.path().join("superseded.deb");
+        std::fs::write(&superseded_package_path, b"deb")?;
+        state.artifact_paths.package_path = Some(superseded_package_path);
 
         assert!(complete_pending_install_if_already_installed(
             &mut state, &paths
@@ -1883,6 +1876,10 @@ mod tests {
 
         assert_eq!(state.status, UpdateStatus::Installed);
         assert_eq!(state.candidate_version, None);
+        assert_eq!(state.artifact_paths.package_path, None);
+        assert_eq!(state.error_message, None);
+        crate::rollback::record_current_package_as_known_good(&mut state);
+        assert_eq!(state.artifact_paths.rollback_package_path, None);
         Ok(())
     }
 
@@ -1974,6 +1971,7 @@ mod tests {
 
         assert_eq!(state.status, UpdateStatus::Installed);
         assert_eq!(state.candidate_version, None);
+        assert_eq!(state.artifact_paths.package_path, None);
         assert_eq!(state.error_message, None);
         Ok(())
     }

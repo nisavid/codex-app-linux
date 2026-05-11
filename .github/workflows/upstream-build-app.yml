@@ -134,7 +134,11 @@ jobs:
           JSON
 
       - name: Build app from upstream DMG
-        run: make build-app DMG=/tmp/codex-upstream-ci/Codex.dmg
+        run: |
+          set -euo pipefail
+          CODEX_PATCH_REPORT_JSON="$GITHUB_WORKSPACE/patch-report.json" \
+            make build-app DMG=/tmp/codex-upstream-ci/Codex.dmg
+          node scripts/ci/validate-patch-report.js patch-report.json --profile upstream-build
 
       - name: Upload upstream DMG metadata artifact
         uses: actions/upload-artifact@v7

@@ -158,9 +158,14 @@ ensure_nodejs_compatible() {
         return
     fi
 
+    if [ "$distro" = "dnf5" ]; then
+        info "Skipping system Node.js check; install.sh provides the managed Node.js runtime"
+        return
+    fi
+
     if [ "$distro" != "apt" ]; then
         error "Node.js ${MIN_NODE_MAJOR}+ with npm and npx is required$(current_node_version_suffix).
-Install a supported Node.js version for this distro, then re-run this script."
+Install a supported Node.js version for this distro, or use install.sh to download the managed runtime, then re-run this script."
     fi
 
     warn "Node.js ${MIN_NODE_MAJOR}+ with npm and npx is required$(current_node_version_suffix)"
@@ -185,8 +190,71 @@ Check apt output above or install Node.js ${MIN_NODE_MAJOR}+ manually."
 # ---------------------------------------------------------------------------
 # Distro detection
 # ---------------------------------------------------------------------------
+os_release_field() {
+    local field="$1"
+    local file line value
+
+    for file in ${OS_RELEASE_FILE:-} /etc/os-release /usr/lib/os-release; do
+        [ -n "$file" ] || continue
+        [ -r "$file" ] || continue
+        while IFS= read -r line; do
+            case "$line" in
+                "$field="*)
+                    value="${line#*=}"
+                    value="${value#\"}"
+                    value="${value%\"}"
+                    value="${value#\'}"
+                    value="${value%\'}"
+                    printf '%s\n' "${value,,}"
+                    return 0
+                    ;;
+            esac
+        done < "$file"
+    done
+
+    return 1
+}
+
+os_release_matches() {
+    local expected token
+    for expected in "$@"; do
+        [ "${OS_RELEASE_ID:-}" = "$expected" ] && return 0
+        for token in ${OS_RELEASE_ID_LIKE:-}; do
+            [ "$token" = "$expected" ] && return 0
+        done
+    done
+    return 1
+}
+
+os_release_version_major() {
+    local version="${OS_RELEASE_VERSION_ID:-}"
+    version="${version%%.*}"
+    case "$version" in
+        ''|*[!0-9]*) return 1 ;;
+        *) printf '%s\n' "$version" ;;
+    esac
+}
+
 detect_distro() {
-    if command -v apt-get &>/dev/null; then
+    if os_release_matches debian ubuntu linuxmint pop elementary zorin && command -v apt-get &>/dev/null; then
+        echo "apt"
+    elif os_release_matches arch archlinux manjaro endeavouros artix && command -v pacman &>/dev/null; then
+        echo "pacman"
+    elif os_release_matches opensuse suse sles && command -v zypper &>/dev/null; then
+        echo "zypper"
+    elif os_release_matches fedora rhel centos rocky almalinux ol; then
+        local major
+        major="$(os_release_version_major 2>/dev/null || true)"
+        if [ "${OS_RELEASE_ID:-}" = "fedora" ] && [ -n "$major" ] && [ "$major" -lt 41 ] && command -v dnf &>/dev/null; then
+            echo "dnf"
+        elif command -v dnf5 &>/dev/null; then
+            echo "dnf5"
+        elif command -v dnf &>/dev/null; then
+            echo "dnf"
+        else
+            echo "unknown"
+        fi
+    elif command -v apt-get &>/dev/null; then
         echo "apt"
     elif command -v dnf5 &>/dev/null; then
         echo "dnf5"
@@ -227,16 +295,17 @@ install_apt() {
 }
 
 install_dnf5() {
-    info "Detected Fedora 41+ (dnf5)"
-    # dnf5: 7zip provides /usr/bin/7z; @development-tools is the group syntax
-    sudo dnf install -y \
-        nodejs npm python3 \
-        7zip curl unzip \
+    info "Detected RPM-based distro (dnf5)"
+    # Fedora 42 still packages 7z via p7zip + p7zip-plugins; @development-tools is the group syntax.
+    # Node.js is provided by install.sh's managed runtime on Fedora 41+.
+    sudo dnf5 install -y \
+        python3 p7zip p7zip-plugins curl unzip \
+        gcc-c++ make \
         @development-tools
 }
 
 install_dnf() {
-    info "Detected Fedora/RHEL (dnf)"
+    info "Detected RPM-based distro (dnf)"
     # Older dnf: 7z comes from p7zip + p7zip-plugins
     sudo dnf install -y \
         nodejs npm python3 \
@@ -269,7 +338,7 @@ install_gui_prompt_helper() {
             sudo apt-get install -y "$package"
             ;;
         dnf5)
-            sudo dnf install -y "$package"
+            sudo dnf5 install -y "$package"
             ;;
         dnf)
             sudo dnf install -y "$package"
@@ -390,7 +459,16 @@ install_rust() {
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+OS_RELEASE_ID="$(os_release_field ID 2>/dev/null || true)"
+OS_RELEASE_ID_LIKE="$(os_release_field ID_LIKE 2>/dev/null || true)"
+OS_RELEASE_VERSION_ID="$(os_release_field VERSION_ID 2>/dev/null || true)"
 DISTRO="$(detect_distro)"
+
+if [ "${DETECT_ONLY:-0}" = "1" ]; then
+    info "Detected dependency profile: $DISTRO"
+    info "os-release: ID=${OS_RELEASE_ID:-unknown} ID_LIKE=${OS_RELEASE_ID_LIKE:-unknown} VERSION_ID=${OS_RELEASE_VERSION_ID:-unknown}"
+    exit 0
+fi
 
 case "$DISTRO" in
     apt)     install_apt    ;;
@@ -402,7 +480,7 @@ case "$DISTRO" in
         error "Unsupported package manager. Install manually:
   # Debian/Ubuntu: install Node.js 20+ with npm/npx from NodeSource, nvm, or another compatible source, then:
   sudo apt install python3 p7zip-full curl unzip coreutils tar build-essential       # Debian/Ubuntu
-  sudo dnf install nodejs npm python3 7zip curl unzip coreutils tar @development-tools  # Fedora 41+ (dnf5)
+  sudo dnf5 install python3 p7zip p7zip-plugins curl unzip coreutils tar gcc-c++ make @development-tools # Fedora 41+ (dnf5; install.sh provides managed Node.js)
   sudo dnf install nodejs npm python3 p7zip p7zip-plugins curl unzip coreutils tar   # Fedora <41 (dnf)
   sudo dnf groupinstall 'Development Tools'                                          # Fedora <41 (dnf)
   sudo pacman -S nodejs npm python p7zip curl unzip coreutils tar zstd base-devel    # Arch

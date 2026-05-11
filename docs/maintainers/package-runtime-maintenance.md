@@ -231,7 +231,7 @@ State handling matters:
 ## Crate Versioning Policy
 
 The updater crate version is in `updater/Cargo.toml`. The current version is
-`0.7.0`. Keep the changelog and any user-facing version references in sync.
+`0.7.1`. Keep the changelog and any user-facing version references in sync.
 
 Use:
 

@@ -47,6 +47,25 @@ jobs:
           bash -n contrib/user-local-install/files/.local/bin/codex-app-update
           bash -n contrib/user-local-install/files/.local/bin/codex-app-version
           bash -n contrib/user-local-install/files/share/common.sh
+          bash -n scripts/ci/update-nix-hashes.sh
+
+      - name: Check Node patcher syntax
+        run: |
+          set -euo pipefail
+          node --check scripts/patch-linux-window-ui.js
+          node --check scripts/patch-linux-window-ui.test.js
+          for file in scripts/patches/*.js; do
+            node --check "$file"
+          done
+          for file in linux-features/*/patch.js; do
+            [ -f "$file" ] || continue
+            node --check "$file"
+          done
+          feature_tests=(linux-features/*/test.js)
+          if [ -e "${feature_tests[0]}" ]; then
+            node --test --test-concurrency=1 "${feature_tests[@]}"
+          fi
+          node --check scripts/ci/validate-patch-report.js
 
       - name: Check Rust formatting
         run: cargo fmt --check

@@ -1,8 +1,14 @@
+use crate::windowing::registry::{
+    self, COSMIC_WAYLAND_BACKEND, GNOME_SHELL_EXTENSION_BACKEND, GNOME_SHELL_INTROSPECT_BACKEND,
+    HYPRLAND_BACKEND, KWIN_BACKEND,
+};
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     env, fs,
+    fs::OpenOptions,
+    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -64,6 +70,10 @@ pub struct AccessibilityReport {
 pub struct WindowingReport {
     pub gnome_shell_introspect: Check,
     pub codex_gnome_shell_extension: Check,
+    pub cosmic_helper: Check,
+    pub kwin: Check,
+    pub hyprland: Check,
+    pub backends: BTreeMap<String, Check>,
     pub can_list_windows: bool,
     pub can_focus_apps: bool,
     pub can_focus_windows: bool,
@@ -130,7 +140,7 @@ pub fn doctor_report() -> DoctorReport {
     let accessibility = accessibility_report();
     let windowing = windowing_report();
     let input = input_report();
-    let readiness = readiness_report(&accessibility, &windowing, &input);
+    let readiness = readiness_report(&platform, &accessibility, &windowing, &input);
 
     DoctorReport {
         platform,
@@ -343,37 +353,58 @@ fn accessibility_report() -> AccessibilityReport {
 }
 
 fn windowing_report() -> WindowingReport {
-    let gnome_shell_introspect = gdbus_call_check(
-        "org.gnome.Shell",
-        "/org/gnome/Shell/Introspect",
-        "org.gnome.Shell.Introspect.GetWindows",
-        &[],
-    );
-    let codex_gnome_shell_extension = gdbus_call_check(
-        "com.openai.Codex.WindowControl",
-        "/com/openai/Codex/WindowControl",
-        "com.openai.Codex.WindowControl.ListWindows",
-        &[],
-    );
-    let can_list_windows = gnome_shell_introspect.ok || codex_gnome_shell_extension.ok;
-    let can_focus_apps = gdbus_introspect_contains(
-        "org.gnome.Shell",
-        "/org/gnome/Shell",
-        "org.gnome.Shell",
-        "FocusApp",
-    )
-    .ok;
-    let can_focus_windows = codex_gnome_shell_extension.ok;
+    let probes = registry::probe_backends();
+    let backend_check = |id: &str| {
+        probes
+            .iter()
+            .find(|probe| probe.id == id)
+            .map(check_from_backend_probe)
+            .unwrap_or_else(|| Check::fail("backend probe did not run"))
+    };
+    let gnome_shell_introspect = backend_check(GNOME_SHELL_INTROSPECT_BACKEND);
+    let codex_gnome_shell_extension = backend_check(GNOME_SHELL_EXTENSION_BACKEND);
+    let cosmic_helper = backend_check(COSMIC_WAYLAND_BACKEND);
+    let kwin = backend_check(KWIN_BACKEND);
+    let hyprland = backend_check(HYPRLAND_BACKEND);
+    let backends = probes
+        .iter()
+        .map(|probe| (probe.id.to_string(), check_from_backend_probe(probe)))
+        .collect::<BTreeMap<_, _>>();
+    let can_list_windows = probes.iter().any(|probe| probe.can_list_windows);
+    let can_focus_apps = probes.iter().any(|probe| probe.can_focus_apps);
+    let can_focus_windows = probes.iter().any(|probe| probe.can_focus_windows);
     let note = if can_list_windows {
-        "A GNOME window listing backend is available for list_windows, focused_window, and targeted input verification."
+        let available = probes
+            .iter()
+            .filter(|probe| probe.can_list_windows)
+            .map(|probe| {
+                registry::descriptor(probe.id)
+                    .map(|descriptor| descriptor.failure_label)
+                    .unwrap_or(probe.id)
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "Window listing is available through {available} for list_windows, focused_window, and targeted input verification."
+        )
     } else {
-        "GNOME window listing is unavailable or denied. Computer Use can still use screenshots, AT-SPI, and global ydotool input, but targeted window input cannot be verified. Run setup-window-targeting to install the optional GNOME Shell extension backend."
-    }
-    .to_string();
+        let hints = registry::descriptors()
+            .iter()
+            .map(|descriptor| descriptor.missing_hint)
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!(
+            "Window listing is unavailable or denied. Computer Use can still use screenshots, AT-SPI, and global ydotool input, but targeted window input cannot be verified. {hints}"
+        )
+    };
 
     WindowingReport {
         gnome_shell_introspect,
         codex_gnome_shell_extension,
+        cosmic_helper,
+        kwin,
+        hyprland,
+        backends,
         can_list_windows,
         can_focus_apps,
         can_focus_windows,
@@ -381,17 +412,25 @@ fn windowing_report() -> WindowingReport {
     }
 }
 
+fn check_from_backend_probe(probe: &registry::BackendProbe) -> Check {
+    if probe.ok {
+        Check::ok(probe.detail.clone())
+    } else {
+        Check::fail(probe.detail.clone())
+    }
+}
+
 fn input_report() -> InputReport {
-    let socket = ydotool_socket_path();
     InputReport {
         ydotool: command_path_check("ydotool"),
         ydotoold: process_check("ydotoold"),
-        ydotool_socket: path_check(&socket),
-        uinput: path_check(Path::new("/dev/uinput")),
+        ydotool_socket: ydotool_socket_check(),
+        uinput: read_write_path_check(Path::new("/dev/uinput")),
     }
 }
 
 fn readiness_report(
+    platform: &PlatformReport,
     accessibility: &AccessibilityReport,
     windowing: &WindowingReport,
     input: &InputReport,
@@ -402,7 +441,7 @@ fn readiness_report(
     let can_focus_apps = windowing.can_focus_apps;
     let can_focus_windows = windowing.can_focus_windows;
     let can_send_development_input =
-        input.ydotool.ok && input.ydotoold.ok && input.ydotool_socket.ok && input.uinput.ok;
+        input.ydotool.ok && input.ydotoold.ok && input.ydotool_socket.ok;
 
     if !can_build_accessibility_tree {
         blockers.push(
@@ -412,22 +451,24 @@ fn readiness_report(
     }
 
     if !can_query_windows {
-        blockers.push(
-            "GNOME Shell window introspection is unavailable; targeted window focus and verification will be disabled."
-                .to_string(),
-        );
+        blockers.push(if is_cosmic_wayland_platform(platform) {
+            "COSMIC Wayland window introspection is unavailable; targeted window focus and verification will be disabled.".to_string()
+        } else {
+            "Window introspection is unavailable; targeted window focus and verification will be disabled."
+                .to_string()
+        });
     }
 
     if can_query_windows && !can_focus_windows {
         blockers.push(
-            "Exact GNOME Shell window activation is unavailable; app-level focus may work, but window_id/title/terminal-targeted input cannot be verified."
+            "Exact window activation is unavailable; app-level focus may work, but window_id/title/terminal-targeted input cannot be verified."
                 .to_string(),
         );
     }
 
     if !can_send_development_input {
         blockers.push(
-            "Development input fallback is not fully available; ydotool, ydotoold, socket, and /dev/uinput are required."
+            "Development input fallback is unavailable; ydotool needs a running ydotoold daemon with a connectable ydotoold socket."
                 .to_string(),
         );
     }
@@ -436,13 +477,21 @@ fn readiness_report(
         "Run setup_accessibility to enable GNOME accessibility before element-aware actions."
             .to_string()
     } else if !can_query_windows {
-        "Run setup-window-targeting to install the Codex GNOME Shell extension backend, or enable GNOME Shell window introspection before using targeted keyboard input.".to_string()
+        format!(
+            "Enable a supported window backend before using targeted keyboard input: {}",
+            registry::descriptors()
+                .iter()
+                .map(|descriptor| descriptor.missing_hint)
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
     } else if !can_focus_windows {
-        "Run setup-window-targeting to install the Codex GNOME Shell extension backend before using exact window_id, title, or terminal-targeted input.".to_string()
+        "Enable an exact-focus window backend before using window_id, title, or terminal-targeted input.".to_string()
     } else if !can_send_development_input {
-        "Install and start ydotoold if development input fallback is needed.".to_string()
+        "Fix ydotool input access: start ydotoold with a socket accessible to this desktop user."
+            .to_string()
     } else {
-        "Computer Use is ready: AT-SPI tree support, GNOME window targeting, and ydotool input fallback are available."
+        "Computer Use is ready: AT-SPI tree support, window targeting, and ydotool input fallback are available."
             .to_string()
     };
 
@@ -456,6 +505,14 @@ fn readiness_report(
         recommended_next_step,
         blockers,
     }
+}
+
+fn is_cosmic_wayland_platform(platform: &PlatformReport) -> bool {
+    platform
+        .xdg_current_desktop
+        .as_deref()
+        .is_some_and(|desktop| desktop.to_ascii_lowercase().contains("cosmic"))
+        && platform.xdg_session_type.as_deref() == Some("wayland")
 }
 
 fn can_build_accessibility_tree(accessibility: &AccessibilityReport) -> bool {
@@ -492,24 +549,32 @@ fn dbus_session_address() -> Option<String> {
         })
 }
 
-fn ydotool_socket_path() -> PathBuf {
+fn ydotool_socket_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
     if let Some(value) = env_var("YDOTOOL_SOCKET") {
-        return PathBuf::from(value);
+        candidates.push(PathBuf::from(value));
     }
 
-    let runtime_socket = xdg_runtime_dir().map(|runtime| runtime.join(".ydotool_socket"));
-    let tmp_socket = PathBuf::from("/tmp/.ydotool_socket");
+    if let Some(runtime_socket) = xdg_runtime_dir().map(|runtime| runtime.join(".ydotool_socket")) {
+        candidates.push(runtime_socket);
+    }
+    candidates.push(PathBuf::from("/tmp/.ydotool_socket"));
+    candidates
+}
 
-    for candidate in [runtime_socket.as_ref(), Some(&tmp_socket)]
-        .into_iter()
-        .flatten()
-    {
-        if candidate.exists() {
-            return candidate.to_path_buf();
+fn ydotool_socket_check() -> Check {
+    let mut checked = Vec::new();
+    for candidate in ydotool_socket_candidates() {
+        match socket_connect_result(&candidate) {
+            Ok(()) => return Check::ok(format!("connectable: {}", candidate.display())),
+            Err(detail) => checked.push(detail),
         }
     }
 
-    runtime_socket.unwrap_or(tmp_socket)
+    Check::fail(format!(
+        "no connectable ydotool socket ({})",
+        checked.join("; ")
+    ))
 }
 
 fn user_id() -> Option<String> {
@@ -529,11 +594,33 @@ fn process_check(process_name: &str) -> Check {
     command_check("pgrep", &["-a", process_name])
 }
 
-fn path_check(path: &Path) -> Check {
-    if path.exists() {
-        Check::ok(path.display().to_string())
-    } else {
-        Check::fail(format!("missing: {}", path.display()))
+#[cfg(test)]
+fn socket_connect_check(path: &Path) -> Check {
+    match socket_connect_result(path) {
+        Ok(()) => Check::ok(format!("connectable: {}", path.display())),
+        Err(detail) => Check::fail(detail),
+    }
+}
+
+fn socket_connect_result(path: &Path) -> std::result::Result<(), String> {
+    if !path.exists() {
+        return Err(format!("missing: {}", path.display()));
+    }
+
+    match UnixStream::connect(path) {
+        Ok(_) => Ok(()),
+        Err(error) => Err(format!("{}: {error}", path.display())),
+    }
+}
+
+fn read_write_path_check(path: &Path) -> Check {
+    if !path.exists() {
+        return Check::fail(format!("missing: {}", path.display()));
+    }
+
+    match OpenOptions::new().read(true).write(true).open(path) {
+        Ok(_) => Check::ok(format!("read/write: {}", path.display())),
+        Err(error) => Check::fail(format!("{}: {error}", path.display())),
     }
 }
 
@@ -567,34 +654,6 @@ fn gdbus_call_check(destination: &str, object_path: &str, method: &str, args: &[
     ];
     command_args.extend_from_slice(args);
     command_check_with_session_bus("gdbus", &command_args)
-}
-
-fn gdbus_introspect_contains(
-    destination: &str,
-    object_path: &str,
-    interface: &str,
-    member: &str,
-) -> Check {
-    let check = command_check_with_session_bus(
-        "gdbus",
-        &[
-            "introspect",
-            "--session",
-            "--dest",
-            destination,
-            "--object-path",
-            object_path,
-        ],
-    );
-    if !check.ok {
-        return check;
-    }
-
-    if check.detail.contains(interface) && check.detail.contains(member) {
-        Check::ok(format!("{interface}.{member} is available"))
-    } else {
-        Check::fail(format!("{interface}.{member} was not advertised"))
-    }
 }
 
 fn command_check(command: &str, args: &[&str]) -> Check {
@@ -645,6 +704,21 @@ fn run_command(command: &str, args: &[&str], with_session_bus: bool) -> Check {
 mod tests {
     use super::*;
 
+    fn platform_report() -> PlatformReport {
+        PlatformReport {
+            os: "linux".to_string(),
+            arch: "x86_64".to_string(),
+            desktop_session: None,
+            xdg_session_type: Some("wayland".to_string()),
+            xdg_current_desktop: Some("GNOME".to_string()),
+            wayland_display: Some("wayland-0".to_string()),
+            display: Some(":0".to_string()),
+            dbus_session_bus_address: Some("unix:path=/run/user/1000/bus".to_string()),
+            xdg_runtime_dir: Some("/run/user/1000".to_string()),
+            gnome_shell_version: Check::ok("GNOME Shell 46.0"),
+        }
+    }
+
     fn accessibility_report(
         at_spi_bus: Check,
         toolkit_accessibility: Check,
@@ -669,6 +743,10 @@ mod tests {
             } else {
                 Check::fail("missing")
             },
+            cosmic_helper: Check::fail("missing"),
+            kwin: Check::fail("not a KWin session"),
+            hyprland: Check::fail("not a Hyprland session"),
+            backends: BTreeMap::new(),
             can_list_windows,
             can_focus_apps: true,
             can_focus_windows,
@@ -682,11 +760,20 @@ mod tests {
         } else {
             Check::fail("missing")
         };
+        input_report_parts(check.clone(), check.clone(), check.clone(), check)
+    }
+
+    fn input_report_parts(
+        ydotool: Check,
+        ydotoold: Check,
+        ydotool_socket: Check,
+        uinput: Check,
+    ) -> InputReport {
         InputReport {
-            ydotool: check.clone(),
-            ydotoold: check.clone(),
-            ydotool_socket: check.clone(),
-            uinput: check,
+            ydotool,
+            ydotoold,
+            ydotool_socket,
+            uinput,
         }
     }
 
@@ -731,35 +818,157 @@ mod tests {
 
     #[test]
     fn readiness_requires_exact_window_focus_for_targeted_input() {
+        let platform = platform_report();
         let accessibility = accessibility_report(Check::ok("bus"), Check::ok("true"));
         let windowing = windowing_report(true, false);
         let input = input_report(true);
 
-        let readiness = readiness_report(&accessibility, &windowing, &input);
+        let readiness = readiness_report(&platform, &accessibility, &windowing, &input);
 
         assert!(readiness.can_query_windows);
         assert!(!readiness.can_focus_windows);
         assert!(readiness
             .recommended_next_step
-            .contains("setup-window-targeting"));
+            .contains("exact-focus window backend"));
         assert!(readiness
             .blockers
             .iter()
-            .any(|blocker| blocker.contains("Exact GNOME Shell window activation")));
+            .any(|blocker| blocker.contains("Exact window activation")));
     }
 
     #[test]
-    fn readiness_message_stays_within_pr1_scope() {
+    fn readiness_treats_kwin_as_full_window_backend() {
+        let platform = platform_report();
+        let accessibility = accessibility_report(Check::ok("bus"), Check::ok("true"));
+        let mut windowing = windowing_report(false, false);
+        windowing.kwin = Check::ok("KWin scripting is available");
+        windowing.can_list_windows = true;
+        windowing.can_focus_apps = true;
+        windowing.can_focus_windows = true;
+        let input = input_report(true);
+
+        let readiness = readiness_report(&platform, &accessibility, &windowing, &input);
+
+        assert!(readiness.can_query_windows);
+        assert!(readiness.can_focus_apps);
+        assert!(readiness.can_focus_windows);
+        assert!(readiness.blockers.is_empty());
+    }
+
+    #[test]
+    fn readiness_message_mentions_generic_window_targeting() {
+        let platform = platform_report();
         let accessibility = accessibility_report(Check::ok("bus"), Check::ok("true"));
         let windowing = windowing_report(true, true);
         let input = input_report(true);
 
-        let readiness = readiness_report(&accessibility, &windowing, &input);
+        let readiness = readiness_report(&platform, &accessibility, &windowing, &input);
 
         assert!(readiness.blockers.is_empty());
         assert!(readiness
             .recommended_next_step
             .contains("AT-SPI tree support"));
-        assert!(!readiness.recommended_next_step.contains("action/value"));
+        assert!(readiness.recommended_next_step.contains("window targeting"));
+        assert!(!readiness
+            .recommended_next_step
+            .contains("GNOME window targeting"));
+    }
+
+    #[test]
+    fn readiness_accepts_connectable_ydotool_socket_without_direct_uinput_access() {
+        let platform = platform_report();
+        let accessibility = accessibility_report(Check::ok("bus"), Check::ok("true"));
+        let windowing = windowing_report(true, true);
+        let input = input_report_parts(
+            Check::ok("ydotool"),
+            Check::ok("ydotoold"),
+            Check::ok("connectable: /tmp/.ydotool_socket"),
+            Check::fail("/dev/uinput: Permission denied"),
+        );
+
+        let readiness = readiness_report(&platform, &accessibility, &windowing, &input);
+
+        assert!(readiness.can_send_development_input);
+        assert!(readiness.blockers.is_empty());
+    }
+
+    #[test]
+    fn readiness_rejects_direct_uinput_without_connectable_ydotool_socket() {
+        let platform = platform_report();
+        let accessibility = accessibility_report(Check::ok("bus"), Check::ok("true"));
+        let windowing = windowing_report(true, true);
+        let input = input_report_parts(
+            Check::ok("ydotool"),
+            Check::fail("ydotoold not running"),
+            Check::fail("no connectable ydotool socket"),
+            Check::ok("read/write: /dev/uinput"),
+        );
+
+        let readiness = readiness_report(&platform, &accessibility, &windowing, &input);
+
+        assert!(!readiness.can_send_development_input);
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("connectable ydotoold socket")));
+    }
+
+    #[test]
+    fn readiness_rejects_inaccessible_ydotool_paths() {
+        let platform = platform_report();
+        let accessibility = accessibility_report(Check::ok("bus"), Check::ok("true"));
+        let windowing = windowing_report(true, true);
+        let input = input_report_parts(
+            Check::ok("ydotool"),
+            Check::ok("ydotoold"),
+            Check::fail("/tmp/.ydotool_socket: Permission denied"),
+            Check::fail("/dev/uinput: Permission denied"),
+        );
+
+        let readiness = readiness_report(&platform, &accessibility, &windowing, &input);
+
+        assert!(!readiness.can_send_development_input);
+        assert!(readiness
+            .recommended_next_step
+            .contains("Fix ydotool input access"));
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("connectable ydotoold socket")));
+    }
+
+    #[test]
+    fn ydotool_socket_check_requires_a_connectable_socket() {
+        let dir = std::env::temp_dir().join(format!(
+            "codex-computer-use-diagnostics-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create temp diagnostics dir");
+        let socket = dir.join("ydotool.sock");
+        let listener =
+            std::os::unix::net::UnixListener::bind(&socket).expect("bind temp diagnostics socket");
+
+        let check = socket_connect_check(&socket);
+
+        assert!(check.ok, "{check:?}");
+        drop(listener);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn readiness_reports_cosmic_window_blocker_on_cosmic() {
+        let mut platform = platform_report();
+        platform.xdg_current_desktop = Some("COSMIC".to_string());
+        let accessibility = accessibility_report(Check::ok("bus"), Check::ok("true"));
+        let windowing = windowing_report(false, false);
+        let input = input_report(true);
+
+        let readiness = readiness_report(&platform, &accessibility, &windowing, &input);
+
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("COSMIC Wayland window introspection")));
     }
 }

@@ -15,7 +15,7 @@ use std::{
 use tokio::process::Command;
 use tracing::info;
 
-const REQUIRED_BUNDLE_FILES: [(&str, &str); 13] = [
+const REQUIRED_BUNDLE_FILES: [(&str, &str); 15] = [
     ("Cargo.toml", "Cargo.toml"),
     ("Cargo.lock", "Cargo.lock"),
     ("computer-use-linux", "computer-use-linux"),
@@ -31,10 +31,12 @@ const REQUIRED_BUNDLE_FILES: [(&str, &str); 13] = [
         "scripts/patch-linux-window-ui.js",
         "scripts/patch-linux-window-ui.js",
     ),
+    ("scripts/patches", "scripts/patches"),
     ("scripts/lib", "scripts/lib"),
     ("node-runtime", "node-runtime"),
     ("packaging/linux", "packaging/linux"),
     ("assets/codex.png", "assets/codex.png"),
+    ("linux-features", "linux-features"),
 ];
 const OPTIONAL_BUNDLE_FILES: [(&str, &str); 3] = [
     ("scripts/build-rpm.sh", "scripts/build-rpm.sh"),
@@ -339,6 +341,7 @@ fn read_app_package_version(app_dir: &Path) -> Result<String> {
 fn build_command_path(builder_bundle_root: &Path) -> OsString {
     let mut entries = managed_node_bin_dirs(builder_bundle_root);
     entries.extend(preferred_node_bin_dirs());
+    entries.extend(preferred_rust_bin_dirs());
     entries.extend(std::env::split_paths(
         &std::env::var_os("PATH").unwrap_or_default(),
     ));
@@ -379,6 +382,25 @@ fn preferred_node_bin_dirs() -> Vec<PathBuf> {
     };
 
     collect_nvm_bin_dirs(&nvm_root)
+}
+
+fn preferred_rust_bin_dirs() -> Vec<PathBuf> {
+    let Some(home) = std::env::var_os("HOME") else {
+        return Vec::new();
+    };
+
+    let cargo_bin = PathBuf::from(home).join(".cargo/bin");
+    if is_executable_file(&cargo_bin.join("cargo")) {
+        vec![cargo_bin]
+    } else {
+        Vec::new()
+    }
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
 }
 
 fn collect_nvm_bin_dirs(nvm_root: &Path) -> Vec<PathBuf> {
@@ -520,6 +542,19 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         Ok(())
     }
 
+    fn write_fake_linux_features_bundle(root: &Path) -> Result<()> {
+        fs::create_dir_all(root.join("linux-features/example-feature"))?;
+        fs::write(
+            root.join("linux-features/features.example.json"),
+            b"{\"enabled\":[]}\n",
+        )?;
+        fs::write(
+            root.join("linux-features/example-feature/feature.json"),
+            b"{\"id\":\"example-feature\"}\n",
+        )?;
+        Ok(())
+    }
+
     #[tokio::test]
     async fn builds_update_with_fake_bundle() -> Result<()> {
         let temp = tempdir()?;
@@ -527,11 +562,13 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         let state_root = temp.path().join("state");
         let cache_root = temp.path().join("cache");
         fs::create_dir_all(bundle_root.join("scripts/lib"))?;
+        fs::create_dir_all(bundle_root.join("scripts/patches"))?;
         fs::create_dir_all(bundle_root.join("launcher"))?;
         fs::create_dir_all(bundle_root.join("packaging/linux"))?;
         fs::create_dir_all(bundle_root.join("assets"))?;
         fs::create_dir_all(bundle_root.join("node-runtime/bin"))?;
         write_fake_computer_use_bundle(&bundle_root)?;
+        write_fake_linux_features_bundle(&bundle_root)?;
         fs::write(
             bundle_root.join("launcher/start.sh.template"),
             b"# fake launcher template\n",
@@ -621,6 +658,10 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
             b"console.log('patched');\n",
         )?;
         fs::write(
+            bundle_root.join("scripts/patches/registry.js"),
+            b"module.exports = {};\n",
+        )?;
+        fs::write(
             bundle_root.join("scripts/lib/package-common.sh"),
             b"#!/bin/bash\n",
         )?;
@@ -676,6 +717,14 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
             .workspace_dir
             .join("builder/scripts/lib/node-runtime.sh")
             .exists());
+        assert!(artifacts
+            .workspace_dir
+            .join("builder/scripts/patches/registry.js")
+            .exists());
+        assert!(artifacts
+            .workspace_dir
+            .join("builder/linux-features/features.example.json")
+            .exists());
         assert!(
             is_native_package_file(&artifacts.package_path),
             "expected a native package (.deb, .rpm, or .pkg.tar.zst), got {}",
@@ -691,11 +740,13 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         let destination_root = temp.path().join("destination");
 
         fs::create_dir_all(source_root.join("scripts/lib"))?;
+        fs::create_dir_all(source_root.join("scripts/patches"))?;
         fs::create_dir_all(source_root.join("launcher"))?;
         fs::create_dir_all(source_root.join("packaging/linux"))?;
         fs::create_dir_all(source_root.join("assets"))?;
         fs::create_dir_all(source_root.join("node-runtime/bin"))?;
         write_fake_computer_use_bundle(&source_root)?;
+        write_fake_linux_features_bundle(&source_root)?;
         fs::write(source_root.join("install.sh"), b"#!/bin/bash\n")?;
         fs::write(
             source_root.join("launcher/start.sh.template"),
@@ -705,6 +756,10 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         fs::write(
             source_root.join("scripts/patch-linux-window-ui.js"),
             b"console.log('patched');\n",
+        )?;
+        fs::write(
+            source_root.join("scripts/patches/registry.js"),
+            b"module.exports = {};\n",
         )?;
         fs::write(
             source_root.join("scripts/lib/package-common.sh"),
@@ -731,6 +786,9 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         assert!(destination_root
             .join("scripts/patch-linux-window-ui.js")
             .exists());
+        assert!(destination_root
+            .join("scripts/patches/registry.js")
+            .exists());
         assert!(destination_root.join("computer-use-linux").exists());
         assert!(destination_root.join("updater").exists());
         assert!(destination_root
@@ -740,6 +798,9 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
             .join("scripts/lib/node-runtime.sh")
             .exists());
         assert!(destination_root.join("node-runtime/bin/node").exists());
+        assert!(destination_root
+            .join("linux-features/features.example.json")
+            .exists());
         assert!(!destination_root.join("scripts/build-rpm.sh").exists());
         assert!(!destination_root.join("scripts/build-pacman.sh").exists());
         Ok(())
@@ -812,6 +873,44 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         let path = build_command_path(temp.path());
         let directories = std::env::split_paths(&path).collect::<Vec<_>>();
         assert_eq!(directories.first(), Some(&runtime_bin));
+        Ok(())
+    }
+
+    #[test]
+    fn build_command_path_includes_cargo_bin_from_home() -> Result<()> {
+        let _env_guard = crate::test_util::env_lock();
+        let temp = tempdir()?;
+        let home_dir = temp.path().join("home");
+        let cargo_bin = home_dir.join(".cargo/bin");
+        fs::create_dir_all(&cargo_bin)?;
+        fs::write(cargo_bin.join("cargo"), b"bin")?;
+        fs::set_permissions(cargo_bin.join("cargo"), fs::Permissions::from_mode(0o755))?;
+
+        let _home_guard = crate::test_util::EnvVarGuard::set(&_env_guard, "HOME", &home_dir);
+
+        let path = build_command_path(Path::new("/tmp/missing-codex-builder"));
+
+        let directories = std::env::split_paths(&path).collect::<Vec<_>>();
+        assert!(directories.iter().any(|dir| dir == &cargo_bin));
+        Ok(())
+    }
+
+    #[test]
+    fn build_command_path_skips_non_executable_cargo_from_home() -> Result<()> {
+        let _env_guard = crate::test_util::env_lock();
+        let temp = tempdir()?;
+        let home_dir = temp.path().join("home");
+        let cargo_bin = home_dir.join(".cargo/bin");
+        fs::create_dir_all(&cargo_bin)?;
+        fs::write(cargo_bin.join("cargo"), b"bin")?;
+        fs::set_permissions(cargo_bin.join("cargo"), fs::Permissions::from_mode(0o644))?;
+
+        let _home_guard = crate::test_util::EnvVarGuard::set(&_env_guard, "HOME", &home_dir);
+
+        let path = build_command_path(Path::new("/tmp/missing-codex-builder"));
+
+        let directories = std::env::split_paths(&path).collect::<Vec<_>>();
+        assert!(!directories.iter().any(|dir| dir == &cargo_bin));
         Ok(())
     }
 }
