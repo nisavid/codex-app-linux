@@ -960,7 +960,7 @@ mod tests {
         let temp = tempdir()?;
         let paths = test_runtime_paths(temp.path());
         paths.ensure_dirs()?;
-        let _codex_cli_path_guard = EnvVarGuard::remove("CODEX_CLI_PATH");
+        let _codex_cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
 
         let codex_path = temp.path().join("codex");
         write_executable_script(
@@ -1022,7 +1022,7 @@ mod tests {
         let temp = tempdir()?;
         let paths = test_runtime_paths(temp.path());
         paths.ensure_dirs()?;
-        let _codex_cli_path_guard = EnvVarGuard::remove("CODEX_CLI_PATH");
+        let _codex_cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
 
         let configured_path = temp.path().join("configured-codex");
         write_executable_script(
@@ -1051,7 +1051,7 @@ mod tests {
         let temp = tempdir()?;
         let paths = test_runtime_paths(temp.path());
         paths.ensure_dirs()?;
-        let _codex_cli_path_guard = EnvVarGuard::remove("CODEX_CLI_PATH");
+        let _codex_cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
 
         let codex_path = temp.path().join("codex");
         write_executable_script(
@@ -1083,12 +1083,12 @@ mod tests {
         let paths = test_runtime_paths(temp.path());
         paths.ensure_dirs()?;
 
-        let _home_guard = EnvVarGuard::set("HOME", temp.path());
-        let _path_guard = EnvVarGuard::set("PATH", temp.path().join("missing-bin"));
-        let _nvm_dir_guard = EnvVarGuard::remove("NVM_DIR");
-        let _codex_cli_path_guard = EnvVarGuard::remove("CODEX_CLI_PATH");
+        let _home_guard = EnvVarGuard::set(&_env_guard, "HOME", temp.path());
+        let _path_guard = EnvVarGuard::set(&_env_guard, "PATH", temp.path().join("missing-bin"));
+        let _nvm_dir_guard = EnvVarGuard::remove(&_env_guard, "NVM_DIR");
+        let _codex_cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
         let _skip_system_cli_lookup_guard =
-            EnvVarGuard::set("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+            EnvVarGuard::set(&_env_guard, "CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
 
         let missing_path = temp.path().join("missing-codex");
         let mut state = PersistedState::new(true);
@@ -1116,12 +1116,12 @@ mod tests {
         let paths = test_runtime_paths(temp.path());
         paths.ensure_dirs()?;
 
-        let _home_guard = EnvVarGuard::set("HOME", temp.path());
-        let _path_guard = EnvVarGuard::set("PATH", temp.path().join("missing-bin"));
-        let _nvm_dir_guard = EnvVarGuard::remove("NVM_DIR");
-        let _codex_cli_path_guard = EnvVarGuard::remove("CODEX_CLI_PATH");
+        let _home_guard = EnvVarGuard::set(&_env_guard, "HOME", temp.path());
+        let _path_guard = EnvVarGuard::set(&_env_guard, "PATH", temp.path().join("missing-bin"));
+        let _nvm_dir_guard = EnvVarGuard::remove(&_env_guard, "NVM_DIR");
+        let _codex_cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
         let _skip_system_cli_lookup_guard =
-            EnvVarGuard::set("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+            EnvVarGuard::set(&_env_guard, "CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
 
         let mut state = PersistedState::new(true);
         let config = test_runtime_config(&paths);
@@ -1159,11 +1159,15 @@ mod tests {
             "#!/bin/sh\nif [ \"$1\" = \"view\" ] && [ \"$2\" = \"@openai/codex\" ] && [ \"$3\" = \"version\" ]; then\n  echo '0.42.1'\n  exit 0\nfi\nif [ \"$1\" = \"install\" ] && [ \"$2\" = \"-g\" ]; then\n  printf '%s\\n' '#!/bin/sh' 'if [ \"$1\" = \"--version\" ] || [ \"$1\" = \"version\" ]; then' \"  echo 'codex-cli v0.42.1'\" '  exit 0' 'fi' 'exit 1' > \"$FAKE_CODEX_PATH\"\n  exit 0\nfi\nexit 1\n",
         )?;
 
-        let _home_guard = EnvVarGuard::set("HOME", temp.path());
-        let _path_guard = EnvVarGuard::set("PATH", std::env::join_paths([bin_dir.clone()])?);
-        let _nvm_dir_guard = EnvVarGuard::remove("NVM_DIR");
-        let _codex_cli_path_guard = EnvVarGuard::remove("CODEX_CLI_PATH");
-        let _fake_codex_path_guard = EnvVarGuard::set("FAKE_CODEX_PATH", &codex_path);
+        let _home_guard = EnvVarGuard::set(&_env_guard, "HOME", temp.path());
+        let _path_guard = EnvVarGuard::set(
+            &_env_guard,
+            "PATH",
+            std::env::join_paths([bin_dir.clone()])?,
+        );
+        let _nvm_dir_guard = EnvVarGuard::remove(&_env_guard, "NVM_DIR");
+        let _codex_cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
+        let _fake_codex_path_guard = EnvVarGuard::set(&_env_guard, "FAKE_CODEX_PATH", &codex_path);
 
         assert_eq!(npm_program(), npm_path);
 
@@ -1191,7 +1195,7 @@ mod tests {
 
         let codex_path = temp.path().join("codex");
         write_executable_script(&codex_path, "#!/bin/sh\nexit 42\n")?;
-        let _codex_cli_path_guard = EnvVarGuard::remove("CODEX_CLI_PATH");
+        let _codex_cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
 
         let mut state = PersistedState::new(true);
         state.cli_path = Some(codex_path.clone());

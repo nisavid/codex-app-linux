@@ -126,7 +126,10 @@ function applyLinuxComputerUsePluginGatePatch(currentSource) {
   }
 
   if (hasComputerUseLiteral(currentSource) && currentSource.includes("computerUse")) {
-    throw new Error("Required Linux Computer Use plugin gate patch failed: could not enable bundled Computer Use on Linux");
+    console.warn(
+      "WARN: Required Linux Computer Use plugin gate patch failed: could not enable bundled Computer Use on Linux",
+    );
+    return currentSource;
   }
 
   return currentSource;

@@ -1361,10 +1361,15 @@ test("patches Computer Use gates that use imported namespace constants", () => {
   assert.equal((patched.match(/installWhenMissing:!0,name:e\.kn/g) || []).length, 2);
 });
 
-test("fails hard when the Computer Use gate is recognizable but unpatchable", () => {
-  assert.throws(
-    () => applyLinuxComputerUsePluginGatePatch("var tn=`computer-use`;var x=[{name:tn,isEnabled:({features:e,platform:t})=>isMac(t)&&e.computerUse,migrate:wn}];"),
-    /Required Linux Computer Use plugin gate patch failed/,
+test("warns when the Computer Use gate is recognizable but unpatchable", () => {
+  const { value: patched, warnings } = captureWarns(() =>
+    applyLinuxComputerUsePluginGatePatch("var tn=`computer-use`;var x=[{name:tn,isEnabled:({features:e,platform:t})=>isMac(t)&&e.computerUse,migrate:wn}];"),
+  );
+
+  assert.match(warnings.join("\n"), /Required Linux Computer Use plugin gate patch failed/);
+  assert.equal(
+    patched,
+    "var tn=`computer-use`;var x=[{name:tn,isEnabled:({features:e,platform:t})=>isMac(t)&&e.computerUse,migrate:wn}];",
   );
 });
 

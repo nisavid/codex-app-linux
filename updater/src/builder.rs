@@ -886,7 +886,7 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         fs::write(cargo_bin.join("cargo"), b"bin")?;
         fs::set_permissions(cargo_bin.join("cargo"), fs::Permissions::from_mode(0o755))?;
 
-        let _home_guard = crate::test_util::EnvVarGuard::set("HOME", &home_dir);
+        let _home_guard = crate::test_util::EnvVarGuard::set(&_env_guard, "HOME", &home_dir);
 
         let path = build_command_path(Path::new("/tmp/missing-codex-builder"));
 
@@ -905,7 +905,7 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         fs::write(cargo_bin.join("cargo"), b"bin")?;
         fs::set_permissions(cargo_bin.join("cargo"), fs::Permissions::from_mode(0o644))?;
 
-        let _home_guard = crate::test_util::EnvVarGuard::set("HOME", &home_dir);
+        let _home_guard = crate::test_util::EnvVarGuard::set(&_env_guard, "HOME", &home_dir);
 
         let path = build_command_path(Path::new("/tmp/missing-codex-builder"));
 

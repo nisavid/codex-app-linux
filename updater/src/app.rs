@@ -1724,17 +1724,25 @@ mod tests {
         };
         paths.ensure_dirs()?;
 
-        let _display_guard = crate::test_util::EnvVarGuard::remove("DISPLAY");
-        let _wayland_display_guard = crate::test_util::EnvVarGuard::remove("WAYLAND_DISPLAY");
+        let _display_guard = crate::test_util::EnvVarGuard::remove(&_env_guard, "DISPLAY");
+        let _wayland_display_guard =
+            crate::test_util::EnvVarGuard::remove(&_env_guard, "WAYLAND_DISPLAY");
         let _dbus_session_bus_address_guard =
-            crate::test_util::EnvVarGuard::remove("DBUS_SESSION_BUS_ADDRESS");
-        let _xdg_runtime_dir_guard = crate::test_util::EnvVarGuard::remove("XDG_RUNTIME_DIR");
-        let _path_guard =
-            crate::test_util::EnvVarGuard::set("PATH", temp.path().join("missing-bin"));
-        let _home_guard = crate::test_util::EnvVarGuard::set("HOME", temp.path());
-        let _nvm_dir_guard = crate::test_util::EnvVarGuard::remove("NVM_DIR");
-        let _skip_system_cli_lookup_guard =
-            crate::test_util::EnvVarGuard::set("CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+            crate::test_util::EnvVarGuard::remove(&_env_guard, "DBUS_SESSION_BUS_ADDRESS");
+        let _xdg_runtime_dir_guard =
+            crate::test_util::EnvVarGuard::remove(&_env_guard, "XDG_RUNTIME_DIR");
+        let _path_guard = crate::test_util::EnvVarGuard::set(
+            &_env_guard,
+            "PATH",
+            temp.path().join("missing-bin"),
+        );
+        let _home_guard = crate::test_util::EnvVarGuard::set(&_env_guard, "HOME", temp.path());
+        let _nvm_dir_guard = crate::test_util::EnvVarGuard::remove(&_env_guard, "NVM_DIR");
+        let _skip_system_cli_lookup_guard = crate::test_util::EnvVarGuard::set(
+            &_env_guard,
+            "CODEX_APP_UPDATER_SKIP_SYSTEM_CLI_LOOKUP",
+            "1",
+        );
 
         let invalid_cli_path = temp.path().join("codex.txt");
         std::fs::write(&invalid_cli_path, b"not executable")?;
