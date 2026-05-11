@@ -1,10 +1,10 @@
 # Security Policy
 
-This repository is an unofficial community fork that adapts the official macOS
-Codex app into Linux app and package formats. Security reports for this fork
-should focus on the Linux conversion, package builders, generated launcher,
-native packages, updater, bundled runtime helpers, local desktop integration,
-and repository release workflows.
+This repository is an unofficial community fork that ports the official macOS
+Codex app to Linux application and package formats. Security reports for this
+fork should focus on the Linux conversion, package builders, generated
+launcher, native packages, updater, bundled runtime helpers, local desktop
+integration, and repository release workflows.
 
 Security guarantees made by OpenAI services, OpenAI accounts, and the official
 upstream Codex app outside this local conversion path are outside this
@@ -20,7 +20,7 @@ If you are using an older package build, update to the newest available package
 or rebuild from current `main` before reporting an issue that may already be
 fixed.
 
-## Reporting A Vulnerability
+## Reporting a Vulnerability
 
 Use GitHub's private vulnerability reporting flow for anything that may expose
 users or package consumers. On the repository page, open **Security** and choose
@@ -42,7 +42,7 @@ had a chance to triage it privately. Public issues are appropriate for ordinary
 bugs, packaging failures, compatibility reports, documentation fixes, and
 already-public hardening work.
 
-## What To Include
+## What to Include
 
 Please include enough detail for maintainers to reproduce and scope the issue:
 
