@@ -97,7 +97,7 @@ function readWebviewAsset(webviewAssetsDir, assetName) {
 
 function findRequiredWebviewAsset(webviewAssetsDir, filenamePattern, marker, description) {
   if (!fs.existsSync(webviewAssetsDir)) {
-    throw new Error(`Required Keybinds settings patch failed: missing webview assets directory ${webviewAssetsDir}`);
+    throw new Error(`Required webview asset patch failed: missing webview assets directory ${webviewAssetsDir}`);
   }
 
   const candidates = fs
@@ -109,7 +109,7 @@ function findRequiredWebviewAsset(webviewAssetsDir, filenamePattern, marker, des
     : candidates.filter((name) => readWebviewAsset(webviewAssetsDir, name).includes(marker));
 
   if (matches.length === 0) {
-    throw new Error(`Required Keybinds settings patch failed: could not find ${description}`);
+    throw new Error(`Required webview asset patch failed: could not find ${description}`);
   }
 
   return matches[0];

@@ -1981,18 +1981,26 @@ fn ydotool_output_error(output: Output) -> String {
 }
 
 fn ydotool_socket() -> Option<String> {
-    connectable_ydotool_socket_from(ydotool_socket_candidates())
+    if let Some(socket) = explicit_ydotool_socket() {
+        return Some(socket);
+    }
+
+    connectable_ydotool_socket_from(fallback_ydotool_socket_candidates())
         .map(|path| path.display().to_string())
 }
 
-fn ydotool_socket_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
+fn explicit_ydotool_socket() -> Option<String> {
     if let Ok(socket) = env::var("YDOTOOL_SOCKET") {
         let socket = socket.trim();
         if !socket.is_empty() {
-            candidates.push(PathBuf::from(socket));
+            return Some(socket.to_string());
         }
     }
+    None
+}
+
+fn fallback_ydotool_socket_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
     if let Some(runtime) = env::var("XDG_RUNTIME_DIR")
         .ok()
         .map(PathBuf::from)
@@ -2782,6 +2790,28 @@ mod tests {
         assert_eq!(selected, usable_socket);
         drop(listener);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn explicit_ydotool_socket_is_used_without_connectability_probe() {
+        let key = "YDOTOOL_SOCKET";
+        let original = std::env::var_os(key);
+        unsafe {
+            std::env::set_var(key, " /does/not/exist.sock ");
+        }
+
+        let selected = explicit_ydotool_socket();
+
+        match original {
+            Some(value) => unsafe {
+                std::env::set_var(key, value);
+            },
+            None => unsafe {
+                std::env::remove_var(key);
+            },
+        }
+
+        assert_eq!(selected.as_deref(), Some("/does/not/exist.sock"));
     }
 
     #[test]
