@@ -480,7 +480,7 @@ case "$DISTRO" in
         error "Unsupported package manager. Install manually:
   # Debian/Ubuntu: install Node.js 20+ with npm/npx from NodeSource, nvm, or another compatible source, then:
   sudo apt install python3 p7zip-full curl unzip coreutils tar build-essential       # Debian/Ubuntu
-  sudo dnf install nodejs npm python3 p7zip p7zip-plugins curl unzip coreutils tar gcc-c++ make @development-tools  # Fedora 41+ (dnf5)
+  sudo dnf5 install python3 p7zip p7zip-plugins curl unzip coreutils tar gcc-c++ make @development-tools # Fedora 41+ (dnf5; install.sh provides managed Node.js)
   sudo dnf install nodejs npm python3 p7zip p7zip-plugins curl unzip coreutils tar   # Fedora <41 (dnf)
   sudo dnf groupinstall 'Development Tools'                                          # Fedora <41 (dnf)
   sudo pacman -S nodejs npm python p7zip curl unzip coreutils tar zstd base-devel    # Arch
