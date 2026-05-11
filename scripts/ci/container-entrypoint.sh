@@ -65,6 +65,29 @@ prepare_apt_install_deps() {
     apt_install ca-certificates curl sudo
 }
 
+fedora_install() {
+    if command -v dnf5 >/dev/null 2>&1; then
+        dnf5 install -y "$@"
+        dnf5 clean all
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y "$@"
+        dnf clean all
+    else
+        error "Fedora image is missing dnf/dnf5"
+    fi
+}
+
+prepare_fedora_install_deps() {
+    fedora_install ca-certificates curl sudo
+}
+
+prepare_install_deps_bootstrap() {
+    case "$CI_IMAGE_KEY" in
+        fedora-*) prepare_fedora_install_deps ;;
+        *)        prepare_apt_install_deps ;;
+    esac
+}
+
 prepare_fedora_ci() {
     dnf install -y \
         bash \
@@ -336,11 +359,24 @@ run_install_deps_job_as_root() {
     bash scripts/install-deps.sh
     export PATH="$HOME/.local/bin:$PATH"
 
-    node -p "process.versions.node"
-    node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)'
-    npm -v
-    npx -v
-    dpkg-query -W -f='${Provides}\n' nodejs | grep -E '(^|[,[:space:]])npm([,[:space:](]|$)'
+    if command -v node >/dev/null 2>&1; then
+        node -p "process.versions.node"
+        node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)'
+        npm -v
+        npx -v
+        if command -v dpkg-query >/dev/null 2>&1; then
+            dpkg-query -W -f='${Provides}\n' nodejs | grep -E '(^|[,[:space:]])npm([,[:space:](]|$)'
+        elif command -v rpm >/dev/null 2>&1; then
+            rpm -q nodejs npm >/dev/null
+        elif command -v pacman >/dev/null 2>&1; then
+            pacman -Q nodejs npm >/dev/null
+        fi
+    else
+        case "$CI_IMAGE_KEY" in
+            fedora-*) info "System Node.js is not required for $CI_IMAGE_KEY; install.sh provides the managed runtime" ;;
+            *)        error "Node.js 20+ with npm and npx should be installed by install-deps" ;;
+        esac
+    fi
 
     local output
     local status
@@ -480,7 +516,7 @@ case "$CI_JOB" in
         run_as_ci_user
         ;;
     install-deps)
-        prepare_apt_install_deps
+        prepare_install_deps_bootstrap
         run_install_deps_job_as_root
         ;;
     nix)

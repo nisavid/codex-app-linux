@@ -68,9 +68,9 @@ Run the dependency helper:
 bash scripts/install-deps.sh
 ```
 
-It installs Python, 7z, curl, build tools, verifies or installs the Node.js/npm
-development toolchain required by the helper workflow, and bootstraps Rust
-through `rustup` if `cargo` is missing.
+It installs Python, 7z, curl, build tools, and bootstraps Rust through `rustup`
+if `cargo` is missing. Fedora 41+ uses the app's managed Node.js runtime
+instead of requiring distro `nodejs` and `npm` packages.
 
 ### Arch Linux
 
