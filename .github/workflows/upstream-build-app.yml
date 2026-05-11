@@ -137,7 +137,7 @@ jobs:
         run: make build-app DMG=/tmp/codex-upstream-ci/Codex.dmg
 
       - name: Upload upstream DMG metadata artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: upstream-dmg-metadata
           path: upstream-dmg-metadata.json
