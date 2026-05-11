@@ -1,0 +1,66 @@
+name: Rust Clippy Code Scanning
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: "24 17 * * 2"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CLIPPY_SARIF_VERSION: "0.8.0"
+  SARIF_FMT_VERSION: "0.8.0"
+
+jobs:
+  clippy-sarif:
+    name: Clippy SARIF
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust components
+        run: rustup component add clippy
+
+      - name: Cache SARIF tools
+        id: sarif-tools-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/clippy-sarif
+            ~/.cargo/bin/sarif-fmt
+          key: clippy-sarif-tools-${{ runner.os }}-${{ env.CLIPPY_SARIF_VERSION }}-${{ env.SARIF_FMT_VERSION }}
+
+      - name: Install SARIF tools
+        if: steps.sarif-tools-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          cargo install --locked clippy-sarif --version "${CLIPPY_SARIF_VERSION}"
+          cargo install --locked sarif-fmt --version "${SARIF_FMT_VERSION}"
+
+      - name: Run Clippy and create SARIF
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy --workspace --all-targets --message-format=json \
+            | clippy-sarif \
+            | tee rust-clippy-results.sarif \
+            | sarif-fmt
+
+      - name: Upload Clippy SARIF
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: rust-clippy-results.sarif
+          category: clippy
+          wait-for-processing: true
