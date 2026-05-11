@@ -37,11 +37,10 @@ function requireBundleIdentifier(value, label) {
   return value;
 }
 
-const unsafeJavaScriptLiteralChars = /[<>/\u2028\u2029]/g;
+const unsafeJavaScriptLiteralChars = /[<>\u2028\u2029]/g;
 const unsafeJavaScriptLiteralEscapes = {
   "<": "\\u003C",
   ">": "\\u003E",
-  "/": "\\u002F",
   "\u2028": "\\u2028",
   "\u2029": "\\u2029",
 };
@@ -63,6 +62,15 @@ function assertSafeWebviewJavaScriptAssetName(value, description) {
 
 function jsModuleSpecifier(assetName, description) {
   return jsStringLiteral(`./${assertSafeWebviewJavaScriptAssetName(assetName, description)}`);
+}
+
+function requireRouteKey(value, label) {
+  const quotedRouteKey = /^"[A-Za-z0-9_-]+":$/;
+  const identifierRouteKey = /^[A-Za-z_$][\w$]*:$/;
+  if (!quotedRouteKey.test(value) && !identifierRouteKey.test(value)) {
+    throw new Error(`Required Keybinds settings patch failed: invalid ${label} route key`);
+  }
+  return value;
 }
 
 function buildKeybindsSettingsSource({
@@ -397,10 +405,15 @@ function applyKeybindsSettingsIndexPatch(currentSource) {
           "Required Keybinds settings patch failed: could not replace keyboard shortcuts route",
         );
       }
-      const keybindsImportPath = JSON.stringify(`./${keybindsSettingsAsset}`);
+      const keybindsImportPath = jsModuleSpecifier(keybindsSettingsAsset, "Keybinds settings asset");
       patchedSource = patchedSource.replace(
         routePattern,
-        `"keyboard-shortcuts":(0,$1.lazy)(()=>$2(()=>import(${keybindsImportPath}),[],import.meta.url)),$4`,
+        (_match, lazyModule, importHelper, _quote, nextRouteKey) => {
+          const lazy = requireBundleIdentifier(lazyModule, "keyboard shortcuts lazy module");
+          const helper = requireBundleIdentifier(importHelper, "keyboard shortcuts import helper");
+          const followingRoute = requireRouteKey(nextRouteKey, "following settings");
+          return `"keyboard-shortcuts":(0,${lazy}.lazy)(()=>${helper}(()=>import(${keybindsImportPath}),[],import.meta.url)),${followingRoute}`;
+        },
       );
     }
 
@@ -409,14 +422,20 @@ function applyKeybindsSettingsIndexPatch(currentSource) {
 
   if (!patchedSource.includes(`${keybindsSettingsAsset}`)) {
     const routePattern =
-      /((?:var|let|const) [A-Za-z_$][\w$]*=\{(?:\.\.\.[A-Za-z_$][\w$]*,)?)"general-settings":(?=\(0,([A-Za-z_$][\w$]*)\.lazy\)\(\(\)=>([A-Za-z_$][\w$]*)\()/;
+      /((?:var|let|const) ([A-Za-z_$][\w$]*)=\{)(?:\.\.\.([A-Za-z_$][\w$]*),)?"general-settings":(?=\(0,([A-Za-z_$][\w$]*)\.lazy\)\(\(\)=>([A-Za-z_$][\w$]*)\()/;
     if (!routePattern.test(patchedSource)) {
       throw new Error("Required Keybinds settings patch failed: could not add keybinds route");
     }
-    const keybindsImportPath = JSON.stringify(`./${keybindsSettingsAsset}`);
+    const keybindsImportPath = jsModuleSpecifier(keybindsSettingsAsset, "Keybinds settings asset");
     patchedSource = patchedSource.replace(
       routePattern,
-      `$1keybinds:(0,$2.lazy)(()=>$3(()=>import(${keybindsImportPath}),[],import.meta.url)),"general-settings":`,
+      (_match, declarationPrefix, routeMapName, spreadName, lazyModule, importHelper) => {
+        requireBundleIdentifier(routeMapName, "route map");
+        const spread = spreadName == null ? "" : `...${requireBundleIdentifier(spreadName, "spread route map")},`;
+        const lazy = requireBundleIdentifier(lazyModule, "settings lazy module");
+        const helper = requireBundleIdentifier(importHelper, "settings import helper");
+        return `${declarationPrefix}${spread}keybinds:(0,${lazy}.lazy)(()=>${helper}(()=>import(${keybindsImportPath}),[],import.meta.url)),"general-settings":`;
+      },
     );
   }
 

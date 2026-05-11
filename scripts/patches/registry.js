@@ -281,6 +281,11 @@ function createMainBundleContext(iconAsset) {
 }
 
 function recordAssetPatch(report, name, patchResult, warnings) {
+  const status =
+    patchResult.required && patchResult.changed === 0 && warnings.length > 0
+      ? "failed-required"
+      : patchStatusFromChange(patchResult.changed > 0, warnings);
+
   if (patchResult.matched === 0) {
     recordPatch(
       report,
@@ -294,7 +299,7 @@ function recordAssetPatch(report, name, patchResult, warnings) {
   recordPatch(
     report,
     name,
-    patchStatusFromChange(patchResult.changed > 0, warnings),
+    status,
     warnings[0] ?? null,
   );
 }

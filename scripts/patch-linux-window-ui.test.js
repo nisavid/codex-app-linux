@@ -881,10 +881,10 @@ test("builds Keybinds settings source from safe asset names", () => {
     const keybindsAsset = resolveKeybindsSettingsAsset(tempRoot);
 
     assert.equal(keybindsAsset.filePath, path.join(tempRoot, "webview", "assets", "keybinds-settings-linux.js"));
-    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.chunkAsset}"`));
-    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.reactAsset}"`));
-    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.jsxRuntimeAsset}"`));
-    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.vscodeApiAsset}"`));
+    assert.ok(keybindsAsset.source.includes(`from"./${names.chunkAsset}"`));
+    assert.ok(keybindsAsset.source.includes(`from"./${names.reactAsset}"`));
+    assert.ok(keybindsAsset.source.includes(`from"./${names.jsxRuntimeAsset}"`));
+    assert.ok(keybindsAsset.source.includes(`from"./${names.vscodeApiAsset}"`));
     assert.match(keybindsAsset.source, /\/\/# sourceMappingURL=keybinds-settings-linux\.js\.map\n$/);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -1843,7 +1843,7 @@ test("patchExtractedApp records a structured patch report", () => {
   }
 });
 
-test("patch report marks warned asset patches as skipped", () => {
+test("patch report marks warned required asset patches as failed", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-warned-asset-"));
   try {
     const assetsDir = path.join(tempRoot, "webview", "assets");
@@ -1854,11 +1854,11 @@ test("patch report marks warned asset patches as skipped", () => {
     captureWarns(() => patchExtractedApp(tempRoot, { report }));
 
     const sunsetPatch = report.patches.find((patch) => patch.name === "linux-app-sunset-gate");
-    assert.equal(sunsetPatch.status, "skipped-optional");
+    assert.equal(sunsetPatch.status, "failed-required");
     assert.match(sunsetPatch.reason, /Could not find app sunset gate needle/);
     assert.ok(
       validateReport(report, "upstream-build").some((failure) =>
-        failure.startsWith("linux-app-sunset-gate: skipped-optional"),
+        failure.startsWith("linux-app-sunset-gate: failed-required"),
       ),
     );
   } finally {

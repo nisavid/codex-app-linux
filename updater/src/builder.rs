@@ -390,11 +390,17 @@ fn preferred_rust_bin_dirs() -> Vec<PathBuf> {
     };
 
     let cargo_bin = PathBuf::from(home).join(".cargo/bin");
-    if cargo_bin.join("cargo").is_file() {
+    if is_executable_file(&cargo_bin.join("cargo")) {
         vec![cargo_bin]
     } else {
         Vec::new()
     }
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
 }
 
 fn collect_nvm_bin_dirs(nvm_root: &Path) -> Vec<PathBuf> {
@@ -878,6 +884,7 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         let cargo_bin = home_dir.join(".cargo/bin");
         fs::create_dir_all(&cargo_bin)?;
         fs::write(cargo_bin.join("cargo"), b"bin")?;
+        fs::set_permissions(cargo_bin.join("cargo"), fs::Permissions::from_mode(0o755))?;
 
         let _home_guard = crate::test_util::EnvVarGuard::set("HOME", &home_dir);
 
@@ -885,6 +892,25 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
 
         let directories = std::env::split_paths(&path).collect::<Vec<_>>();
         assert!(directories.iter().any(|dir| dir == &cargo_bin));
+        Ok(())
+    }
+
+    #[test]
+    fn build_command_path_skips_non_executable_cargo_from_home() -> Result<()> {
+        let _env_guard = crate::test_util::env_lock();
+        let temp = tempdir()?;
+        let home_dir = temp.path().join("home");
+        let cargo_bin = home_dir.join(".cargo/bin");
+        fs::create_dir_all(&cargo_bin)?;
+        fs::write(cargo_bin.join("cargo"), b"bin")?;
+        fs::set_permissions(cargo_bin.join("cargo"), fs::Permissions::from_mode(0o644))?;
+
+        let _home_guard = crate::test_util::EnvVarGuard::set("HOME", &home_dir);
+
+        let path = build_command_path(Path::new("/tmp/missing-codex-builder"));
+
+        let directories = std::env::split_paths(&path).collect::<Vec<_>>();
+        assert!(!directories.iter().any(|dir| dir == &cargo_bin));
         Ok(())
     }
 }

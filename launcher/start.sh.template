@@ -345,6 +345,26 @@ print(version.strip())
 PY
 }
 
+sync_bundled_marketplace_cache() {
+    local label="$1"
+    local source_marketplace="$2"
+    local marketplace_plugins_dir="$3"
+    local target_marketplace="$marketplace_plugins_dir/marketplace.json"
+    local tmp_marketplace="$marketplace_plugins_dir/.marketplace.json.tmp.$$"
+
+    [ -f "$source_marketplace" ] || return 0
+
+    if mkdir -p "$marketplace_plugins_dir" && \
+        cp "$source_marketplace" "$tmp_marketplace" && \
+        chmod u+w "$tmp_marketplace" && \
+        mv "$tmp_marketplace" "$target_marketplace"; then
+        return 0
+    fi
+
+    rm -f "$tmp_marketplace"
+    echo "$label bundled marketplace sync failed; continuing with existing marketplace cache."
+}
+
 sync_browser_use_bundled_plugin_cache() {
     local source_plugin="$SCRIPT_DIR/resources/plugins/openai-bundled/plugins/browser-use"
     local source_marketplace="$SCRIPT_DIR/resources/plugins/openai-bundled/.agents/plugins/marketplace.json"
@@ -365,13 +385,7 @@ sync_browser_use_bundled_plugin_cache() {
 
     marketplace_root="$codex_home/.tmp/bundled-marketplaces/openai-bundled"
     marketplace_plugins_dir="$marketplace_root/.agents/plugins"
-    if [ -f "$source_marketplace" ]; then
-        mkdir -p "$marketplace_plugins_dir"
-        rm -f "$marketplace_plugins_dir/marketplace.json"
-        cp "$source_marketplace" "$marketplace_plugins_dir/marketplace.json" && \
-            chmod u+w "$marketplace_plugins_dir/marketplace.json" || \
-            echo "Browser Use bundled marketplace sync failed; continuing with existing marketplace cache."
-    fi
+    sync_bundled_marketplace_cache "Browser Use" "$source_marketplace" "$marketplace_plugins_dir"
 
     version="$(bundled_plugin_version "$plugin_json" 2>/dev/null || true)"
     [ -n "$version" ] || return 0
@@ -551,12 +565,7 @@ sync_chrome_bundled_plugin_cache() {
     marketplace_plugins_dir="$marketplace_root/.agents/plugins"
     marketplace_plugin_link="$marketplace_root/plugins/chrome"
     mkdir -p "$marketplace_plugins_dir" "$marketplace_root/plugins"
-    if [ -f "$source_marketplace" ]; then
-        rm -f "$marketplace_plugins_dir/marketplace.json"
-        cp "$source_marketplace" "$marketplace_plugins_dir/marketplace.json" && \
-            chmod u+w "$marketplace_plugins_dir/marketplace.json" || \
-            echo "Chrome bundled marketplace sync failed; continuing with existing marketplace cache."
-    fi
+    sync_bundled_marketplace_cache "Chrome" "$source_marketplace" "$marketplace_plugins_dir"
     if [ -e "$marketplace_plugin_link" ] && [ ! -L "$marketplace_plugin_link" ]; then
         rm -rf "$marketplace_plugin_link"
     fi
@@ -591,13 +600,7 @@ sync_computer_use_bundled_plugin_cache() {
 
     marketplace_root="$codex_home/.tmp/bundled-marketplaces/openai-bundled"
     marketplace_plugins_dir="$marketplace_root/.agents/plugins"
-    if [ -f "$source_marketplace" ]; then
-        mkdir -p "$marketplace_plugins_dir"
-        rm -f "$marketplace_plugins_dir/marketplace.json"
-        cp "$source_marketplace" "$marketplace_plugins_dir/marketplace.json" && \
-            chmod u+w "$marketplace_plugins_dir/marketplace.json" || \
-            echo "Computer Use bundled marketplace sync failed; continuing with existing marketplace cache."
-    fi
+    sync_bundled_marketplace_cache "Computer Use" "$source_marketplace" "$marketplace_plugins_dir"
 
     version="$(bundled_plugin_version "$plugin_json" 2>/dev/null || true)"
     [ -n "$version" ] || return 0
