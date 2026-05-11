@@ -11,6 +11,8 @@ const {
   COMPUTER_USE_UI_ENV_VAR,
   COMPUTER_USE_UI_SETTINGS_KEY,
   applyKeybindsSettingsIndexPatch,
+  applyKeybindsSettingsSectionsPatch,
+  applyKeybindsSettingsSharedPatch,
   applyLinuxComputerUseFeaturePatch,
   applyLinuxComputerUseInstallFlowPatch,
   applyLinuxComputerUsePluginGatePatch,
@@ -46,6 +48,7 @@ const {
   patchLinuxAppUpdaterBridge,
   createPatchReport,
   resolveDesktopName,
+  resolveKeybindsSettingsAsset,
 } = require("./patch-linux-window-ui.js");
 const {
   validateReport,
@@ -188,6 +191,52 @@ function keybindsIndexBundleFixture() {
     "switch(e){case`appearance`:case`git-settings`:case`worktrees`:case`local-environments`:case`data-controls`:case`environments`:return l===`electron`;}",
     "switch(e){case`usage`:k=g;break bb0;case`appearance`:case`general-settings`:case`agent`:case`git-settings`:case`account`:case`data-controls`:case`personalization`:k=!1;break bb0;}",
   ].join("");
+}
+
+function spreadKeybindsIndexBundleFixture() {
+  return keybindsIndexBundleFixture().replace("var i_e={", "const allRoutes={...base,");
+}
+
+function keyboardShortcutsIndexBundleFixture() {
+  return [
+    "var ww={\"general-settings\":(0,Q.lazy)(()=>it(()=>import(`./general-settings-OdfVFvhe.js`).then(e=>({default:e.GeneralSettings})),__vite__mapDeps([233]),import.meta.url)),",
+    "\"keyboard-shortcuts\":(0,Q.lazy)(()=>it(()=>import(`./keyboard-shortcuts-settings-BWZg3k-L.js`).then(e=>({default:e.KeyboardShortcutsSettings})),__vite__mapDeps([243,3,1]),import.meta.url)),",
+    "agent:(0,Q.lazy)(()=>it(()=>import(`./agent-settings-DZfkvWn6.js`).then(e=>({default:e.AgentSettings})),__vite__mapDeps([245]),import.meta.url))};",
+    "var fe={\"general-settings\":I,\"keyboard-shortcuts\":ue,appearance:re};",
+    "pe=[`general-settings`,`appearance`,`agent`,`personalization`,`keyboard-shortcuts`];",
+    "me=[{key:`connection`,slugs:[`agent`,`personalization`,`keyboard-shortcuts`]}];",
+    "switch(e.slug){case`keyboard-shortcuts`:return d===`electron`&&h}",
+    "switch(M.slug){case`keyboard-shortcuts`:P=d===`electron`&&g;break bb0;}",
+  ].join("");
+}
+
+function writeMinimalKeybindsSettingsAssets(tempRoot, overrides = {}) {
+  const assetsDir = path.join(tempRoot, "webview", "assets");
+  fs.mkdirSync(assetsDir, { recursive: true });
+  const names = {
+    chunkAsset: "chunk-test.js",
+    reactAsset: "react-test.js",
+    jsxRuntimeAsset: "jsx-runtime-test.js",
+    vscodeApiAsset: "vscode-api-test.js",
+    hotkeySettingsAsset: "general-settings-test.js",
+    toggleAsset: "toggle-test.js",
+    settingsRowAsset: "settings-row-test.js",
+    settingsLayoutAsset: "settings-content-layout-test.js",
+    ...overrides,
+  };
+
+  fs.writeFileSync(path.join(assetsDir, names.chunkAsset), "");
+  fs.writeFileSync(
+    path.join(assetsDir, names.reactAsset),
+    `import{s}from"./${names.chunkAsset}";react.transitional.element`,
+  );
+  fs.writeFileSync(path.join(assetsDir, names.jsxRuntimeAsset), "react.transitional.element");
+  fs.writeFileSync(path.join(assetsDir, names.vscodeApiAsset), "vscode://codex");
+  fs.writeFileSync(path.join(assetsDir, names.hotkeySettingsAsset), "hotkey-window-hotkey-state");
+  fs.writeFileSync(path.join(assetsDir, names.toggleAsset), "");
+  fs.writeFileSync(path.join(assetsDir, names.settingsRowAsset), "");
+  fs.writeFileSync(path.join(assetsDir, names.settingsLayoutAsset), "");
+  return names;
 }
 
 function appSunsetBundleFixture() {
@@ -757,6 +806,100 @@ test("captures Keybinds settings route helper aliases after minifier renames", (
   );
   assert.doesNotMatch(patched, /Z\.lazy/);
   assert.doesNotMatch(patched, /s\(\(\)=>import\("\.\/keybinds-settings-linux\.js"\)/);
+});
+
+test("adds Keybinds settings route to spread route maps", () => {
+  const patched = applyPatchTwice(
+    applyKeybindsSettingsIndexPatch,
+    spreadKeybindsIndexBundleFixture(),
+  );
+
+  assert.match(
+    patched,
+    /const allRoutes=\{\.\.\.base,keybinds:\(0,Z\.lazy\)\(\(\)=>s\(\(\)=>import\("\.\/keybinds-settings-linux\.js"\)/,
+  );
+  assert.match(patched, /"general-settings":\(0,Z\.lazy\)/);
+  assert.match(patched, /codexLinuxKeybindOverridesRuntime/);
+});
+
+test("uses upstream Keyboard Shortcuts settings surface when available", () => {
+  const patched = applyPatchTwice(
+    applyKeybindsSettingsIndexPatch,
+    keyboardShortcutsIndexBundleFixture(),
+  );
+
+  assert.match(
+    patched,
+    /"keyboard-shortcuts":\(0,Q\.lazy\)\(\(\)=>it\(\(\)=>import\("\.\/keybinds-settings-linux\.js"\),\[\],import\.meta\.url\)\),agent:/,
+  );
+  assert.doesNotMatch(patched, /keybinds:\(0,Q\.lazy/);
+  assert.match(patched, /"keyboard-shortcuts":ue/);
+  assert.match(patched, /`keyboard-shortcuts`/);
+  assert.match(patched, /codexLinuxKeybindOverridesRuntime/);
+});
+
+test("rejects unsafe Keybinds settings asset names before source generation", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-keybind-asset-name-test-"));
+  try {
+    writeMinimalKeybindsSettingsAssets(tempRoot, {
+      reactAsset: 'react-test";globalThis.__codexInjected=1;.js',
+    });
+
+    assert.throws(
+      () => resolveKeybindsSettingsAsset(tempRoot),
+      /unsafe React asset/,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("rejects unsafe imported React shared chunk asset names", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-keybind-asset-name-test-"));
+  try {
+    const names = writeMinimalKeybindsSettingsAssets(tempRoot);
+    fs.writeFileSync(path.join(tempRoot, "webview", "outside.js"), "");
+    fs.writeFileSync(
+      path.join(tempRoot, "webview", "assets", names.reactAsset),
+      'import{s}from"./../outside.js";react.transitional.element',
+    );
+
+    assert.throws(
+      () => resolveKeybindsSettingsAsset(tempRoot),
+      /unsafe React shared chunk asset/,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("builds Keybinds settings source from safe asset names", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-keybind-asset-name-test-"));
+  try {
+    const names = writeMinimalKeybindsSettingsAssets(tempRoot);
+
+    const keybindsAsset = resolveKeybindsSettingsAsset(tempRoot);
+
+    assert.equal(keybindsAsset.filePath, path.join(tempRoot, "webview", "assets", "keybinds-settings-linux.js"));
+    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.chunkAsset}"`));
+    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.reactAsset}"`));
+    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.jsxRuntimeAsset}"`));
+    assert.ok(keybindsAsset.source.includes(`from".\\u002F${names.vscodeApiAsset}"`));
+    assert.match(keybindsAsset.source, /\/\/# sourceMappingURL=keybinds-settings-linux\.js\.map\n$/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("does not duplicate upstream Keyboard Shortcuts settings metadata", () => {
+  const sections = "n=[{slug:`general-settings`},{slug:`appearance`},{slug:`keyboard-shortcuts`}]";
+  const shared = [
+    '"keyboard-shortcuts":{id:`settings.nav.keyboard-shortcuts`,defaultMessage:`Keyboard shortcuts`,description:`Title for keyboard shortcuts settings section`},',
+    "case`keyboard-shortcuts`:{return (0,d.jsx)(n,{id:`settings.section.keyboard-shortcuts`,defaultMessage:`Keyboard shortcuts`,description:`Title for keyboard shortcuts settings section`})}",
+  ].join("");
+
+  assert.equal(applyKeybindsSettingsSectionsPatch(sections), sections);
+  assert.equal(applyKeybindsSettingsSharedPatch(shared), shared);
 });
 
 test("disables the upstream app sunset gate in the Linux wrapper webview", () => {
