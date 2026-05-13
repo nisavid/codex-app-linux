@@ -59,8 +59,16 @@ validate_no_newline() {
 validate_package_inputs() {
     [[ "$PACKAGE_NAME" =~ ^[a-z0-9][a-z0-9+._-]*$ ]] || \
         error "PACKAGE_NAME must match ^[a-z0-9][a-z0-9+._-]*$: $PACKAGE_NAME"
+    case "${PACKAGE_ENABLE_UPDATER:-1}" in
+        0|1) ;;
+        *) error "PACKAGE_ENABLE_UPDATER must be 0 or 1" ;;
+    esac
     validate_no_newline "PACKAGE_DISPLAY_NAME" "${PACKAGE_DISPLAY_NAME:-Codex App}"
     validate_no_newline "PACKAGE_COMMENT" "${PACKAGE_COMMENT:-Run Codex App on Linux}"
+}
+
+package_updater_enabled() {
+    [ "${PACKAGE_ENABLE_UPDATER:-1}" = "1" ]
 }
 
 render_desktop_entry() {
@@ -68,10 +76,12 @@ render_desktop_entry() {
     local package_name
     local display_name
     local comment
+    local temp_target
 
     package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
     display_name="$(sed_escape_replacement "${PACKAGE_DISPLAY_NAME:-Codex App}")"
     comment="$(sed_escape_replacement "${PACKAGE_COMMENT:-Run Codex App on Linux}")"
+    temp_target="$target.tmp.$$"
 
     sed \
         -e "s/codex-app-updater/__CODEX_APP_UPDATER__/g" \
@@ -79,7 +89,20 @@ render_desktop_entry() {
         -e "s/__CODEX_APP_UPDATER__/codex-app-updater/g" \
         -e "s/^Name=.*/Name=$display_name/g" \
         -e "s/^Comment=.*/Comment=$comment/g" \
-        "$DESKTOP_TEMPLATE" > "$target"
+        "$DESKTOP_TEMPLATE" > "$temp_target"
+    if package_updater_enabled; then
+        mv "$temp_target" "$target"
+    else
+        awk '
+            /^\[Desktop Action CheckForUpdates\]$/ { skip = 1; next }
+            /^\[Desktop Action InstallReadyUpdate\]$/ { skip = 1; next }
+            /^\[/ { skip = 0 }
+            skip { next }
+            /^Actions=CheckForUpdates;InstallReadyUpdate;$/ { next }
+            { print }
+        ' "$temp_target" > "$target"
+        rm -f "$temp_target"
+    fi
     chmod 0644 "$target"
 }
 
@@ -91,6 +114,7 @@ render_packaged_runtime_helper() {
     sed \
         -e "s/CHROME_DESKTOP=\"codex-app.desktop\"/CHROME_DESKTOP=\"$package_name.desktop\"/" \
         -e "s|BAMF_DESKTOP_FILE_HINT=\"/usr/share/applications/codex-app.desktop\"|BAMF_DESKTOP_FILE_HINT=\"/usr/share/applications/$package_name.desktop\"|" \
+        -e "s/__CODEX_PACKAGE_ENABLE_UPDATER__/${PACKAGE_ENABLE_UPDATER:-1}/g" \
         "$PACKAGED_RUNTIME_SOURCE" > "$target"
     chmod 0644 "$target"
 }
@@ -191,16 +215,16 @@ stage_common_package_files() {
 
     validate_package_inputs
     validate_app_payload_source
-    ensure_file_exists "$polkit_policy" "polkit policy"
+    if package_updater_enabled; then
+        ensure_file_exists "$polkit_policy" "polkit policy"
+    fi
 
     mkdir -p \
         "$root/opt" \
         "$root/usr/bin" \
         "$support_root" \
-        "$root/usr/lib/systemd/user" \
         "$root/usr/share/applications" \
-        "$root/usr/share/icons/hicolor/256x256/apps" \
-        "$root/usr/share/polkit-1/actions"
+        "$root/usr/share/icons/hicolor/256x256/apps"
 
     rm -rf "$app_root"
     cp -aT "$APP_DIR" "$app_root"
@@ -209,16 +233,23 @@ stage_common_package_files() {
     cp "$ICON_SOURCE" "$app_root/.codex-linux/$PACKAGE_NAME.png"
     render_desktop_entry "$root/usr/share/applications/$PACKAGE_NAME.desktop"
     cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"
-    cp "$UPDATER_BINARY_SOURCE" "$root/usr/bin/codex-app-updater"
-    chmod 0755 "$root/usr/bin/codex-app-updater"
-    cp "$UPDATER_SERVICE_SOURCE" "$root/usr/lib/systemd/user/codex-app-updater.service"
-    chmod 0644 "$root/usr/lib/systemd/user/codex-app-updater.service"
-    cp "$polkit_policy" "$root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
-    chmod 0644 "$root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
+    if package_updater_enabled; then
+        mkdir -p \
+            "$root/usr/lib/systemd/user" \
+            "$root/usr/share/polkit-1/actions"
+        cp "$UPDATER_BINARY_SOURCE" "$root/usr/bin/codex-app-updater"
+        chmod 0755 "$root/usr/bin/codex-app-updater"
+        cp "$UPDATER_SERVICE_SOURCE" "$root/usr/lib/systemd/user/codex-app-updater.service"
+        chmod 0644 "$root/usr/lib/systemd/user/codex-app-updater.service"
+        cp "$polkit_policy" "$root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
+        chmod 0644 "$root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
+    fi
     render_packaged_runtime_helper "$support_root/packaged-runtime.sh"
 }
 
 stage_update_builder_bundle() {
+    package_updater_enabled || return 0
+
     local root="$1"
     local update_builder_root="$root/usr/lib/$PACKAGE_NAME/update-builder"
     local node_runtime_source="$APP_DIR/resources/node-runtime"

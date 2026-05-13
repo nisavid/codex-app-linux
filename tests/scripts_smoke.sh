@@ -231,6 +231,57 @@ SCRIPT
     assert_contains "$pkg_root/usr/lib/codex-cua-lab/packaged-runtime.sh" 'CHROME_DESKTOP="codex-cua-lab.desktop"'
 }
 
+test_deb_builder_can_disable_updater() {
+    info "Running Debian packaging smoke test without updater"
+    local workspace="$TMP_DIR/deb-no-updater"
+    local bin_dir="$workspace/bin"
+    local app_dir="$workspace/app"
+    local dist_dir="$workspace/dist"
+    local pkg_root="$workspace/deb-root"
+
+    mkdir -p "$workspace" "$dist_dir"
+    make_stub_bin_dir "$bin_dir"
+    make_fake_app "$app_dir"
+
+    cat > "$bin_dir/dpkg" <<'SCRIPT'
+#!/bin/bash
+if [ "$1" = "--print-architecture" ]; then
+    echo amd64
+    exit 0
+fi
+exit 0
+SCRIPT
+    cat > "$bin_dir/dpkg-deb" <<'SCRIPT'
+#!/bin/bash
+output="${@: -1}"
+mkdir -p "$(dirname "$output")"
+touch "$output"
+SCRIPT
+    cat > "$bin_dir/cargo" <<'SCRIPT'
+#!/bin/bash
+echo "cargo should not be called when PACKAGE_ENABLE_UPDATER=0" >&2
+exit 99
+SCRIPT
+    chmod +x "$bin_dir/dpkg" "$bin_dir/dpkg-deb" "$bin_dir/cargo"
+
+    PATH="$bin_dir:$PATH" \
+    APP_DIR_OVERRIDE="$app_dir" \
+    PKG_ROOT_OVERRIDE="$pkg_root" \
+    DIST_DIR_OVERRIDE="$dist_dir" \
+    PACKAGE_ENABLE_UPDATER=0 \
+    PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
+    "$REPO_DIR/scripts/build-deb.sh"
+
+    assert_file_exists "$dist_dir/codex-app_2026.03.24.120000+deadbeef_amd64.deb"
+    assert_file_not_exists "$pkg_root/usr/bin/codex-app-updater"
+    assert_file_not_exists "$pkg_root/usr/lib/systemd/user/codex-app-updater.service"
+    assert_file_not_exists "$pkg_root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
+    assert_file_not_exists "$pkg_root/usr/lib/codex-app/update-builder"
+    assert_not_contains "$pkg_root/usr/share/applications/codex-app.desktop" "Actions=CheckForUpdates;InstallReadyUpdate;"
+    assert_not_contains "$pkg_root/usr/share/applications/codex-app.desktop" "codex-app-updater"
+    assert_contains "$pkg_root/usr/lib/codex-app/packaged-runtime.sh" '[ "0" != "1" ]'
+}
+
 test_rpm_builder_smoke() {
     info "Running RPM packaging smoke test"
     local workspace="$TMP_DIR/rpm"
@@ -277,6 +328,63 @@ SCRIPT
     "$REPO_DIR/scripts/build-rpm.sh"
 
     assert_file_exists "$dist_dir/codex-app-2026.03.24.120000-deadbeef.x86_64.rpm"
+}
+
+test_rpm_builder_can_disable_updater() {
+    info "Running RPM packaging smoke test without updater"
+    local workspace="$TMP_DIR/rpm-no-updater"
+    local bin_dir="$workspace/bin"
+    local app_dir="$workspace/app"
+    local dist_dir="$workspace/dist"
+    local spec_capture="$workspace/codex-app.spec"
+
+    mkdir -p "$workspace" "$dist_dir"
+    make_stub_bin_dir "$bin_dir"
+    make_fake_app "$app_dir"
+
+    cat > "$bin_dir/rpmbuild" <<'SCRIPT'
+#!/bin/bash
+rpmdir=""
+spec_file=""
+while [ $# -gt 0 ]; do
+    if [ "$1" = "--define" ]; then
+        case "$2" in
+            _rpmdir\ *) rpmdir="${2#_rpmdir }" ;;
+        esac
+        shift 2
+        continue
+    fi
+    spec_file="$1"
+    shift
+done
+[ -n "$rpmdir" ] || exit 1
+[ -n "$spec_file" ] || exit 1
+cp "$spec_file" "$RPM_SPEC_CAPTURE"
+mkdir -p "$rpmdir/x86_64"
+touch "$rpmdir/x86_64/codex-app-2026.03.24.120000-deadbeef.x86_64.rpm"
+SCRIPT
+    cat > "$bin_dir/cargo" <<'SCRIPT'
+#!/bin/bash
+echo "cargo should not be called when PACKAGE_ENABLE_UPDATER=0" >&2
+exit 99
+SCRIPT
+    chmod +x "$bin_dir/rpmbuild" "$bin_dir/cargo"
+
+    PATH="$bin_dir:$PATH" \
+    APP_DIR_OVERRIDE="$app_dir" \
+    DIST_DIR_OVERRIDE="$dist_dir" \
+    PACKAGE_ENABLE_UPDATER=0 \
+    PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
+    RPM_SPEC_CAPTURE="$spec_capture" \
+    "$REPO_DIR/scripts/build-rpm.sh"
+
+    assert_file_exists "$dist_dir/codex-app-2026.03.24.120000-deadbeef.x86_64.rpm"
+    assert_file_exists "$spec_capture"
+    assert_not_contains "$spec_capture" "/usr/bin/codex-app-updater"
+    assert_not_contains "$spec_capture" "codex-app-updater.service"
+    assert_not_contains "$spec_capture" "codex-app-updater-user-service.sh"
+    assert_not_contains "$spec_capture" "Local auto-updates rebuild"
+    assert_not_contains "$spec_capture" "polkit, curl, unzip, gcc-c++, make"
 }
 
 test_missing_input_failure() {
@@ -2474,7 +2582,9 @@ main() {
     test_common_helper_sourcing
     test_deb_builder_smoke
     test_deb_builder_respects_package_identity
+    test_deb_builder_can_disable_updater
     test_rpm_builder_smoke
+    test_rpm_builder_can_disable_updater
     test_missing_input_failure
     test_make_build_app_uses_installer_download_flow_by_default
     test_upstream_build_app_workflow_tracks_dmg_metadata

@@ -49,13 +49,17 @@ main() {
     [ -x "$APP_DIR/start.sh" ] || error "Missing launcher: $APP_DIR/start.sh"
     [ -f "$SPEC_TEMPLATE" ] || error "Missing spec template: $SPEC_TEMPLATE"
     [ -f "$DESKTOP_TEMPLATE" ] || error "Missing desktop template: $DESKTOP_TEMPLATE"
-    [ -f "$UPDATER_SERVICE_SOURCE" ] || error "Missing updater service template: $UPDATER_SERVICE_SOURCE"
-    [ -f "$USER_SERVICE_HELPER_TEMPLATE" ] || error "Missing updater user service helper: $USER_SERVICE_HELPER_TEMPLATE"
     [ -f "$ICON_SOURCE" ] || error "Missing icon: $ICON_SOURCE"
     [ -f "$PACKAGED_RUNTIME_SOURCE" ] || error "Missing packaged launcher runtime helper: $PACKAGED_RUNTIME_SOURCE"
+    if package_updater_enabled; then
+        [ -f "$UPDATER_SERVICE_SOURCE" ] || error "Missing updater service template: $UPDATER_SERVICE_SOURCE"
+        [ -f "$USER_SERVICE_HELPER_TEMPLATE" ] || error "Missing updater user service helper: $USER_SERVICE_HELPER_TEMPLATE"
+    fi
     command -v rpmbuild >/dev/null 2>&1 || error "rpmbuild is required (install rpm-build)"
 
-    ensure_updater_binary
+    if package_updater_enabled; then
+        ensure_updater_binary
+    fi
 
     local arch
     arch="$(map_arch)"
@@ -80,13 +84,68 @@ SCRIPT
     chmod 0755 "$staging_root/usr/bin/$PACKAGE_NAME"
 
     local spec_file="$build_root/codex-app.spec"
-    sed \
-        -e "s/__PACKAGE_NAME__/$PACKAGE_NAME/g" \
-        -e "s/__RPM_VERSION__/$rpm_ver/g" \
-        -e "s/__RPM_RELEASE__/$rpm_rel/g" \
-        -e "s|__RPM_STAGING_DIR__|$staging_root|g" \
-        -e "s/__ARCH__/$arch/g" \
-        "$SPEC_TEMPLATE" > "$spec_file"
+    local updater_requires=""
+    local updater_description=""
+    local updater_files=""
+    local updater_post=""
+    local updater_preun=""
+    local updater_postun=""
+    if package_updater_enabled; then
+        updater_requires="Requires:       polkit, curl, unzip, gcc-c++, make"
+        updater_description="Local auto-updates rebuild a Linux package from the upstream Codex.dmg and therefore
+use the bundled managed Node.js runtime plus the local packaging toolchain listed in Requires."
+        updater_files="/usr/bin/codex-app-updater
+/usr/lib/systemd/user/codex-app-updater.service
+/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
+        updater_post="SERVICE_HELPER=/usr/lib/$PACKAGE_NAME/update-builder/packaging/linux/codex-app-updater-user-service.sh
+if [ -f \"\$SERVICE_HELPER\" ]; then
+    . \"\$SERVICE_HELPER\"
+    codex_ensure_user_service_running || true
+fi"
+        updater_preun="SERVICE_HELPER=/usr/lib/$PACKAGE_NAME/update-builder/packaging/linux/codex-app-updater-user-service.sh
+[ -f \"\$SERVICE_HELPER\" ] && . \"\$SERVICE_HELPER\"
+if [ \$1 -eq 0 ] && [ -f \"\$SERVICE_HELPER\" ]; then
+    codex_cleanup_user_service stop || true
+    codex_cleanup_user_service disable || true
+fi"
+        updater_postun="SERVICE_HELPER=/usr/lib/$PACKAGE_NAME/update-builder/packaging/linux/codex-app-updater-user-service.sh
+if [ -f \"\$SERVICE_HELPER\" ]; then
+    . \"\$SERVICE_HELPER\"
+    codex_reload_user_managers || true
+fi"
+    fi
+    AWK_PACKAGE_NAME="$PACKAGE_NAME" \
+    AWK_RPM_VERSION="$rpm_ver" \
+    AWK_RPM_RELEASE="$rpm_rel" \
+    AWK_RPM_STAGING_DIR="$staging_root" \
+    AWK_ARCH="$arch" \
+    AWK_UPDATER_REQUIRES="$updater_requires" \
+    AWK_UPDATER_DESCRIPTION="$updater_description" \
+    AWK_UPDATER_FILES="$updater_files" \
+    AWK_UPDATER_POST="$updater_post" \
+    AWK_UPDATER_PREUN="$updater_preun" \
+    AWK_UPDATER_POSTUN="$updater_postun" \
+    awk '
+        function emit_env(name) {
+            if (ENVIRON[name] != "") {
+                print ENVIRON[name]
+            }
+        }
+        {
+            if ($0 == "__UPDATER_REQUIRES__") { emit_env("AWK_UPDATER_REQUIRES"); next }
+            if ($0 == "__UPDATER_DESCRIPTION__") { emit_env("AWK_UPDATER_DESCRIPTION"); next }
+            if ($0 == "__UPDATER_FILES__") { emit_env("AWK_UPDATER_FILES"); next }
+            if ($0 == "__UPDATER_POST__") { emit_env("AWK_UPDATER_POST"); next }
+            if ($0 == "__UPDATER_PREUN__") { emit_env("AWK_UPDATER_PREUN"); next }
+            if ($0 == "__UPDATER_POSTUN__") { emit_env("AWK_UPDATER_POSTUN"); next }
+            gsub(/__PACKAGE_NAME__/, ENVIRON["AWK_PACKAGE_NAME"])
+            gsub(/__RPM_VERSION__/, ENVIRON["AWK_RPM_VERSION"])
+            gsub(/__RPM_RELEASE__/, ENVIRON["AWK_RPM_RELEASE"])
+            gsub(/__RPM_STAGING_DIR__/, ENVIRON["AWK_RPM_STAGING_DIR"])
+            gsub(/__ARCH__/, ENVIRON["AWK_ARCH"])
+            print
+        }
+    ' "$SPEC_TEMPLATE" > "$spec_file"
 
     local rpmbuild_dir="$build_root/rpmbuild"
     mkdir -p \

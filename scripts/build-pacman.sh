@@ -41,17 +41,21 @@ main() {
 	ensure_file_exists "$PKGBUILD_TEMPLATE" "PKGBUILD template"
 	ensure_file_exists "$INSTALL_HOOKS" "install hooks"
 	ensure_file_exists "$DESKTOP_TEMPLATE" "desktop template"
-	ensure_file_exists "$UPDATER_SERVICE_SOURCE" "updater service template"
-	ensure_file_exists "$USER_SERVICE_HELPER_TEMPLATE" "updater user service helper"
 	ensure_file_exists "$ICON_SOURCE" "icon"
 	ensure_file_exists "$PACKAGED_RUNTIME_SOURCE" "packaged launcher runtime helper"
+	if package_updater_enabled; then
+		ensure_file_exists "$UPDATER_SERVICE_SOURCE" "updater service template"
+		ensure_file_exists "$USER_SERVICE_HELPER_TEMPLATE" "updater user service helper"
+	fi
 	command -v makepkg >/dev/null 2>&1 || error "makepkg is required (part of pacman)"
 
 	if [ "$(id -u)" -eq 0 ]; then
 		error "makepkg cannot run as root. Run this script as a regular user."
 	fi
 
-	ensure_updater_binary
+	if package_updater_enabled; then
+		ensure_updater_binary
+	fi
 
 	local arch
 	arch="$(map_arch)"
