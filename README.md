@@ -142,6 +142,14 @@ That rebuilds `codex-app/` from the current upstream DMG source, then builds the
 native package format for your host. To choose a package format explicitly,
 replace `package` with `deb`, `rpm`, or `pacman`.
 
+To build a package without installing `codex-app-updater`, its user service, or
+its polkit/update-builder support files, disable the updater at package build
+time:
+
+```bash
+PACKAGE_ENABLE_UPDATER=0 make package
+```
+
 Package outputs land in `dist/`:
 
 | Target | Output |

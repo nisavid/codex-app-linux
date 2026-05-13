@@ -38,17 +38,21 @@ main() {
     ensure_app_layout
     ensure_file_exists "$CONTROL_TEMPLATE" "control template"
     ensure_file_exists "$DESKTOP_TEMPLATE" "desktop template"
-    ensure_file_exists "$UPDATER_SERVICE_SOURCE" "updater service template"
-    ensure_file_exists "$USER_SERVICE_HELPER_TEMPLATE" "updater user service helper"
     ensure_file_exists "$ICON_SOURCE" "icon"
     ensure_file_exists "$PRERM_TEMPLATE" "Debian prerm template"
     ensure_file_exists "$POSTRM_TEMPLATE" "Debian postrm template"
     ensure_file_exists "$POSTINST_TEMPLATE" "Debian postinst template"
     ensure_file_exists "$PACKAGED_RUNTIME_SOURCE" "packaged launcher runtime helper"
+    if package_updater_enabled; then
+        ensure_file_exists "$UPDATER_SERVICE_SOURCE" "updater service template"
+        ensure_file_exists "$USER_SERVICE_HELPER_TEMPLATE" "updater user service helper"
+    fi
     command -v dpkg-deb >/dev/null 2>&1 || error "dpkg-deb is required"
     command -v dpkg >/dev/null 2>&1 || error "dpkg is required"
 
-    ensure_updater_binary
+    if package_updater_enabled; then
+        ensure_updater_binary
+    fi
 
     local arch output_file
     arch="$(map_arch)"

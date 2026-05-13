@@ -227,6 +227,15 @@ You can also run builders directly:
 ./scripts/build-pacman.sh
 ```
 
+Set `PACKAGE_ENABLE_UPDATER=0` when you need a native package that does not
+install `codex-app-updater`, its `systemd --user` service, or the privileged
+update support files:
+
+```bash
+PACKAGE_ENABLE_UPDATER=0 make package
+PACKAGE_ENABLE_UPDATER=0 ./scripts/build-deb.sh
+```
+
 By default, `install.sh` reads `Codex.app/Contents/Info.plist` from the
 extracted DMG and writes `codex-app/codex-app-version.env`. Package builders use
 that metadata, so an upstream app version such as `26.422.30944 (2080)` becomes

@@ -5,6 +5,10 @@ codex_packaged_runtime_prelaunch() {
 }
 
 codex_packaged_runtime_prelaunch_background() {
+    if [ "__CODEX_PACKAGE_ENABLE_UPDATER__" != "1" ]; then
+        return 0
+    fi
+
     if ! command -v systemctl >/dev/null 2>&1; then
         return 0
     fi
