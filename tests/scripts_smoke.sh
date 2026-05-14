@@ -441,6 +441,11 @@ SCRIPT
 
 test_pacman_builder_can_disable_updater() {
     info "Running pacman packaging smoke test without updater"
+    if [ "$(id -u)" -eq 0 ]; then
+        info "Skipping pacman packaging smoke test while running as root"
+        return 0
+    fi
+
     local workspace="$TMP_DIR/pacman-no-updater"
     local bin_dir="$workspace/bin"
     local app_dir="$workspace/app"
