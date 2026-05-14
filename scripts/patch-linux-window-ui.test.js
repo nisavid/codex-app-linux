@@ -2128,6 +2128,46 @@ test("patch report marks warned required asset patches as failed", () => {
   }
 });
 
+test("patch report marks missing required package metadata as failed", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-package-metadata-"));
+  try {
+    const report = createPatchReport();
+    patchExtractedApp(tempRoot, { report });
+
+    const packagePatch = report.patches.find((patch) => patch.name === "package-desktop-name");
+    assert.equal(packagePatch.status, "failed-required");
+    assert.match(packagePatch.reason, /package\.json missing or unreadable/);
+    assert.ok(
+      validateReport(report, "upstream-build").some((failure) =>
+        failure.startsWith("package-desktop-name: failed-required"),
+      ),
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("patch report keeps main-process-ui status independent from descriptor warnings", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-main-ui-"));
+  try {
+    const buildDir = path.join(tempRoot, ".vite", "build");
+    const assetsDir = path.join(tempRoot, "webview", "assets");
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(path.join(buildDir, "main.js"), alreadyOpaqueBackgroundBundle);
+    fs.writeFileSync(path.join(tempRoot, "package.json"), JSON.stringify({ name: "codex" }));
+
+    const report = createPatchReport();
+    captureWarns(() => patchExtractedApp(tempRoot, { report }));
+
+    const mainPatch = report.patches.find((patch) => patch.name === "main-process-ui");
+    assert.equal(mainPatch.status, "already-applied");
+    assert.equal(mainPatch.reason, undefined);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("patcher CLI writes --report-json output", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-cli-test-"));
   try {

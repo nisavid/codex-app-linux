@@ -42,7 +42,7 @@ module.exports = [
     },
     status: (result) => ({
       status: result?.desktopName == null
-        ? "skipped-optional"
+        ? "failed-required"
         : result?.changed
           ? "applied"
           : "already-applied",

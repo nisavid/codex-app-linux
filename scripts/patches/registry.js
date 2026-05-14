@@ -3,10 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const {
-  patchStatusFromChange,
-  recordPatch,
-} = require("../lib/patch-report.js");
+const { recordPatch } = require("../lib/patch-report.js");
 const {
   detectLinuxTargetContext,
   linuxTargetSummary,
@@ -163,8 +160,7 @@ function patchExtractedApp(extractedDir, options = {}) {
     recordPatch(
       report,
       "main-process-ui",
-      patchStatusFromChange(patchedSource !== source, warnings),
-      warnings[0] ?? null,
+      patchedSource !== source ? "applied" : "already-applied",
     );
   }
 
