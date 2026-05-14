@@ -1,4 +1,4 @@
-SHELL := /bin/bash
+SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 unexport BASH_ENV
 unexport BASH_FUNC_module%%
@@ -9,6 +9,7 @@ PACKAGE_NAME := codex-app
 PACMAN_PACKAGE_NAME := codex-app
 NEXT_APP_DIR := $(CURDIR)/codex-app-next
 REBUILD_REPORT_DIR := $(CURDIR)/dist-next/rebuild
+PACKAGE_WITH_UPDATER ?= $(if $(filter undefined,$(origin PACKAGE_ENABLE_UPDATER)),1,$(PACKAGE_ENABLE_UPDATER))
 DEV_APP_ID ?= codex-cua-lab
 DEV_APP_NAME ?= Codex CUA Lab
 DEV_APP_DIR ?= $(CURDIR)/$(DEV_APP_ID)-app
@@ -51,7 +52,7 @@ if [ -z "$$format" ]; then \
 fi; \
 printf '%s\n' "$$format"
 
-.PHONY: help check test build-updater update rebuild rebuild-install inspect-upstream build-app rebuild-next run-app build-dev-app run-dev-app deb rpm pacman package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
+.PHONY: help check test build-updater maybe-build-updater update rebuild rebuild-install inspect-upstream build-app rebuild-next run-app build-dev-app run-dev-app deb rpm pacman package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
 
 help:
 	@printf '\nCodex App Linux Make Targets\n\n'
@@ -87,6 +88,7 @@ help:
 	@printf '  %-18s %s\n' "DEV_APP_ID=..." "Override side-by-side test app id/bin (default: codex-cua-lab)"
 	@printf '  %-18s %s\n' "DEV_APP_NAME=..." "Override side-by-side test app display name"
 	@printf '  %-18s %s\n' "PACKAGE_VERSION=..." "Override the package version for make deb / make rpm / make pacman"
+	@printf '  %-18s %s\n' "PACKAGE_WITH_UPDATER=0" "Build packages without codex-app-updater or the updater service"
 	@printf '  %-18s %s\n' "DEB=/path/file.deb" "Override the .deb used by make install"
 	@printf '  %-18s %s\n' "RPM=/path/file.rpm" "Override the .rpm used by make install"
 	@printf '  %-18s %s\n' "PKG=/path/file.pkg.tar.zst" "Override the pacman package used by make install"
@@ -117,6 +119,14 @@ test:
 build-updater:
 	@echo "[make] Building codex-app-updater (release)"
 	cargo build --release -p codex-app-updater
+
+maybe-build-updater:
+	@case "$(PACKAGE_WITH_UPDATER)" in \
+		0|false|False|FALSE|no|No|NO|off|Off|OFF) \
+			echo "[make] Skipping codex-app-updater build (PACKAGE_WITH_UPDATER=0)" ;; \
+		*) \
+			$(MAKE) build-updater ;; \
+	esac
 
 update: rebuild-install
 
@@ -169,27 +179,27 @@ run-dev-app:
 	@echo "[make] Launching side-by-side Electron app"
 	"$(DEV_APP_BIN)"
 
-deb: build-updater
+deb: maybe-build-updater
 	@echo "[make] Building Debian package"
-	PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-deb.sh
+	PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-deb.sh
 
-rpm: build-updater
+rpm: maybe-build-updater
 	@echo "[make] Building RPM package"
-	PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-rpm.sh
+	PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-rpm.sh
 
-pacman: build-updater
+pacman: maybe-build-updater
 	@echo "[make] Building pacman package"
-	PACKAGE_NAME="$(PACMAN_PACKAGE_NAME)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-pacman.sh
+	PACKAGE_NAME="$(PACMAN_PACKAGE_NAME)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-pacman.sh
 
-package: build-updater
+package: maybe-build-updater
 	@echo "[make] Building native package (auto-detecting distro)"
 	@format="$$( $(NATIVE_PKG_FORMAT_CMD) )"; \
 	if [ "$$format" = "pacman" ]; then \
-		PACKAGE_NAME="$(PACMAN_PACKAGE_NAME)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-pacman.sh; \
+		PACKAGE_NAME="$(PACMAN_PACKAGE_NAME)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-pacman.sh; \
 	elif [ "$$format" = "rpm" ]; then \
-		PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-rpm.sh; \
+		PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-rpm.sh; \
 	elif [ "$$format" = "deb" ]; then \
-		PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-deb.sh; \
+		PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-deb.sh; \
 	else \
 		echo "[make] No supported packaging tool found. Install dpkg-dev (Debian), rpm-build (Fedora), or pacman (Arch)." >&2; \
 		exit 1; \

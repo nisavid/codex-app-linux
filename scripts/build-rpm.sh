@@ -51,13 +51,15 @@ main() {
     [ -f "$DESKTOP_TEMPLATE" ] || error "Missing desktop template: $DESKTOP_TEMPLATE"
     [ -f "$ICON_SOURCE" ] || error "Missing icon: $ICON_SOURCE"
     [ -f "$PACKAGED_RUNTIME_SOURCE" ] || error "Missing packaged launcher runtime helper: $PACKAGED_RUNTIME_SOURCE"
-    if package_updater_enabled; then
+    if package_with_updater_enabled; then
         [ -f "$UPDATER_SERVICE_SOURCE" ] || error "Missing updater service template: $UPDATER_SERVICE_SOURCE"
         [ -f "$USER_SERVICE_HELPER_TEMPLATE" ] || error "Missing updater user service helper: $USER_SERVICE_HELPER_TEMPLATE"
+    else
+        info "Building package without codex-app-updater (PACKAGE_WITH_UPDATER=0)"
     fi
     command -v rpmbuild >/dev/null 2>&1 || error "rpmbuild is required (install rpm-build)"
 
-    if package_updater_enabled; then
+    if package_with_updater_enabled; then
         ensure_updater_binary
     fi
 
@@ -75,7 +77,7 @@ main() {
     local staging_root="$build_root/STAGING"
 
     stage_common_package_files "$staging_root"
-    stage_update_builder_bundle "$staging_root"
+    stage_optional_update_builder_bundle "$staging_root"
 
     cat > "$staging_root/usr/bin/$PACKAGE_NAME" <<SCRIPT
 #!/bin/bash
@@ -90,7 +92,7 @@ SCRIPT
     local updater_post=""
     local updater_preun=""
     local updater_postun=""
-    if package_updater_enabled; then
+    if package_with_updater_enabled; then
         updater_requires="Requires:       /usr/bin/7z, polkit, curl, unzip, gcc-c++, make"
         updater_description="Local auto-updates rebuild a Linux package from the upstream Codex.dmg and therefore
 use the bundled managed Node.js runtime plus the local packaging toolchain listed in Requires."
@@ -113,6 +115,14 @@ if [ -f \"\$SERVICE_HELPER\" ]; then
     . \"\$SERVICE_HELPER\"
     codex_reload_user_managers || true
 fi"
+    else
+        updater_description="This package was built without codex-app-updater. Update manually from a trusted checkout."
+        updater_post="CLEANUP_HELPER=/usr/lib/$PACKAGE_NAME/no-updater-transition-cleanup.sh
+if [ -f \"\$CLEANUP_HELPER\" ]; then
+    . \"\$CLEANUP_HELPER\"
+    codex_no_updater_cleanup_update_manager_service || true
+fi"
+        updater_preun="$updater_post"
     fi
     AWK_PACKAGE_NAME="$PACKAGE_NAME" \
     AWK_RPM_VERSION="$rpm_ver" \

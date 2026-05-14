@@ -15,7 +15,7 @@ use std::{
 use tokio::process::Command;
 use tracing::info;
 
-const REQUIRED_BUNDLE_FILES: [(&str, &str); 15] = [
+const REQUIRED_BUNDLE_FILES: [(&str, &str); 16] = [
     ("Cargo.toml", "Cargo.toml"),
     ("Cargo.lock", "Cargo.lock"),
     ("computer-use-linux", "computer-use-linux"),
@@ -26,6 +26,7 @@ const REQUIRED_BUNDLE_FILES: [(&str, &str); 15] = [
     ),
     ("install.sh", "install.sh"),
     ("launcher/start.sh.template", "launcher/start.sh.template"),
+    ("launcher/webview-server.py", "launcher/webview-server.py"),
     ("scripts/build-deb.sh", "scripts/build-deb.sh"),
     (
         "scripts/patch-linux-window-ui.js",
@@ -573,6 +574,10 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
             bundle_root.join("launcher/start.sh.template"),
             b"# fake launcher template\n",
         )?;
+        fs::write(
+            bundle_root.join("launcher/webview-server.py"),
+            b"# fake webview server\n",
+        )?;
         fs::write(bundle_root.join("assets/codex.png"), b"png")?;
         fs::write(
             bundle_root.join("packaging/linux/control"),
@@ -715,6 +720,10 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
             .exists());
         assert!(artifacts
             .workspace_dir
+            .join("builder/launcher/webview-server.py")
+            .exists());
+        assert!(artifacts
+            .workspace_dir
             .join("builder/scripts/lib/node-runtime.sh")
             .exists());
         assert!(artifacts
@@ -752,6 +761,10 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
             source_root.join("launcher/start.sh.template"),
             b"# fake launcher template\n",
         )?;
+        fs::write(
+            source_root.join("launcher/webview-server.py"),
+            b"# fake webview server\n",
+        )?;
         fs::write(source_root.join("scripts/build-deb.sh"), b"#!/bin/bash\n")?;
         fs::write(
             source_root.join("scripts/patch-linux-window-ui.js"),
@@ -786,6 +799,7 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
         assert!(destination_root
             .join("scripts/patch-linux-window-ui.js")
             .exists());
+        assert!(destination_root.join("launcher/webview-server.py").exists());
         assert!(destination_root
             .join("scripts/patches/registry.js")
             .exists());

@@ -40,17 +40,19 @@ main() {
     ensure_file_exists "$DESKTOP_TEMPLATE" "desktop template"
     ensure_file_exists "$ICON_SOURCE" "icon"
     ensure_file_exists "$PACKAGED_RUNTIME_SOURCE" "packaged launcher runtime helper"
-    if package_updater_enabled; then
+    if package_with_updater_enabled; then
         ensure_file_exists "$UPDATER_SERVICE_SOURCE" "updater service template"
         ensure_file_exists "$USER_SERVICE_HELPER_TEMPLATE" "updater user service helper"
         ensure_file_exists "$PRERM_TEMPLATE" "Debian prerm template"
         ensure_file_exists "$POSTRM_TEMPLATE" "Debian postrm template"
         ensure_file_exists "$POSTINST_TEMPLATE" "Debian postinst template"
+    else
+        info "Building package without codex-app-updater (PACKAGE_WITH_UPDATER=0)"
     fi
     command -v dpkg-deb >/dev/null 2>&1 || error "dpkg-deb is required"
     command -v dpkg >/dev/null 2>&1 || error "dpkg is required"
 
-    if package_updater_enabled; then
+    if package_with_updater_enabled; then
         ensure_updater_binary
     fi
 
@@ -65,16 +67,18 @@ main() {
         "$PKG_ROOT/opt"
 
     stage_common_package_files "$PKG_ROOT"
-    stage_update_builder_bundle "$PKG_ROOT"
+    stage_optional_update_builder_bundle "$PKG_ROOT"
     write_launcher_stub "$PKG_ROOT"
 
     local deb_depends
     local updater_description=""
     deb_depends="python3, libasound2 | libasound2t64, libatk-bridge2.0-0, libatk1.0-0, libc6, libcairo2, libcups2t64 | libcups2, libdbus-1-3, libdrm2, libgbm1, libglib2.0-0t64 | libglib2.0-0, libgtk-3-0t64 | libgtk-3-0, libnspr4, libnss3, libpango-1.0-0, libstdc++6, libx11-6, libx11-xcb1, libxcb-dri3-0, libxcb1, libxcomposite1, libxdamage1, libxext6, libxfixes3, libxkbcommon0, libxrandr2"
-    if package_updater_enabled; then
+    if package_with_updater_enabled; then
         deb_depends="build-essential, curl, dpkg, p7zip-full, pkexec | policykit-1, polkitd | policykit-1, $deb_depends, unzip"
         updater_description=" Local auto-updates rebuild a Linux package from the upstream Codex.dmg and therefore
  use the bundled managed Node.js runtime plus the local packaging toolchain listed in Depends."
+    else
+        updater_description=" This package was built without codex-app-updater. Update manually from a trusted checkout."
     fi
     AWK_PACKAGE_NAME="$PACKAGE_NAME" \
     AWK_VERSION="$PACKAGE_VERSION" \
@@ -97,7 +101,7 @@ main() {
         }
     ' "$CONTROL_TEMPLATE" > "$PKG_ROOT/DEBIAN/control"
     chmod 0644 "$PKG_ROOT/DEBIAN/control"
-    if package_updater_enabled; then
+    if package_with_updater_enabled; then
         sed \
             -e "s|/opt/codex-app|/opt/$PACKAGE_NAME|g" \
             -e "s|/usr/lib/codex-app|/usr/lib/$PACKAGE_NAME|g" \
@@ -105,6 +109,10 @@ main() {
         cp "$PRERM_TEMPLATE" "$PKG_ROOT/DEBIAN/prerm"
         cp "$POSTRM_TEMPLATE" "$PKG_ROOT/DEBIAN/postrm"
         chmod 0755 "$PKG_ROOT/DEBIAN/postinst" "$PKG_ROOT/DEBIAN/prerm" "$PKG_ROOT/DEBIAN/postrm"
+    else
+        write_no_updater_deb_postinst "$PKG_ROOT/DEBIAN/postinst"
+        write_no_updater_deb_prerm "$PKG_ROOT/DEBIAN/prerm"
+        write_no_updater_deb_postrm "$PKG_ROOT/DEBIAN/postrm"
     fi
 
     mkdir -p "$DIST_DIR"

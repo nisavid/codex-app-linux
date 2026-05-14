@@ -10,11 +10,12 @@ function createPatchReport() {
     mainBundle: null,
     iconAsset: null,
     desktopName: null,
+    linuxTarget: null,
     patches: [],
   };
 }
 
-function recordPatch(report, name, status, reason = null) {
+function recordPatch(report, name, status, reason = null, metadata = null) {
   if (report == null) {
     return;
   }
@@ -22,6 +23,14 @@ function recordPatch(report, name, status, reason = null) {
   const entry = { name, status };
   if (reason != null && String(reason).length > 0) {
     entry.reason = String(reason);
+  }
+  if (metadata != null && typeof metadata === "object") {
+    for (const [key, value] of Object.entries(metadata)) {
+      if (["name", "status", "reason", "__proto__", "prototype", "constructor"].includes(key)) {
+        continue;
+      }
+      entry[key] = value;
+    }
   }
   report.patches.push(entry);
 }

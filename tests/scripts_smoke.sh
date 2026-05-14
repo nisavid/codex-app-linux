@@ -129,7 +129,7 @@ DESKTOP
     # shellcheck disable=SC1091
     source "$REPO_DIR/scripts/lib/package-common.sh"
     PACKAGE_NAME="codex-app" \
-    PACKAGE_ENABLE_UPDATER=0 \
+    PACKAGE_WITH_UPDATER=0 \
     DESKTOP_TEMPLATE="$desktop_template" \
     render_desktop_entry "$rendered_desktop"
 
@@ -196,8 +196,17 @@ SCRIPT
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/rebuild-report.sh"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-features.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-features.sh"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-target-context.js"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/engine.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/registry.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/shared.js"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/all-linux/extracted-app/package-metadata/patch.js"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/all-linux/main-process/lifecycle/patch.js"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/all-linux/webview/theme-and-sunset/patch.js"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/distro/nixos/README.md"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/desktop/i3/README.md"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/package/deb/README.md"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/launcher/webview-server.py"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/linux-features/README.md"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/linux-features/example-feature/feature.json"
     assert_file_not_exists "$pkg_root/usr/lib/codex-app/update-builder/linux-features/features.json"
@@ -301,7 +310,7 @@ touch "$output"
 SCRIPT
     cat > "$bin_dir/cargo" <<'SCRIPT'
 #!/bin/bash
-echo "cargo should not be called when PACKAGE_ENABLE_UPDATER=0" >&2
+echo "cargo should not be called when PACKAGE_WITH_UPDATER=0" >&2
 exit 99
 SCRIPT
     chmod +x "$bin_dir/dpkg" "$bin_dir/dpkg-deb" "$bin_dir/cargo"
@@ -310,14 +319,15 @@ SCRIPT
     APP_DIR_OVERRIDE="$app_dir" \
     PKG_ROOT_OVERRIDE="$pkg_root" \
     DIST_DIR_OVERRIDE="$dist_dir" \
+    PACKAGE_WITH_UPDATER=0 \
     PACKAGE_ENABLE_UPDATER=0 \
     PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     "$REPO_DIR/scripts/build-deb.sh"
 
     assert_file_exists "$dist_dir/codex-app_2026.03.24.120000+deadbeef_amd64.deb"
-    assert_file_not_exists "$pkg_root/DEBIAN/postinst"
-    assert_file_not_exists "$pkg_root/DEBIAN/prerm"
-    assert_file_not_exists "$pkg_root/DEBIAN/postrm"
+    assert_file_exists "$pkg_root/DEBIAN/postinst"
+    assert_file_exists "$pkg_root/DEBIAN/prerm"
+    assert_file_exists "$pkg_root/DEBIAN/postrm"
     assert_not_contains "$pkg_root/DEBIAN/control" "build-essential"
     assert_not_contains "$pkg_root/DEBIAN/control" "curl"
     assert_not_contains "$pkg_root/DEBIAN/control" "p7zip-full"
@@ -328,6 +338,14 @@ SCRIPT
     assert_file_not_exists "$pkg_root/usr/lib/systemd/user/codex-app-updater.service"
     assert_file_not_exists "$pkg_root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
     assert_file_not_exists "$pkg_root/usr/lib/codex-app/update-builder"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/no-updater-transition-cleanup.sh"
+    assert_contains "$pkg_root/usr/lib/codex-app/no-updater-transition-cleanup.sh" "codex_no_updater_cleanup_user_enablement_links"
+    assert_contains "$pkg_root/DEBIAN/postinst" "codex_no_updater_cleanup_update_manager_service"
+    assert_contains "$pkg_root/DEBIAN/prerm" "codex_no_updater_cleanup_update_manager_service"
+    assert_contains "$pkg_root/DEBIAN/postrm" "codex_no_updater_cleanup_update_manager_service"
+    assert_contains "$pkg_root/DEBIAN/postrm" "update-desktop-database"
+    assert_not_contains "$pkg_root/DEBIAN/postinst" "update-builder"
+    assert_not_contains "$pkg_root/DEBIAN/prerm" "update-builder"
     assert_not_contains "$pkg_root/usr/share/applications/codex-app.desktop" "Actions=CheckForUpdates;InstallReadyUpdate;"
     assert_not_contains "$pkg_root/usr/share/applications/codex-app.desktop" "codex-app-updater"
     assert_contains "$pkg_root/usr/lib/codex-app/packaged-runtime.sh" '[ "0" != "1" ]'
@@ -416,7 +434,7 @@ touch "$rpmdir/x86_64/codex-app-2026.03.24.120000-deadbeef.x86_64.rpm"
 SCRIPT
     cat > "$bin_dir/cargo" <<'SCRIPT'
 #!/bin/bash
-echo "cargo should not be called when PACKAGE_ENABLE_UPDATER=0" >&2
+echo "cargo should not be called when PACKAGE_WITH_UPDATER=0" >&2
 exit 99
 SCRIPT
     chmod +x "$bin_dir/rpmbuild" "$bin_dir/cargo"
@@ -424,6 +442,7 @@ SCRIPT
     PATH="$bin_dir:$PATH" \
     APP_DIR_OVERRIDE="$app_dir" \
     DIST_DIR_OVERRIDE="$dist_dir" \
+    PACKAGE_WITH_UPDATER=0 \
     PACKAGE_ENABLE_UPDATER=0 \
     PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     RPM_SPEC_CAPTURE="$spec_capture" \
@@ -437,6 +456,7 @@ SCRIPT
     assert_not_contains "$spec_capture" "Local auto-updates rebuild"
     assert_not_contains "$spec_capture" "/usr/bin/7z"
     assert_not_contains "$spec_capture" "polkit, curl, unzip, gcc-c++, make"
+    assert_contains "$spec_capture" "codex_no_updater_cleanup_update_manager_service"
 }
 
 test_pacman_builder_can_disable_updater() {
@@ -470,7 +490,7 @@ exit 0
 SCRIPT
     cat > "$bin_dir/cargo" <<'SCRIPT'
 #!/bin/bash
-echo "cargo should not be called when PACKAGE_ENABLE_UPDATER=0" >&2
+echo "cargo should not be called when PACKAGE_WITH_UPDATER=0" >&2
 exit 99
 SCRIPT
     chmod +x "$bin_dir/makepkg" "$bin_dir/pacman" "$bin_dir/cargo"
@@ -478,6 +498,7 @@ SCRIPT
     PATH="$bin_dir:$PATH" \
     APP_DIR_OVERRIDE="$app_dir" \
     DIST_DIR_OVERRIDE="$dist_dir" \
+    PACKAGE_WITH_UPDATER=0 \
     PACKAGE_ENABLE_UPDATER=0 \
     PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     PACMAN_PKGBUILD_CAPTURE="$pkgbuild_capture" \
@@ -495,9 +516,10 @@ SCRIPT
     assert_not_contains "$pkgbuild_capture" "'gcc'"
     assert_not_contains "$pkgbuild_capture" "'make'"
     assert_contains "$install_capture" "update-desktop-database"
-    assert_not_contains "$install_capture" "codex-app-updater"
+    assert_contains "$install_capture" "codex_no_updater_cleanup_update_manager_service"
+    assert_contains "$install_capture" "post_upgrade"
+    assert_contains "$install_capture" "pre_remove"
     assert_not_contains "$install_capture" "update-builder"
-    assert_not_contains "$install_capture" "SERVICE_HELPER"
 }
 
 test_missing_input_failure() {
@@ -838,6 +860,73 @@ SCRIPT
     assert_contains "$workspace/output.log" "v22.22.2"
 }
 
+test_native_module_version_floor() {
+    info "Checking native module compatibility floor"
+    local output
+    local module_dir="$TMP_DIR/better-sqlite3-electron-42"
+
+    output="$(
+        ELECTRON_VERSION=41.0.0 \
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_41=12.9.0 \
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=12.10.0 \
+        bash -c '. "$1"; better_sqlite3_build_version 12.8.0' _ "$REPO_DIR/scripts/lib/native-modules.sh"
+    )"
+    [ "$output" = "12.9.0" ] || fail "Expected Electron 41 better-sqlite3 floor 12.9.0, got $output"
+
+    output="$(
+        ELECTRON_VERSION=42.0.1 \
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_41=12.9.0 \
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=12.10.0 \
+        bash -c '. "$1"; better_sqlite3_build_version 12.9.0' _ "$REPO_DIR/scripts/lib/native-modules.sh"
+    )"
+    [ "$output" = "12.10.0" ] || fail "Expected Electron 42 better-sqlite3 floor 12.10.0, got $output"
+
+    mkdir -p "$module_dir/src/util"
+    printf '%s\n' '#define OnlyAddon static_cast<Addon*>(info.Data().As<v8::External>()->Value())' > "$module_dir/src/util/macros.cpp"
+    printf '%s\n' 'v8::Local<v8::External> data = v8::External::New(isolate, addon);' > "$module_dir/src/better_sqlite3.cpp"
+    cat > "$module_dir/src/util/helpers.cpp" <<'CPP'
+recv->InstanceTemplate()->SetNativeDataProperty(
+        InternalizedFromLatin1(isolate, name),
+        func,
+        0,
+        data
+);
+CPP
+
+    ELECTRON_VERSION=42.0.1 \
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=12.10.0 \
+        bash -c '. "$1"; patch_better_sqlite3_for_electron_42 "$2" "$3"' \
+        _ "$REPO_DIR/scripts/lib/native-modules.sh" "$module_dir" 12.10.0
+    assert_contains "$module_dir/src/util/macros.cpp" "Value(v8::kExternalPointerTypeTagDefault)"
+    assert_contains "$module_dir/src/better_sqlite3.cpp" "External::New(isolate, addon, v8::kExternalPointerTypeTagDefault)"
+    assert_contains "$module_dir/src/util/helpers.cpp" "nullptr,"
+
+    local drifted_module_dir="$TMP_DIR/better-sqlite3-electron-42-drifted"
+    mkdir -p "$drifted_module_dir/src/util"
+    printf '%s\n' '#define OnlyAddon static_cast<Addon*>(info.Data().As<v8::External>()->Value(v8::kExternalPointerTypeTagDefault))' > "$drifted_module_dir/src/util/macros.cpp"
+    printf '%s\n' 'v8::Local<v8::External> data = v8::External::New(isolate, addon);' > "$drifted_module_dir/src/better_sqlite3.cpp"
+    printf '%s\n' '        0,' > "$drifted_module_dir/src/util/helpers.cpp"
+
+    if ELECTRON_VERSION=42.0.1 \
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=12.10.0 \
+        bash -c 'error() { echo "$*" >&2; exit 1; }; . "$1"; patch_better_sqlite3_for_electron_42 "$2" "$3"' \
+        _ "$REPO_DIR/scripts/lib/native-modules.sh" "$drifted_module_dir" 12.10.0 > "$TMP_DIR/drifted-native-patch.log" 2>&1; then
+        fail "Expected better-sqlite3 Electron 42 patch to fail when source markers drift"
+    fi
+    assert_contains "$TMP_DIR/drifted-native-patch.log" "expected ExternalPointer pattern not found"
+
+    local newer_module_dir="$TMP_DIR/better-sqlite3-electron-42-newer"
+    mkdir -p "$newer_module_dir/src/util"
+    printf '%s\n' '#define OnlyAddon static_cast<Addon*>(info.Data().As<v8::External>()->Value())' > "$newer_module_dir/src/util/macros.cpp"
+    printf '%s\n' 'v8::Local<v8::External> data = v8::External::New(isolate, addon);' > "$newer_module_dir/src/better_sqlite3.cpp"
+
+    ELECTRON_VERSION=42.0.1 \
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=12.10.0 \
+        bash -c '. "$1"; patch_better_sqlite3_for_electron_42 "$2" "$3"' \
+        _ "$REPO_DIR/scripts/lib/native-modules.sh" "$newer_module_dir" 12.10.1
+    assert_not_contains "$newer_module_dir/src/util/macros.cpp" "kExternalPointerTypeTagDefault"
+}
+
 test_launcher_template_sanity() {
     info "Checking launcher template markers"
     assert_contains "$REPO_DIR/install.sh" 'DEFAULT_CODEX_WEBVIEW_PORT=5175'
@@ -848,10 +937,34 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/scripts/lib/asar-patch.sh" "CODEX_PATCH_REPORT_JSON"
     assert_contains "$REPO_DIR/scripts/lib/rebuild-report.sh" "write_rebuild_report_json"
     assert_contains "$REPO_DIR/install.sh" "MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_41=\"12.9.0\""
+    assert_contains "$REPO_DIR/install.sh" "MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=\"12.10.0\""
+    assert_contains "$REPO_DIR/install.sh" "error \"Webview server helper not found"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "better_sqlite3_build_version"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "CODEX_ELECTRON_CACHE_DIR"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "--continue-at -"
-    assert_contains "$REPO_DIR/launcher/start.sh.template" 'python3 -m http.server "$CODEX_LINUX_WEBVIEW_PORT" --bind 127.0.0.1'
+    assert_not_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" 'ldd "$destination"'
+    assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" "readelf --version-info"
+    assert_contains "$REPO_DIR/Makefile" '$(origin PACKAGE_ENABLE_UPDATER)'
+    assert_not_contains "$REPO_DIR/scripts/lib/package-common.sh" "package_updater_enabled()"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" 'python3 "$SCRIPT_DIR/.codex-linux/webview-server.py" "$CODEX_LINUX_WEBVIEW_PORT" --bind 127.0.0.1'
+    assert_contains "$REPO_DIR/launcher/start.sh.template" '*/webview-server.py'
+    assert_not_contains "$REPO_DIR/launcher/start.sh.template" 'chmod -R'
+    assert_not_contains "$REPO_DIR/launcher/start.sh.template" 'monitor_bundled_marketplace_tmp_permissions'
+    assert_contains "$REPO_DIR/launcher/start.sh.template" '[ ! -L "$path" ] || return 0'
+    assert_contains "$REPO_DIR/launcher/start.sh.template" '[ ! -L "$marketplace_tmp_root" ] || return 0'
+    node - "$REPO_DIR/scripts/patches/registry.js" <<'NODE'
+const registry = require(process.argv[2]);
+for (const name of [
+  "COMPUTER_USE_UI_ASSET_PATCHES",
+  "MAIN_BUNDLE_PATCHES",
+  "WEBVIEW_ASSET_PATCHES",
+]) {
+  const descriptor = Object.getOwnPropertyDescriptor(registry, name);
+  if (descriptor == null || typeof descriptor.get !== "function") {
+    throw new Error(`${name} must be exported as a lazy getter`);
+  }
+}
+NODE
     assert_contains "$REPO_DIR/launcher/start.sh.template" "WEBVIEW_PID_FILE"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "owned_webview_server_pid"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "discover_webview_server_pid"
@@ -942,6 +1055,23 @@ if 'clear_stale_pid_file' not in reconcile_body:
 if 'if [ -z "$webview_pid" ] || { ! pid_is_webview_server "$webview_pid" && ! pid_is_stale_webview_server "$webview_pid"; }; then' not in reconcile_body:
     raise SystemExit("reconcile_runtime_state must clear stale launcher webview ownership markers without touching valid orphaned servers")
 PY
+    if python3 "$REPO_DIR/launcher/webview-server.py" > "$TMP_DIR/webview-server-usage.log" 2>&1; then
+        fail "Expected webview-server.py without arguments to fail with usage"
+    fi
+    assert_contains "$TMP_DIR/webview-server-usage.log" "Usage: webview-server.py"
+    if python3 "$REPO_DIR/launcher/webview-server.py" not-a-port > "$TMP_DIR/webview-server-invalid-port.log" 2>&1; then
+        fail "Expected webview-server.py with invalid port to fail with usage"
+    fi
+    assert_contains "$TMP_DIR/webview-server-invalid-port.log" "Usage: webview-server.py"
+    if python3 "$REPO_DIR/launcher/webview-server.py" 70000 > "$TMP_DIR/webview-server-out-of-range-port.log" 2>&1; then
+        fail "Expected webview-server.py with out-of-range port to fail with usage"
+    fi
+    assert_contains "$TMP_DIR/webview-server-out-of-range-port.log" "Usage: webview-server.py"
+    if python3 "$REPO_DIR/launcher/webview-server.py" 8080 --bind 127.0.0.1 extra > "$TMP_DIR/webview-server-extra-args.log" 2>&1; then
+        fail "Expected webview-server.py with trailing arguments to fail with usage"
+    fi
+    assert_contains "$TMP_DIR/webview-server-extra-args.log" "Usage: webview-server.py"
+
     local launcher_probe
     local output
     launcher_probe="$TMP_DIR/launcher-rendering-probe.sh"
@@ -2711,6 +2841,7 @@ main() {
     test_rebuild_report_records_missing_patch_json
     test_installer_keeps_electron_fallback_for_bad_metadata
     test_managed_node_runtime_source_install
+    test_native_module_version_floor
     test_browser_use_node_repl_fallback_runtime
     test_chrome_plugin_staging
     test_chrome_native_host_manifest_writer

@@ -5,7 +5,7 @@ last synced upstream ref. Use it during upstream syncs to preserve local
 contracts and keep divergence claims grounded in the actual upstream baseline.
 
 The current comparison baseline is upstream commit
-`5c3cf8b7b026ff02a61a155f709bcab115832e5e` (2026-05-10). Claims below describe
+`43c8bd1b5d4ab2eb4be8eb474528d6050c51db9a` (2026-05-14). Claims below describe
 the current tree's diff against that
 baseline, with current source files taking precedence over generated output.
 
@@ -277,7 +277,7 @@ while maintaining the local XDG/path contract.
 launches must avoid LAN exposure, stale servers, and PID ownership races.
 
 **Current paths:** `launcher/start.sh.template`,
-`scripts/lib/webview-install.sh`, `install.sh`,
+`launcher/webview-server.py`, `scripts/lib/webview-install.sh`, `install.sh`,
 `docs/webview-server-evaluation.md`, `docs/usage/troubleshooting.md`,
 `tests/scripts_smoke.sh`.
 
@@ -289,7 +289,8 @@ changing the local server model, port behavior, or warm-start adoption.
 **Fork delta:** Upstream's Linux Computer Use backend and bundled plugin remain
 part of the packaged app. This fork preserves the `codex-app` package identity,
 keeps the plugin manifest pointed at packaged assets, carries local Linux
-input/window-targeting hardening where needed, and documents the local opt-in for
+input/window-targeting hardening where needed, adapts configurable backend
+identity under the packaged resource layout, and documents the local opt-in for
 Computer Use UI patching without claiming that local installation changes
 OpenAI account policy or server-side availability.
 

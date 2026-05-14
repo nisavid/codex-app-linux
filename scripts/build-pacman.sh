@@ -43,9 +43,11 @@ main() {
 	ensure_file_exists "$DESKTOP_TEMPLATE" "desktop template"
 	ensure_file_exists "$ICON_SOURCE" "icon"
 	ensure_file_exists "$PACKAGED_RUNTIME_SOURCE" "packaged launcher runtime helper"
-	if package_updater_enabled; then
+	if package_with_updater_enabled; then
 		ensure_file_exists "$UPDATER_SERVICE_SOURCE" "updater service template"
 		ensure_file_exists "$USER_SERVICE_HELPER_TEMPLATE" "updater user service helper"
+	else
+		info "Building package without codex-app-updater (PACKAGE_WITH_UPDATER=0)"
 	fi
 	command -v makepkg >/dev/null 2>&1 || error "makepkg is required (part of pacman)"
 
@@ -53,7 +55,7 @@ main() {
 		error "makepkg cannot run as root. Run this script as a regular user."
 	fi
 
-	if package_updater_enabled; then
+	if package_with_updater_enabled; then
 		ensure_updater_binary
 	fi
 
@@ -69,11 +71,11 @@ main() {
 	local staging_root="$build_root/staging"
 
 	stage_common_package_files "$staging_root"
-	stage_update_builder_bundle "$staging_root"
+	stage_optional_update_builder_bundle "$staging_root"
 	write_launcher_stub "$staging_root"
 
 	local pacman_updater_depends=""
-	if package_updater_enabled; then
+	if package_with_updater_enabled; then
 		pacman_updater_depends="    'p7zip'
     'polkit'
     'curl'
@@ -112,7 +114,7 @@ main() {
 	local updater_post_install=""
 	local updater_pre_remove="    :"
 	local updater_post_remove="    :"
-	if package_updater_enabled; then
+	if package_with_updater_enabled; then
 		updater_service_preamble="SERVICE_HELPER=\"/usr/lib/$PACKAGE_NAME/update-builder/packaging/linux/codex-app-updater-user-service.sh\"
 if [ -f \"\$SERVICE_HELPER\" ]; then
     # shellcheck source=/usr/lib/$PACKAGE_NAME/update-builder/packaging/linux/codex-app-updater-user-service.sh
@@ -128,28 +130,30 @@ fi"
 		updater_post_remove="    if [ -f \"\$SERVICE_HELPER\" ]; then
         codex_reload_user_managers || true
     fi"
-	fi
-	AWK_PACKAGE_NAME="$PACKAGE_NAME" \
-	AWK_UPDATER_SERVICE_PREAMBLE="$updater_service_preamble" \
-	AWK_UPDATER_POST_INSTALL="$updater_post_install" \
-	AWK_UPDATER_PRE_REMOVE="$updater_pre_remove" \
-	AWK_UPDATER_POST_REMOVE="$updater_post_remove" \
-	awk '
-		function emit_env(name) {
-			if (ENVIRON[name] != "") {
-				print ENVIRON[name]
+		AWK_PACKAGE_NAME="$PACKAGE_NAME" \
+		AWK_UPDATER_SERVICE_PREAMBLE="$updater_service_preamble" \
+		AWK_UPDATER_POST_INSTALL="$updater_post_install" \
+		AWK_UPDATER_PRE_REMOVE="$updater_pre_remove" \
+		AWK_UPDATER_POST_REMOVE="$updater_post_remove" \
+		awk '
+			function emit_env(name) {
+				if (ENVIRON[name] != "") {
+					print ENVIRON[name]
+				}
 			}
-		}
-		{
-			if ($0 == "__UPDATER_SERVICE_PREAMBLE__") { emit_env("AWK_UPDATER_SERVICE_PREAMBLE"); next }
-			if ($0 == "__UPDATER_POST_INSTALL__") { emit_env("AWK_UPDATER_POST_INSTALL"); next }
-			if ($0 == "__UPDATER_PRE_REMOVE__") { emit_env("AWK_UPDATER_PRE_REMOVE"); next }
-			if ($0 == "__UPDATER_POST_REMOVE__") { emit_env("AWK_UPDATER_POST_REMOVE"); next }
-			gsub(/\/opt\/codex-app/, "/opt/" ENVIRON["AWK_PACKAGE_NAME"])
-			gsub(/\/usr\/lib\/codex-app/, "/usr/lib/" ENVIRON["AWK_PACKAGE_NAME"])
-			print
-		}
-	' "$INSTALL_HOOKS" >"$build_root/${PACKAGE_NAME}.install"
+			{
+				if ($0 == "__UPDATER_SERVICE_PREAMBLE__") { emit_env("AWK_UPDATER_SERVICE_PREAMBLE"); next }
+				if ($0 == "__UPDATER_POST_INSTALL__") { emit_env("AWK_UPDATER_POST_INSTALL"); next }
+				if ($0 == "__UPDATER_PRE_REMOVE__") { emit_env("AWK_UPDATER_PRE_REMOVE"); next }
+				if ($0 == "__UPDATER_POST_REMOVE__") { emit_env("AWK_UPDATER_POST_REMOVE"); next }
+				gsub(/\/opt\/codex-app/, "/opt/" ENVIRON["AWK_PACKAGE_NAME"])
+				gsub(/\/usr\/lib\/codex-app/, "/usr/lib/" ENVIRON["AWK_PACKAGE_NAME"])
+				print
+			}
+		' "$INSTALL_HOOKS" >"$build_root/${PACKAGE_NAME}.install"
+	else
+		write_no_updater_pacman_install_hooks "$build_root/${PACKAGE_NAME}.install"
+	fi
 
 	mkdir -p "$DIST_DIR"
 	info "Building ${PACKAGE_NAME}-${PACMAN_PKGVER}-${PACMAN_PKGREL}-${arch}.pkg.tar.zst"

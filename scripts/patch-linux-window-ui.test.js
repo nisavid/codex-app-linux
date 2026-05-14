@@ -47,12 +47,24 @@ const {
   patchPackageJson,
   patchLinuxAppUpdaterBridge,
   createPatchReport,
+  corePatchDescriptors,
+  detectLinuxTargetContext,
+  discoverCorePatchDescriptors,
+  linuxTargetSummary,
+  normalizePatchDescriptors,
+  parseOsRelease,
   resolveDesktopName,
   resolveKeybindsSettingsAsset,
 } = require("./patch-linux-window-ui.js");
 const {
+  applyExtractedAppPatchDescriptors,
+} = require("./patches/engine.js");
+const {
   validateReport,
 } = require("./ci/validate-patch-report.js");
+const {
+  recordPatch,
+} = require("./lib/patch-report.js");
 
 const mainBundlePrefix =
   "let n=require(`electron`),i=require(`node:path`),o=require(`node:fs`);";
@@ -62,7 +74,6 @@ const alreadyOpaqueBackgroundBundle =
   "process.platform===`linux`?{backgroundColor:e?t:n,backgroundMaterial:null}:{backgroundColor:r,backgroundMaterial:null}";
 const opaqueBackgroundBundleWithDriftingGw =
   "var cM=`#00000000`,lM=`#000000`,uM=`#f9f9f9`;function OM(e){return e===`avatarOverlay`||e===`browserCommentPopup`}function jM({platform:e,appearance:t,opaqueWindowsEnabled:n,prefersDarkColors:r}){return e===`win32`&&!OM(t)?n?{backgroundColor:r?lM:uM,backgroundMaterial:`none`}:{backgroundColor:cM,backgroundMaterial:`mica`}:{backgroundColor:cM,backgroundMaterial:null}}function gw(e){return e.page==null?e.snapshot.url:mw(e.page)}";
-
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -85,6 +96,242 @@ function captureWarns(fn) {
     console.warn = originalWarn;
   }
 }
+
+test("Linux target context parses distro, package, and desktop details", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-linux-target-"));
+  try {
+    const osReleasePath = path.join(tempRoot, "os-release");
+    fs.writeFileSync(
+      osReleasePath,
+      [
+        "ID=ubuntu",
+        "ID_LIKE=\"debian\"",
+        "VERSION_ID=\"24.04\"",
+        "PRETTY_NAME=\"Ubuntu 24.04 LTS\"",
+      ].join("\n"),
+    );
+
+    const target = detectLinuxTargetContext({
+      env: {
+        OS_RELEASE_FILE: osReleasePath,
+        PATH: "",
+        XDG_CURRENT_DESKTOP: "KDE:GNOME",
+        XDG_SESSION_TYPE: "wayland",
+        WAYLAND_DISPLAY: "wayland-0",
+      },
+    });
+
+    assert.deepEqual(parseOsRelease(fs.readFileSync(osReleasePath, "utf8")).ID_LIKE, "debian");
+    assert.equal(target.distro.id, "ubuntu");
+    assert.equal(target.arch, normalizeExpectedArch(process.arch));
+    assert.deepEqual(target.distro.idLike, ["debian"]);
+    assert.equal(target.distro.versionMajor, 24);
+    assert.equal(target.packageFormat, "deb");
+    assert.equal(target.packageManager, "apt");
+    assert.equal(target.matchesId("debian"), true);
+    assert.equal(target.matchesId(["ubuntu", "fedora"]), true);
+    assert.equal(target.packageFormatIs("deb"), true);
+    assert.equal(target.desktopMatches("kde"), true);
+    assert.equal(target.desktopMatches(["plasma", "gnome"]), true);
+    assert.equal(target.versionAtLeast("24.04"), true);
+    assert.equal(target.versionAtLeast("24.10"), false);
+    assert.equal(target.wayland, true);
+    assert.match(linuxTargetSummary(target), /^ubuntu:24\.04\/deb:/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+function normalizeExpectedArch(value) {
+  switch (value) {
+    case "x64":
+      return "x86_64";
+    case "arm64":
+      return "aarch64";
+    case "ia32":
+      return "i686";
+    default:
+      return value;
+  }
+}
+
+test("Linux target context falls back after unreadable os-release candidates", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-linux-target-fallback-"));
+  try {
+    const unreadablePath = path.join(tempRoot, "unreadable-os-release");
+    const osReleasePath = path.join(tempRoot, "os-release");
+    fs.mkdirSync(unreadablePath);
+    fs.writeFileSync(
+      osReleasePath,
+      [
+        "ID=fedora",
+        "VERSION_ID=\"42\"",
+        "PRETTY_NAME=\"Fedora Linux 42\"",
+      ].join("\n"),
+    );
+
+    const target = detectLinuxTargetContext({
+      env: {
+        PATH: "",
+      },
+      osReleasePaths: [unreadablePath, osReleasePath],
+    });
+
+    assert.equal(target.osReleasePath, osReleasePath);
+    assert.equal(target.distro.id, "fedora");
+    assert.equal(target.packageFormat, "rpm");
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("auto-discovered core patches can target a specific Linux distro", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-core-patch-root-"));
+  try {
+    const patchDir = path.join(tempRoot, "gentoo", "sample");
+    fs.mkdirSync(patchDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(patchDir, "patch.js"),
+      [
+        "\"use strict\";",
+        "module.exports = {",
+        "  id: \"gentoo-only-sample\",",
+        "  phase: \"main-bundle\",",
+        "  ciPolicy: \"required-upstream\",",
+        "  order: 30000,",
+        "  appliesTo: (context) => context.linux.matchesId(\"gentoo\"),",
+        "  apply: (source) => source.replace(\"codexLinuxGentooDisabled()\", \"codexLinuxGentooEnabled()\"),",
+        "};",
+      ].join("\n"),
+    );
+
+    const descriptors = discoverCorePatchDescriptors({ root: tempRoot });
+    assert.equal(descriptors.length, 1);
+    assert.equal(descriptors[0].id, "gentoo-only-sample");
+
+    const gentoo = detectLinuxTargetContext({
+      env: {
+        CODEX_LINUX_TARGET_ID: "gentoo",
+        CODEX_LINUX_TARGET_PACKAGE_FORMAT: "unknown",
+        PATH: "",
+      },
+    });
+    const ubuntu = detectLinuxTargetContext({
+      env: {
+        CODEX_LINUX_TARGET_ID: "ubuntu",
+        CODEX_LINUX_TARGET_ID_LIKE: "debian",
+        PATH: "",
+      },
+    });
+
+    assert.match(
+      captureWarns(() =>
+        patchMainBundleSource("codexLinuxGentooDisabled()", null, {
+          corePatchRoot: tempRoot,
+          linuxTarget: gentoo,
+        }),
+      ).value,
+      /codexLinuxGentooEnabled/,
+    );
+    assert.doesNotMatch(
+      captureWarns(() =>
+        patchMainBundleSource("codexLinuxGentooDisabled()", null, {
+          corePatchRoot: tempRoot,
+          linuxTarget: ubuntu,
+        }),
+      ).value,
+      /codexLinuxGentooEnabled/,
+    );
+
+    const tempApp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-skipped-target-report-"));
+    try {
+      const buildDir = path.join(tempApp, ".vite", "build");
+      fs.mkdirSync(buildDir, { recursive: true });
+      fs.writeFileSync(path.join(buildDir, "main.js"), "codexLinuxGentooDisabled()");
+      const report = createPatchReport();
+      captureWarns(() =>
+        patchExtractedApp(tempApp, {
+          report,
+          corePatchRoot: tempRoot,
+          linuxTarget: ubuntu,
+        }),
+      );
+      assert.equal(
+        report.patches.find((patch) => patch.name === "gentoo-only-sample")?.status,
+        "skipped-target",
+      );
+      assert.equal(report.linuxTarget.distro.id, "ubuntu");
+    } finally {
+      fs.rmSync(tempApp, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("patch descriptor normalization rejects duplicate ids", () => {
+  assert.throws(
+    () => normalizePatchDescriptors([
+      { id: "duplicate", apply: (source) => source },
+      { id: "duplicate", apply: (source) => source },
+    ]),
+    /Duplicate patch descriptor id 'duplicate'/,
+  );
+});
+
+test("default core patch descriptors are grouped and unique", () => {
+  const descriptors = corePatchDescriptors();
+  const ids = descriptors.map((descriptor) => descriptor.id);
+  const expectedIds = [
+    "linux-quit-guard",
+    "linux-explicit-quit-prompt-bypass",
+    "linux-explicit-quit-drain-timeout",
+    "linux-explicit-tray-quit",
+    "linux-explicit-ipc-quit",
+    "linux-window-options",
+    "linux-menu",
+    "linux-set-icon",
+    "linux-opaque-background",
+    "linux-avatar-overlay-mouse-passthrough",
+    "linux-file-manager",
+    "linux-tray",
+    "linux-single-instance",
+    "linux-computer-use-ui-feature",
+    "linux-computer-use-plugin-gate",
+    "linux-chrome-plugin-auto-install",
+    "browser-use-node-repl-approval",
+    "linux-browser-use-iab-visible-on-create",
+    "linux-chrome-extension-status",
+    "linux-app-updater-menu",
+    "linux-tray-close-setting",
+    "linux-settings-persistence",
+    "linux-launch-actions",
+    "linux-hotkey-window-prewarm",
+    "linux-git-origins-source-fallback",
+    "linux-app-sunset-gate",
+    "opaque-window-default-general-settings",
+    "opaque-window-default-webview-index",
+    "opaque-window-default-resolved-theme",
+    "linux-computer-use-ui-availability",
+    "linux-computer-use-install-flow",
+    "linux-app-updater-bridge",
+    "browser-annotation-screenshot",
+    "keybinds-settings",
+    "package-desktop-name",
+  ];
+
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual([...ids].sort(), [...expectedIds].sort());
+  assert.ok(descriptors.every((descriptor) => descriptor.sourcePath.includes(`${path.sep}core${path.sep}`)));
+  assert.equal(
+    descriptors.find((descriptor) => descriptor.id === "package-desktop-name")?.phase,
+    "extracted-app",
+  );
+  assert.match(
+    descriptors.find((descriptor) => descriptor.id === "linux-chrome-plugin-auto-install")?.sourcePath,
+    /main-process[\\/]browser-integrations[\\/]patch\.js$/,
+  );
+});
 
 function trayBundleFixture() {
   return [
@@ -277,6 +524,7 @@ function currentBootstrapUpdaterBundleFixture() {
 
 function avatarOverlayBundleFixture() {
   return [
+    "let u=require(`node:child_process`);",
     "var rV=`/avatar-overlay`,zB={width:356,height:320},oV={width:112,height:121},sV={width:276,height:131};",
     "var fV=class{window=null;openingWindowPromise=null;anchor=pV({x:0,y:0,...zB},oV);dragState=null;layout=null;mascotSize=oV;momentumTimer=null;mousePassthroughEnabled=!1;placement=`top-end`;pointerInteractive=!1;rendererReady=!1;traySize=null;",
     "constructor(e,t){this.windowManager=e,this.globalState=t}",
@@ -409,6 +657,17 @@ test("supports explicit tray quit patching when minified aliases drift", () => {
   );
 });
 
+test("supports explicit tray quit patching with localized quit label helpers", () => {
+  const source =
+    "let n=require(`electron`);function mH(e){return `Quit ${e}`}var q=class{getNativeTrayMenuItems(){return[{label:mH(this.appName),click:()=>{n.app.quit()}}]}}";
+  const patched = applyPatchTwice(applyLinuxExplicitTrayQuitPatch, source);
+
+  assert.match(
+    patched,
+    /\{label:mH\(this\.appName\),click:\(\)=>\{typeof codexLinuxPrepareForExplicitQuit===`function`\?codexLinuxPrepareForExplicitQuit\(\):typeof codexLinuxMarkQuitInProgress===`function`&&codexLinuxMarkQuitInProgress\(\),n\.app\.quit\(\)\}\}/,
+  );
+});
+
 test("supports explicit IPC quit patching when minified aliases drift", () => {
   const source =
     "let x=require(`electron`);var q=class{getNativeTrayMenuItems(){return[{label:rB(this.appName),click:()=>{x.app.quit()}}]}};if(m.type===`quit-app`){x.app.quit();return}";
@@ -457,7 +716,23 @@ test("adds Linux avatar overlay mouse passthrough recovery", () => {
   assert.match(patched, /codexLinuxSyncAvatarPointerInteractivity\(e\)/);
   assert.match(patched, /codexLinuxBuildAvatarInputShape\(e\)/);
   assert.match(patched, /codexLinuxApplyAvatarInputShape\(e\)/);
-  assert.match(patched, /typeof e\.setShape==`function`/);
+  assert.match(patched, /codexLinuxIsI3Session\(\)/);
+  assert.match(patched, /process\.env\.I3SOCK/);
+  assert.match(patched, /codexLinuxApplyAvatarCompositorHints\(e\)/);
+  assert.match(patched, /getNativeWindowHandle\?\.\(\)/);
+  assert.match(patched, /u\.execFile\(`xdotool`,\[`search`,`--pid`,String\(process\.pid\)\]/);
+  assert.match(patched, /u\.execFile\(`xwininfo`,\[`-id`,e\]/);
+  assert.match(patched, /u\.execFile\(`xprop`/);
+  assert.match(patched, /_GTK_FRAME_EXTENTS/);
+  assert.match(patched, /Override Redirect State/);
+  assert.match(patched, /Absolute upper-left X/);
+  assert.match(patched, /Number\(l\)!==t\.x/);
+  assert.match(patched, /Number\(h\)!==t\.y/);
+  assert.match(patched, /Number\(d\)!==t\.width/);
+  assert.doesNotMatch(patched, /let\[,l,u,d,f\]=c/);
+  assert.doesNotMatch(patched, /this\.codexLinuxIsI3Session\(\)\)\{this\.codexLinuxStopAvatarPassthroughRecovery\(\),this\.codexLinuxAvatarInputShapeKey=null,this\.pointerInteractive=!0,this\.mousePassthroughEnabled&&\(this\.mousePassthroughEnabled=!1\),e\.setIgnoreMouseEvents\(!1\);return\}/);
+  assert.match(patched, /if\(process\.platform===`linux`&&typeof e\.setShape==`function`\)\{/);
+  assert.doesNotMatch(patched, /typeof e\.setShape==`function`&&!this\.codexLinuxIsI3Session\(\)/);
   assert.match(patched, /if\(t==null\)return null/);
   assert.match(patched, /if\(t==null\)return!1;let n=JSON\.stringify\(t\)/);
   assert.match(patched, /e\.setShape\(t\),this\.codexLinuxAvatarInputShapeKey=n;return!0/);
@@ -473,10 +748,37 @@ test("adds Linux avatar overlay mouse passthrough recovery", () => {
   assert.match(patched, /displayBounds:n\.screen\.getDisplayNearestPoint\(n\.screen\.getCursorScreenPoint\(\)\)\.bounds\},process\.platform===`linux`&&\(this\.pointerInteractive=!0,this\.applyPointerInteractivityPolicy\(\)\)\}moveDrag\(e\)/);
   assert.match(patched, /this\.dragState=null,this\.reclampWindowToVisibleDisplay\(\{shouldPersist:!0\}\),process\.platform===`linux`&&this\.applyPointerInteractivityPolicy\(\)/);
   assert.match(patched, /this\.applyLayout\(r\),process\.platform===`linux`&&this\.applyPointerInteractivityPolicy\(\)/);
+  assert.match(patched, /this\.codexLinuxAvatarCompositorHintsApplied=!1,this\.codexLinuxAvatarCompositorHintsApplying=!1,this\.rendererReady=/);
+  assert.match(patched, /traySize:process\.platform===`linux`&&typeof this\.codexLinuxIsI3Session==`function`&&this\.codexLinuxIsI3Session\(\)\?this\.traySize:this\.traySize\?\?sV/);
   assert.match(patched, /this\.setWindowBounds\(e,r\.windowBounds\),this\.sendLayoutToRenderer\(e\),process\.platform===`linux`&&this\.applyPointerInteractivityPolicy\(\)/);
-  assert.match(patched, /e\.moveTop\(\),e\.showInactive\(\),process\.platform===`linux`&&this\.applyPointerInteractivityPolicy\(\)/);
+  assert.match(patched, /e\.moveTop\(\),e\.showInactive\(\),process\.platform===`linux`&&this\.codexLinuxApplyAvatarCompositorHints\(e\),process\.platform===`linux`&&this\.applyPointerInteractivityPolicy\(\)/);
   assert.doesNotMatch(patched, /codexLinuxRecoverAvatarPointerInteractivity/);
-  assert.match(patched, /this\.window===t&&\(this\.codexLinuxStopAvatarPassthroughRecovery\(\),this\.codexLinuxAvatarInputShapeKey=null,this\.cancelMomentum\(\)/);
+  assert.match(patched, /this\.window===t&&\(this\.codexLinuxStopAvatarPassthroughRecovery\(\),this\.codexLinuxAvatarInputShapeKey=null,this\.codexLinuxAvatarCompositorHintsApplied=!1,this\.codexLinuxAvatarCompositorHintsApplying=!1,this\.cancelMomentum\(\)/);
+});
+
+test("upgrades older i3 avatar compositor hint patches", () => {
+  const source =
+    "let u=require(`node:child_process`);class A{createWindow(){let t={webContents:{id:1}};return this.window=t,this.codexLinuxApplyAvatarCompositorHints(t),this.rendererReady=this.windowManager.isWebContentsReady(t.webContents.id),t}codexLinuxIsI3Session(){let e=[process.env.XDG_CURRENT_DESKTOP,process.env.DESKTOP_SESSION,process.env.I3SOCK].filter(Boolean).join(`:`).toLowerCase();return/(^|[:;/])i3([:;/.-]|$)/.test(e)}codexLinuxApplyAvatarCompositorHints(e){if(process.platform!==`linux`||!this.codexLinuxIsI3Session()||this.codexLinuxAvatarCompositorHintsApplied||e==null||e.isDestroyed()||!process.env.DISPLAY)return;let t=null;try{let n=e.getNativeWindowHandle?.();n!=null&&n.length>=4&&(t=n.readUInt32LE(0))}catch{}if(!Number.isFinite(t)||t<=0)return;this.codexLinuxAvatarCompositorHintsApplied=!0;try{u.execFile(`xprop`,[`-id`,String(t),`-f`,`_GTK_FRAME_EXTENTS`,`32c`,`-set`,`_GTK_FRAME_EXTENTS`,`0, 0, 0, 0`],{timeout:1e3},e=>{e&&(this.codexLinuxAvatarCompositorHintsApplied=!1)})}catch{this.codexLinuxAvatarCompositorHintsApplied=!1}}codexLinuxStopAvatarPassthroughRecovery(){}}";
+  const patched = applyPatchTwice(applyLinuxAvatarOverlayMousePassthroughPatch, source);
+
+  assert.match(patched, /u\.execFile\(`xdotool`,\[`search`,`--pid`,String\(process\.pid\)\]/);
+  assert.match(patched, /u\.execFile\(`xwininfo`,\[`-id`,e\]/);
+  assert.match(patched, /Override Redirect State/);
+  assert.match(patched, /this\.window=t,this\.codexLinuxAvatarCompositorHintsApplied=!1,this\.codexLinuxAvatarCompositorHintsApplying=!1,this\.rendererReady=/);
+  assert.doesNotMatch(patched, /let t=null;try\{let n=e\.getNativeWindowHandle/);
+  assert.doesNotMatch(patched, /this\.window=t,this\.codexLinuxApplyAvatarCompositorHints\(t\),this\.rendererReady=/);
+});
+
+test("upgrades intermediate i3 avatar compositor hint patches", () => {
+  const source =
+    "let u=require(`node:child_process`);class A{createWindow(){let t={webContents:{id:1}};return this.window=t,this.codexLinuxAvatarCompositorHintsApplied=!1,process.platform===`linux`&&this.codexLinuxApplyAvatarCompositorHints(t),this.rendererReady=this.windowManager.isWebContentsReady(t.webContents.id),t}codexLinuxIsI3Session(){let e=[process.env.XDG_CURRENT_DESKTOP,process.env.DESKTOP_SESSION,process.env.I3SOCK].filter(Boolean).join(`:`).toLowerCase();return/(^|[:;/])i3([:;/.-]|$)/.test(e)}codexLinuxApplyAvatarCompositorHints(e){if(process.platform!==`linux`||!this.codexLinuxIsI3Session()||this.codexLinuxAvatarCompositorHintsApplied||e==null||e.isDestroyed()||!process.env.DISPLAY)return;let t=[];try{let n=e.getNativeWindowHandle?.();n!=null&&n.length>=4&&t.push(String(n.readUInt32LE(0)))}catch{}this.codexLinuxAvatarCompositorHintsApplying=!0;let n=e=>{let t=[...new Set(e)].filter(e=>/^[0-9]+$/.test(e)&&e!==`0`);if(t.length===0){this.codexLinuxAvatarCompositorHintsApplying=!1;return}let n=t.length,r=!1,i=()=>{n--,n===0&&(this.codexLinuxAvatarCompositorHintsApplying=!1,r&&(this.codexLinuxAvatarCompositorHintsApplied=!0))};for(let a of t)try{u.execFile(`xprop`,[`-id`,a,`-f`,`_GTK_FRAME_EXTENTS`,`32c`,`-set`,`_GTK_FRAME_EXTENTS`,`0, 0, 0, 0`],{timeout:1e3},e=>{e||(r=!0),i()})}catch{i()}};try{u.execFile(`xdotool`,[`search`,`--pid`,String(process.pid)],{timeout:1e3},(e,r)=>{n([...t,...String(r??``).trim().split(/\\s+/).filter(Boolean)])})}catch{n(t)}}codexLinuxStopAvatarPassthroughRecovery(){}}";
+  const patched = applyPatchTwice(applyLinuxAvatarOverlayMousePassthroughPatch, source);
+
+  assert.match(patched, /this\.window=t,this\.codexLinuxAvatarCompositorHintsApplied=!1,this\.codexLinuxAvatarCompositorHintsApplying=!1,this\.rendererReady=/);
+  assert.match(patched, /u\.execFile\(`xwininfo`,\[`-id`,e\]/);
+  assert.match(patched, /Override Redirect State/);
+  assert.doesNotMatch(patched, /this\.codexLinuxAvatarCompositorHintsApplied=!1,process\.platform===`linux`&&this\.codexLinuxApplyAvatarCompositorHints\(t\),this\.rendererReady=/);
+  assert.doesNotMatch(patched, /for\(let a of t\)try\{u\.execFile\(`xprop`/);
 });
 
 test("adds Linux window icon handling when an icon asset is available", () => {
@@ -1882,6 +2184,94 @@ test("patch report marks warned required asset patches as failed", () => {
         failure.startsWith("linux-app-sunset-gate: failed-required"),
       ),
     );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("patch report metadata cannot overwrite core fields", () => {
+  const report = createPatchReport();
+
+  recordPatch(report, "core-name", "already-applied", "core reason", {
+    name: "metadata-name",
+    status: "failed-required",
+    reason: "metadata reason",
+    phase: "main-bundle",
+    constructor: "ignored",
+  });
+
+  assert.deepEqual(report.patches[0], {
+    name: "core-name",
+    status: "already-applied",
+    reason: "core reason",
+    phase: "main-bundle",
+  });
+});
+
+test("patch report marks missing required package metadata as failed", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-package-metadata-"));
+  try {
+    const report = createPatchReport();
+    patchExtractedApp(tempRoot, { report });
+
+    const packagePatch = report.patches.find((patch) => patch.name === "package-desktop-name");
+    assert.equal(packagePatch.status, "failed-required");
+    assert.match(packagePatch.reason, /package\.json missing or unreadable/);
+    assert.ok(
+      validateReport(report, "upstream-build").some((failure) =>
+        failure.startsWith("package-desktop-name: failed-required"),
+      ),
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("extracted-app descriptors honor required-upstream policy without custom status", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-required-extracted-app-"));
+  try {
+    const report = createPatchReport();
+    applyExtractedAppPatchDescriptors(
+      tempRoot,
+      [
+        {
+          id: "required-extracted-app-test",
+          phase: "extracted-app",
+          ciPolicy: "required-upstream",
+          apply: () => {
+            console.warn("missing required extracted app marker");
+            return { changed: false };
+          },
+        },
+      ],
+      {},
+      report,
+    );
+
+    const patch = report.patches.find((entry) => entry.name === "required-extracted-app-test");
+    assert.equal(patch.status, "failed-required");
+    assert.match(patch.reason, /missing required extracted app marker/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("patch report keeps main-process-ui status independent from descriptor warnings", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-main-ui-"));
+  try {
+    const buildDir = path.join(tempRoot, ".vite", "build");
+    const assetsDir = path.join(tempRoot, "webview", "assets");
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(path.join(buildDir, "main.js"), alreadyOpaqueBackgroundBundle);
+    fs.writeFileSync(path.join(tempRoot, "package.json"), JSON.stringify({ name: "codex" }));
+
+    const report = createPatchReport();
+    captureWarns(() => patchExtractedApp(tempRoot, { report }));
+
+    const mainPatch = report.patches.find((patch) => patch.name === "main-process-ui");
+    assert.equal(mainPatch.status, "already-applied");
+    assert.equal(mainPatch.reason, undefined);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

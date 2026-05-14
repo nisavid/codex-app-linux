@@ -1,6 +1,6 @@
 # Codex App Linux Threat Model
 
-Date: 2026-05-01
+Date: 2026-05-14
 
 This repository adapts the official OpenAI `Codex.dmg` into a Linux Electron
 app, builds native Linux packages, and ships `codex-app-updater` to check,
@@ -33,19 +33,24 @@ The repository already has meaningful hardening: HTTPS-only non-loopback DMG
 URLs, URL redaction, partial downloads, package metadata checks, private staged
 install copies, package payload symlink rejection, package mode normalization,
 builder-root permission checks, default-enabled Electron sandboxing, release
-gate checks, and Apple DMG verification tooling. The remaining critical gaps
-are trusted upstream metadata, digest binding for privileged installs, generated
-app security review evidence, and public artifact provenance.
+gate checks, Apple DMG verification tooling, descriptor-based required patch
+validation, sanitized Linux desktop-target launches, loopback-only no-cache
+webview serving, and no-updater transition cleanup under package-owned support
+paths. The remaining critical gaps are trusted upstream metadata, digest
+binding for privileged installs, generated app security review evidence, and
+public artifact provenance.
 
 ## Scope
 
 In scope:
 
 - Installer and generated launcher sources: `install.sh`,
-  `launcher/start.sh.template`, and `scripts/lib/`.
+  `launcher/start.sh.template`, `launcher/webview-server.py`, and
+  `scripts/lib/`.
 - ASAR and generated-app inspection tooling:
   `scripts/patch-linux-window-ui.js`,
-  `scripts/patch-linux-window-ui.test.js`, and
+  `scripts/patch-linux-window-ui.test.js`, `scripts/patches/`,
+  `scripts/lib/linux-features.js`, `scripts/lib/linux-target-context.js`, and
   `scripts/inspect-electron-security.js`.
 - Native package builders and templates: `scripts/build-deb.sh`,
   `scripts/build-rpm.sh`, `scripts/build-pacman.sh`, `scripts/lib/package-common.sh`,
@@ -53,6 +58,8 @@ In scope:
 - Updater service and CLI: `updater/`, `updater/Cargo.toml`, and updater tests.
 - Linux Computer Use backend and bundled plugin resources:
   `computer-use-linux/` and `plugins/openai-bundled/plugins/computer-use/`.
+- Linux feature patches: `linux-features/`, including desktop target discovery
+  and feature-specific generated-app patches.
 - Release, CI, and Nix trust roots: `.github/workflows/`, `Makefile`,
   `flake.nix`, `flake.lock`, `Cargo.toml`, and `Cargo.lock`.
 - Maintainer docs that define security workflow, package behavior, and fork
@@ -110,10 +117,19 @@ Open questions that materially affect risk:
   preflights the Codex CLI, loads packaged runtime behavior when installed,
   records app/webview liveness, and launches Electron.
 - **Local webview server:** serves extracted webview assets on loopback port
-  `5175` by default and validates startup markers before Electron launch.
+  `5175` by default through `launcher/webview-server.py`, sends no-cache
+  headers, and validates startup markers before Electron launch.
+- **Linux feature and patch registry:** applies descriptor-backed core patches
+  and optional feature patches to generated main-process, webview, and
+  extracted-app bundles; required upstream patches must fail closed in patch
+  reports.
+- **Linux open-target discovery:** patches generated app open-target behavior
+  to discover terminals, IDEs, file managers, and `.desktop` entries, sanitize
+  the launch environment, and invoke targets with argument vectors.
 - **Linux Computer Use backend:** Rust MCP backend and plugin resources that can
   inspect accessibility state, capture screenshots, and synthesize desktop
-  input when upstream UI/account gating enables the feature.
+  input through AT-SPI, GNOME/KDE portal, and ydotool-style backends when
+  upstream UI/account gating enables the feature.
 - **Native package builders:** convert a generated app tree into `.deb`, `.rpm`,
   or pacman packages under the `codex-app` identity.
 - **Updater daemon:** `codex-app-updater daemon` runs as a `systemd --user`
@@ -136,6 +152,7 @@ Open questions that materially affect risk:
 | Build toolchain | npm, Electron releases, Rust crates, distro tools, 7z/7zz | generated app and packages | Dependency compromise, unpinned downloads, malicious native modules |
 | Generated app bundle | extracted upstream app and patched ASAR | Linux Electron runtime | Renderer isolation, IPC, navigation, local file access |
 | Local webview origin | loopback HTTP server | Electron renderer | Same-user port spoofing, stale assets, marker spoofing |
+| Linux feature patches | generated app bundle | desktop launch helpers and platform integrations | Descriptor drift, command launch semantics, unsafe environment inheritance |
 | User config/state/cache | XDG user-writable files | updater decisions and rebuild inputs | Path substitution, stale state, developer-mode misuse, secret leakage |
 | Updater rebuild | unprivileged user service | package builder scripts and artifacts | Builder-root trust, PATH/tool influence, package identity |
 | Privileged install | unprivileged updater/package path | `pkexec` and system package manager | TOCTOU, package substitution, root-owned payload install |
@@ -196,6 +213,8 @@ flowchart LR
   processes.
 - Generated ASAR/webview content, renderer messages, plugin manifests, and
   Computer Use requests.
+- `.desktop` entries, icon files, PATH entries, XDG desktop/session variables,
+  and Linux feature configuration used when discovering desktop targets.
 - Package paths passed to privileged install subcommands.
 - Subprocess stdout/stderr that may be written to service logs or state.
 
@@ -217,6 +236,11 @@ flowchart LR
   deliberately rethinks the webview trust model.
 - Electron sandboxing must remain enabled by default; disabling it is an
   explicit lower-security compatibility mode.
+- Required generated-app patches must be marked as required failures when
+  upstream bundle drift prevents application.
+- Desktop target discovery must use argument-vector process launches, sanitize
+  app-internal environment variables, and treat user-local `.desktop` entries
+  as same-user trust inputs.
 - Computer Use must remain locally scoped, account/host-gated, and bound to
   user-consented desktop-control semantics.
 - Logs and state must not store credential-bearing URLs or credential-looking
@@ -285,7 +309,8 @@ locally or distributed publicly.
 **Existing mitigations:** packaged builder-root restrictions, developer-mode
 guard for builder redirection, fixed updater rebuild PATH, Rust subprocess
 argument vectors, builder bundle symlink and mode checks, package payload
-symlink rejection, package mode normalization.
+symlink rejection, package mode normalization, and deterministic temporary
+source patches for known Electron/native-module ABI compatibility gaps.
 
 **Gaps:** non-Nix build dependencies still rely heavily on live registries and
 tool downloads; developer mode intentionally trusts local builder roots.
@@ -307,7 +332,8 @@ or updater trust failures.
 **Existing mitigations:** loopback bind, startup marker checks, live app marker
 preservation, default-enabled Chromium sandboxing, explicit
 `CODEX_APP_DISABLE_ELECTRON_SANDBOX` opt-out, static
-`scripts/inspect-electron-security.js` release-gate inspection.
+`scripts/inspect-electron-security.js` release-gate inspection, and
+`launcher/webview-server.py` no-cache headers.
 
 **Gaps:** fixed port and marker checks are spoofable by same-user processes;
 generated bundle IPC, CSP, navigation, and Electron `webPreferences` require
@@ -331,7 +357,8 @@ session.
 **Existing mitigations:** feature remains subject to upstream account-side
 rollout and host accessibility/input prerequisites; backend is packaged as a
 local app component rather than a network service; requested app selection now
-errors when no accessible app matches.
+errors when no accessible app matches; the backend carries explicit identity
+metadata for desktop portal/GNOME integration.
 
 **Gaps:** local authorization/consent semantics for Computer Use are mostly
 inherited from the upstream app flow; the backend needs manual review when
@@ -339,6 +366,33 @@ plugin manifests, command routing, screenshot handling, or input backends
 change.
 
 **Priority:** High when touching Computer Use; Medium otherwise.
+
+### T5a: Linux Open-Target Discovery Launches Unintended Desktop Targets
+
+**Entry points:** patched open-target discovery, PATH, XDG data directories,
+Flatpak/Snap desktop exports, user-local `.desktop` files, icon paths, and
+project/file paths supplied to the generated app.
+
+**Abuse path:** same-user state or a malicious local desktop entry influences
+the generated app's discovered terminal/editor/file-manager targets; the app
+launches the wrong local command or inherits app-specific environment that
+changes the launched process's behavior.
+
+**Impact:** Medium. The launched target runs as the user, but this path can
+affect which tools open project paths and whether app-internal environment
+state leaks into child desktop processes.
+
+**Existing mitigations:** executable discovery requires executable files,
+desktop-entry parsing filters hidden/non-application/broad non-IDE entries,
+launches use argument vectors instead of a shell, file manager reveal paths
+fall back to Electron `shell.openPath`, and launch environment sanitization
+removes app-internal Electron, Node, Codex, and wrapper variables.
+
+**Gaps:** user-local `.desktop` entries remain same-user trust inputs by design;
+the allowlist and heuristic matching need review when new launcher families are
+added.
+
+**Priority:** Medium when changing open-target discovery; Low otherwise.
 
 ### T6: User Config, State, Or Cache Misleads The Updater
 
@@ -434,9 +488,11 @@ still contain arbitrary sensitive values.
 6. Add package signing, checksums, and hosted provenance for public artifacts.
 7. Review Computer Use command routing, screenshots, and input backends whenever
    that surface changes.
-8. Review npm CLI auto-upgrade trust and add an approved-version or consent
+8. Review Linux open-target discovery heuristics and launch environment
+   sanitization when adding target families or `.desktop` handling.
+9. Review npm CLI auto-upgrade trust and add an approved-version or consent
    path.
-9. Redact credential-looking subprocess output before persistence.
+10. Redact credential-looking subprocess output before persistence.
 
 ## Focus Paths For Manual Security Review
 
@@ -444,11 +500,18 @@ still contain arbitrary sensitive values.
   Electron download, bundled plugin staging.
 - `launcher/start.sh.template`: webview server lifecycle, CLI discovery,
   sandbox flags, packaged runtime loading, liveness state.
-- `scripts/patch-linux-window-ui.js`: ASAR patch injection, fail-soft behavior,
-  file-manager handling, launch-action socket behavior.
+- `scripts/patch-linux-window-ui.js` and `scripts/patches/`: ASAR patch
+  injection, descriptor policies, fail-soft behavior, file-manager handling,
+  launch-action socket behavior.
 - `scripts/inspect-electron-security.js`: generated app security checks used by
   release gates.
+- `launcher/webview-server.py`: loopback webview serving, cache headers, and
+  port/bind assumptions.
+- `linux-features/open-target-discovery/`: Linux desktop target discovery,
+  `.desktop` parsing, argument-vector launches, and environment sanitization.
 - `scripts/lib/dmg.sh`: installer DMG download and version extraction.
+- `scripts/lib/native-modules.sh`: native dependency version floors and
+  Electron-specific temporary source compatibility patches.
 - `scripts/lib/package-common.sh`: package payload staging, symlink checks,
   mode normalization, builder bundle layout.
 - `scripts/build-deb.sh`, `scripts/build-rpm.sh`, `scripts/build-pacman.sh`:
@@ -469,7 +532,8 @@ still contain arbitrary sensitive values.
 - `updater/src/state.rs`: persisted state compatibility, artifact path state,
   recovery assumptions.
 - `computer-use-linux/`: accessibility tree access, screenshot capture, input
-  synthesis, MCP request handling.
+  synthesis, clipboard/portal behavior, backend identity, and MCP request
+  handling.
 - `plugins/openai-bundled/plugins/computer-use/`: plugin manifest, backend
   command routing, packaged assets.
 - `packaging/linux/codex-app-updater.service`: user-service sandboxing,
@@ -489,7 +553,8 @@ still contain arbitrary sensitive values.
   Computer Use, CI/release, Nix, and docs.
 - Trust boundaries are explicit: internet downloads, generated app, localhost
   HTTP, user-writable XDG state, updater-to-package-builder,
-  updater-to-`pkexec`, desktop automation, and public artifacts.
+  updater-to-`pkexec`, desktop automation, Linux desktop target discovery, and
+  public artifacts.
 - Attacker-controlled inputs are listed separately from findings.
 - Threats are repository-context classes, not findings about a current diff.
 - Current mitigations and gaps match the maintained security backlog.
