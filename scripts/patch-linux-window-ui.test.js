@@ -613,6 +613,17 @@ test("supports explicit tray quit patching when minified aliases drift", () => {
   );
 });
 
+test("supports explicit tray quit patching with localized quit label helpers", () => {
+  const source =
+    "let n=require(`electron`);function mH(e){return `Quit ${e}`}var q=class{getNativeTrayMenuItems(){return[{label:mH(this.appName),click:()=>{n.app.quit()}}]}}";
+  const patched = applyPatchTwice(applyLinuxExplicitTrayQuitPatch, source);
+
+  assert.match(
+    patched,
+    /\{label:mH\(this\.appName\),click:\(\)=>\{typeof codexLinuxPrepareForExplicitQuit===`function`\?codexLinuxPrepareForExplicitQuit\(\):typeof codexLinuxMarkQuitInProgress===`function`&&codexLinuxMarkQuitInProgress\(\),n\.app\.quit\(\)\}\}/,
+  );
+});
+
 test("supports explicit IPC quit patching when minified aliases drift", () => {
   const source =
     "let x=require(`electron`);var q=class{getNativeTrayMenuItems(){return[{label:rB(this.appName),click:()=>{x.app.quit()}}]}};if(m.type===`quit-app`){x.app.quit();return}";
