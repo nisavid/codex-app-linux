@@ -1,16 +1,10 @@
-SERVICE_HELPER="/usr/lib/codex-app/update-builder/packaging/linux/codex-app-updater-user-service.sh"
-if [ -f "$SERVICE_HELPER" ]; then
-    # shellcheck source=/usr/lib/codex-app/update-builder/packaging/linux/codex-app-updater-user-service.sh
-    . "$SERVICE_HELPER"
-fi
+__UPDATER_SERVICE_PREAMBLE__
 
 post_install() {
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
     fi
-    if [ -f "$SERVICE_HELPER" ]; then
-        codex_ensure_user_service_running || true
-    fi
+__UPDATER_POST_INSTALL__
 }
 
 post_upgrade() {
@@ -18,14 +12,9 @@ post_upgrade() {
 }
 
 pre_remove() {
-    if [ -f "$SERVICE_HELPER" ]; then
-        codex_cleanup_user_service stop || true
-        codex_cleanup_user_service disable || true
-    fi
+__UPDATER_PRE_REMOVE__
 }
 
 post_remove() {
-    if [ -f "$SERVICE_HELPER" ]; then
-        codex_reload_user_managers || true
-    fi
+__UPDATER_POST_REMOVE__
 }

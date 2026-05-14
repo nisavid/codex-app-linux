@@ -397,6 +397,62 @@ SCRIPT
     assert_not_contains "$spec_capture" "polkit, curl, unzip, gcc-c++, make"
 }
 
+test_pacman_builder_can_disable_updater() {
+    info "Running pacman packaging smoke test without updater"
+    local workspace="$TMP_DIR/pacman-no-updater"
+    local bin_dir="$workspace/bin"
+    local app_dir="$workspace/app"
+    local dist_dir="$workspace/dist"
+    local pkgbuild_capture="$workspace/PKGBUILD"
+    local install_capture="$workspace/codex-app.install"
+
+    mkdir -p "$workspace" "$dist_dir"
+    make_stub_bin_dir "$bin_dir"
+    make_fake_app "$app_dir"
+
+    cat > "$bin_dir/makepkg" <<'SCRIPT'
+#!/bin/bash
+cp PKGBUILD "$PACMAN_PKGBUILD_CAPTURE"
+cp codex-app.install "$PACMAN_INSTALL_CAPTURE"
+mkdir -p "$PKGDEST"
+touch "$PKGDEST/codex-app-2026.03.24.120000-1-x86_64.pkg.tar.zst"
+SCRIPT
+    cat > "$bin_dir/pacman" <<'SCRIPT'
+#!/bin/bash
+exit 0
+SCRIPT
+    cat > "$bin_dir/cargo" <<'SCRIPT'
+#!/bin/bash
+echo "cargo should not be called when PACKAGE_ENABLE_UPDATER=0" >&2
+exit 99
+SCRIPT
+    chmod +x "$bin_dir/makepkg" "$bin_dir/pacman" "$bin_dir/cargo"
+
+    PATH="$bin_dir:$PATH" \
+    APP_DIR_OVERRIDE="$app_dir" \
+    DIST_DIR_OVERRIDE="$dist_dir" \
+    PACKAGE_ENABLE_UPDATER=0 \
+    PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
+    PACMAN_PKGBUILD_CAPTURE="$pkgbuild_capture" \
+    PACMAN_INSTALL_CAPTURE="$install_capture" \
+    "$REPO_DIR/scripts/build-pacman.sh"
+
+    assert_file_exists "$dist_dir/codex-app-2026.03.24.120000-1-x86_64.pkg.tar.zst"
+    assert_file_exists "$pkgbuild_capture"
+    assert_file_exists "$install_capture"
+    assert_contains "$pkgbuild_capture" "'python'"
+    assert_not_contains "$pkgbuild_capture" "'p7zip'"
+    assert_not_contains "$pkgbuild_capture" "'polkit'"
+    assert_not_contains "$pkgbuild_capture" "'curl'"
+    assert_not_contains "$pkgbuild_capture" "'unzip'"
+    assert_not_contains "$pkgbuild_capture" "'gcc'"
+    assert_not_contains "$pkgbuild_capture" "'make'"
+    assert_contains "$install_capture" "update-desktop-database"
+    assert_not_contains "$install_capture" "codex-app-updater"
+    assert_not_contains "$install_capture" "update-builder"
+    assert_not_contains "$install_capture" "SERVICE_HELPER"
+}
+
 test_missing_input_failure() {
     info "Checking missing-input failure path"
     local workspace="$TMP_DIR/missing"
@@ -2595,6 +2651,7 @@ main() {
     test_deb_builder_can_disable_updater
     test_rpm_builder_smoke
     test_rpm_builder_can_disable_updater
+    test_pacman_builder_can_disable_updater
     test_missing_input_failure
     test_make_build_app_uses_installer_download_flow_by_default
     test_upstream_build_app_workflow_tracks_dmg_metadata
