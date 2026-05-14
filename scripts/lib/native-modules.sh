@@ -53,7 +53,7 @@ patch_better_sqlite3_for_electron_42() {
     grep -qF 'info.Data().As<v8::External>()->Value(v8::kExternalPointerTypeTagDefault)' "$macros" ||
         error "Could not patch better-sqlite3 macros.cpp: ExternalPointer replacement failed"
     grep -qF 'v8::External::New(isolate, addon)' "$binding" ||
-        error "Could not patch better-sqlite3 binding.cpp: expected External::New pattern not found"
+        error "Could not patch better-sqlite3 better_sqlite3.cpp: expected External::New pattern not found"
     sed -i \
         's/v8::External::New(isolate, addon)/v8::External::New(isolate, addon, v8::kExternalPointerTypeTagDefault)/' \
         "$binding"

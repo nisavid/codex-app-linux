@@ -200,6 +200,7 @@ SCRIPT
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/engine.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/registry.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/shared.js"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/all-linux/extracted-app/package-metadata/patch.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/all-linux/main-process/lifecycle/patch.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/all-linux/webview/theme-and-sunset/patch.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/distro/nixos/README.md"
@@ -319,6 +320,7 @@ SCRIPT
     PKG_ROOT_OVERRIDE="$pkg_root" \
     DIST_DIR_OVERRIDE="$dist_dir" \
     PACKAGE_WITH_UPDATER=0 \
+    PACKAGE_ENABLE_UPDATER=0 \
     PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     "$REPO_DIR/scripts/build-deb.sh"
 
@@ -439,6 +441,7 @@ SCRIPT
     APP_DIR_OVERRIDE="$app_dir" \
     DIST_DIR_OVERRIDE="$dist_dir" \
     PACKAGE_WITH_UPDATER=0 \
+    PACKAGE_ENABLE_UPDATER=0 \
     PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     RPM_SPEC_CAPTURE="$spec_capture" \
     "$REPO_DIR/scripts/build-rpm.sh"
@@ -494,6 +497,7 @@ SCRIPT
     APP_DIR_OVERRIDE="$app_dir" \
     DIST_DIR_OVERRIDE="$dist_dir" \
     PACKAGE_WITH_UPDATER=0 \
+    PACKAGE_ENABLE_UPDATER=0 \
     PACKAGE_VERSION="2026.03.24.120000+deadbeef" \
     PACMAN_PKGBUILD_CAPTURE="$pkgbuild_capture" \
     PACMAN_INSTALL_CAPTURE="$install_capture" \
