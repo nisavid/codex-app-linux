@@ -77,11 +77,16 @@ render_desktop_entry() {
     local display_name
     local comment
     local temp_target
+    local filtered_target=""
+    local temp_dir
 
     package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
     display_name="$(sed_escape_replacement "${PACKAGE_DISPLAY_NAME:-Codex App}")"
     comment="$(sed_escape_replacement "${PACKAGE_COMMENT:-Run Codex App on Linux}")"
-    temp_target="$target.tmp.$$"
+    temp_dir="$(dirname "$target")"
+    temp_target="$(mktemp "$temp_dir/.${PACKAGE_NAME}.desktop.XXXXXX")" || \
+        error "Failed to create temporary desktop entry"
+    trap '[ -z "${temp_target:-}" ] || rm -f "$temp_target"; [ -z "${filtered_target:-}" ] || rm -f "$filtered_target"' RETURN
 
     sed \
         -e "s/codex-app-updater/__CODEX_APP_UPDATER__/g" \
@@ -92,7 +97,10 @@ render_desktop_entry() {
         "$DESKTOP_TEMPLATE" > "$temp_target"
     if package_updater_enabled; then
         mv "$temp_target" "$target"
+        temp_target=""
     else
+        filtered_target="$(mktemp "$temp_dir/.${PACKAGE_NAME}.desktop.XXXXXX")" || \
+            error "Failed to create filtered desktop entry"
         awk '
             /^\[Desktop Action CheckForUpdates\]$/ { skip = 1; next }
             /^\[Desktop Action InstallReadyUpdate\]$/ { skip = 1; next }
@@ -100,9 +108,13 @@ render_desktop_entry() {
             skip { next }
             /^Actions=CheckForUpdates;InstallReadyUpdate;$/ { next }
             { print }
-        ' "$temp_target" > "$target"
+        ' "$temp_target" > "$filtered_target"
+        mv "$filtered_target" "$target"
+        filtered_target=""
         rm -f "$temp_target"
+        temp_target=""
     fi
+    trap - RETURN
     chmod 0644 "$target"
 }
 
