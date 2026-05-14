@@ -19,9 +19,54 @@ better_sqlite3_build_version() {
                 return
             fi
             ;;
+        42.*)
+            if version_lt "$detected_version" "$MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42"; then
+                echo "$MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42"
+                return
+            fi
+            ;;
     esac
 
     echo "$detected_version"
+}
+
+patch_better_sqlite3_for_electron_42() {
+    local module_dir="$1"
+    local macros="$module_dir/src/util/macros.cpp"
+    local helpers="$module_dir/src/util/helpers.cpp"
+    local binding="$module_dir/src/better_sqlite3.cpp"
+
+    case "$ELECTRON_VERSION" in
+        42.*) ;;
+        *) return 0 ;;
+    esac
+
+    [ -f "$macros" ] || error "Could not patch better-sqlite3: missing $macros"
+    [ -f "$helpers" ] || error "Could not patch better-sqlite3: missing $helpers"
+    [ -f "$binding" ] || error "Could not patch better-sqlite3: missing $binding"
+
+    sed -i \
+        's/info.Data().As<v8::External>()->Value()/info.Data().As<v8::External>()->Value(v8::kExternalPointerTypeTagDefault)/' \
+        "$macros"
+    sed -i \
+        's/v8::External::New(isolate, addon)/v8::External::New(isolate, addon, v8::kExternalPointerTypeTagDefault)/' \
+        "$binding"
+    sed -i \
+        's/^\([[:space:]]*\)0,\([[:space:]]*\)$/\1nullptr,\2/' \
+        "$helpers"
+}
+
+prune_native_module_build_artifacts() {
+    local module_dir="$1"
+    local build_dir="$module_dir/build"
+
+    [ -d "$build_dir" ] || return 0
+
+    # node-gyp leaves Makefiles/configs/objects with absolute build paths.
+    # The packaged runtime only needs the compiled .node binaries.
+    find "$build_dir" -type f ! -name "*.node" -delete 2>/dev/null || true
+    find "$build_dir" -type d -empty -delete 2>/dev/null || true
+    find "$module_dir" -type f -name "*.target.mk" -delete 2>/dev/null || true
 }
 
 build_native_modules() {
@@ -51,6 +96,7 @@ build_native_modules() {
     info "Installing fresh sources from npm..."
     npm install "electron@$ELECTRON_VERSION" --save-dev --ignore-scripts >&2
     npm install "better-sqlite3@$bs3_build_ver" "node-pty@$npty_ver" --ignore-scripts >&2
+    patch_better_sqlite3_for_electron_42 "$build_dir/node_modules/better-sqlite3"
 
     info "Compiling for Electron v$ELECTRON_VERSION (this takes ~1 min)..."
     info "Using Electron headers: $ELECTRON_HEADERS_URL"
@@ -65,6 +111,8 @@ build_native_modules() {
     rm -rf "$app_extracted/node_modules/node-pty"
     cp -r "$build_dir/node_modules/better-sqlite3" "$app_extracted/node_modules/"
     cp -r "$build_dir/node_modules/node-pty" "$app_extracted/node_modules/"
+    prune_native_module_build_artifacts "$app_extracted/node_modules/better-sqlite3"
+    prune_native_module_build_artifacts "$app_extracted/node_modules/node-pty"
 }
 
 # ---- Download Linux Electron ----

@@ -3,6 +3,7 @@ use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
+use xkeysym::Keysym;
 use zbus::{
     proxy::SignalStream,
     zvariant::{OwnedObjectPath, OwnedValue, Value},
@@ -16,9 +17,13 @@ const PORTAL_SCREENCAST_INTERFACE: &str = "org.freedesktop.portal.ScreenCast";
 const PORTAL_REQUEST_INTERFACE: &str = "org.freedesktop.portal.Request";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
+const DEVICE_KEYBOARD: u32 = 1;
 const DEVICE_POINTER: u32 = 2;
 const SOURCE_MONITOR: u32 = 1;
 const CURSOR_MODE_HIDDEN: u32 = 1;
+
+const KEY_RELEASED: u32 = 0;
+const KEY_PRESSED: u32 = 1;
 
 const POINTER_BUTTON_RELEASED: u32 = 0;
 const POINTER_BUTTON_PRESSED: u32 = 1;
@@ -40,6 +45,12 @@ pub struct PortalPointerSession {
     session_handle: OwnedObjectPath,
     streams: Vec<PortalStream>,
     op_lock: Arc<Mutex<()>>,
+}
+
+#[derive(Clone)]
+pub struct PortalKeyboardSession {
+    connection: Connection,
+    session_handle: OwnedObjectPath,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +103,41 @@ pub async fn start_portal_pointer_session() -> Result<PortalPointerSession> {
         streams,
         op_lock: Arc::new(Mutex::new(())),
     })
+}
+
+pub async fn start_portal_keyboard_session() -> Result<PortalKeyboardSession> {
+    hydrate_session_bus_env();
+
+    let connection = Connection::session()
+        .await
+        .context("failed to connect to session bus for remote desktop portal")?;
+    let session_handle = create_remote_desktop_session(&connection).await?;
+    select_keyboard_devices(&connection, &session_handle).await?;
+    let (devices, _) = start_remote_desktop_session(&connection, &session_handle).await?;
+
+    if devices & DEVICE_KEYBOARD == 0 {
+        bail!("remote desktop portal session started without keyboard access");
+    }
+
+    Ok(PortalKeyboardSession {
+        connection,
+        session_handle,
+    })
+}
+
+pub fn keysyms_for_text(text: &str) -> Result<Vec<i32>> {
+    text.chars()
+        .map(|ch| {
+            let keysym = Keysym::from_char(ch);
+            if keysym == Keysym::NoSymbol {
+                bail!(
+                    "character U+{:04X} cannot be represented as an X11 keysym",
+                    ch as u32
+                );
+            }
+            i32::try_from(keysym.raw()).context("X11 keysym did not fit in D-Bus int32")
+        })
+        .collect()
 }
 
 pub async fn click(
@@ -198,6 +244,38 @@ pub async fn drag(
     }
 }
 
+pub async fn type_text_with_keysyms(
+    session: &PortalKeyboardSession,
+    keysyms: &[i32],
+) -> Result<()> {
+    let proxy = remote_desktop_proxy(&session.connection).await?;
+    for keysym in keysyms {
+        notify_keyboard_keysym(&proxy, &session.session_handle, *keysym, KEY_PRESSED).await?;
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        notify_keyboard_keysym(&proxy, &session.session_handle, *keysym, KEY_RELEASED).await?;
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    Ok(())
+}
+
+pub async fn press_keycode_chord(
+    session: &PortalKeyboardSession,
+    modifiers: &[i32],
+    keycode: i32,
+) -> Result<()> {
+    let proxy = remote_desktop_proxy(&session.connection).await?;
+    for modifier in modifiers {
+        notify_keyboard_keycode(&proxy, &session.session_handle, *modifier, KEY_PRESSED).await?;
+    }
+    notify_keyboard_keycode(&proxy, &session.session_handle, keycode, KEY_PRESSED).await?;
+    tokio::time::sleep(Duration::from_millis(35)).await;
+    notify_keyboard_keycode(&proxy, &session.session_handle, keycode, KEY_RELEASED).await?;
+    for modifier in modifiers.iter().rev() {
+        notify_keyboard_keycode(&proxy, &session.session_handle, *modifier, KEY_RELEASED).await?;
+    }
+    Ok(())
+}
+
 impl PortalPointerSession {
     fn map_absolute_point(&self, x: i32, y: i32) -> Result<(u32, f64, f64)> {
         if let Some(stream) = self
@@ -298,15 +376,28 @@ async fn create_remote_desktop_session(connection: &Connection) -> Result<OwnedO
 }
 
 async fn select_pointer_devices(connection: &Connection, session: &OwnedObjectPath) -> Result<()> {
+    select_devices(connection, session, DEVICE_POINTER, "rd_devices").await
+}
+
+async fn select_keyboard_devices(connection: &Connection, session: &OwnedObjectPath) -> Result<()> {
+    select_devices(connection, session, DEVICE_KEYBOARD, "rd_keyboard_devices").await
+}
+
+async fn select_devices(
+    connection: &Connection,
+    session: &OwnedObjectPath,
+    device_types: u32,
+    request_prefix: &str,
+) -> Result<()> {
     let remote_proxy = remote_desktop_proxy(connection).await?;
     let (request_path, mut response_stream) =
-        portal_request_stream(connection, "rd_devices").await?;
+        portal_request_stream(connection, request_prefix).await?;
     let mut options: HashMap<&str, Value<'_>> = HashMap::new();
     options.insert(
         "handle_token",
         Value::from(last_path_component(&request_path)),
     );
-    options.insert("types", Value::from(DEVICE_POINTER));
+    options.insert("types", Value::from(device_types));
 
     let handle: OwnedObjectPath = remote_proxy
         .call("SelectDevices", &(session, options))
@@ -425,6 +516,34 @@ async fn notify_pointer_axis_discrete(
         )
         .await
         .context("RemoteDesktop NotifyPointerAxisDiscrete failed")?;
+    Ok(())
+}
+
+async fn notify_keyboard_keysym(
+    proxy: &Proxy<'_>,
+    session: &OwnedObjectPath,
+    keysym: i32,
+    state: u32,
+) -> Result<()> {
+    let options: HashMap<&str, Value<'_>> = HashMap::new();
+    let _: () = proxy
+        .call("NotifyKeyboardKeysym", &(session, options, keysym, state))
+        .await
+        .context("RemoteDesktop NotifyKeyboardKeysym failed")?;
+    Ok(())
+}
+
+async fn notify_keyboard_keycode(
+    proxy: &Proxy<'_>,
+    session: &OwnedObjectPath,
+    keycode: i32,
+    state: u32,
+) -> Result<()> {
+    let options: HashMap<&str, Value<'_>> = HashMap::new();
+    let _: () = proxy
+        .call("NotifyKeyboardKeycode", &(session, options, keycode, state))
+        .await
+        .context("RemoteDesktop NotifyKeyboardKeycode failed")?;
     Ok(())
 }
 
@@ -566,4 +685,58 @@ fn request_token(prefix: &str) -> String {
         _ => '_',
     })
     .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xkeysym::key;
+
+    #[test]
+    fn keysyms_for_url_text_round_trips_to_literal_characters() {
+        let text = "https://example.com:8080/page#anchor";
+        let keysyms = keysyms_for_text(text).expect("URL should map to keysyms");
+
+        let round_tripped = keysyms
+            .iter()
+            .map(|keysym| {
+                Keysym::new(*keysym as u32)
+                    .key_char()
+                    .expect("keysym should map back to a character")
+            })
+            .collect::<String>();
+
+        assert_eq!(round_tripped, text);
+    }
+
+    #[test]
+    fn keysyms_for_layout_sensitive_ascii_use_literal_symbols() {
+        assert_eq!(
+            keysyms_for_text(":#/?@").expect("symbols should map to keysyms"),
+            vec![
+                key::colon as i32,
+                key::numbersign as i32,
+                key::slash as i32,
+                key::question as i32,
+                key::at as i32,
+            ]
+        );
+    }
+
+    #[test]
+    fn keysyms_for_non_ascii_use_legacy_and_unicode_mapped_values() {
+        assert_eq!(
+            keysyms_for_text("ä€😉").expect("non-ASCII text should map to keysyms"),
+            vec![key::adiaeresis as i32, key::EuroSign as i32, 0x0101_F609]
+        );
+    }
+
+    #[test]
+    fn keysyms_for_text_rejects_unicode_non_symbols_before_input() {
+        let error = keysyms_for_text("\u{FDD0}")
+            .expect_err("Unicode non-characters should not be emitted through the portal")
+            .to_string();
+
+        assert!(error.contains("U+FDD0"));
+    }
 }

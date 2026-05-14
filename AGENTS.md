@@ -67,13 +67,16 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
 ## Source Pointers
 
 - Installer, ASAR patching, Electron runtime setup, generated launcher: `install.sh`
-- Launcher template and runtime behavior: `launcher/start.sh.template`
+- Launcher template, webview helper, and runtime behavior:
+  `launcher/start.sh.template` and `launcher/webview-server.py`
 - Debian package builder: `scripts/build-deb.sh`
 - RPM package builder: `scripts/build-rpm.sh`
 - pacman package builder: `scripts/build-pacman.sh`
 - Shared package staging helpers: `scripts/lib/package-common.sh`
 - Linux Computer Use backend and bundled plugin: `computer-use-linux/` and `plugins/openai-bundled/plugins/computer-use/`
 - Host dependency bootstrap: `scripts/install-deps.sh`
+- Linux patch registry and patch descriptors: `scripts/patches/` and
+  `scripts/lib/linux-features.js`
 - Linux package templates, maintainer scripts, desktop entry, service unit, packaged runtime helper: `packaging/linux/`
 - Rust updater service and CLI: `updater/`
 - Updater crate version and versioning policy: `updater/Cargo.toml` and

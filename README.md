@@ -147,8 +147,11 @@ its polkit/update-builder support files, disable the updater at package build
 time:
 
 ```bash
-PACKAGE_ENABLE_UPDATER=0 make package
+PACKAGE_WITH_UPDATER=0 make package
 ```
+
+No-updater packages also remove stale `codex-app-updater.service` enablement
+when installed over a default package.
 
 Package outputs land in `dist/`:
 
