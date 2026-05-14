@@ -2193,9 +2193,14 @@ async fn run_kde_clipboard_paste_text(
 
 fn kde_clipboard_contents() -> std::result::Result<String, String> {
     let output = run_qdbus6_klipper(&["getClipboardContents"])?;
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .trim_end_matches('\n')
-        .to_string())
+    Ok(strip_qdbus_output_terminator(
+        &String::from_utf8_lossy(&output.stdout),
+    ))
+}
+
+fn strip_qdbus_output_terminator(output: &str) -> String {
+    let output = output.strip_suffix('\n').unwrap_or(output);
+    output.strip_suffix('\r').unwrap_or(output).to_string()
 }
 
 fn kde_set_clipboard_contents(text: &str) -> std::result::Result<Output, String> {
@@ -3056,6 +3061,17 @@ mod tests {
     fn ydotool_type_timeout_scales_with_text_length() {
         assert_eq!(ydotool_type_timeout("short").as_secs(), 10);
         assert!(ydotool_type_timeout(&"x".repeat(500)).as_secs() > 10);
+    }
+
+    #[test]
+    fn qdbus_clipboard_output_removes_only_command_terminator() {
+        assert_eq!(strip_qdbus_output_terminator("one line\n"), "one line");
+        assert_eq!(strip_qdbus_output_terminator("one line\r\n"), "one line");
+        assert_eq!(
+            strip_qdbus_output_terminator("multiline\nclipboard\n\n"),
+            "multiline\nclipboard\n"
+        );
+        assert_eq!(strip_qdbus_output_terminator("\n\n"), "\n");
     }
 
     #[tokio::test]

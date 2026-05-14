@@ -243,14 +243,17 @@ function applyExtractedAppPatchDescriptors(extractedDir, descriptors, context, r
     const statusResult = typeof descriptor.status === "function"
       ? descriptor.status(result, warnings, context)
       : result?.changed != null
-        ? patchStatusFromChange(Boolean(result.changed), warnings)
+        ? descriptorPatchStatusFromChange(descriptor, Boolean(result.changed), warnings)
         : "applied";
-    const status = typeof statusResult === "object" && statusResult != null
+    let status = typeof statusResult === "object" && statusResult != null
       ? statusResult.status
       : statusResult;
     const reason = typeof statusResult === "object" && statusResult != null
       ? statusResult.reason
       : result?.reason ?? warnings[0] ?? null;
+    if (status === "skipped-optional" && descriptor.ciPolicy === REQUIRED_UPSTREAM) {
+      status = "failed-required";
+    }
     recordDescriptorPatch(report, descriptor, status, reason, context);
   }
 }

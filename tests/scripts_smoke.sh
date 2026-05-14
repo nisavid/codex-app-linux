@@ -892,6 +892,18 @@ CPP
     assert_contains "$module_dir/src/util/macros.cpp" "Value(v8::kExternalPointerTypeTagDefault)"
     assert_contains "$module_dir/src/better_sqlite3.cpp" "External::New(isolate, addon, v8::kExternalPointerTypeTagDefault)"
     assert_contains "$module_dir/src/util/helpers.cpp" "nullptr,"
+
+    local drifted_module_dir="$TMP_DIR/better-sqlite3-electron-42-drifted"
+    mkdir -p "$drifted_module_dir/src/util"
+    printf '%s\n' '#define OnlyAddon static_cast<Addon*>(info.Data().As<v8::External>()->Value(v8::kExternalPointerTypeTagDefault))' > "$drifted_module_dir/src/util/macros.cpp"
+    printf '%s\n' 'v8::Local<v8::External> data = v8::External::New(isolate, addon);' > "$drifted_module_dir/src/better_sqlite3.cpp"
+    printf '%s\n' '        0,' > "$drifted_module_dir/src/util/helpers.cpp"
+
+    if ELECTRON_VERSION=42.0.1 bash -c 'error() { echo "$*" >&2; exit 1; }; . "$1"; patch_better_sqlite3_for_electron_42 "$2"' \
+        _ "$REPO_DIR/scripts/lib/native-modules.sh" "$drifted_module_dir" > "$TMP_DIR/drifted-native-patch.log" 2>&1; then
+        fail "Expected better-sqlite3 Electron 42 patch to fail when source markers drift"
+    fi
+    assert_contains "$TMP_DIR/drifted-native-patch.log" "expected ExternalPointer pattern not found"
 }
 
 test_launcher_template_sanity() {

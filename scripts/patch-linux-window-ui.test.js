@@ -57,6 +57,9 @@ const {
   resolveKeybindsSettingsAsset,
 } = require("./patch-linux-window-ui.js");
 const {
+  applyExtractedAppPatchDescriptors,
+} = require("./patches/engine.js");
+const {
   validateReport,
 } = require("./ci/validate-patch-report.js");
 
@@ -2142,6 +2145,35 @@ test("patch report marks missing required package metadata as failed", () => {
         failure.startsWith("package-desktop-name: failed-required"),
       ),
     );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("extracted-app descriptors honor required-upstream policy without custom status", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-required-extracted-app-"));
+  try {
+    const report = createPatchReport();
+    applyExtractedAppPatchDescriptors(
+      tempRoot,
+      [
+        {
+          id: "required-extracted-app-test",
+          phase: "extracted-app",
+          ciPolicy: "required-upstream",
+          apply: () => {
+            console.warn("missing required extracted app marker");
+            return { changed: false };
+          },
+        },
+      ],
+      {},
+      report,
+    );
+
+    const patch = report.patches.find((entry) => entry.name === "required-extracted-app-test");
+    assert.equal(patch.status, "failed-required");
+    assert.match(patch.reason, /missing required extracted app marker/);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

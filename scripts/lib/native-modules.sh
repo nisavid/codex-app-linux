@@ -45,12 +45,18 @@ patch_better_sqlite3_for_electron_42() {
     [ -f "$helpers" ] || error "Could not patch better-sqlite3: missing $helpers"
     [ -f "$binding" ] || error "Could not patch better-sqlite3: missing $binding"
 
+    grep -qF 'info.Data().As<v8::External>()->Value()' "$macros" ||
+        error "Could not patch better-sqlite3 macros.cpp: expected ExternalPointer pattern not found"
     sed -i \
         's/info.Data().As<v8::External>()->Value()/info.Data().As<v8::External>()->Value(v8::kExternalPointerTypeTagDefault)/' \
         "$macros"
+    grep -qF 'v8::External::New(isolate, addon)' "$binding" ||
+        error "Could not patch better-sqlite3 binding.cpp: expected External::New pattern not found"
     sed -i \
         's/v8::External::New(isolate, addon)/v8::External::New(isolate, addon, v8::kExternalPointerTypeTagDefault)/' \
         "$binding"
+    grep -qE '^[[:space:]]*0,[[:space:]]*$' "$helpers" ||
+        error "Could not patch better-sqlite3 helpers.cpp: expected native data property sentinel not found"
     sed -i \
         's/^\([[:space:]]*\)0,\([[:space:]]*\)$/\1nullptr,\2/' \
         "$helpers"
