@@ -435,6 +435,7 @@ SCRIPT
     assert_not_contains "$spec_capture" "codex-app-updater.service"
     assert_not_contains "$spec_capture" "codex-app-updater-user-service.sh"
     assert_not_contains "$spec_capture" "Local auto-updates rebuild"
+    assert_not_contains "$spec_capture" "/usr/bin/7z"
     assert_not_contains "$spec_capture" "polkit, curl, unzip, gcc-c++, make"
 }
 

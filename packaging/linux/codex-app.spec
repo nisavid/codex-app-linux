@@ -9,7 +9,7 @@ Obsoletes:      codex-desktop
 %global __requires_exclude_from ^/opt/__PACKAGE_NAME__/.*$
 %global __provides_exclude_from ^/opt/__PACKAGE_NAME__/.*$
 
-Requires:       python3, /usr/bin/7z
+Requires:       python3
 __UPDATER_REQUIRES__
 Requires:       alsa-lib, at-spi2-atk, atk, glib2, gtk3, libdrm
 Requires:       nspr, nss, pango, libstdc++, libX11, libxcb
