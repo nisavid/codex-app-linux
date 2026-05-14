@@ -50,16 +50,22 @@ patch_better_sqlite3_for_electron_42() {
     sed -i \
         's/info.Data().As<v8::External>()->Value()/info.Data().As<v8::External>()->Value(v8::kExternalPointerTypeTagDefault)/' \
         "$macros"
+    grep -qF 'info.Data().As<v8::External>()->Value(v8::kExternalPointerTypeTagDefault)' "$macros" ||
+        error "Could not patch better-sqlite3 macros.cpp: ExternalPointer replacement failed"
     grep -qF 'v8::External::New(isolate, addon)' "$binding" ||
         error "Could not patch better-sqlite3 binding.cpp: expected External::New pattern not found"
     sed -i \
         's/v8::External::New(isolate, addon)/v8::External::New(isolate, addon, v8::kExternalPointerTypeTagDefault)/' \
         "$binding"
+    grep -qF 'v8::External::New(isolate, addon, v8::kExternalPointerTypeTagDefault)' "$binding" ||
+        error "Could not patch better-sqlite3 binding.cpp: External::New replacement failed"
     grep -qE '^[[:space:]]*0,[[:space:]]*$' "$helpers" ||
         error "Could not patch better-sqlite3 helpers.cpp: expected native data property sentinel not found"
     sed -i \
         's/^\([[:space:]]*\)0,\([[:space:]]*\)$/\1nullptr,\2/' \
         "$helpers"
+    grep -qF 'nullptr,' "$helpers" ||
+        error "Could not patch better-sqlite3 helpers.cpp: native data property replacement failed"
 }
 
 prune_native_module_build_artifacts() {

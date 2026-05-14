@@ -38,15 +38,21 @@ use tokio::{
     process::{Child as TokioChild, Command as TokioCommand},
     time::{sleep, timeout},
 };
+use zbus::{Connection as ZbusConnection, Proxy as ZbusProxy};
 
 const YDOTOOL_TIMEOUT: Duration = Duration::from_secs(10);
 const YDOTOOL_TYPE_CHARS_PER_SECOND: u64 = 20;
+const KDE_CLIPBOARD_DBUS_TIMEOUT: Duration = Duration::from_secs(3);
+const KDE_KLIPPER_SERVICE: &str = "org.kde.klipper";
+const KDE_KLIPPER_PATH: &str = "/klipper";
+const KDE_KLIPPER_INTERFACE: &str = "org.kde.klipper.klipper";
 
 #[derive(Clone, Default)]
 pub struct ComputerUseLinux {
     last_nodes: Arc<Mutex<Vec<AccessibilityNode>>>,
     portal_pointer_session: Arc<Mutex<Option<PortalPointerSession>>>,
     portal_keyboard_session: Arc<Mutex<Option<PortalKeyboardSession>>>,
+    kde_clipboard_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[tool_router]
@@ -680,6 +686,7 @@ impl ComputerUseLinux {
         if self.should_prefer_kde_clipboard_text_backend() {
             match self.ensure_portal_keyboard_session().await {
                 Ok(Some(session)) => {
+                    let _clipboard_guard = self.kde_clipboard_lock.lock().await;
                     match run_kde_clipboard_paste_text(&session, &params.text).await {
                         Ok(message) => {
                             return Json(successful_action_with_focus(
@@ -2169,15 +2176,19 @@ async fn run_kde_clipboard_paste_text(
     session: &PortalKeyboardSession,
     text: &str,
 ) -> std::result::Result<String, KdeClipboardPasteError> {
-    let previous = kde_clipboard_contents().map_err(KdeClipboardPasteError::before_text_input)?;
-    kde_set_clipboard_contents(text).map_err(KdeClipboardPasteError::before_text_input)?;
+    let previous = kde_clipboard_contents()
+        .await
+        .map_err(KdeClipboardPasteError::before_text_input)?;
+    kde_set_clipboard_contents(text)
+        .await
+        .map_err(KdeClipboardPasteError::before_text_input)?;
 
     let paste_result = press_keycode_chord(session, &[EVDEV_KEY_LEFTCTRL], EVDEV_KEY_V)
         .await
         .map_err(|error| format!("{error:#}"));
 
     tokio::time::sleep(Duration::from_millis(KDE_CLIPBOARD_RESTORE_DELAY_MS)).await;
-    let restore_result = kde_set_clipboard_contents(&previous);
+    let restore_result = kde_set_clipboard_contents(&previous).await;
 
     match (paste_result, restore_result) {
         (Ok(_), Ok(_)) => Ok("Action pasted through KDE clipboard integration.".to_string()),
@@ -2191,11 +2202,17 @@ async fn run_kde_clipboard_paste_text(
     }
 }
 
-fn kde_clipboard_contents() -> std::result::Result<String, String> {
-    let output = run_qdbus6_klipper(&["getClipboardContents"])?;
-    Ok(strip_qdbus_output_terminator(
-        &String::from_utf8_lossy(&output.stdout),
-    ))
+async fn kde_clipboard_contents() -> std::result::Result<String, String> {
+    let connection = kde_clipboard_connection().await?;
+    let proxy = kde_clipboard_proxy(&connection).await?;
+    let output: String = timeout(
+        KDE_CLIPBOARD_DBUS_TIMEOUT,
+        proxy.call("getClipboardContents", &()),
+    )
+    .await
+    .map_err(|_| "KDE clipboard getClipboardContents timed out".to_string())?
+    .map_err(|error| format!("KDE clipboard getClipboardContents failed: {error}"))?;
+    Ok(strip_qdbus_output_terminator(&output))
 }
 
 fn strip_qdbus_output_terminator(output: &str) -> String {
@@ -2203,21 +2220,36 @@ fn strip_qdbus_output_terminator(output: &str) -> String {
     output.strip_suffix('\r').unwrap_or(output).to_string()
 }
 
-fn kde_set_clipboard_contents(text: &str) -> std::result::Result<Output, String> {
-    run_qdbus6_klipper(&["setClipboardContents", text])
+async fn kde_set_clipboard_contents(text: &str) -> std::result::Result<(), String> {
+    let connection = kde_clipboard_connection().await?;
+    let proxy = kde_clipboard_proxy(&connection).await?;
+    let _: () = timeout(
+        KDE_CLIPBOARD_DBUS_TIMEOUT,
+        proxy.call("setClipboardContents", &(text)),
+    )
+    .await
+    .map_err(|_| "KDE clipboard setClipboardContents timed out".to_string())?
+    .map_err(|error| format!("KDE clipboard setClipboardContents failed: {error}"))?;
+    Ok(())
 }
 
-fn run_qdbus6_klipper(args: &[&str]) -> std::result::Result<Output, String> {
-    let output = Command::new("qdbus6")
-        .args(["org.kde.klipper", "/klipper"])
-        .args(args)
-        .output();
+async fn kde_clipboard_connection() -> std::result::Result<ZbusConnection, String> {
+    ZbusConnection::session()
+        .await
+        .map_err(|error| format!("failed to connect to session bus for KDE clipboard: {error}"))
+}
 
-    match output {
-        Ok(output) if output.status.success() => Ok(output),
-        Ok(output) => Err(command_output_error("qdbus6", output)),
-        Err(error) => Err(format!("failed to run qdbus6: {error}")),
-    }
+async fn kde_clipboard_proxy(
+    connection: &ZbusConnection,
+) -> std::result::Result<ZbusProxy<'_>, String> {
+    ZbusProxy::new(
+        connection,
+        KDE_KLIPPER_SERVICE,
+        KDE_KLIPPER_PATH,
+        KDE_KLIPPER_INTERFACE,
+    )
+    .await
+    .map_err(|error| format!("failed to create KDE clipboard proxy: {error}"))
 }
 
 fn ydotool_output_error(output: Output) -> String {

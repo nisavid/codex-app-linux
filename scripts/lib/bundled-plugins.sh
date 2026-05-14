@@ -325,9 +325,37 @@ print("patched")
 PY
 }
 
-is_browser_use_node_repl_ldd_output_compatible() {
-    local output="$1"
-    ! printf '%s\n' "$output" | grep -Eq "=> not found|version .* not found"
+version_gt() {
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]
+}
+
+host_glibc_version() {
+    getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $NF}'
+}
+
+browser_use_node_repl_required_glibc_versions() {
+    local file="$1"
+    readelf --version-info "$file" 2>/dev/null |
+        sed -n 's/.*Name: GLIBC_\([0-9][0-9.]*\).*/\1/p' |
+        sort -Vu
+}
+
+is_browser_use_node_repl_elf_compatible() {
+    local file="$1"
+    local host_version
+    local required_version
+
+    command -v readelf >/dev/null 2>&1 || return 0
+    host_version="$(host_glibc_version)"
+    [ -n "$host_version" ] || return 0
+
+    while IFS= read -r required_version; do
+        [ -n "$required_version" ] || continue
+        if version_gt "$required_version" "$host_version"; then
+            return 1
+        fi
+    done < <(browser_use_node_repl_required_glibc_versions "$file")
+    return 0
 }
 
 install_browser_use_node_repl_executable_resource() {
@@ -335,7 +363,6 @@ install_browser_use_node_repl_executable_resource() {
     local destination="$2"
     local label="$3"
     local log_level="${4:-warn}"
-    local ldd_output
     local patch_status
 
     if ! install_linux_executable_resource "$source" "$destination" "$label" "$log_level"; then
@@ -353,17 +380,14 @@ install_browser_use_node_repl_executable_resource() {
         info "Patched Browser Use $label for glibc 2.34+ compatibility"
     fi
 
-    if command -v ldd >/dev/null 2>&1; then
-        if ! ldd_output="$(ldd "$destination" 2>&1)" \
-            || ! is_browser_use_node_repl_ldd_output_compatible "$ldd_output"; then
-            if [ "$log_level" = "info" ]; then
-                info "Browser Use $label is not compatible with this host runtime; skipping"
-            else
-                warn "Browser Use $label is not compatible with this host runtime; skipping"
-            fi
-            rm -f "$destination"
-            return 1
+    if ! is_browser_use_node_repl_elf_compatible "$destination"; then
+        if [ "$log_level" = "info" ]; then
+            info "Browser Use $label is not compatible with this host runtime; skipping"
+        else
+            warn "Browser Use $label is not compatible with this host runtime; skipping"
         fi
+        rm -f "$destination"
+        return 1
     fi
 }
 

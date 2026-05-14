@@ -25,6 +25,19 @@ function applyPatchTwice(patchFn, source) {
   return patched;
 }
 
+function captureWarnings(fn) {
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    warnings.push(args.map(String).join(" "));
+  };
+  try {
+    return { value: fn(), warnings };
+  } finally {
+    console.warn = originalWarn;
+  }
+}
+
 function copilotReasoningEffortSettingsFixture() {
   return [
     "function bwe(){let e=(0,Y.c)(3),t=wr(),{data:n,isLoading:r}=or(`copilot-default-model`),i=n??t.defaultModel,a;return e[0]!==r||e[1]!==i?(a={model:i,reasoningEffort:`medium`,profile:null,isLoading:r},e[0]=r,e[1]=i,e[2]=a):a=e[2],a}",
@@ -132,6 +145,16 @@ test("allows Copilot auth to change reasoning effort from the UI", () => {
   assert.match(patched, /let w=s&&f,T;/);
   assert.doesNotMatch(patched, /disabled:E,RightIcon:t===O\?rg:void 0/);
   assert.doesNotMatch(patched, /let w=s&&f&&!p,T;/);
+});
+
+test("recognizes Copilot reasoning effort UI patch with renamed scope aliases", () => {
+  const source = copilotReasoningEffortUiFixture().replace("i.get(bh).log", "scope.get(bh).log");
+  const { value: patched, warnings } = captureWarnings(() =>
+    applyPatchTwice(applyCopilotReasoningEffortUiPatch, source),
+  );
+
+  assert.match(patched, /disabled:!1,RightIcon:t===O\?rg:void 0/);
+  assert.deepEqual(warnings, []);
 });
 
 test("feature descriptor loader exposes the Copilot webview asset patches only when enabled", () => {

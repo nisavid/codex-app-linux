@@ -920,8 +920,12 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "better_sqlite3_build_version"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "CODEX_ELECTRON_CACHE_DIR"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "--continue-at -"
+    assert_not_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" 'ldd "$destination"'
+    assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" "readelf --version-info"
+    assert_contains "$REPO_DIR/Makefile" '$(origin PACKAGE_ENABLE_UPDATER)'
+    assert_not_contains "$REPO_DIR/scripts/lib/package-common.sh" "package_updater_enabled()"
     assert_contains "$REPO_DIR/launcher/start.sh.template" 'python3 "$SCRIPT_DIR/.codex-linux/webview-server.py" "$CODEX_LINUX_WEBVIEW_PORT" --bind 127.0.0.1'
-    assert_contains "$REPO_DIR/launcher/start.sh.template" "webview-server.py"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" '*/webview-server.py'
     assert_contains "$REPO_DIR/launcher/start.sh.template" "WEBVIEW_PID_FILE"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "owned_webview_server_pid"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "discover_webview_server_pid"
@@ -1012,6 +1016,15 @@ if 'clear_stale_pid_file' not in reconcile_body:
 if 'if [ -z "$webview_pid" ] || { ! pid_is_webview_server "$webview_pid" && ! pid_is_stale_webview_server "$webview_pid"; }; then' not in reconcile_body:
     raise SystemExit("reconcile_runtime_state must clear stale launcher webview ownership markers without touching valid orphaned servers")
 PY
+    if python3 "$REPO_DIR/launcher/webview-server.py" > "$TMP_DIR/webview-server-usage.log" 2>&1; then
+        fail "Expected webview-server.py without arguments to fail with usage"
+    fi
+    assert_contains "$TMP_DIR/webview-server-usage.log" "Usage: webview-server.py"
+    if python3 "$REPO_DIR/launcher/webview-server.py" not-a-port > "$TMP_DIR/webview-server-invalid-port.log" 2>&1; then
+        fail "Expected webview-server.py with invalid port to fail with usage"
+    fi
+    assert_contains "$TMP_DIR/webview-server-invalid-port.log" "Usage: webview-server.py"
+
     local launcher_probe
     local output
     launcher_probe="$TMP_DIR/launcher-rendering-probe.sh"

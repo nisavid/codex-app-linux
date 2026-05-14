@@ -51,6 +51,7 @@ pub struct PortalPointerSession {
 pub struct PortalKeyboardSession {
     connection: Connection,
     session_handle: OwnedObjectPath,
+    op_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +123,7 @@ pub async fn start_portal_keyboard_session() -> Result<PortalKeyboardSession> {
     Ok(PortalKeyboardSession {
         connection,
         session_handle,
+        op_lock: Arc::new(Mutex::new(())),
     })
 }
 
@@ -248,11 +250,20 @@ pub async fn type_text_with_keysyms(
     session: &PortalKeyboardSession,
     keysyms: &[i32],
 ) -> Result<()> {
+    let _op_guard = session.op_lock.lock().await;
     let proxy = remote_desktop_proxy(&session.connection).await?;
+    let mut pressed = Vec::new();
     for keysym in keysyms {
         notify_keyboard_keysym(&proxy, &session.session_handle, *keysym, KEY_PRESSED).await?;
+        pressed.push(*keysym);
         tokio::time::sleep(Duration::from_millis(5)).await;
-        notify_keyboard_keysym(&proxy, &session.session_handle, *keysym, KEY_RELEASED).await?;
+        if let Err(error) =
+            notify_keyboard_keysym(&proxy, &session.session_handle, *keysym, KEY_RELEASED).await
+        {
+            release_pressed_keysyms(&proxy, &session.session_handle, &mut pressed).await;
+            return Err(error);
+        }
+        pressed.pop();
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     Ok(())
@@ -263,15 +274,31 @@ pub async fn press_keycode_chord(
     modifiers: &[i32],
     keycode: i32,
 ) -> Result<()> {
+    let _op_guard = session.op_lock.lock().await;
     let proxy = remote_desktop_proxy(&session.connection).await?;
+    let mut pressed = Vec::new();
     for modifier in modifiers {
         notify_keyboard_keycode(&proxy, &session.session_handle, *modifier, KEY_PRESSED).await?;
+        pressed.push(*modifier);
     }
     notify_keyboard_keycode(&proxy, &session.session_handle, keycode, KEY_PRESSED).await?;
+    pressed.push(keycode);
     tokio::time::sleep(Duration::from_millis(35)).await;
-    notify_keyboard_keycode(&proxy, &session.session_handle, keycode, KEY_RELEASED).await?;
+    if let Err(error) =
+        notify_keyboard_keycode(&proxy, &session.session_handle, keycode, KEY_RELEASED).await
+    {
+        release_pressed_keycodes(&proxy, &session.session_handle, &mut pressed).await;
+        return Err(error);
+    }
+    pressed.pop();
     for modifier in modifiers.iter().rev() {
-        notify_keyboard_keycode(&proxy, &session.session_handle, *modifier, KEY_RELEASED).await?;
+        if let Err(error) =
+            notify_keyboard_keycode(&proxy, &session.session_handle, *modifier, KEY_RELEASED).await
+        {
+            release_pressed_keycodes(&proxy, &session.session_handle, &mut pressed).await;
+            return Err(error);
+        }
+        pressed.pop();
     }
     Ok(())
 }
@@ -545,6 +572,26 @@ async fn notify_keyboard_keycode(
         .await
         .context("RemoteDesktop NotifyKeyboardKeycode failed")?;
     Ok(())
+}
+
+async fn release_pressed_keysyms(
+    proxy: &Proxy<'_>,
+    session: &OwnedObjectPath,
+    pressed: &mut Vec<i32>,
+) {
+    while let Some(keysym) = pressed.pop() {
+        let _ = notify_keyboard_keysym(proxy, session, keysym, KEY_RELEASED).await;
+    }
+}
+
+async fn release_pressed_keycodes(
+    proxy: &Proxy<'_>,
+    session: &OwnedObjectPath,
+    pressed: &mut Vec<i32>,
+) {
+    while let Some(keycode) = pressed.pop() {
+        let _ = notify_keyboard_keycode(proxy, session, keycode, KEY_RELEASED).await;
+    }
 }
 
 async fn remote_desktop_proxy(connection: &Connection) -> Result<Proxy<'_>> {

@@ -62,6 +62,9 @@ const {
 const {
   validateReport,
 } = require("./ci/validate-patch-report.js");
+const {
+  recordPatch,
+} = require("./lib/patch-report.js");
 
 const mainBundlePrefix =
   "let n=require(`electron`),i=require(`node:path`),o=require(`node:fs`);";
@@ -2129,6 +2132,25 @@ test("patch report marks warned required asset patches as failed", () => {
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("patch report metadata cannot overwrite core fields", () => {
+  const report = createPatchReport();
+
+  recordPatch(report, "core-name", "already-applied", "core reason", {
+    name: "metadata-name",
+    status: "failed-required",
+    reason: "metadata reason",
+    phase: "main-bundle",
+    constructor: "ignored",
+  });
+
+  assert.deepEqual(report.patches[0], {
+    name: "core-name",
+    status: "already-applied",
+    reason: "core reason",
+    phase: "main-bundle",
+  });
 });
 
 test("patch report marks missing required package metadata as failed", () => {

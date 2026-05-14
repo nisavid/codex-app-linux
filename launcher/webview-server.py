@@ -4,10 +4,23 @@ import http.server
 import sys
 
 
-port = int(sys.argv[1])
+def usage():
+    raise SystemExit("Usage: webview-server.py <port> [--bind ADDRESS]")
+
+
+if len(sys.argv) < 2:
+    usage()
+
+try:
+    port = int(sys.argv[1])
+except ValueError:
+    usage()
+
 bind = "127.0.0.1"
 if len(sys.argv) >= 4 and sys.argv[2] == "--bind":
     bind = sys.argv[3]
+elif len(sys.argv) > 2:
+    usage()
 
 
 class CodexWebviewHandler(http.server.SimpleHTTPRequestHandler):

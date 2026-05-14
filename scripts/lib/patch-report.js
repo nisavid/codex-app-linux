@@ -25,7 +25,12 @@ function recordPatch(report, name, status, reason = null, metadata = null) {
     entry.reason = String(reason);
   }
   if (metadata != null && typeof metadata === "object") {
-    Object.assign(entry, metadata);
+    for (const [key, value] of Object.entries(metadata)) {
+      if (["name", "status", "reason", "__proto__", "prototype", "constructor"].includes(key)) {
+        continue;
+      }
+      entry[key] = value;
+    }
   }
   report.patches.push(entry);
 }

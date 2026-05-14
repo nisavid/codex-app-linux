@@ -1127,7 +1127,7 @@ pid_has_webview_server_cmdline() {
     mapfile -d '' -t argv < "/proc/$pid/cmdline" 2>/dev/null || return 1
     for arg in "${argv[@]}"; do
         case "$arg" in
-            http.server|webview-server.py) has_http_server=1 ;;
+            http.server|webview-server.py|*/webview-server.py) has_http_server=1 ;;
         esac
         [ "$arg" = "$CODEX_LINUX_WEBVIEW_PORT" ] && has_port=1
     done

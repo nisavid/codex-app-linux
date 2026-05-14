@@ -104,10 +104,6 @@ package_with_updater_enabled() {
     [ "$(package_with_updater_value)" = "1" ]
 }
 
-package_updater_enabled() {
-    package_with_updater_enabled
-}
-
 render_desktop_entry() {
     local target="$1"
     local package_name

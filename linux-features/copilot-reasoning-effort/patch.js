@@ -85,10 +85,11 @@ function applyCopilotReasoningEffortModelListPatch(currentSource) {
 function applyCopilotReasoningEffortUiPatch(currentSource) {
   let patchedSource = currentSource;
 
-  const reasoningDropdownPatch = "disabled:!1,RightIcon:t===O?rg:void 0,onSelect:()=>{i.get(bh).log({eventName:`codex_composer_reasoning_effort_changed`";
+  const reasoningDropdownPatchedRegex =
+    /disabled:!1,RightIcon:[A-Za-z_$][\w$]*===[A-Za-z_$][\w$]*\?rg:void 0,onSelect:\(\)=>\{[A-Za-z_$][\w$]*\.get\(bh\)\.log\(\{eventName:`codex_composer_reasoning_effort_changed`/;
   const reasoningDropdownRegex =
     /disabled:([A-Za-z_$][\w$]*),RightIcon:([A-Za-z_$][\w$]*)===([A-Za-z_$][\w$]*)\?rg:void 0,onSelect:\(\)=>\{([A-Za-z_$][\w$]*)\.get\(bh\)\.log\(\{eventName:`codex_composer_reasoning_effort_changed`/;
-  if (patchedSource.includes(reasoningDropdownPatch)) {
+  if (reasoningDropdownPatchedRegex.test(patchedSource)) {
     // Already patched.
   } else if (reasoningDropdownRegex.test(patchedSource)) {
     patchedSource = patchedSource.replace(
