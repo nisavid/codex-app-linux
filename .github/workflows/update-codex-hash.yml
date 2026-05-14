@@ -34,7 +34,7 @@ jobs:
           fi
 
           CODEX_DMG_HASH="$(scripts/ci/update-nix-hashes.sh read-flake-hash 'codexDmg = pkgs.fetchurl {' 'hash = ')"
-          PAYLOAD_HASH="$(scripts/ci/update-nix-hashes.sh read-flake-hash 'codexDesktopPayload = pkgs.stdenv.mkDerivation {' 'outputHash = ')"
+          PAYLOAD_HASH="$(scripts/ci/update-nix-hashes.sh read-flake-hash 'codexAppPayload = pkgs.stdenv.mkDerivation {' 'outputHash = ')"
 
           git config user.name  "codex-dmg-hash-bot"
           git config user.email "actions@github.com"
@@ -45,27 +45,41 @@ jobs:
           git commit \
             -m "fix(nix): update upstream Nix hashes" \
             -m "Refreshed Codex.dmg SRI hash to $CODEX_DMG_HASH." \
-            -m "Refreshed codexDesktopPayload recursive outputHash to $PAYLOAD_HASH." \
-            -m "[skip ci]"
+            -m "Refreshed codexAppPayload recursive outputHash to $PAYLOAD_HASH." \
+            -m "[skip ci]" \
+            -m "Co-authored-by: Codex <noreply@openai.com>"
           git push --force-with-lease origin "$BRANCH"
 
           PR_BODY="Refreshed Codex.dmg SRI hash to \`$CODEX_DMG_HASH\`.
 
-          Refreshed codexDesktopPayload recursive outputHash to \`$PAYLOAD_HASH\`.
+          Refreshed codexAppPayload recursive outputHash to \`$PAYLOAD_HASH\`.
 
-          This scheduled workflow opens a PR for maintainer review instead of pushing directly to main."
+          This scheduled workflow pushes refreshed hashes to \`$BRANCH\` and attempts to open or update a PR for maintainer review."
 
           PR_NUMBER="$(gh pr list --repo nisavid/codex-app-linux --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          PR_ACTION_FAILED=0
           if [ -n "$PR_NUMBER" ]; then
             gh pr edit "$PR_NUMBER" \
               --repo nisavid/codex-app-linux \
               --title "fix(nix): update upstream Nix hashes" \
-              --body "$PR_BODY"
+              --body "$PR_BODY" || PR_ACTION_FAILED=1
           else
             gh pr create \
               --repo nisavid/codex-app-linux \
               --base main \
               --head "$BRANCH" \
               --title "fix(nix): update upstream Nix hashes" \
-              --body "$PR_BODY"
+              --body "$PR_BODY" || PR_ACTION_FAILED=1
+          fi
+
+          if [ "$PR_ACTION_FAILED" -ne 0 ]; then
+            echo "::warning::Pushed refreshed hashes to $BRANCH, but could not create or update the PR."
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              {
+                echo "### Hash update PR not created"
+                echo
+                echo "The workflow pushed refreshed hashes to \`$BRANCH\`, but the workflow token could not create or update the PR."
+                echo "Open or update the PR manually from \`$BRANCH\`."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
