@@ -327,7 +327,7 @@ SCRIPT
     assert_file_exists "$dist_dir/codex-app_2026.03.24.120000+deadbeef_amd64.deb"
     assert_file_exists "$pkg_root/DEBIAN/postinst"
     assert_file_exists "$pkg_root/DEBIAN/prerm"
-    assert_file_not_exists "$pkg_root/DEBIAN/postrm"
+    assert_file_exists "$pkg_root/DEBIAN/postrm"
     assert_not_contains "$pkg_root/DEBIAN/control" "build-essential"
     assert_not_contains "$pkg_root/DEBIAN/control" "curl"
     assert_not_contains "$pkg_root/DEBIAN/control" "p7zip-full"
@@ -342,6 +342,8 @@ SCRIPT
     assert_contains "$pkg_root/usr/lib/codex-app/no-updater-transition-cleanup.sh" "codex_no_updater_cleanup_user_enablement_links"
     assert_contains "$pkg_root/DEBIAN/postinst" "codex_no_updater_cleanup_update_manager_service"
     assert_contains "$pkg_root/DEBIAN/prerm" "codex_no_updater_cleanup_update_manager_service"
+    assert_contains "$pkg_root/DEBIAN/postrm" "codex_no_updater_cleanup_update_manager_service"
+    assert_contains "$pkg_root/DEBIAN/postrm" "update-desktop-database"
     assert_not_contains "$pkg_root/DEBIAN/postinst" "update-builder"
     assert_not_contains "$pkg_root/DEBIAN/prerm" "update-builder"
     assert_not_contains "$pkg_root/usr/share/applications/codex-app.desktop" "Actions=CheckForUpdates;InstallReadyUpdate;"
@@ -1032,6 +1034,10 @@ PY
         fail "Expected webview-server.py with invalid port to fail with usage"
     fi
     assert_contains "$TMP_DIR/webview-server-invalid-port.log" "Usage: webview-server.py"
+    if python3 "$REPO_DIR/launcher/webview-server.py" 70000 > "$TMP_DIR/webview-server-out-of-range-port.log" 2>&1; then
+        fail "Expected webview-server.py with out-of-range port to fail with usage"
+    fi
+    assert_contains "$TMP_DIR/webview-server-out-of-range-port.log" "Usage: webview-server.py"
 
     local launcher_probe
     local output

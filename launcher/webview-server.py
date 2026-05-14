@@ -15,6 +15,8 @@ try:
     port = int(sys.argv[1])
 except ValueError:
     usage()
+if port < 1 or port > 65535:
+    usage()
 
 bind = "127.0.0.1"
 if len(sys.argv) >= 4 and sys.argv[2] == "--bind":

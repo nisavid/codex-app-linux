@@ -683,6 +683,7 @@ impl ComputerUseLinux {
                 });
             }
         };
+        let mut allow_portal_keyboard_fallback = false;
         if self.should_prefer_kde_clipboard_text_backend() {
             match self.ensure_portal_keyboard_session().await {
                 Ok(Some(session)) => {
@@ -708,6 +709,8 @@ impl ComputerUseLinux {
                                     focus,
                                 ));
                             }
+                            allow_portal_keyboard_fallback = self.is_kde_wayland_session()
+                                && self.cached_portal_keyboard_session().is_some();
                         }
                     }
                 }
@@ -715,7 +718,7 @@ impl ComputerUseLinux {
                 Err(_) => {}
             }
         }
-        if self.should_prefer_portal_keyboard_backend() {
+        if self.should_prefer_portal_keyboard_backend() || allow_portal_keyboard_fallback {
             if let Ok(keysyms) = keysyms_for_text(&params.text) {
                 match self.ensure_portal_keyboard_session().await {
                     Ok(Some(session)) => match type_text_with_keysyms(&session, &keysyms).await {
@@ -2212,12 +2215,7 @@ async fn kde_clipboard_contents() -> std::result::Result<String, String> {
     .await
     .map_err(|_| "KDE clipboard getClipboardContents timed out".to_string())?
     .map_err(|error| format!("KDE clipboard getClipboardContents failed: {error}"))?;
-    Ok(strip_qdbus_output_terminator(&output))
-}
-
-fn strip_qdbus_output_terminator(output: &str) -> String {
-    let output = output.strip_suffix('\n').unwrap_or(output);
-    output.strip_suffix('\r').unwrap_or(output).to_string()
+    Ok(output)
 }
 
 async fn kde_set_clipboard_contents(text: &str) -> std::result::Result<(), String> {
@@ -3093,17 +3091,6 @@ mod tests {
     fn ydotool_type_timeout_scales_with_text_length() {
         assert_eq!(ydotool_type_timeout("short").as_secs(), 10);
         assert!(ydotool_type_timeout(&"x".repeat(500)).as_secs() > 10);
-    }
-
-    #[test]
-    fn qdbus_clipboard_output_removes_only_command_terminator() {
-        assert_eq!(strip_qdbus_output_terminator("one line\n"), "one line");
-        assert_eq!(strip_qdbus_output_terminator("one line\r\n"), "one line");
-        assert_eq!(
-            strip_qdbus_output_terminator("multiline\nclipboard\n\n"),
-            "multiline\nclipboard\n"
-        );
-        assert_eq!(strip_qdbus_output_terminator("\n\n"), "\n");
     }
 
     #[tokio::test]

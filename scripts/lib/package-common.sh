@@ -313,6 +313,31 @@ SCRIPT
     chmod 0755 "$target"
 }
 
+write_no_updater_deb_postrm() {
+    local target="$1"
+    local package_name
+
+    package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
+    cat > "$target" <<SCRIPT
+#!/bin/sh
+set -eu
+
+CLEANUP_HELPER="/usr/lib/$package_name/no-updater-transition-cleanup.sh"
+if [ -f "\$CLEANUP_HELPER" ]; then
+    # shellcheck source=/usr/lib/$package_name/no-updater-transition-cleanup.sh
+    . "\$CLEANUP_HELPER"
+    codex_no_updater_cleanup_update_manager_service || true
+fi
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+fi
+
+exit 0
+SCRIPT
+    chmod 0755 "$target"
+}
+
 write_no_updater_pacman_install_hooks() {
     local target="$1"
     local package_name

@@ -112,6 +112,7 @@ main() {
     else
         write_no_updater_deb_postinst "$PKG_ROOT/DEBIAN/postinst"
         write_no_updater_deb_prerm "$PKG_ROOT/DEBIAN/prerm"
+        write_no_updater_deb_postrm "$PKG_ROOT/DEBIAN/postrm"
     fi
 
     mkdir -p "$DIST_DIR"
