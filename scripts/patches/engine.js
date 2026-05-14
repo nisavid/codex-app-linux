@@ -4,7 +4,6 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   captureWarnings,
-  patchStatusFromChange,
   recordPatch,
 } = require("../lib/patch-report.js");
 const {

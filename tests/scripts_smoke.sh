@@ -921,6 +921,7 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/scripts/lib/rebuild-report.sh" "write_rebuild_report_json"
     assert_contains "$REPO_DIR/install.sh" "MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_41=\"12.9.0\""
     assert_contains "$REPO_DIR/install.sh" "MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=\"12.10.0\""
+    assert_contains "$REPO_DIR/install.sh" "error \"Webview server helper not found"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "better_sqlite3_build_version"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "CODEX_ELECTRON_CACHE_DIR"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "--continue-at -"
@@ -930,6 +931,9 @@ test_launcher_template_sanity() {
     assert_not_contains "$REPO_DIR/scripts/lib/package-common.sh" "package_updater_enabled()"
     assert_contains "$REPO_DIR/launcher/start.sh.template" 'python3 "$SCRIPT_DIR/.codex-linux/webview-server.py" "$CODEX_LINUX_WEBVIEW_PORT" --bind 127.0.0.1'
     assert_contains "$REPO_DIR/launcher/start.sh.template" '*/webview-server.py'
+    assert_not_contains "$REPO_DIR/launcher/start.sh.template" 'chmod -R'
+    assert_contains "$REPO_DIR/launcher/start.sh.template" '[ ! -L "$path" ] || return 0'
+    assert_contains "$REPO_DIR/launcher/start.sh.template" '[ ! -L "$marketplace_tmp_root" ] || return 0'
     assert_contains "$REPO_DIR/launcher/start.sh.template" "WEBVIEW_PID_FILE"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "owned_webview_server_pid"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "discover_webview_server_pid"

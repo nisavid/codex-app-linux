@@ -61,11 +61,9 @@ SCRIPT
 
     chmod +x "$INSTALL_DIR/start.sh"
     mkdir -p "$INSTALL_DIR/.codex-linux"
-    if [ -f "$SCRIPT_DIR/launcher/webview-server.py" ]; then
-        cp "$SCRIPT_DIR/launcher/webview-server.py" "$INSTALL_DIR/.codex-linux/webview-server.py"
-    else
-        warn "Webview server helper not found at $SCRIPT_DIR/launcher/webview-server.py"
-    fi
+    [ -f "$SCRIPT_DIR/launcher/webview-server.py" ] ||
+        error "Webview server helper not found at $SCRIPT_DIR/launcher/webview-server.py"
+    cp "$SCRIPT_DIR/launcher/webview-server.py" "$INSTALL_DIR/.codex-linux/webview-server.py"
     if [ -f "$ICON_SOURCE" ]; then
         cp "$ICON_SOURCE" "$INSTALL_DIR/.codex-linux/$CODEX_APP_ID.png"
     else

@@ -225,13 +225,13 @@ package_file_or_fail() {
 assert_contains_file() {
     local path="$1"
     local pattern="$2"
-    grep -q -- "$pattern" "$path" || error "Expected '$pattern' in $path"
+    grep -Fq -- "$pattern" "$path" || error "Expected '$pattern' in $path"
 }
 
 assert_not_contains_file() {
     local path="$1"
     local pattern="$2"
-    if grep -q -- "$pattern" "$path"; then
+    if grep -Fq -- "$pattern" "$path"; then
         error "Did not expect '$pattern' in $path"
     fi
 }

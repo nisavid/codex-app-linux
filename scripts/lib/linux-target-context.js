@@ -61,7 +61,7 @@ function readFirstOsRelease(paths) {
     try {
       return { path: filePath, fields: parseOsRelease(fs.readFileSync(filePath, "utf8")) };
     } catch {
-      return { path: filePath, fields: Object.create(null) };
+      continue;
     }
   }
   return { path: null, fields: Object.create(null) };

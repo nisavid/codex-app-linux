@@ -141,6 +141,36 @@ test("Linux target context parses distro, package, and desktop details", () => {
   }
 });
 
+test("Linux target context falls back after unreadable os-release candidates", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-linux-target-fallback-"));
+  try {
+    const unreadablePath = path.join(tempRoot, "unreadable-os-release");
+    const osReleasePath = path.join(tempRoot, "os-release");
+    fs.mkdirSync(unreadablePath);
+    fs.writeFileSync(
+      osReleasePath,
+      [
+        "ID=fedora",
+        "VERSION_ID=\"42\"",
+        "PRETTY_NAME=\"Fedora Linux 42\"",
+      ].join("\n"),
+    );
+
+    const target = detectLinuxTargetContext({
+      env: {
+        PATH: "",
+      },
+      osReleasePaths: [unreadablePath, osReleasePath],
+    });
+
+    assert.equal(target.osReleasePath, osReleasePath);
+    assert.equal(target.distro.id, "fedora");
+    assert.equal(target.packageFormat, "rpm");
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("auto-discovered core patches can target a specific Linux distro", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-core-patch-root-"));
   try {

@@ -146,14 +146,20 @@ log_phase() {
 make_tree_owner_writable() {
     local path="$1"
 
-    [ -e "$path" ] || return 0
-    chmod -R u+rwX "$path" 2>/dev/null || true
+    [ -e "$path" ] || [ -L "$path" ] || return 0
+    [ ! -L "$path" ] || return 0
+    if [ -d "$path" ]; then
+        find "$path" -type d -exec chmod u+rwx {} + 2>/dev/null || true
+        find "$path" -type f -exec chmod u+rw {} + 2>/dev/null || true
+    else
+        chmod u+rw "$path" 2>/dev/null || true
+    fi
 }
 
 remove_tree_if_exists() {
     local path="$1"
 
-    [ -e "$path" ] || return 0
+    [ -e "$path" ] || [ -L "$path" ] || return 0
     make_tree_owner_writable "$path"
     rm -rf "$path"
 }
@@ -163,6 +169,7 @@ fix_bundled_marketplace_tmp_permissions() {
     local marketplace_tmp_root="$codex_home/.tmp/bundled-marketplaces"
 
     [ -d "$marketplace_tmp_root" ] || return 0
+    [ ! -L "$marketplace_tmp_root" ] || return 0
     find "$marketplace_tmp_root" -type d -exec chmod u+rwx {} + 2>/dev/null || true
     find "$marketplace_tmp_root" -type f -exec chmod u+rw {} + 2>/dev/null || true
 }
@@ -172,6 +179,10 @@ clear_bundled_marketplace_tmp_cache() {
     local marketplace_tmp_root="$codex_home/.tmp/bundled-marketplaces"
     local path
 
+    if [ -L "$marketplace_tmp_root" ]; then
+        rm -f "$marketplace_tmp_root"
+        return 0
+    fi
     fix_bundled_marketplace_tmp_permissions
     for path in "$marketplace_tmp_root"/openai-bundled "$marketplace_tmp_root"/openai-bundled.staging-*; do
         [ -e "$path" ] || continue
