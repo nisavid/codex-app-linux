@@ -202,7 +202,7 @@ PY
 
           outputHashAlgo = "sha256";
           outputHashMode = "recursive";
-          outputHash = "sha256-Mckt6xOP0tcmhsezQTboLTB7u3Xws+3ruq2A6jo5R5I=";
+          outputHash = "sha256-5UfktERIPiKm5kUytlqqk7NHhwmLLU28E/xrzjkuts4=";
           unsafeDiscardReferences.out = true;
 
           dontConfigure = true;
@@ -231,8 +231,7 @@ PY
             patchShebangs "$npm_tools"
             export PATH="$npm_tools/node_modules/.bin:$PATH"
             substituteInPlace "$source_dir/scripts/lib/asar-patch.sh" \
-              --replace-fail "npx --yes asar" "asar" \
-              --replace-fail "npx asar" "asar"
+              --replace-fail "npx --yes asar" "asar"
             substituteInPlace "$source_dir/scripts/lib/dmg.sh" \
               --replace-fail "npx --yes asar" "asar"
             substituteInPlace "$source_dir/scripts/lib/native-modules.sh" \

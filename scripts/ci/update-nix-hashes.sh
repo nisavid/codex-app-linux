@@ -146,10 +146,10 @@ main() {
         exit 1
     fi
 
-    current_payload_hash="$(read_flake_hash "codexDesktopPayload = pkgs.stdenv.mkDerivation {" "outputHash = ")"
+    current_payload_hash="$(read_flake_hash "codexAppPayload = pkgs.stdenv.mkDerivation {" "outputHash = ")"
     echo "Current payload outputHash: $current_payload_hash"
     echo "Actual payload outputHash:  $new_payload_hash"
-    replace_flake_hash "codexDesktopPayload = pkgs.stdenv.mkDerivation {" "outputHash = " "$new_payload_hash"
+    replace_flake_hash "codexAppPayload = pkgs.stdenv.mkDerivation {" "outputHash = " "$new_payload_hash"
 
     run_nix_build "$VERIFY_LOG"
     echo "Nix build succeeded after refreshing the payload outputHash."
