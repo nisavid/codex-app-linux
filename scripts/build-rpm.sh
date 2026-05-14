@@ -91,7 +91,7 @@ SCRIPT
     local updater_preun=""
     local updater_postun=""
     if package_updater_enabled; then
-        updater_requires="Requires:       polkit, curl, unzip, gcc-c++, make"
+        updater_requires="Requires:       /usr/bin/7z, polkit, curl, unzip, gcc-c++, make"
         updater_description="Local auto-updates rebuild a Linux package from the upstream Codex.dmg and therefore
 use the bundled managed Node.js runtime plus the local packaging toolchain listed in Requires."
         updater_files="/usr/bin/codex-app-updater
