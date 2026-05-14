@@ -190,17 +190,6 @@ clear_bundled_marketplace_tmp_cache() {
     done
 }
 
-monitor_bundled_marketplace_tmp_permissions() {
-    (
-        local i=0
-        while [ "$i" -lt 300 ]; do
-            fix_bundled_marketplace_tmp_permissions
-            sleep 0.1
-            i=$((i + 1))
-        done
-    ) &
-}
-
 import_graphical_env_entry() {
     local entry="$1"
     local name="${entry%%=*}"
@@ -1826,12 +1815,10 @@ fi
 export_packaged_runtime_env
 if needs_cold_start; then
     clear_bundled_marketplace_tmp_cache
-    # The runtime marketplace is populated asynchronously and can briefly
-    # recreate read-only plugin cache trees before the sync below replaces them.
-    monitor_bundled_marketplace_tmp_permissions
     sync_browser_use_bundled_plugin_cache
     sync_chrome_bundled_plugin_cache
     sync_computer_use_bundled_plugin_cache
+    fix_bundled_marketplace_tmp_permissions
 fi
 resolve_browser_use_runtime_env
 

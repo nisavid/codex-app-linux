@@ -949,8 +949,22 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/launcher/start.sh.template" 'python3 "$SCRIPT_DIR/.codex-linux/webview-server.py" "$CODEX_LINUX_WEBVIEW_PORT" --bind 127.0.0.1'
     assert_contains "$REPO_DIR/launcher/start.sh.template" '*/webview-server.py'
     assert_not_contains "$REPO_DIR/launcher/start.sh.template" 'chmod -R'
+    assert_not_contains "$REPO_DIR/launcher/start.sh.template" 'monitor_bundled_marketplace_tmp_permissions'
     assert_contains "$REPO_DIR/launcher/start.sh.template" '[ ! -L "$path" ] || return 0'
     assert_contains "$REPO_DIR/launcher/start.sh.template" '[ ! -L "$marketplace_tmp_root" ] || return 0'
+    node - "$REPO_DIR/scripts/patches/registry.js" <<'NODE'
+const registry = require(process.argv[2]);
+for (const name of [
+  "COMPUTER_USE_UI_ASSET_PATCHES",
+  "MAIN_BUNDLE_PATCHES",
+  "WEBVIEW_ASSET_PATCHES",
+]) {
+  const descriptor = Object.getOwnPropertyDescriptor(registry, name);
+  if (descriptor == null || typeof descriptor.get !== "function") {
+    throw new Error(`${name} must be exported as a lazy getter`);
+  }
+}
+NODE
     assert_contains "$REPO_DIR/launcher/start.sh.template" "WEBVIEW_PID_FILE"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "owned_webview_server_pid"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "discover_webview_server_pid"

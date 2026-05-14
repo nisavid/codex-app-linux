@@ -224,21 +224,23 @@ function requiredPatchNamesForProfile(profile, options = {}) {
     .map((patch) => patch.name);
 }
 
-const EXPORTED_CORE_PATCHES = corePatchDescriptors();
-const MAIN_BUNDLE_PATCHES = EXPORTED_CORE_PATCHES.filter((patch) => patch.phase === "main-bundle");
-const WEBVIEW_ASSET_PATCHES = EXPORTED_CORE_PATCHES.filter((patch) => patch.phase === "webview-asset");
-const COMPUTER_USE_UI_ASSET_PATCHES = WEBVIEW_ASSET_PATCHES.filter((patch) =>
-  patch.id.startsWith("linux-computer-use-"),
-);
+function exportedMainBundlePatches() {
+  return corePatchDescriptors().filter((patch) => patch.phase === "main-bundle");
+}
+
+function exportedWebviewAssetPatches() {
+  return corePatchDescriptors().filter((patch) => patch.phase === "webview-asset");
+}
+
+function exportedComputerUseUiAssetPatches() {
+  return exportedWebviewAssetPatches().filter((patch) => patch.id.startsWith("linux-computer-use-"));
+}
 
 module.exports = {
-  COMPUTER_USE_UI_ASSET_PATCHES,
   CUSTOM_PATCH_POLICIES,
-  MAIN_BUNDLE_PATCHES,
   OPTIONAL,
   OPT_IN,
   REQUIRED_UPSTREAM,
-  WEBVIEW_ASSET_PATCHES,
   allPatchPolicies,
   corePatchDescriptors,
   createMainBundleContext,
@@ -247,4 +249,13 @@ module.exports = {
   patchExtractedApp,
   patchMainBundleSource,
   requiredPatchNamesForProfile,
+  get COMPUTER_USE_UI_ASSET_PATCHES() {
+    return exportedComputerUseUiAssetPatches();
+  },
+  get MAIN_BUNDLE_PATCHES() {
+    return exportedMainBundlePatches();
+  },
+  get WEBVIEW_ASSET_PATCHES() {
+    return exportedWebviewAssetPatches();
+  },
 };
