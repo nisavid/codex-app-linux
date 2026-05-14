@@ -2148,7 +2148,19 @@ fn ydotool_type_timeout(text: &str) -> Duration {
 
 const EVDEV_KEY_LEFTCTRL: i32 = 29;
 const EVDEV_KEY_V: i32 = 47;
-const KDE_CLIPBOARD_RESTORE_DELAY_MS: u64 = 500;
+const KDE_CLIPBOARD_RESTORE_MIN_DELAY_MS: u64 = 1_500;
+const KDE_CLIPBOARD_RESTORE_MAX_DELAY_MS: u64 = 5_000;
+const KDE_CLIPBOARD_RESTORE_CHARS_PER_SECOND: u64 = 250;
+
+fn kde_clipboard_restore_delay(text: &str) -> Duration {
+    let text_delay_ms = (text.chars().count() as u64)
+        .saturating_mul(1_000)
+        .div_ceil(KDE_CLIPBOARD_RESTORE_CHARS_PER_SECOND);
+    Duration::from_millis(text_delay_ms.clamp(
+        KDE_CLIPBOARD_RESTORE_MIN_DELAY_MS,
+        KDE_CLIPBOARD_RESTORE_MAX_DELAY_MS,
+    ))
+}
 
 #[derive(Debug)]
 struct KdeClipboardPasteError {
@@ -2190,7 +2202,7 @@ async fn run_kde_clipboard_paste_text(
         .await
         .map_err(|error| format!("{error:#}"));
 
-    tokio::time::sleep(Duration::from_millis(KDE_CLIPBOARD_RESTORE_DELAY_MS)).await;
+    sleep(kde_clipboard_restore_delay(text)).await;
     let restore_result = kde_set_clipboard_contents(&previous).await;
 
     match (paste_result, restore_result) {
@@ -2788,6 +2800,29 @@ mod tests {
         assert_eq!(compacted.len(), 3);
         assert_eq!(compacted[2].role, "page tab");
         assert_eq!(compacted[2].name.as_deref(), Some("Hidden"));
+    }
+
+    #[test]
+    fn kde_clipboard_restore_delay_uses_minimum_for_short_text() {
+        assert_eq!(
+            kde_clipboard_restore_delay("short"),
+            Duration::from_millis(KDE_CLIPBOARD_RESTORE_MIN_DELAY_MS)
+        );
+    }
+
+    #[test]
+    fn kde_clipboard_restore_delay_scales_and_caps_long_text() {
+        let scaled_text = "x".repeat(1_000);
+        assert_eq!(
+            kde_clipboard_restore_delay(&scaled_text),
+            Duration::from_millis(4_000)
+        );
+
+        let capped_text = "x".repeat(10_000);
+        assert_eq!(
+            kde_clipboard_restore_delay(&capped_text),
+            Duration::from_millis(KDE_CLIPBOARD_RESTORE_MAX_DELAY_MS)
+        );
     }
 
     #[test]
