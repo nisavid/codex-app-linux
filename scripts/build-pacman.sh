@@ -72,18 +72,84 @@ main() {
 	stage_update_builder_bundle "$staging_root"
 	write_launcher_stub "$staging_root"
 
-	sed \
-		-e "s/__PACKAGE_NAME__/$PACKAGE_NAME/g" \
-		-e "s/__PACKAGE_PROVIDES__/$PACKAGE_PROVIDES/g" \
-		-e "s/__PACKAGE_CONFLICTS__/$PACKAGE_CONFLICTS/g" \
-		-e "s/__PKGVER__/$PACMAN_PKGVER/g" \
-		-e "s/__PKGREL__/$PACMAN_PKGREL/g" \
-		-e "s|__STAGING_DIR__|$staging_root|g" \
-		-e "s/__ARCH__/$arch/g" \
-		"$PKGBUILD_TEMPLATE" >"$build_root/PKGBUILD"
-	sed -e "s|/opt/codex-app|/opt/$PACKAGE_NAME|g" \
-		-e "s|/usr/lib/codex-app|/usr/lib/$PACKAGE_NAME|g" \
-		"$INSTALL_HOOKS" >"$build_root/${PACKAGE_NAME}.install"
+	local pacman_updater_depends=""
+	if package_updater_enabled; then
+		pacman_updater_depends="    'p7zip'
+    'polkit'
+    'curl'
+    'unzip'
+    'gcc'
+    'make'"
+	fi
+	AWK_PACKAGE_NAME="$PACKAGE_NAME" \
+	AWK_PACKAGE_PROVIDES="$PACKAGE_PROVIDES" \
+	AWK_PACKAGE_CONFLICTS="$PACKAGE_CONFLICTS" \
+	AWK_PKGVER="$PACMAN_PKGVER" \
+	AWK_PKGREL="$PACMAN_PKGREL" \
+	AWK_STAGING_DIR="$staging_root" \
+	AWK_ARCH="$arch" \
+	AWK_PACMAN_UPDATER_DEPENDS="$pacman_updater_depends" \
+	awk '
+		function emit_env(name) {
+			if (ENVIRON[name] != "") {
+				print ENVIRON[name]
+			}
+		}
+		{
+			if ($0 == "__PACMAN_UPDATER_DEPENDS__") { emit_env("AWK_PACMAN_UPDATER_DEPENDS"); next }
+			gsub(/__PACKAGE_NAME__/, ENVIRON["AWK_PACKAGE_NAME"])
+			gsub(/__PACKAGE_PROVIDES__/, ENVIRON["AWK_PACKAGE_PROVIDES"])
+			gsub(/__PACKAGE_CONFLICTS__/, ENVIRON["AWK_PACKAGE_CONFLICTS"])
+			gsub(/__PKGVER__/, ENVIRON["AWK_PKGVER"])
+			gsub(/__PKGREL__/, ENVIRON["AWK_PKGREL"])
+			gsub(/__STAGING_DIR__/, ENVIRON["AWK_STAGING_DIR"])
+			gsub(/__ARCH__/, ENVIRON["AWK_ARCH"])
+			print
+		}
+	' "$PKGBUILD_TEMPLATE" >"$build_root/PKGBUILD"
+
+	local updater_service_preamble=""
+	local updater_post_install=""
+	local updater_pre_remove="    :"
+	local updater_post_remove="    :"
+	if package_updater_enabled; then
+		updater_service_preamble="SERVICE_HELPER=\"/usr/lib/$PACKAGE_NAME/update-builder/packaging/linux/codex-app-updater-user-service.sh\"
+if [ -f \"\$SERVICE_HELPER\" ]; then
+    # shellcheck source=/usr/lib/$PACKAGE_NAME/update-builder/packaging/linux/codex-app-updater-user-service.sh
+    . \"\$SERVICE_HELPER\"
+fi"
+		updater_post_install="    if [ -f \"\$SERVICE_HELPER\" ]; then
+        codex_ensure_user_service_running || true
+    fi"
+		updater_pre_remove="    if [ -f \"\$SERVICE_HELPER\" ]; then
+        codex_cleanup_user_service stop || true
+        codex_cleanup_user_service disable || true
+    fi"
+		updater_post_remove="    if [ -f \"\$SERVICE_HELPER\" ]; then
+        codex_reload_user_managers || true
+    fi"
+	fi
+	AWK_PACKAGE_NAME="$PACKAGE_NAME" \
+	AWK_UPDATER_SERVICE_PREAMBLE="$updater_service_preamble" \
+	AWK_UPDATER_POST_INSTALL="$updater_post_install" \
+	AWK_UPDATER_PRE_REMOVE="$updater_pre_remove" \
+	AWK_UPDATER_POST_REMOVE="$updater_post_remove" \
+	awk '
+		function emit_env(name) {
+			if (ENVIRON[name] != "") {
+				print ENVIRON[name]
+			}
+		}
+		{
+			if ($0 == "__UPDATER_SERVICE_PREAMBLE__") { emit_env("AWK_UPDATER_SERVICE_PREAMBLE"); next }
+			if ($0 == "__UPDATER_POST_INSTALL__") { emit_env("AWK_UPDATER_POST_INSTALL"); next }
+			if ($0 == "__UPDATER_PRE_REMOVE__") { emit_env("AWK_UPDATER_PRE_REMOVE"); next }
+			if ($0 == "__UPDATER_POST_REMOVE__") { emit_env("AWK_UPDATER_POST_REMOVE"); next }
+			gsub(/\/opt\/codex-app/, "/opt/" ENVIRON["AWK_PACKAGE_NAME"])
+			gsub(/\/usr\/lib\/codex-app/, "/usr/lib/" ENVIRON["AWK_PACKAGE_NAME"])
+			print
+		}
+	' "$INSTALL_HOOKS" >"$build_root/${PACKAGE_NAME}.install"
 
 	mkdir -p "$DIST_DIR"
 	info "Building ${PACKAGE_NAME}-${PACMAN_PKGVER}-${PACMAN_PKGREL}-${arch}.pkg.tar.zst"

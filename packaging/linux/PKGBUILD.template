@@ -10,12 +10,7 @@ provides=('__PACKAGE_PROVIDES__')
 conflicts=('__PACKAGE_CONFLICTS__')
 depends=(
     'python'
-    'p7zip'
-    'polkit'
-    'curl'
-    'unzip'
-    'gcc'
-    'make'
+__PACMAN_UPDATER_DEPENDS__
     # Electron runtime libraries
     'alsa-lib'
     'at-spi2-core'
