@@ -52,6 +52,7 @@ pub struct ComputerUseLinux {
     last_nodes: Arc<Mutex<Vec<AccessibilityNode>>>,
     portal_pointer_session: Arc<Mutex<Option<PortalPointerSession>>>,
     portal_keyboard_session: Arc<Mutex<Option<PortalKeyboardSession>>>,
+    portal_keyboard_init_lock: Arc<tokio::sync::Mutex<()>>,
     kde_clipboard_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
@@ -1204,6 +1205,11 @@ impl ComputerUseLinux {
         {
             return Ok(None);
         }
+        if let Some(session) = self.cached_portal_keyboard_session() {
+            return Ok(Some(session));
+        }
+
+        let _init_guard = self.portal_keyboard_init_lock.lock().await;
         if let Some(session) = self.cached_portal_keyboard_session() {
             return Ok(Some(session));
         }

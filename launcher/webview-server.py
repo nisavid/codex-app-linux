@@ -19,9 +19,9 @@ if port < 1 or port > 65535:
     usage()
 
 bind = "127.0.0.1"
-if len(sys.argv) >= 4 and sys.argv[2] == "--bind":
+if len(sys.argv) == 4 and sys.argv[2] == "--bind":
     bind = sys.argv[3]
-elif len(sys.argv) > 2:
+elif len(sys.argv) != 2:
     usage()
 
 

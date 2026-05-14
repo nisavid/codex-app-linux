@@ -893,8 +893,10 @@ recv->InstanceTemplate()->SetNativeDataProperty(
 );
 CPP
 
-    ELECTRON_VERSION=42.0.1 bash -c '. "$1"; patch_better_sqlite3_for_electron_42 "$2"' \
-        _ "$REPO_DIR/scripts/lib/native-modules.sh" "$module_dir"
+    ELECTRON_VERSION=42.0.1 \
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=12.10.0 \
+        bash -c '. "$1"; patch_better_sqlite3_for_electron_42 "$2" "$3"' \
+        _ "$REPO_DIR/scripts/lib/native-modules.sh" "$module_dir" 12.10.0
     assert_contains "$module_dir/src/util/macros.cpp" "Value(v8::kExternalPointerTypeTagDefault)"
     assert_contains "$module_dir/src/better_sqlite3.cpp" "External::New(isolate, addon, v8::kExternalPointerTypeTagDefault)"
     assert_contains "$module_dir/src/util/helpers.cpp" "nullptr,"
@@ -905,11 +907,24 @@ CPP
     printf '%s\n' 'v8::Local<v8::External> data = v8::External::New(isolate, addon);' > "$drifted_module_dir/src/better_sqlite3.cpp"
     printf '%s\n' '        0,' > "$drifted_module_dir/src/util/helpers.cpp"
 
-    if ELECTRON_VERSION=42.0.1 bash -c 'error() { echo "$*" >&2; exit 1; }; . "$1"; patch_better_sqlite3_for_electron_42 "$2"' \
-        _ "$REPO_DIR/scripts/lib/native-modules.sh" "$drifted_module_dir" > "$TMP_DIR/drifted-native-patch.log" 2>&1; then
+    if ELECTRON_VERSION=42.0.1 \
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=12.10.0 \
+        bash -c 'error() { echo "$*" >&2; exit 1; }; . "$1"; patch_better_sqlite3_for_electron_42 "$2" "$3"' \
+        _ "$REPO_DIR/scripts/lib/native-modules.sh" "$drifted_module_dir" 12.10.0 > "$TMP_DIR/drifted-native-patch.log" 2>&1; then
         fail "Expected better-sqlite3 Electron 42 patch to fail when source markers drift"
     fi
     assert_contains "$TMP_DIR/drifted-native-patch.log" "expected ExternalPointer pattern not found"
+
+    local newer_module_dir="$TMP_DIR/better-sqlite3-electron-42-newer"
+    mkdir -p "$newer_module_dir/src/util"
+    printf '%s\n' '#define OnlyAddon static_cast<Addon*>(info.Data().As<v8::External>()->Value())' > "$newer_module_dir/src/util/macros.cpp"
+    printf '%s\n' 'v8::Local<v8::External> data = v8::External::New(isolate, addon);' > "$newer_module_dir/src/better_sqlite3.cpp"
+
+    ELECTRON_VERSION=42.0.1 \
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=12.10.0 \
+        bash -c '. "$1"; patch_better_sqlite3_for_electron_42 "$2" "$3"' \
+        _ "$REPO_DIR/scripts/lib/native-modules.sh" "$newer_module_dir" 12.10.1
+    assert_not_contains "$newer_module_dir/src/util/macros.cpp" "kExternalPointerTypeTagDefault"
 }
 
 test_launcher_template_sanity() {
@@ -1038,6 +1053,10 @@ PY
         fail "Expected webview-server.py with out-of-range port to fail with usage"
     fi
     assert_contains "$TMP_DIR/webview-server-out-of-range-port.log" "Usage: webview-server.py"
+    if python3 "$REPO_DIR/launcher/webview-server.py" 8080 --bind 127.0.0.1 extra > "$TMP_DIR/webview-server-extra-args.log" 2>&1; then
+        fail "Expected webview-server.py with trailing arguments to fail with usage"
+    fi
+    assert_contains "$TMP_DIR/webview-server-extra-args.log" "Usage: webview-server.py"
 
     local launcher_probe
     local output

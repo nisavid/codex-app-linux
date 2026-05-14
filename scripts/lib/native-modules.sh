@@ -32,6 +32,7 @@ better_sqlite3_build_version() {
 
 patch_better_sqlite3_for_electron_42() {
     local module_dir="$1"
+    local module_version="$2"
     local macros="$module_dir/src/util/macros.cpp"
     local helpers="$module_dir/src/util/helpers.cpp"
     local binding="$module_dir/src/better_sqlite3.cpp"
@@ -40,6 +41,7 @@ patch_better_sqlite3_for_electron_42() {
         42.*) ;;
         *) return 0 ;;
     esac
+    [ "$module_version" = "${MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42:-}" ] || return 0
 
     [ -f "$macros" ] || error "Could not patch better-sqlite3: missing $macros"
     [ -f "$helpers" ] || error "Could not patch better-sqlite3: missing $helpers"
@@ -108,7 +110,7 @@ build_native_modules() {
     info "Installing fresh sources from npm..."
     npm install "electron@$ELECTRON_VERSION" --save-dev --ignore-scripts >&2
     npm install "better-sqlite3@$bs3_build_ver" "node-pty@$npty_ver" --ignore-scripts >&2
-    patch_better_sqlite3_for_electron_42 "$build_dir/node_modules/better-sqlite3"
+    patch_better_sqlite3_for_electron_42 "$build_dir/node_modules/better-sqlite3" "$bs3_build_ver"
 
     info "Compiling for Electron v$ELECTRON_VERSION (this takes ~1 min)..."
     info "Using Electron headers: $ELECTRON_HEADERS_URL"
