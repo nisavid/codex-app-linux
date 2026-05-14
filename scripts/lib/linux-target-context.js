@@ -16,6 +16,20 @@ function normalizeToken(value) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function normalizeArch(value) {
+  const arch = normalizeToken(value);
+  switch (arch) {
+    case "x64":
+      return "x86_64";
+    case "arm64":
+      return "aarch64";
+    case "ia32":
+      return "i686";
+    default:
+      return arch;
+  }
+}
+
 function splitTokens(value) {
   return String(value ?? "")
     .split(/\s+/u)
@@ -232,7 +246,7 @@ function detectLinuxTargetContext(options = {}) {
   const desktopTokens = buildDesktopTokens(env);
   const target = {
     osReleasePath: osRelease.path,
-    arch: env.CODEX_LINUX_TARGET_ARCH || process.arch,
+    arch: normalizeArch(env.CODEX_LINUX_TARGET_ARCH || process.arch),
     kernelRelease: env.CODEX_LINUX_TARGET_KERNEL_RELEASE || os.release(),
     distro: {
       id,

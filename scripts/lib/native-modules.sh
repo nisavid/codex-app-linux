@@ -58,7 +58,7 @@ patch_better_sqlite3_for_electron_42() {
         's/v8::External::New(isolate, addon)/v8::External::New(isolate, addon, v8::kExternalPointerTypeTagDefault)/' \
         "$binding"
     grep -qF 'v8::External::New(isolate, addon, v8::kExternalPointerTypeTagDefault)' "$binding" ||
-        error "Could not patch better-sqlite3 binding.cpp: External::New replacement failed"
+        error "Could not patch better-sqlite3 better_sqlite3.cpp: External::New replacement failed"
     grep -qE '^[[:space:]]*0,[[:space:]]*$' "$helpers" ||
         error "Could not patch better-sqlite3 helpers.cpp: expected native data property sentinel not found"
     sed -i \

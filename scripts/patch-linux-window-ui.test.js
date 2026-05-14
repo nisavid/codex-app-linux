@@ -123,6 +123,7 @@ test("Linux target context parses distro, package, and desktop details", () => {
 
     assert.deepEqual(parseOsRelease(fs.readFileSync(osReleasePath, "utf8")).ID_LIKE, "debian");
     assert.equal(target.distro.id, "ubuntu");
+    assert.equal(target.arch, normalizeExpectedArch(process.arch));
     assert.deepEqual(target.distro.idLike, ["debian"]);
     assert.equal(target.distro.versionMajor, 24);
     assert.equal(target.packageFormat, "deb");
@@ -140,6 +141,19 @@ test("Linux target context parses distro, package, and desktop details", () => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+
+function normalizeExpectedArch(value) {
+  switch (value) {
+    case "x64":
+      return "x86_64";
+    case "arm64":
+      return "aarch64";
+    case "ia32":
+      return "i686";
+    default:
+      return value;
+  }
+}
 
 test("Linux target context falls back after unreadable os-release candidates", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-linux-target-fallback-"));

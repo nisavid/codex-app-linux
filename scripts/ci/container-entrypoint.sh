@@ -231,6 +231,7 @@ assert_contains_file() {
 assert_not_contains_file() {
     local path="$1"
     local pattern="$2"
+    [ -f "$path" ] || error "Expected file to exist: $path"
     if grep -Fq -- "$pattern" "$path"; then
         error "Did not expect '$pattern' in $path"
     fi
