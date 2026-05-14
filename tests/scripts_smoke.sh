@@ -144,6 +144,7 @@ SCRIPT
     "$REPO_DIR/scripts/build-deb.sh"
 
     assert_file_exists "$dist_dir/codex-app_2026.03.24.120000+deadbeef_amd64.deb"
+    assert_contains "$pkg_root/DEBIAN/control" "build-essential, curl, dpkg, p7zip-full"
     assert_file_exists "$pkg_root/DEBIAN/prerm"
     assert_file_exists "$pkg_root/DEBIAN/postrm"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/package-common.sh"
@@ -273,6 +274,15 @@ SCRIPT
     "$REPO_DIR/scripts/build-deb.sh"
 
     assert_file_exists "$dist_dir/codex-app_2026.03.24.120000+deadbeef_amd64.deb"
+    assert_file_not_exists "$pkg_root/DEBIAN/postinst"
+    assert_file_not_exists "$pkg_root/DEBIAN/prerm"
+    assert_file_not_exists "$pkg_root/DEBIAN/postrm"
+    assert_not_contains "$pkg_root/DEBIAN/control" "build-essential"
+    assert_not_contains "$pkg_root/DEBIAN/control" "curl"
+    assert_not_contains "$pkg_root/DEBIAN/control" "p7zip-full"
+    assert_not_contains "$pkg_root/DEBIAN/control" "pkexec"
+    assert_not_contains "$pkg_root/DEBIAN/control" "polkit"
+    assert_not_contains "$pkg_root/DEBIAN/control" "Local auto-updates rebuild"
     assert_file_not_exists "$pkg_root/usr/bin/codex-app-updater"
     assert_file_not_exists "$pkg_root/usr/lib/systemd/user/codex-app-updater.service"
     assert_file_not_exists "$pkg_root/usr/share/polkit-1/actions/com.github.nisavid.codex-app.update.policy"
