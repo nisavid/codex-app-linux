@@ -231,8 +231,7 @@ PY
             patchShebangs "$npm_tools"
             export PATH="$npm_tools/node_modules/.bin:$PATH"
             substituteInPlace "$source_dir/scripts/lib/asar-patch.sh" \
-              --replace-fail "npx --yes asar" "asar" \
-              --replace-fail "npx asar" "asar"
+              --replace-fail "npx --yes asar" "asar"
             substituteInPlace "$source_dir/scripts/lib/dmg.sh" \
               --replace-fail "npx --yes asar" "asar"
             substituteInPlace "$source_dir/scripts/lib/native-modules.sh" \

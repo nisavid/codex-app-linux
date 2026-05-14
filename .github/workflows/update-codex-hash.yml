@@ -34,7 +34,7 @@ jobs:
           fi
 
           CODEX_DMG_HASH="$(scripts/ci/update-nix-hashes.sh read-flake-hash 'codexDmg = pkgs.fetchurl {' 'hash = ')"
-          PAYLOAD_HASH="$(scripts/ci/update-nix-hashes.sh read-flake-hash 'codexDesktopPayload = pkgs.stdenv.mkDerivation {' 'outputHash = ')"
+          PAYLOAD_HASH="$(scripts/ci/update-nix-hashes.sh read-flake-hash 'codexAppPayload = pkgs.stdenv.mkDerivation {' 'outputHash = ')"
 
           git config user.name  "codex-dmg-hash-bot"
           git config user.email "actions@github.com"
@@ -45,13 +45,14 @@ jobs:
           git commit \
             -m "fix(nix): update upstream Nix hashes" \
             -m "Refreshed Codex.dmg SRI hash to $CODEX_DMG_HASH." \
-            -m "Refreshed codexDesktopPayload recursive outputHash to $PAYLOAD_HASH." \
-            -m "[skip ci]"
+            -m "Refreshed codexAppPayload recursive outputHash to $PAYLOAD_HASH." \
+            -m "[skip ci]" \
+            -m "Co-authored-by: Codex <noreply@openai.com>"
           git push --force-with-lease origin "$BRANCH"
 
           PR_BODY="Refreshed Codex.dmg SRI hash to \`$CODEX_DMG_HASH\`.
 
-          Refreshed codexDesktopPayload recursive outputHash to \`$PAYLOAD_HASH\`.
+          Refreshed codexAppPayload recursive outputHash to \`$PAYLOAD_HASH\`.
 
           This scheduled workflow opens a PR for maintainer review instead of pushing directly to main."
 
