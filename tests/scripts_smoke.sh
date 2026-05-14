@@ -99,6 +99,47 @@ test_common_helper_sourcing() {
     ensure_file_exists "$probe_file" "probe file"
 }
 
+test_desktop_renderer_preserves_non_updater_actions() {
+    info "Checking no-updater desktop action filtering"
+    local workspace="$TMP_DIR/desktop-actions"
+    local desktop_template="$workspace/codex-app.desktop"
+    local rendered_desktop="$workspace/rendered.desktop"
+
+    mkdir -p "$workspace"
+    cat > "$desktop_template" <<'DESKTOP'
+[Desktop Entry]
+Name=Codex App
+Comment=Run Codex App on Linux
+Exec=/usr/bin/codex-app %u
+Actions=OpenDocs;CheckForUpdates;InstallReadyUpdate;
+
+[Desktop Action OpenDocs]
+Name=Open Docs
+Exec=/usr/bin/codex-app --docs
+
+[Desktop Action CheckForUpdates]
+Name=Check for Updates
+Exec=/usr/bin/codex-app-updater check-now
+
+[Desktop Action InstallReadyUpdate]
+Name=Install Ready Update
+Exec=/usr/bin/codex-app-updater install-ready
+DESKTOP
+
+    # shellcheck disable=SC1091
+    source "$REPO_DIR/scripts/lib/package-common.sh"
+    PACKAGE_NAME="codex-app" \
+    PACKAGE_ENABLE_UPDATER=0 \
+    DESKTOP_TEMPLATE="$desktop_template" \
+    render_desktop_entry "$rendered_desktop"
+
+    assert_contains "$rendered_desktop" "Actions=OpenDocs;"
+    assert_contains "$rendered_desktop" "[Desktop Action OpenDocs]"
+    assert_not_contains "$rendered_desktop" "CheckForUpdates"
+    assert_not_contains "$rendered_desktop" "InstallReadyUpdate"
+    assert_not_contains "$rendered_desktop" "codex-app-updater"
+}
+
 test_deb_builder_smoke() {
     info "Running Debian packaging smoke test"
     local workspace="$TMP_DIR/deb"
@@ -2646,6 +2687,7 @@ test_linux_file_manager_patch_fails_soft() {
 
 main() {
     test_common_helper_sourcing
+    test_desktop_renderer_preserves_non_updater_actions
     test_deb_builder_smoke
     test_deb_builder_respects_package_identity
     test_deb_builder_can_disable_updater
