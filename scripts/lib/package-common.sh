@@ -102,11 +102,26 @@ render_desktop_entry() {
         filtered_target="$(mktemp "$temp_dir/.${PACKAGE_NAME}.desktop.XXXXXX")" || \
             error "Failed to create filtered desktop entry"
         awk '
+            /^Actions=/ {
+                rendered = ""
+                action_count = split(substr($0, 9), actions, ";")
+                for (i = 1; i <= action_count; i++) {
+                    if (actions[i] == "" ||
+                        actions[i] == "CheckForUpdates" ||
+                        actions[i] == "InstallReadyUpdate") {
+                        continue
+                    }
+                    rendered = rendered actions[i] ";"
+                }
+                if (rendered != "") {
+                    print "Actions=" rendered
+                }
+                next
+            }
             /^\[Desktop Action CheckForUpdates\]$/ { skip = 1; next }
             /^\[Desktop Action InstallReadyUpdate\]$/ { skip = 1; next }
             /^\[/ { skip = 0 }
             skip { next }
-            /^Actions=CheckForUpdates;InstallReadyUpdate;$/ { next }
             { print }
         ' "$temp_target" > "$filtered_target"
         mv "$filtered_target" "$target"
