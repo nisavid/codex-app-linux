@@ -278,10 +278,20 @@ pub async fn press_keycode_chord(
     let proxy = remote_desktop_proxy(&session.connection).await?;
     let mut pressed = Vec::new();
     for modifier in modifiers {
-        notify_keyboard_keycode(&proxy, &session.session_handle, *modifier, KEY_PRESSED).await?;
+        if let Err(error) =
+            notify_keyboard_keycode(&proxy, &session.session_handle, *modifier, KEY_PRESSED).await
+        {
+            release_pressed_keycodes(&proxy, &session.session_handle, &mut pressed).await;
+            return Err(error);
+        }
         pressed.push(*modifier);
     }
-    notify_keyboard_keycode(&proxy, &session.session_handle, keycode, KEY_PRESSED).await?;
+    if let Err(error) =
+        notify_keyboard_keycode(&proxy, &session.session_handle, keycode, KEY_PRESSED).await
+    {
+        release_pressed_keycodes(&proxy, &session.session_handle, &mut pressed).await;
+        return Err(error);
+    }
     pressed.push(keycode);
     tokio::time::sleep(Duration::from_millis(35)).await;
     if let Err(error) =
