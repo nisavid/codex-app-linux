@@ -36,8 +36,11 @@ Then rerun `./install.sh` or rebuild the package so the generated app picks up
 the changed feature list.
 
 For packaged installs and updater rebuilds, put the same JSON shape at
-`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json`. For one-off
-builds, set `CODEX_LINUX_FEATURES_CONFIG=/path/to/file.json`.
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json`. Checkout
+builds ignore that persistent user file when the repo has a `.git` directory or
+worktree pointer, so use `linux-features/features.json` or
+`CODEX_LINUX_FEATURES_CONFIG` for development builds. For one-off builds, set
+`CODEX_LINUX_FEATURES_CONFIG=/path/to/file.json`.
 
 This feature is broader than `zed-opener`. If both are enabled, `zed-opener`
 can provide the focused Zed target while this feature avoids adding a second

@@ -57,8 +57,11 @@ has already been generated, rerun the install/build step.
 
 Packaged installs and updater rebuilds can use a persistent user override at
 `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` with the same
-shape. For one-off builds, set `CODEX_LINUX_FEATURES_CONFIG=/path/to/file.json`
-to point at an explicit config file.
+shape. Checkout builds intentionally ignore that persistent user file when the
+repo has a `.git` directory or worktree pointer, so packaged-install preferences
+do not silently change local development builds or tests. For one-off builds,
+set `CODEX_LINUX_FEATURES_CONFIG=/path/to/file.json` to point at an explicit
+config file.
 
 Each feature directory should include:
 

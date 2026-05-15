@@ -158,7 +158,8 @@ To disable default features or enable other optional integrations, copy
 `linux-features/features.json`, edit the `enabled` and `disabled` lists, then
 rebuild. Packaged installs can use
 `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` for the same
-override shape.
+override shape; checkout builds ignore that persistent user file and use
+`linux-features/features.json` or `CODEX_LINUX_FEATURES_CONFIG` instead.
 See [`linux-features/README.md`](linux-features/README.md) for the feature
 contract.
 

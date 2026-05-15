@@ -28,7 +28,7 @@ function linuxFeaturesConfigPath(featuresRoot) {
   if (fs.existsSync(localConfig)) {
     return localConfig;
   }
-  const userConfig = linuxFeaturesUserConfigPath();
+  const userConfig = isCheckoutLinuxFeaturesRoot(featuresRoot) ? null : linuxFeaturesUserConfigPath();
   if (userConfig != null && fs.existsSync(userConfig)) {
     return userConfig;
   }
@@ -36,11 +36,22 @@ function linuxFeaturesConfigPath(featuresRoot) {
 }
 
 function linuxFeaturesConfigAppId() {
-  const configured = (process.env.CODEX_APP_ID ?? process.env.CODEX_LINUX_APP_ID ?? "").trim();
-  if (APP_CONFIG_ID_PATTERN.test(configured)) {
-    return configured;
+  for (const value of [process.env.CODEX_APP_ID, process.env.CODEX_LINUX_APP_ID]) {
+    const configured = value?.trim();
+    if (configured && APP_CONFIG_ID_PATTERN.test(configured)) {
+      return configured;
+    }
   }
   return "codex-app";
+}
+
+function isCheckoutLinuxFeaturesRoot(featuresRoot) {
+  const resolvedRoot = path.resolve(featuresRoot);
+  if (path.basename(resolvedRoot) !== "linux-features") {
+    return false;
+  }
+  const repoRoot = path.dirname(resolvedRoot);
+  return fs.existsSync(path.join(repoRoot, ".git"));
 }
 
 function linuxFeaturesUserConfigPath() {

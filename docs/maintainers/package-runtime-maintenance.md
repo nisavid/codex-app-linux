@@ -147,9 +147,10 @@ The ASAR patch step currently:
   `"codex-linux-computer-use-ui-enabled": true`.
 - applies `open-target-discovery` by default through `linux-features/` so the
   app can discover Linux terminals, editors, and file managers for the Open
-  menus. A checkout `linux-features/features.json`, persistent
-  `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json`, or
-  explicit `CODEX_LINUX_FEATURES_CONFIG` file can disable it before rebuild.
+  menus. A checkout `linux-features/features.json`, a packaged/update-builder
+  `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` override,
+  or an explicit `CODEX_LINUX_FEATURES_CONFIG` file can disable it before
+  rebuild.
 
 ## Updater Boundary
 
