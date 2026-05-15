@@ -59,6 +59,12 @@ test("example feature stays disabled until listed in features.json", () => {
   });
 });
 
+test("missing explicitly enabled features are not reported as enabled", () => {
+  withTempFeatureRoot(["missing-feature"], (root) => {
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), []);
+  });
+});
+
 test("default-enabled features load unless listed in disabled", () => {
   withTempFeatureRoot([], (root) => {
     const manifestPath = path.join(root, "example-feature", "feature.json");

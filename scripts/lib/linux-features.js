@@ -124,8 +124,16 @@ function enabledLinuxFeatureIds(options = {}) {
   const featuresRoot = linuxFeaturesRoot(options);
   const config = readLinuxFeaturesConfig(featuresRoot);
   const disabled = new Set(config.disabled);
+  const featuresById = new Map();
   const seen = new Set();
   const ids = [];
+
+  const featureForId = (id) => {
+    if (!featuresById.has(id)) {
+      featuresById.set(id, loadLinuxFeatureManifest(featuresRoot, id));
+    }
+    return featuresById.get(id);
+  };
 
   const addFeature = (id) => {
     if (disabled.has(id) || seen.has(id)) {
@@ -136,13 +144,15 @@ function enabledLinuxFeatureIds(options = {}) {
   };
 
   for (const id of discoverLinuxFeatureIds(featuresRoot)) {
-    const feature = loadLinuxFeatureManifest(featuresRoot, id);
+    const feature = featureForId(id);
     if (feature?.manifest.defaultEnabled === true) {
       addFeature(id);
     }
   }
   for (const id of config.enabled) {
-    addFeature(id);
+    if (featureForId(id) != null) {
+      addFeature(id);
+    }
   }
   return ids;
 }
