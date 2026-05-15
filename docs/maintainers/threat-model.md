@@ -58,8 +58,8 @@ In scope:
 - Updater service and CLI: `updater/`, `updater/Cargo.toml`, and updater tests.
 - Linux Computer Use backend and bundled plugin resources:
   `computer-use-linux/` and `plugins/openai-bundled/plugins/computer-use/`.
-- Linux feature patches: `linux-features/`, including desktop target discovery
-  and feature-specific generated-app patches.
+- Linux feature patches: `linux-features/`, including default-enabled desktop
+  target discovery and feature-specific generated-app patches.
 - Release, CI, and Nix trust roots: `.github/workflows/`, `Makefile`,
   `flake.nix`, `flake.lock`, `Cargo.toml`, and `Cargo.lock`.
 - Maintainer docs that define security workflow, package behavior, and fork
@@ -123,9 +123,10 @@ Open questions that materially affect risk:
   and optional feature patches to generated main-process, webview, and
   extracted-app bundles; required upstream patches must fail closed in patch
   reports.
-- **Linux open-target discovery:** patches generated app open-target behavior
-  to discover terminals, IDEs, file managers, and `.desktop` entries, sanitize
-  the launch environment, and invoke targets with argument vectors.
+- **Linux open-target discovery:** default-enabled patching of generated app
+  open-target behavior to discover terminals, IDEs, file managers, and
+  `.desktop` entries, sanitize the launch environment, and invoke targets with
+  argument vectors.
 - **Linux Computer Use backend:** Rust MCP backend and plugin resources that can
   inspect accessibility state, capture screenshots, and synthesize desktop
   input through AT-SPI, GNOME/KDE portal, and ydotool-style backends when
@@ -369,9 +370,9 @@ change.
 
 ### T5a: Linux Open-Target Discovery Launches Unintended Desktop Targets
 
-**Entry points:** patched open-target discovery, PATH, XDG data directories,
-Flatpak/Snap desktop exports, user-local `.desktop` files, icon paths, and
-project/file paths supplied to the generated app.
+**Entry points:** default-enabled patched open-target discovery, PATH, XDG data
+directories, Flatpak/Snap desktop exports, user-local `.desktop` files, icon
+paths, and project/file paths supplied to the generated app.
 
 **Abuse path:** same-user state or a malicious local desktop entry influences
 the generated app's discovered terminal/editor/file-manager targets; the app

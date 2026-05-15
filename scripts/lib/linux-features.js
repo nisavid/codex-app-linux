@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const FEATURE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const APP_CONFIG_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
 function defaultLinuxFeaturesRoot() {
   return path.resolve(__dirname, "..", "..", "linux-features");
@@ -27,7 +28,44 @@ function linuxFeaturesConfigPath(featuresRoot) {
   if (fs.existsSync(localConfig)) {
     return localConfig;
   }
+  const userConfig = isCheckoutLinuxFeaturesRoot(featuresRoot) ? null : linuxFeaturesUserConfigPath();
+  if (userConfig != null && fs.existsSync(userConfig)) {
+    return userConfig;
+  }
   return path.join(featuresRoot, "features.example.json");
+}
+
+function linuxFeaturesConfigAppId() {
+  for (const value of [process.env.CODEX_APP_ID, process.env.CODEX_LINUX_APP_ID]) {
+    const configured = value?.trim();
+    if (configured && APP_CONFIG_ID_PATTERN.test(configured)) {
+      return configured;
+    }
+  }
+  return "codex-app";
+}
+
+function isCheckoutLinuxFeaturesRoot(featuresRoot) {
+  const resolvedRoot = path.resolve(featuresRoot);
+  if (path.basename(resolvedRoot) !== "linux-features") {
+    return false;
+  }
+  const repoRoot = path.dirname(resolvedRoot);
+  return fs.existsSync(path.join(repoRoot, ".git"));
+}
+
+function linuxFeaturesUserConfigPath() {
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
+  let configHome = null;
+  if (xdgConfigHome && path.isAbsolute(xdgConfigHome)) {
+    configHome = xdgConfigHome;
+  } else if (process.env.HOME?.trim() && path.isAbsolute(process.env.HOME.trim())) {
+    configHome = path.join(process.env.HOME.trim(), ".config");
+  }
+  if (configHome == null) {
+    return null;
+  }
+  return path.join(configHome, linuxFeaturesConfigAppId(), "linux-features.json");
 }
 
 function readJsonFile(filePath, label) {
@@ -39,9 +77,12 @@ function readJsonFile(filePath, label) {
   }
 }
 
-function normalizeEnabledFeatureIds(value, sourcePath) {
+function normalizeFeatureIdList(value, sourcePath, key) {
+  if (value == null) {
+    return [];
+  }
   if (!Array.isArray(value)) {
-    console.warn(`WARN: Linux features config ${sourcePath} must contain an enabled array`);
+    console.warn(`WARN: Linux features config ${sourcePath} ${key} value must be an array`);
     return [];
   }
 
@@ -49,7 +90,7 @@ function normalizeEnabledFeatureIds(value, sourcePath) {
   const ids = [];
   for (const item of value) {
     if (typeof item !== "string" || !FEATURE_ID_PATTERN.test(item)) {
-      console.warn(`WARN: Invalid Linux feature id in ${sourcePath}: ${String(item)}`);
+      console.warn(`WARN: Invalid Linux feature id in ${sourcePath} ${key}: ${String(item)}`);
       continue;
     }
     if (seen.has(item)) {
@@ -61,25 +102,77 @@ function normalizeEnabledFeatureIds(value, sourcePath) {
   return ids;
 }
 
-function enabledLinuxFeatureIds(options = {}) {
-  const featuresRoot = linuxFeaturesRoot(options);
+function readLinuxFeaturesConfig(featuresRoot) {
   const configPath = linuxFeaturesConfigPath(featuresRoot);
   if (!fs.existsSync(configPath)) {
-    return [];
+    return { enabled: [], disabled: [] };
   }
 
   const config = readJsonFile(configPath, "Linux features config");
   if (config == null) {
+    return { enabled: [], disabled: [] };
+  }
+  return {
+    enabled: normalizeFeatureIdList(config.enabled, configPath, "enabled"),
+    disabled: normalizeFeatureIdList(config.disabled, configPath, "disabled"),
+  };
+}
+
+function discoverLinuxFeatureIds(featuresRoot) {
+  try {
+    return fs.readdirSync(featuresRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && FEATURE_ID_PATTERN.test(entry.name))
+      .map((entry) => entry.name)
+      .filter((id) => fs.existsSync(path.join(featuresRoot, id, "feature.json")))
+      .sort();
+  } catch (error) {
+    console.warn(`WARN: Could not list Linux features at ${featuresRoot}: ${error.message}`);
     return [];
   }
-  return normalizeEnabledFeatureIds(config.enabled, configPath);
+}
+
+function enabledLinuxFeatureIds(options = {}) {
+  const featuresRoot = linuxFeaturesRoot(options);
+  const config = readLinuxFeaturesConfig(featuresRoot);
+  const disabled = new Set(config.disabled);
+  const featuresById = new Map();
+  const seen = new Set();
+  const ids = [];
+
+  const featureForId = (id) => {
+    if (!featuresById.has(id)) {
+      featuresById.set(id, loadLinuxFeatureManifest(featuresRoot, id));
+    }
+    return featuresById.get(id);
+  };
+
+  const addFeature = (id) => {
+    if (disabled.has(id) || seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    ids.push(id);
+  };
+
+  for (const id of discoverLinuxFeatureIds(featuresRoot)) {
+    const feature = featureForId(id);
+    if (feature?.manifest.defaultEnabled === true) {
+      addFeature(id);
+    }
+  }
+  for (const id of config.enabled) {
+    if (featureForId(id) != null) {
+      addFeature(id);
+    }
+  }
+  return ids;
 }
 
 function loadLinuxFeatureManifest(featuresRoot, id) {
   const featureDir = path.join(featuresRoot, id);
   const manifestPath = path.join(featureDir, "feature.json");
   if (!fs.existsSync(manifestPath)) {
-    console.warn(`WARN: Enabled Linux feature '${id}' does not have feature.json`);
+    console.warn(`WARN: Linux feature '${id}' does not have feature.json`);
     return null;
   }
 
@@ -292,5 +385,6 @@ module.exports = {
   loadLinuxFeatureMainBundlePatches,
   linuxFeaturesConfigPath,
   linuxFeaturesRoot,
+  linuxFeaturesUserConfigPath,
   resolveFeatureEntrypoint,
 };

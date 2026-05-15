@@ -547,7 +547,7 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         fs::create_dir_all(root.join("linux-features/example-feature"))?;
         fs::write(
             root.join("linux-features/features.example.json"),
-            b"{\"enabled\":[]}\n",
+            b"{\"enabled\":[],\"disabled\":[]}\n",
         )?;
         fs::write(
             root.join("linux-features/example-feature/feature.json"),

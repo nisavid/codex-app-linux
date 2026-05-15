@@ -119,13 +119,14 @@ function evaluatePatched(source, env, expression, spawnRecorder, openPathCalls) 
   );
 }
 
-function withTempFeatureConfig(enabled, fn) {
+function withTempFeatureConfig(config, fn) {
   const originalConfig = process.env.CODEX_LINUX_FEATURES_CONFIG;
   const root = path.resolve(__dirname, "..");
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-open-target-config-"));
   process.env.CODEX_LINUX_FEATURES_CONFIG = path.join(tempDir, "features.json");
   try {
-    fs.writeFileSync(process.env.CODEX_LINUX_FEATURES_CONFIG, JSON.stringify({ enabled }, null, 2));
+    const configData = Array.isArray(config) ? { enabled: config } : config;
+    fs.writeFileSync(process.env.CODEX_LINUX_FEATURES_CONFIG, JSON.stringify(configData, null, 2));
     return fn(root);
   } finally {
     if (originalConfig == null) {
@@ -649,8 +650,22 @@ test("open-target discovery upgrades the baseline file manager target", async ()
   });
 });
 
-test("open-target discovery stays disabled until listed in features.json", () => {
-  withTempFeatureConfig([], (root) => {
+test("open-target discovery is enabled by default", () => {
+  withTempFeatureConfig({}, (root) => {
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["open-target-discovery"]);
+    assert.equal(loadLinuxFeatureMainBundlePatches({ featuresRoot: root }).length, 1);
+
+    withLinuxFeatureRootEnv(root, () => {
+      const patched = captureWarns(() => patchMainBundleSource(openTargetsBundle, null)).value;
+      assert.match(patched, /linux:\{label:`Terminal`/);
+      assert.match(patched, /\.\.\.codexLinuxDiscoveredIdeTargets\(\)/);
+      assert.match(patched, /codexLinuxOpenFileManager\(e\)/);
+    });
+  });
+});
+
+test("open-target discovery can be disabled in features.json", () => {
+  withTempFeatureConfig({ disabled: ["open-target-discovery"] }, (root) => {
     assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), []);
     assert.deepEqual(loadLinuxFeatureMainBundlePatches({ featuresRoot: root }), []);
 
@@ -664,7 +679,7 @@ test("open-target discovery stays disabled until listed in features.json", () =>
 });
 
 test("open-target discovery participates in feature loading and patch reports", () => {
-  withTempFeatureConfig(["open-target-discovery"], (root) => {
+  withTempFeatureConfig({ enabled: ["open-target-discovery"] }, (root) => {
     assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["open-target-discovery"]);
     assert.equal(loadLinuxFeatureMainBundlePatches({ featuresRoot: root }).length, 1);
 

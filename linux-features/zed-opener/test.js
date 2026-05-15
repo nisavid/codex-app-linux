@@ -97,8 +97,11 @@ test("Zed opener feature fails soft when the opener block is missing", () => {
 
 test("Zed opener feature stays disabled until listed in features.json", () => {
   withTempFeatureConfig([], (root) => {
-    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), []);
-    assert.deepEqual(loadLinuxFeatureMainBundlePatches({ featuresRoot: root }), []);
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["open-target-discovery"]);
+    assert.ok(
+      !loadLinuxFeatureMainBundlePatches({ featuresRoot: root })
+        .some((patch) => patch.name === "feature:zed-opener"),
+    );
 
     withLinuxFeatureRootEnv(root, () => {
       const { value: patched } = captureWarns(() => patchMainBundleSource(zedOpenerBundle, null));
@@ -109,12 +112,12 @@ test("Zed opener feature stays disabled until listed in features.json", () => {
 
 test("Zed opener feature exposes its patch when enabled", () => {
   withTempFeatureConfig(["zed-opener"], (root) => {
-    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["zed-opener"]);
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["open-target-discovery", "zed-opener"]);
 
     const patches = loadLinuxFeatureMainBundlePatches({ featuresRoot: root });
-    assert.equal(patches.length, 1);
-    assert.equal(patches[0].name, "feature:zed-opener");
-    assert.match(patches[0].apply(zedOpenerBundle, {}), /linux:\{label:`Zed`/);
+    const zedPatch = patches.find((patch) => patch.name === "feature:zed-opener");
+    assert.ok(zedPatch);
+    assert.match(zedPatch.apply(zedOpenerBundle, {}), /linux:\{label:`Zed`/);
   });
 });
 

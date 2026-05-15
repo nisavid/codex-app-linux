@@ -12,6 +12,7 @@ const {
   enabledLinuxFeatureIds,
   enabledLinuxFeatureStageHooks,
   loadLinuxFeatureMainBundlePatches,
+  linuxFeaturesConfigPath,
 } = require("../../scripts/lib/linux-features.js");
 const {
   createPatchReport,
@@ -19,15 +20,32 @@ const {
   patchMainBundleSource,
 } = require("../../scripts/patch-linux-window-ui.js");
 
-function withTempFeatureRoot(enabled, fn) {
+function withTempFeatureRoot(config, fn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-example-feature-test-"));
   try {
-    fs.writeFileSync(path.join(root, "features.example.json"), JSON.stringify({ enabled: [] }, null, 2));
-    fs.writeFileSync(path.join(root, "features.json"), JSON.stringify({ enabled }, null, 2));
+    fs.writeFileSync(path.join(root, "features.example.json"), JSON.stringify({ enabled: [], disabled: [] }, null, 2));
+    const featureConfig = Array.isArray(config) ? { enabled: config } : config;
+    if (featureConfig != null) {
+      fs.writeFileSync(path.join(root, "features.json"), JSON.stringify(featureConfig, null, 2));
+    }
     fs.cpSync(__dirname, path.join(root, "example-feature"), { recursive: true });
     return fn(root);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function withTempCheckoutFeatureRoot(fn) {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "codex-example-feature-checkout-"));
+  try {
+    fs.writeFileSync(path.join(repo, ".git"), "gitdir: /tmp/fake-worktree\n");
+    const root = path.join(repo, "linux-features");
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, "features.example.json"), JSON.stringify({ enabled: [], disabled: [] }, null, 2));
+    fs.cpSync(__dirname, path.join(root, "example-feature"), { recursive: true });
+    return fn(root);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
   }
 }
 
@@ -53,6 +71,183 @@ test("example feature stays disabled until listed in features.json", () => {
     assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), []);
     assert.deepEqual(enabledLinuxFeatureStageHooks({ featuresRoot: root }), []);
     assert.deepEqual(loadLinuxFeatureMainBundlePatches({ featuresRoot: root }), []);
+  });
+});
+
+test("missing explicitly enabled features are not reported as enabled", () => {
+  withTempFeatureRoot(["missing-feature"], (root) => {
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), []);
+  });
+});
+
+test("default-enabled features load unless listed in disabled", () => {
+  withTempFeatureRoot([], (root) => {
+    const manifestPath = path.join(root, "example-feature", "feature.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    manifest.defaultEnabled = true;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    fs.writeFileSync(path.join(root, "features.json"), JSON.stringify({}, null, 2));
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["example-feature"]);
+
+    fs.writeFileSync(
+      path.join(root, "features.json"),
+      JSON.stringify({ disabled: ["example-feature"] }, null, 2),
+    );
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), []);
+  });
+});
+
+test("default-enabled features can be disabled from XDG user config", () => {
+  withTempFeatureRoot(null, (root) => {
+    const manifestPath = path.join(root, "example-feature", "feature.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    manifest.defaultEnabled = true;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    const configHome = path.join(root, "xdg-config");
+    const appConfigDir = path.join(configHome, "codex-app");
+    fs.mkdirSync(appConfigDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(appConfigDir, "linux-features.json"),
+      JSON.stringify({ disabled: ["example-feature"] }, null, 2),
+    );
+
+    const originalConfigHome = process.env.XDG_CONFIG_HOME;
+    const originalHome = process.env.HOME;
+    const originalConfig = process.env.CODEX_LINUX_FEATURES_CONFIG;
+    const originalAppId = process.env.CODEX_APP_ID;
+    const originalLinuxAppId = process.env.CODEX_LINUX_APP_ID;
+    try {
+      process.env.XDG_CONFIG_HOME = configHome;
+      process.env.HOME = path.join(root, "home");
+      delete process.env.CODEX_LINUX_FEATURES_CONFIG;
+      delete process.env.CODEX_APP_ID;
+      delete process.env.CODEX_LINUX_APP_ID;
+      assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), []);
+    } finally {
+      if (originalConfigHome == null) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = originalConfigHome;
+      }
+      if (originalHome == null) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalConfig == null) {
+        delete process.env.CODEX_LINUX_FEATURES_CONFIG;
+      } else {
+        process.env.CODEX_LINUX_FEATURES_CONFIG = originalConfig;
+      }
+      if (originalAppId == null) {
+        delete process.env.CODEX_APP_ID;
+      } else {
+        process.env.CODEX_APP_ID = originalAppId;
+      }
+      if (originalLinuxAppId == null) {
+        delete process.env.CODEX_LINUX_APP_ID;
+      } else {
+        process.env.CODEX_LINUX_APP_ID = originalLinuxAppId;
+      }
+    }
+  });
+});
+
+test("checkout feature roots ignore persistent XDG user config fallback", () => {
+  withTempCheckoutFeatureRoot((root) => {
+    const manifestPath = path.join(root, "example-feature", "feature.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    manifest.defaultEnabled = true;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    const configHome = path.join(root, "xdg-config");
+    const appConfigDir = path.join(configHome, "codex-app");
+    fs.mkdirSync(appConfigDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(appConfigDir, "linux-features.json"),
+      JSON.stringify({ disabled: ["example-feature"] }, null, 2),
+    );
+
+    const originalConfigHome = process.env.XDG_CONFIG_HOME;
+    const originalHome = process.env.HOME;
+    const originalConfig = process.env.CODEX_LINUX_FEATURES_CONFIG;
+    try {
+      process.env.XDG_CONFIG_HOME = configHome;
+      process.env.HOME = path.join(root, "home");
+      delete process.env.CODEX_LINUX_FEATURES_CONFIG;
+
+      assert.equal(linuxFeaturesConfigPath(root), path.join(root, "features.example.json"));
+      assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["example-feature"]);
+    } finally {
+      if (originalConfigHome == null) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = originalConfigHome;
+      }
+      if (originalHome == null) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalConfig == null) {
+        delete process.env.CODEX_LINUX_FEATURES_CONFIG;
+      } else {
+        process.env.CODEX_LINUX_FEATURES_CONFIG = originalConfig;
+      }
+    }
+  });
+});
+
+test("empty CODEX_APP_ID does not block CODEX_LINUX_APP_ID config fallback", () => {
+  withTempFeatureRoot(null, (root) => {
+    const configHome = path.join(root, "xdg-config");
+    const appConfigDir = path.join(configHome, "codex-cua-lab");
+    const configPath = path.join(appConfigDir, "linux-features.json");
+    fs.mkdirSync(appConfigDir, { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify({ enabled: [] }, null, 2));
+
+    const originalConfigHome = process.env.XDG_CONFIG_HOME;
+    const originalHome = process.env.HOME;
+    const originalConfig = process.env.CODEX_LINUX_FEATURES_CONFIG;
+    const originalAppId = process.env.CODEX_APP_ID;
+    const originalLinuxAppId = process.env.CODEX_LINUX_APP_ID;
+    try {
+      process.env.XDG_CONFIG_HOME = configHome;
+      process.env.HOME = path.join(root, "home");
+      delete process.env.CODEX_LINUX_FEATURES_CONFIG;
+      process.env.CODEX_APP_ID = "  ";
+      process.env.CODEX_LINUX_APP_ID = "codex-cua-lab";
+
+      assert.equal(linuxFeaturesConfigPath(root), configPath);
+    } finally {
+      if (originalConfigHome == null) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = originalConfigHome;
+      }
+      if (originalHome == null) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalConfig == null) {
+        delete process.env.CODEX_LINUX_FEATURES_CONFIG;
+      } else {
+        process.env.CODEX_LINUX_FEATURES_CONFIG = originalConfig;
+      }
+      if (originalAppId == null) {
+        delete process.env.CODEX_APP_ID;
+      } else {
+        process.env.CODEX_APP_ID = originalAppId;
+      }
+      if (originalLinuxAppId == null) {
+        delete process.env.CODEX_LINUX_APP_ID;
+      } else {
+        process.env.CODEX_LINUX_APP_ID = originalLinuxAppId;
+      }
+    }
   });
 });
 

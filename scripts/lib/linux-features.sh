@@ -1,5 +1,5 @@
 #!/bin/bash
-# Opt-in Linux feature staging hooks.
+# Linux feature staging hooks.
 #
 # Sourced by install.sh. Do not run directly.
 # shellcheck shell=bash

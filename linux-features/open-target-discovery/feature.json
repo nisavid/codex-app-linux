@@ -1,8 +1,8 @@
 {
   "id": "open-target-discovery",
   "title": "Open Target Discovery",
-  "description": "Adds opt-in Linux terminal and editor opener discovery, plus richer file manager launching.",
-  "defaultEnabled": false,
+  "description": "Adds Linux terminal/editor target discovery and richer file-manager launching to Open menus.",
+  "defaultEnabled": true,
   "entrypoints": {
     "mainBundlePatch": "./patch.js"
   }

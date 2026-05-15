@@ -244,8 +244,9 @@ checkout builds or race pending updater install state.
 **Fork delta:** ASAR patches remain fail-soft for volatile upstream bundle
 shapes. The current fork delta includes local identity updates, sanitized
 generated keybind literals, `CODEX_APP_LAUNCH_ACTION_SOCKET`, Linux window
-default refinements, and default-enabled Electron sandboxing with an explicit
-compatibility opt-out. It also keeps the Linux Computer Use plugin manifest gate
+default refinements, default-enabled Electron sandboxing with an explicit
+compatibility opt-out, and default-enabled Linux open-target discovery through
+the feature registry. It also keeps the Linux Computer Use plugin manifest gate
 default-on while keeping Computer Use UI patches opt-in through
 `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` or the persisted
 `codex-linux-computer-use-ui-enabled` setting.
@@ -260,7 +261,9 @@ generation unless a required invariant fails.
 
 **Current paths:** `scripts/patch-linux-window-ui.js`,
 `scripts/patch-linux-window-ui.test.js`, `scripts/lib/asar-patch.sh`,
-`install.sh`, `launcher/start.sh.template`, `tests/scripts_smoke.sh`,
+`scripts/lib/linux-features.js`, `linux-features/open-target-discovery/`,
+`linux-features/features.example.json`, `install.sh`,
+`launcher/start.sh.template`, `tests/scripts_smoke.sh`,
 `docs/usage/troubleshooting.md`.
 
 **Preservation checks:** Run the Node patch tests and shell smoke tests when
