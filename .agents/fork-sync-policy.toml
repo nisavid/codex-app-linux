@@ -12,7 +12,6 @@ preserve_upstream_commit_identity = true
 [policy]
 canonical_inventory = "docs/maintainers/fork-divergences.md"
 sync_procedure = "docs/maintainers/fork-sync-policy.md"
-postmortem = "docs/maintainers/postmortems/pr10-fork-sync.md"
 uncertainty_destination = "pull request body"
 sync_ledger_required = true
 github_pr_repo = "nisavid/codex-app-linux"

@@ -27,8 +27,6 @@ Use this index to choose the smallest document that matches your goal.
   versioning, updater boundaries, Computer Use compatibility, and sync checks.
 - [Fork Sync Policy](maintainers/fork-sync-policy.md) defines the current
   upstream-sync workflow, sync ledger, local gates, and uncertainty triage.
-- [PR #10 Fork Sync Post-Mortem](maintainers/postmortems/pr10-fork-sync.md)
-  records the incident analysis behind the current sync policy.
 - [Changelog](../CHANGELOG.md) tracks user-visible releases and packaging
   behavior changes.
 
@@ -50,6 +48,8 @@ Use this index to choose the smallest document that matches your goal.
 ## Pick Up Agent Work
 
 - Read [AGENTS.md](../AGENTS.md) first. It is the always-loaded policy surface.
+- [Backlog](backlog.md) tracks non-security follow-up until the queue moves to
+  GitHub Issues.
 - Use the package maintenance reference for details that are too large or too
   situational for `AGENTS.md`.
 - Use repo-local skills under `.agents/skills/` when the task touches package
