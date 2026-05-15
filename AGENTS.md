@@ -2,7 +2,16 @@
 
 ## Repository Role
 
-This repository adapts the official macOS Codex DMG into a Linux Electron app, builds native `.deb`, `.rpm`, and pacman packages, and ships the Rust `codex-app-updater` for local update checks, rebuilds, state tracking, and privileged package installation.
+This repository is a downstream maintenance fork of
+`ilysenko/codex-desktop-linux`. Upstream does the primary Linux conversion work
+from the official macOS Codex DMG and carries much of the Linux runtime
+enablement. This fork is the finishing layer over that work: it preserves the
+local `codex-app` identity, distro-shaped install layout, updater policy,
+hardening, security review, and packaging/runtime polish.
+
+Do not describe this repository as "the Linux fork" in durable docs or PR text.
+Describe it as a local hardening and finishing fork layered over upstream's
+Linux work.
 
 Treat this file as always-loaded agent policy. Keep detailed package recipes, runtime notes, and validation matrices in maintainer docs when those docs exist.
 

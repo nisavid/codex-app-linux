@@ -1,21 +1,47 @@
-# Codex App for Linux
+<div align="center">
+  <img src="assets/codex.png" alt="Codex app icon" width="128" height="128">
+  <h1>Codex App for Linux</h1>
+  <p><strong>A polished local Codex desktop build for Linux package workflows.</strong></p>
+  <p>
+    <a href="#build-a-native-package"><img alt="Packages: deb, rpm, pacman" src="https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-2f81f7?style=flat-square"></a>
+    <a href="#local-updater"><img alt="Updater: codex-app-updater" src="https://img.shields.io/badge/updater-codex--app--updater-1f883d?style=flat-square"></a>
+    <a href="#highlights"><img alt="Focus: hardening and polish" src="https://img.shields.io/badge/focus-hardening%20%2B%20polish-8250df?style=flat-square"></a>
+  </p>
+</div>
 
-<p align="center">
-  <img src="assets/codex.png" alt="Codex app icon" width="96" height="96">
-</p>
-
-Run OpenAI Codex on Linux.
-
-Before opening a pull request, read [CONTRIBUTING.md](CONTRIBUTING.md).
-
-The official Codex app is published for macOS. This project adapts the
-upstream `Codex.dmg` into a Linux Electron app, then gives you a few practical
-ways to run it: directly from a checkout, through a native package, or through
-the Nix flake.
+The official Codex app is published for macOS. This repository layers package
+identity, updater policy, hardening, and runtime polish over the Linux
+conversion work from
+[`ilysenko/codex-desktop-linux`](https://github.com/ilysenko/codex-desktop-linux),
+aimed at users who want a polished local app and maintainers who want auditable
+native packages.
 
 > [!NOTE]
 > This is an unofficial community project. It does not redistribute OpenAI
 > software; it automates a local conversion from the upstream Codex DMG.
+
+## Highlights
+
+- **Distro-shaped native packages.** Builds `.deb`, `.rpm`, and pacman packages
+  under the `codex-app` identity, with `/opt/codex-app`, `/usr/lib/codex-app`,
+  `/usr/bin`, `/usr/share`, and XDG user state arranged for package-managed
+  installs. Package versions follow upstream app bundle metadata instead of
+  local build timestamps.
+- **Updater with a narrow privilege boundary.** `codex-app-updater` checks DMGs,
+  rebuilds packages, tracks state, and recovers from failed or interrupted
+  installs as an unprivileged service; only final package installation crosses
+  through `pkexec`.
+- **Managed runtime and CLI preflight.** Generated apps and native packages
+  bundle the Linux Node.js runtime used by Browser Use, Codex CLI
+  install/update, and updater rebuilds, reducing host dependency drift.
+- **Release and supply-chain evidence.** The release gate verifies reviewed DMG
+  hashes, scans generated Electron output, validates package metadata, writes
+  checksums, supports detached signatures, and keeps upstream artifact trust
+  explicit.
+- **Computer Use packaging compatibility.** Upstream's Linux Computer Use
+  backend is staged under this fork's package identity with manifest/path and
+  input hardening, while local UI opt-in stays separate from OpenAI account and
+  host accessibility gates.
 
 ## Feature Status
 
@@ -36,26 +62,17 @@ the Nix flake.
 
 This fork is a downstream maintenance fork of
 [`ilysenko/codex-desktop-linux`](https://github.com/ilysenko/codex-desktop-linux).
-Its main local differences are:
+Upstream does the core Linux app conversion and runtime enablement. The
+Highlights above are the local finishing layer this repository is responsible
+for: package identity/layout, updater policy, hardening, security evidence, and
+compatibility polish.
 
-- the `codex-app` app/package identity and `codex-app-updater` updater
-  identity;
-- XDG/FHS-aligned package paths, including `/opt/codex-app` for the generated
-  app and `/usr/lib/codex-app` for package-private support;
-- package versions derived from the OpenAI DMG app bundle instead of local
-  timestamp builds;
-- extra package, updater, release, and supply-chain validation around the
-  inherited Linux conversion workflow;
-- local compatibility fixes for packaging upstream Linux Computer Use support
-  without implying that account-side feature gates are bypassed.
-
-The upstream owners and contributors did, and continue to do, much of the core
-Linux adaptation work that makes this fork useful. This fork's job is to keep a
-specific local package identity, install layout, updater policy, and maintenance
-workflow coherent on top of that base.
-
-For the maintainer inventory of intentional fork differences, see
-[Fork Divergences](docs/maintainers/fork-divergences.md).
+The upstream owners and contributors did, and continue to do, the Linux
+adaptation work that makes this fork useful. This fork's job is to keep a
+specific local package identity, install layout, updater policy, hardening
+posture, and maintenance workflow coherent on top of that base. For the full
+inventory of fork-specific contracts, see
+[`docs/maintainers/fork-divergences.md`](docs/maintainers/fork-divergences.md).
 
 ## Who This Is For
 
@@ -277,7 +294,7 @@ This local opt-in only controls Linux UI patching in the generated app. It does
 not bypass OpenAI account policy, server-side availability, or host accessibility
 and input prerequisites.
 
-## Updates
+## Local Updater
 
 Native packages install `codex-app-updater`, a `systemd --user` service that
 checks for newer upstream DMGs, rebuilds the matching Linux package locally, and
@@ -333,6 +350,7 @@ and log locations.
 | Build, run, package, or install the app | [Build and Run Guide](docs/usage/build-and-run.md) |
 | Diagnose launch, CLI, webview, or updater issues | [Troubleshooting](docs/usage/troubleshooting.md) |
 | Browse all repo docs by role and task | [Documentation Index](docs/README.md) |
+| Contribute a change | [Contributing](CONTRIBUTING.md) |
 | Follow release notes | [Changelog](CHANGELOG.md) |
 | Try the experimental rootless install path | [User-Local Desktop Integration](contrib/user-local-install/README.md) |
 | Maintain packaging, launcher, or updater behavior | [Package and Runtime Maintenance](docs/maintainers/package-runtime-maintenance.md) |

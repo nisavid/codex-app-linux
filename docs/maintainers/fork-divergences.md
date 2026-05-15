@@ -3,6 +3,10 @@
 This reference records the intentional differences between this fork and the
 last synced upstream ref. Use it during upstream syncs to preserve local
 contracts and keep divergence claims grounded in the actual upstream baseline.
+Treat these differences as a finishing layer over upstream's Linux work:
+upstream owns the primary Linux app conversion and much of the runtime support,
+while this fork preserves local names, paths, updater policy, hardening,
+security review, packaging polish, and maintainer taste.
 
 The current comparison baseline is upstream commit
 `43c8bd1b5d4ab2eb4be8eb474528d6050c51db9a` (2026-05-14). Claims below describe
@@ -17,9 +21,9 @@ For each upstream sync:
 2. Compare incoming changes against every divergence area below.
 3. Preserve local names, paths, versioning, updater boundaries, package shape,
    and security gates unless the PR intentionally changes this policy.
-4. Describe each divergence as the current local delta against the synced
-   upstream baseline: naming, layout, hardening, packaging, compatibility, or
-   documentation.
+4. Describe each divergence as the current local finishing-layer delta against
+   the synced upstream baseline: naming, layout, hardening, packaging,
+   compatibility, security review, or documentation.
 5. Put uncertain conflicts in the PR body for maintainer triage.
 6. Run the local build gate before pushing when generated-app, package, updater
    rebuild, or bundled runtime behavior is touched. The minimum gate is
@@ -373,8 +377,9 @@ part of upstream: always-loaded agent rules, a repo-local maintenance skill,
 maintainer references, security backlog, threat model, usage docs, README
 feature status, and the divergence inventory itself.
 
-**Upstream baseline:** These docs should preserve clear upstream credit while
-describing the local policy and documentation layer as fork work.
+**Upstream baseline:** These docs should preserve clear upstream credit for the
+primary Linux work while describing the local policy and documentation layer as
+fork finishing work.
 
 **Why it matters:** This fork is intentionally divergent from its direct
 upstream. Future maintainers and agents need durable, discoverable policy
