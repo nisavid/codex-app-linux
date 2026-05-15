@@ -101,9 +101,3 @@ text to copy wholesale. Pull over facts that affect supported platforms, host
 requirements, feature gates, install/update commands, troubleshooting, or
 validation, but translate names, paths, service identifiers, package filenames,
 and commands to this fork's local contracts.
-
-## Incident Reference
-
-[PR #10 Fork Sync Post-Mortem](postmortems/pr10-fork-sync.md) records the
-failure modes that led to this policy. It is historical analysis; this document
-is the current rule set.

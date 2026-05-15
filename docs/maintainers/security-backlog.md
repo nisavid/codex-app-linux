@@ -12,8 +12,9 @@ For the broader trust-boundary model, see [Threat Model](threat-model.md).
 Use the `@codex-security` plugin (`plugin://codex-security@openai-curated`) for
 security-sensitive backlog work before implementation is treated as
 review-ready. This applies especially to updater trust, privileged install
-boundaries, release verification, local rebuild inputs, generated-app IPC, and
-secret redaction.
+boundaries, release verification, local rebuild inputs, generated-app IPC,
+bundled browser or Chrome native-host behavior, Computer Use desktop control,
+and secret redaction.
 
 Expected workflow:
 
@@ -73,10 +74,10 @@ Desired state:
 ### Add verification evidence to hash-refresh PRs
 
 The scheduled hash-refresh workflow opens a PR instead of writing directly to
-`main`, and the repository has a separate Apple DMG verification workflow. The
-hash-refresh PR body still needs machine-produced upstream version/build and
-Apple signature/notarization evidence before maintainers accept a changed Nix
-trust root.
+`main`. The PR includes the refreshed Nix SRI hashes. The repository also has a
+separate Apple DMG verification workflow. The hash-refresh PR body still needs
+machine-produced upstream version/build and Apple signature/notarization
+evidence before maintainers accept a changed Nix trust root.
 
 Desired state:
 
@@ -101,6 +102,60 @@ Desired state:
   upstream app can accept it; or
 - critical served assets are validated against generated hashes before launch.
 
+### Review generated-app Electron, IPC, and file-manager handling
+
+The Linux file-manager ASAR patch opens paths through Electron shell APIs when
+the upstream bundle shape still matches. The patch is fail-soft, but each
+public release candidate still needs generated-app evidence for IPC,
+sender-origin validation, navigation, CSP, Electron `webPreferences`, and
+file-manager command constraints.
+
+Desired state:
+
+- generated-app review verifies `contextIsolation`, `nodeIntegration`,
+  renderer sandboxing, navigation/window handling, CSP, IPC sender validation,
+  and `openExternal`/`openPath` policy;
+- file-manager inputs reject URLs, control characters, and unexpected command
+  shapes before shell APIs are reached;
+- the release gate or PR notes identify the generated app bundle and DMG
+  evidence used for the review.
+
+### Review Linux Computer Use desktop-control boundary
+
+Linux Computer Use support now has clearer user-facing docs and readiness
+checks, but the backend can inspect accessibility trees, capture screenshots,
+and synthesize input through host desktop facilities. Local UI opt-in controls
+fork-side patching only; account-side policy and host prerequisites remain
+separate gates.
+
+Desired state:
+
+- `@codex-security` reviews plugin manifests, MCP command routing, screenshot
+  capture, AT-SPI/window selection, and ydotool or portal input paths before
+  Computer Use changes are treated as review-ready;
+- backend logs and state avoid persisting screenshots, accessibility payloads,
+  or credential-looking data beyond the intended local runtime;
+- docs and diagnostics keep local opt-in, account availability, host
+  accessibility, and desktop input permissions distinct.
+
+### Review bundled browser and Chrome native-host boundary
+
+The generated app stages Browser Use resources and the upstream Chrome plugin
+with Linux native-messaging support for Chrome, Brave, and Chromium. These
+components run in the user's desktop session and bridge browser state into
+Codex through local plugin and native-host paths.
+
+Desired state:
+
+- native-messaging manifests and host paths are restricted to packaged assets
+  and expected extension identities;
+- browser profile discovery and launch commands use argument vectors and
+  sanitized inputs;
+- Browser Use and Chrome plugin logs avoid persisting page data, tokens, or
+  browser profile paths longer than needed;
+- stale browser, CDP, or native-host clients cannot receive unintended future
+  commands.
+
 ### Require trusted metadata for non-default DMG sources
 
 Runtime config can redirect `dmg_url` for development and testing. URL parsing
@@ -116,8 +171,9 @@ Desired state:
 ### Pin executable build inputs outside the Nix path
 
 Non-Nix builds fetch npm packages, Electron archives, 7zz archives, and the
-Rust bootstrap through live endpoints. Current controls rely mostly on TLS,
-registry behavior, and operator review.
+Rust bootstrap through live endpoints. Some helper fallbacks now carry checked
+digests, but the broader non-Nix path still relies heavily on TLS, registry
+behavior, and operator review.
 
 Desired state:
 
@@ -143,13 +199,14 @@ Desired state:
 ### Add public package signing and provenance
 
 The release gate writes `SHA256SUMS` and can require a detached checksum
-signature. Format-native signing and hosted provenance are not yet part of the
-package builders or release workflow.
+signature, and signed gates export the public release key. Public release
+publishing, format-native signing, and hosted provenance are not yet part of
+the package builders or release workflow.
 
 Desired state:
 
-- public artifacts publish `SHA256SUMS`, `SHA256SUMS.asc`, and the release
-  signing key;
+- public artifacts consistently publish `SHA256SUMS`, `SHA256SUMS.asc`, and
+  the release signing key;
 - public release builds add GitHub artifact attestations or equivalent hosted
   provenance;
 - Debian, RPM, and pacman artifacts use format-native signing where practical.
@@ -168,20 +225,20 @@ Desired state:
 
 ## Lower Priority
 
-### Review generated-app IPC and file-manager path handling
+### Review Linux open-target discovery and desktop-entry inputs
 
-The Linux file-manager ASAR patch opens paths through Electron shell APIs when
-the upstream bundle shape still matches. The patch is fail-soft, but the
-generated app's IPC, sender-origin validation, and command-shape constraints
-need manual review whenever the patch applies to a new upstream bundle.
+Linux open-target discovery launches terminals, IDEs, file managers, and
+`.desktop` entries as the user. It uses argument-vector launches and sanitizes
+app-internal environment variables, but user-local desktop entries and matching
+heuristics remain same-user trust inputs by design.
 
 Desired state:
 
-- generated-app review verifies `contextIsolation`, `nodeIntegration`,
-  renderer sandboxing, navigation/window handling, CSP, IPC sender validation,
-  and `openExternal`/`openPath` policy;
-- file-manager inputs reject URLs, control characters, and unexpected command
-  shapes before shell APIs are reached.
+- review allowlists, `.desktop` parsing, command arguments, icon handling, and
+  environment sanitization whenever new target families are added;
+- reject URLs, control characters, and unexpected command shapes before desktop
+  target commands are reached;
+- keep the behavior documented as same-user trust, not a privilege boundary.
 
 ### Redact credential-looking subprocess output before persistence
 
