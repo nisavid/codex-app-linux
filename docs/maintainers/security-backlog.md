@@ -227,10 +227,10 @@ Desired state:
 
 ### Review Linux open-target discovery and desktop-entry inputs
 
-Linux open-target discovery launches terminals, IDEs, file managers, and
-`.desktop` entries as the user. It uses argument-vector launches and sanitizes
-app-internal environment variables, but user-local desktop entries and matching
-heuristics remain same-user trust inputs by design.
+Default-enabled Linux open-target discovery launches terminals, IDEs, file
+managers, and `.desktop` entries as the user. It uses argument-vector launches
+and sanitizes app-internal environment variables, but user-local desktop
+entries and matching heuristics remain same-user trust inputs by design.
 
 Desired state:
 

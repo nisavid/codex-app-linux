@@ -192,15 +192,18 @@ Override the webview port by exporting it for the build command:
 CODEX_WEBVIEW_PORT=5180 make build-dev-app
 ```
 
-### Optional Linux Features
+### Linux Features
 
-Disabled-by-default Linux additions live in `linux-features/`. They are for
-integrations that are useful to some users but should not become mandatory core
-patches.
+Linux-side feature modules live in `linux-features/`. This fork enables
+`open-target-discovery` by default so the generated app can discover Linux
+terminals, editors, and file managers for the Open menus.
 
-To enable them for a local build, copy
+To disable default features or enable other optional integrations, copy
 `linux-features/features.example.json` to the git-ignored
-`linux-features/features.json`, add feature ids, then rebuild. See
+`linux-features/features.json`, edit the `enabled` and `disabled` lists, then
+rebuild. Packaged installs can use
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` for the same
+override shape. See
 [`linux-features/README.md`](../../linux-features/README.md) for the feature
 contract.
 

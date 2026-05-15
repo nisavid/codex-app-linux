@@ -56,7 +56,7 @@ native packages.
 | Browser annotations | Working where upstream support is enabled | Uses the bundled browser resources shipped with the generated app. |
 | Chrome plugin native host | Working | Stages the upstream Chrome plugin with Linux native-messaging support for Chrome, Brave, and Chromium. |
 | Linux Computer Use | Packaged; UI controls opt-in | Uses upstream Linux Computer Use support with local packaging/manifest compatibility fixes; requires host accessibility/input support. |
-| Optional Linux feature registry | Opt-in | Disabled-by-default integrations live under `linux-features/` and run only when explicitly enabled before build. |
+| Linux feature registry | Working | `open-target-discovery` is enabled by default; feature config can disable it or enable other optional integrations before build. |
 | NixOS flake | Working with pinned DMG hash | The fixed-output hash can temporarily lag after OpenAI republishes the DMG. |
 | OpenAI server-gated features | Gated by account and rollout | Installing this fork cannot bypass upstream feature flags or account policy. |
 
@@ -147,15 +147,18 @@ make build-dev-app
 make run-dev-app
 ```
 
-## Optional Linux Features
+## Linux Features
 
-Disabled-by-default Linux additions live in `linux-features/`. They are for
-integrations that are useful to some users but should not become mandatory core
-patches.
+Linux-side feature modules live in `linux-features/`. This fork enables
+`open-target-discovery` by default so the Open menus can discover Linux
+terminals, editors, and file managers from the current desktop session.
 
-To enable them for a local build, copy
+To disable default features or enable other optional integrations, copy
 `linux-features/features.example.json` to the git-ignored
-`linux-features/features.json`, add the feature ids you want, then rebuild.
+`linux-features/features.json`, edit the `enabled` and `disabled` lists, then
+rebuild. Packaged installs can use
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` for the same
+override shape.
 See [`linux-features/README.md`](linux-features/README.md) for the feature
 contract.
 

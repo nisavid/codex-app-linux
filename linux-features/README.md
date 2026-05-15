@@ -1,28 +1,68 @@
 # Linux Features
 
-`linux-features/` contains opt-in Linux integration modules for this wrapper.
-These are not upstream Codex plugins; they are Linux-side extensions that can
-add ASAR patches, staged resources, or build/install hooks.
+`linux-features/` contains Linux integration modules for this wrapper. These
+are not upstream Codex plugins; they are Linux-side extensions that can add
+ASAR patches, staged resources, or build/install hooks.
 
-By default, no optional Linux features are enabled. Copy
-`features.example.json` to `features.json` before running `./install.sh` or
-building packages, then list the feature ids you want:
+## Defaults And Local Overrides
+
+This fork enables `open-target-discovery` by default because it improves the
+Linux Open menus with terminal, editor, and file-manager targets. It reads the
+current user's desktop app entries and launches selected targets as that same
+user; see
+[`open-target-discovery/README.md`](open-target-discovery/README.md) for the
+scope and trust notes.
+
+To disable a default feature for a checkout build, copy `features.example.json`
+to the git-ignored `features.json`, add the feature id under `disabled`, then
+rerun `./install.sh` or the package build:
 
 ```json
 {
-  "enabled": [
-    "example-feature"
+  "enabled": [],
+  "disabled": [
+    "open-target-discovery"
   ]
 }
 ```
 
-`features.json` is ignored by git so local choices do not leak into commits.
-Feature choices are read during the install/build pipeline; if you change this
-file after an app has already been generated, rerun the install/build step.
+To enable an optional feature, list it under `enabled`:
+
+```json
+{
+  "enabled": [
+    "zed-opener"
+  ],
+  "disabled": []
+}
+```
+
+You can combine both lists:
+
+```json
+{
+  "enabled": [
+    "copilot-reasoning-effort"
+  ],
+  "disabled": [
+    "open-target-discovery"
+  ]
+}
+```
+
+`disabled` wins if the same feature appears in both lists. `features.json` is
+ignored by git so local choices do not leak into commits. Feature choices are
+read during the install/build pipeline; if you change this file after an app
+has already been generated, rerun the install/build step.
+
+Packaged installs and updater rebuilds can use a persistent user override at
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` with the same
+shape. For one-off builds, set `CODEX_LINUX_FEATURES_CONFIG=/path/to/file.json`
+to point at an explicit config file.
 
 Each feature directory should include:
 
-- `feature.json` — metadata and entrypoints
+- `feature.json` — metadata, optional `defaultEnabled`, and entrypoints
 - `README.md` — what it does, how to test it, and known risks
 - optional `patch.js` — exports `applyMainBundlePatch(source, context)`, or
   descriptor patches when `feature.json` uses `entrypoints.patchDescriptors`
@@ -44,5 +84,5 @@ node --test linux-features/*/test.js
 ```
 
 Core Linux compatibility patches should stay in `scripts/patches/` until they
-are deliberately migrated. Use `linux-features/` for additions that are useful
-for some users but not mandatory for every Linux build.
+are deliberately migrated. Use `linux-features/` for configurable integrations
+whose default can be changed without moving code into the core patch registry.
