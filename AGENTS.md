@@ -66,7 +66,9 @@ Treat this file as always-loaded agent policy. Keep detailed package recipes, ru
   `.agents/fork-sync-policy.toml`, and
   `docs/maintainers/fork-sync-policy.md` before resolving conflicts. If the
   external skill is unavailable, follow the maintainer policy directly and
-  record the missing-skill fallback in the sync ledger. Put uncertainty in the
+  record the missing-skill fallback in the sync ledger. Compare upstream README
+  and user-facing docs against this fork's README and usage docs, adapting
+  relevant facts under local names, paths, and policy. Put uncertainty in the
   PR body for maintainer triage.
 - Keep native-package-only launcher behavior in `packaging/linux/codex-packaged-runtime.sh`; `install.sh` should stay generic and load that helper only when packaging requires it.
 - Keep package builders and `scripts/lib/package-common.sh` aligned when adding, removing, or moving packaged files.

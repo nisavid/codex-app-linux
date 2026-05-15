@@ -57,8 +57,14 @@ pending package.
 | GPU, Vulkan, or Wayland errors | The launcher sets `--ozone-platform-hint=auto`, `--disable-gpu-compositing`, and `--enable-features=WaylandWindowDecorations` by default. To force X11, try `./codex-app/start.sh --ozone-platform=x11`. |
 | Window flickering | GPU compositing is disabled by default. If flickering persists, try `./codex-app/start.sh --disable-gpu`. |
 | Sandbox errors | The launcher keeps Electron sandboxing enabled by default. As a temporary compatibility fallback, run `CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 ./codex-app/start.sh` and treat that mode as lower security. |
+| Rust installer or managed Node runtime fails on hardened hosts | If `/tmp` is mounted `noexec`, set `TMPDIR` and `XDG_CACHE_HOME` to executable user-owned directories before install/build commands. |
+| `ConnectTimeoutError` or slow Electron downloads during `@electron/rebuild` | Retry `make build-app`. If the network path is consistently blocked, set `ELECTRON_MIRROR` for the Electron runtime and `ELECTRON_HEADERS_URL` for Electron headers. |
 | Stale install or cached DMG | Run `./install.sh --fresh` to remove the generated app tree and redownload the DMG. |
 | Usage help | Run `./install.sh --help` or `./codex-app/start.sh --help`. |
+| Computer Use plugin invisible in UI | Confirm the UI patch is enabled: either build with `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1`, or set `"codex-linux-computer-use-ui-enabled": true` in `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/settings.json`, then remember account-side rollout can still hide upstream UI paths. |
+| Computer Use `doctor` reports `ydotool not running` | Start `ydotoold`, then add your user to an input-capable group for `/dev/uinput` and the daemon socket. Common names include `input`, `uinput`, `plugdev`, and `wheel`; check your distro. |
+| Computer Use `doctor` reports `ydotool_socket: Permission denied` | Adjust the `ydotoold` service/socket so the desktop user can connect, commonly by making the socket group-readable by an input-capable group such as `input`, `uinput`, `plugdev`, or `wheel`. |
+| Computer Use AT-SPI tree is empty (GNOME) | On GNOME, run `./codex-app/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux setup` to enable accessibility, then restart the target app. Non-GNOME desktops may use different accessibility mechanisms and may not populate AT-SPI trees. |
 | `codex-app-updater` keeps running after package removal | Run `systemctl --user disable --now codex-app-updater.service`, then confirm `/opt/codex-app` is gone. |
 
 ## Webview Startup Checks
