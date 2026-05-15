@@ -8,10 +8,13 @@ Run OpenAI Codex on Linux.
 
 Before opening a pull request, read [CONTRIBUTING.md](CONTRIBUTING.md).
 
-The official Codex app is published for macOS. This project adapts the
-upstream `Codex.dmg` into a Linux Electron app, then gives you a few practical
-ways to run it: directly from a checkout, through a native package, or through
-the Nix flake.
+The official Codex app is published for macOS. Upstream
+[`ilysenko/codex-desktop-linux`](https://github.com/ilysenko/codex-desktop-linux)
+does the primary Linux conversion work from the upstream `Codex.dmg`. This fork
+builds on that work with local package identity, distro-shaped install layout,
+updater policy, hardening, and polish. It gives you a few practical ways to run
+the app: directly from a checkout, through a native package, or through the Nix
+flake.
 
 > [!NOTE]
 > This is an unofficial community project. It does not redistribute OpenAI
@@ -36,7 +39,10 @@ the Nix flake.
 
 This fork is a downstream maintenance fork of
 [`ilysenko/codex-desktop-linux`](https://github.com/ilysenko/codex-desktop-linux).
-Its main local differences are:
+Upstream does the core Linux app conversion and runtime enablement. This fork is
+the finishing layer over that work: it preserves local package contracts,
+hardens review and release surfaces, and applies the packaging/runtime choices
+that match this maintainer's expectations. Its main local differences are:
 
 - the `codex-app` app/package identity and `codex-app-updater` updater
   identity;
@@ -49,10 +55,10 @@ Its main local differences are:
 - local compatibility fixes for packaging upstream Linux Computer Use support
   without implying that account-side feature gates are bypassed.
 
-The upstream owners and contributors did, and continue to do, much of the core
-Linux adaptation work that makes this fork useful. This fork's job is to keep a
-specific local package identity, install layout, updater policy, and maintenance
-workflow coherent on top of that base.
+The upstream owners and contributors did, and continue to do, the core Linux
+adaptation work that makes this fork useful. This fork's job is to keep a
+specific local package identity, install layout, updater policy, hardening
+posture, and maintenance workflow coherent on top of that base.
 
 For the maintainer inventory of intentional fork differences, see
 [Fork Divergences](docs/maintainers/fork-divergences.md).
