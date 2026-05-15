@@ -37,7 +37,7 @@ function linuxFeaturesConfigPath(featuresRoot) {
 
 function linuxFeaturesConfigAppId() {
   const configured = (process.env.CODEX_APP_ID ?? process.env.CODEX_LINUX_APP_ID ?? "").trim();
-  if (APP_CONFIG_ID_PATTERN.test(configured) && configured !== "." && configured !== "..") {
+  if (APP_CONFIG_ID_PATTERN.test(configured)) {
     return configured;
   }
   return "codex-app";
