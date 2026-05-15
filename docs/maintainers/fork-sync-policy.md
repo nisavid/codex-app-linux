@@ -26,19 +26,23 @@ agents and maintainers; runtime code does not consume it.
    [Fork Divergences](fork-divergences.md) after the sync. The policy config
    points to that canonical inventory instead of duplicating the mutable commit
    hash.
-8. Keep a sync ledger in the PR body or a temporary working note until it is
+8. Compare upstream README and other user-facing docs against this fork's
+   README and usage docs. Classify readme-relevant upstream additions as
+   adapted under local contracts, already covered, intentionally omitted, or
+   follow-up.
+9. Keep a sync ledger in the PR body or a temporary working note until it is
    copied into the PR.
-9. Run the required local gates before the first push that contains code
+10. Run the required local gates before the first push that contains code
    changes covered by [Local Gates](#local-gates).
-10. On the first push of any task branch, create a draft PR in the same
+11. On the first push of any task branch, create a draft PR in the same
    workflow turn.
-11. Use `--repo nisavid/codex-app-linux` on every `gh pr` command in this
+12. Use `--repo nisavid/codex-app-linux` on every `gh pr` command in this
    checkout. Do not rely on GitHub CLI's inferred repository; it can target the
    wrong repository in this fork checkout.
-12. Keep the PR in draft until local gates pass and the PR body records
+13. Keep the PR in draft until local gates pass and the PR body records
    verification evidence. For code-changing branches, the required lifecycle is:
    local gates, first push, draft PR, PR verification notes, ready for review.
-13. Inspect GitHub blockers directly. Do not infer merge readiness from summary
+14. Inspect GitHub blockers directly. Do not infer merge readiness from summary
    status alone.
 
 ## Sync Ledger
@@ -48,6 +52,9 @@ Every broad upstream sync needs a ledger with:
 - upstream refs fetched and the baseline commit;
 - policy files read;
 - every divergence area checked;
+- upstream README and other user-facing doc changes reviewed;
+- readme-relevant additions classified as adapted under local contracts,
+  already covered, intentionally omitted, or follow-up;
 - baseline update made in [Fork Divergences](fork-divergences.md);
 - incoming changes that affect local contracts;
 - classification for each affected area: preserved, upstream now implements it,
@@ -88,6 +95,12 @@ If an upstream change appears to implement the same behavior, update the
 divergence inventory to describe the current diff against the synced upstream
 baseline. If the impact is uncertain, list it for maintainer triage instead of
 choosing by assumption.
+
+Treat upstream README and usage-doc changes as product facts to review, not as
+text to copy wholesale. Pull over facts that affect supported platforms, host
+requirements, feature gates, install/update commands, troubleshooting, or
+validation, but translate names, paths, service identifiers, package filenames,
+and commands to this fork's local contracts.
 
 ## Incident Reference
 

@@ -54,7 +54,9 @@ native packages.
 | Codex CLI preflight | Working | The launcher and updater find or install `@openai/codex` when host tools allow it. |
 | Tray, warm start, and Linux keybinds | Working with desktop variance | Desktop-environment support can vary, especially around tray and window behavior. |
 | Browser annotations | Working where upstream support is enabled | Uses the bundled browser resources shipped with the generated app. |
+| Chrome plugin native host | Working | Stages the upstream Chrome plugin with Linux native-messaging support for Chrome, Brave, and Chromium. |
 | Linux Computer Use | Packaged; UI controls opt-in | Uses upstream Linux Computer Use support with local packaging/manifest compatibility fixes; requires host accessibility/input support. |
+| Optional Linux feature registry | Opt-in | Disabled-by-default integrations live under `linux-features/` and run only when explicitly enabled before build. |
 | NixOS flake | Working with pinned DMG hash | The fixed-output hash can temporarily lag after OpenAI republishes the DMG. |
 | OpenAI server-gated features | Gated by account and rollout | Installing this fork cannot bypass upstream feature flags or account policy. |
 
@@ -94,8 +96,8 @@ make build-app
 make run-app
 ```
 
-`scripts/install-deps.sh` supports Debian/Ubuntu, Fedora, openSUSE, and Arch
-Linux hosts. On openSUSE it uses non-interactive `zypper` to install
+`scripts/install-deps.sh` supports Debian/Ubuntu-family, Fedora, openSUSE, and
+Arch-family hosts. On openSUSE it uses non-interactive `zypper` to install
 `nodejs-default`, `npm-default`, `python3`, `p7zip-full`, `curl`, `unzip`,
 `coreutils`, `tar`, and the `devel_basis` pattern.
 
@@ -107,6 +109,11 @@ The generated app bundles a managed Linux Node.js runtime. You do not need a
 distro `nodejs` or `npm` package for normal installs, Browser Use, Codex CLI
 install/update, or local auto-update rebuilds. Existing `nvm`, asdf, Volta, or
 system Node installs remain valid optional user tooling.
+
+On hardened systems where `/tmp` is mounted `noexec`, set `TMPDIR` and
+`XDG_CACHE_HOME` to user-owned executable locations before installing or
+building. See [Troubleshooting](docs/usage/troubleshooting.md) for a compact
+workaround.
 
 On first launch, the app can install the Codex CLI if it is missing, using the
 bundled managed runtime. If you already have an `npm` command on your shell
@@ -128,6 +135,29 @@ To build from a DMG you already downloaded:
 ```bash
 make build-app DMG=/path/to/Codex.dmg
 ```
+
+If Electron runtime or header downloads are slow or blocked, use
+`ELECTRON_MIRROR` or `ELECTRON_HEADERS_URL`; the
+[Build and Run Guide](docs/usage/build-and-run.md) has the exact knobs.
+
+For a side-by-side test app with a distinct app id and webview port:
+
+```bash
+make build-dev-app
+make run-dev-app
+```
+
+## Optional Linux Features
+
+Disabled-by-default Linux additions live in `linux-features/`. They are for
+integrations that are useful to some users but should not become mandatory core
+patches.
+
+To enable them for a local build, copy
+`linux-features/features.example.json` to the git-ignored
+`linux-features/features.json`, add the feature ids you want, then rebuild.
+See [`linux-features/README.md`](linux-features/README.md) for the feature
+contract.
 
 ## Build A Native Package
 
@@ -251,6 +281,11 @@ backend can inspect apps through AT-SPI, capture screenshots through GNOME Shell
 or XDG Desktop Portal paths, and synthesize input through `ydotool` when the
 host is configured for it.
 
+Runtime readiness depends on the host. Input synthesis usually requires
+`ydotool`/`ydotoold`, `/dev/uinput` access, and a socket usable by your desktop
+user. Non-GNOME desktops usually also need the matching XDG Desktop Portal
+backend, such as the KDE or wlroots portal.
+
 The plugin manifest gate is applied by default so the backend can register on
 Linux. The in-app Computer Use UI controls are opt-in because they touch
 upstream rollout-gated UI paths. Enable them for a build with:
@@ -294,6 +329,15 @@ This local opt-in only controls Linux UI patching in the generated app. It does
 not bypass OpenAI account policy, server-side availability, or host accessibility
 and input prerequisites.
 
+After building the app, the backend can report local readiness:
+
+```bash
+./codex-app/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux doctor
+./codex-app/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux setup
+./codex-app/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux apps
+./codex-app/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux windows
+```
+
 ## Local Updater
 
 Native packages install `codex-app-updater`, a `systemd --user` service that
@@ -336,7 +380,13 @@ Common next steps:
 - blank window or splash hang: check whether something else is serving port
   `5175`;
 - Codex CLI warning: install `@openai/codex` globally or under `~/.local`;
+- hardened `/tmp` with `noexec`: set `TMPDIR` and `XDG_CACHE_HOME` to
+  executable user-owned paths before install/build;
+- Electron download issues: retry, or set `ELECTRON_MIRROR` and
+  `ELECTRON_HEADERS_URL` for your network;
 - stale app tree: rebuild with `./install.sh --fresh`;
+- Computer Use readiness: run the backend `doctor` command and check
+  `ydotoold`, `/dev/uinput`, portal, and AT-SPI status;
 - updater service issue: inspect
   `~/.local/state/codex-app-updater/service.log`.
 

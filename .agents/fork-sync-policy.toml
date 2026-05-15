@@ -31,6 +31,23 @@ package_payload_changes_require_package_builder = true
 release_workflow_changes_require_release_gate = true
 ci_is_secondary_evidence = true
 
+[docs_review]
+upstream_user_facing_docs_review_required = true
+compare_upstream_docs = [
+  "README.md",
+]
+local_user_facing_docs = [
+  "README.md",
+  "docs/usage/build-and-run.md",
+  "docs/usage/troubleshooting.md",
+]
+classify_readme_relevant_additions = [
+  "adapted under local contracts",
+  "already covered",
+  "intentionally omitted",
+  "follow-up",
+]
+
 [fork_contracts]
 preserve_local_identity = true
 preserve_xdg_fhs_layout = true

@@ -21,10 +21,21 @@ generated app, Browser Use, Codex CLI install/update flow, and updater rebuilds.
 System `node`, `npm`, and `npx` remain useful for development and tests, but
 normal app and package builds do not depend on distro Node.js packages.
 
-The dependency helper supports `apt`, `dnf5`, `dnf`, and `pacman`:
+The dependency helper supports `apt`, `dnf5`, `dnf`, `zypper`, and `pacman`:
 
 ```bash
 bash scripts/install-deps.sh
+```
+
+On hardened systems where `/tmp` is mounted `noexec`, the Rust installer and
+managed Linux Node.js runtime may fail when they try to execute temporary files.
+Use executable user-owned locations for temporary and cache files before
+running install or build commands:
+
+```bash
+mkdir -p ~/tmp/codex-work ~/tmp/codex-cache
+export TMPDIR=~/tmp/codex-work
+export XDG_CACHE_HOME=~/tmp/codex-cache
 ```
 
 The generated launcher can install `@openai/codex` on first run when the CLI is
@@ -150,11 +161,68 @@ To use a DMG you already have:
 make build-app DMG=/path/to/Codex.dmg
 ```
 
+If Electron runtime or header downloads from the default endpoints are slow or
+blocked, point the build at a mirror:
+
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ \
+make build-app
+```
+
+`ELECTRON_HEADERS_URL` controls the Electron header URL passed to
+`@electron/rebuild --dist-url`; it must provide both
+`node-v<version>-headers.tar.gz` and the matching `SHASUMS256.txt`.
+
+For a side-by-side test build with a distinct app id and webview port:
+
+```bash
+make build-dev-app
+make run-dev-app
+```
+
+Override the side-by-side identity with Make variables:
+
+```bash
+DEV_APP_ID=codex-test DEV_APP_NAME="Codex Test" make build-dev-app
+```
+
+Override the webview port by exporting it for the build command:
+
+```bash
+CODEX_WEBVIEW_PORT=5180 make build-dev-app
+```
+
+### Optional Linux Features
+
+Disabled-by-default Linux additions live in `linux-features/`. They are for
+integrations that are useful to some users but should not become mandatory core
+patches.
+
+To enable them for a local build, copy
+`linux-features/features.example.json` to the git-ignored
+`linux-features/features.json`, add feature ids, then rebuild. See
+[`linux-features/README.md`](../../linux-features/README.md) for the feature
+contract.
+
 ### Linux Computer Use UI Opt-In
 
 The Linux Computer Use backend and plugin manifest are packaged by default. The
 in-app UI controls are opt-in because they patch upstream UI paths during app
 generation.
+
+Runtime readiness is separate from UI patching. Input synthesis usually
+requires `ydotool`/`ydotoold`, `/dev/uinput` access, and a socket usable by your
+desktop user. Non-GNOME desktops usually also need the matching XDG Desktop
+Portal backend, such as the KDE or wlroots portal.
+
+After building the app, inspect local readiness with:
+
+```bash
+./codex-app/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux doctor
+./codex-app/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux setup
+./codex-app/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux apps
+./codex-app/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux windows
+```
 
 Enable the UI patches for one build:
 
