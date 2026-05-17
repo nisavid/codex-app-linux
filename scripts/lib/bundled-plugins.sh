@@ -25,6 +25,16 @@ build_linux_computer_use_backend() {
     local cosmic_helper_binary="$SCRIPT_DIR/target/release/codex-computer-use-cosmic"
     local cargo_cmd=""
 
+    if [ -n "${CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE:-}" ] || [ -n "${CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE:-}" ]; then
+        [ -n "${CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE:-}" ] || warn "CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE is not set"
+        [ -n "${CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE:-}" ] || warn "CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE is not set"
+        [ -x "${CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE:-}" ] || return 1
+        [ -x "${CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE:-}" ] || return 1
+        info "Using prebuilt Linux Computer Use backend"
+        printf '%s\n%s\n' "$CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE" "$CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE"
+        return 0
+    fi
+
     if [ ! -d "$crate_dir" ]; then
         warn "Linux Computer Use backend source not found at $crate_dir"
         return 1
@@ -504,6 +514,16 @@ build_chrome_extension_host() {
     local source_binary="$SCRIPT_DIR/target/release/codex-chrome-extension-host"
     local cargo_cmd=""
 
+    if [ -n "${CODEX_CHROME_EXTENSION_HOST_SOURCE:-}" ]; then
+        [ -x "$CODEX_CHROME_EXTENSION_HOST_SOURCE" ] || {
+            warn "CODEX_CHROME_EXTENSION_HOST_SOURCE is not executable: $CODEX_CHROME_EXTENSION_HOST_SOURCE"
+            return 1
+        }
+        info "Using prebuilt Chrome extension host"
+        printf '%s\n' "$CODEX_CHROME_EXTENSION_HOST_SOURCE"
+        return 0
+    fi
+
     if ! cargo_cmd="$(find_cargo_for_linux_computer_use)"; then
         warn "cargo not found; Chrome extension host will be unavailable"
         return 1
@@ -653,7 +673,7 @@ stage_browser_use_plugin_from_upstream() {
     local target_client="$target_plugin/scripts/browser-client.mjs"
 
     if [ ! -d "$source_plugin" ]; then
-        warn "Browser Use bundled plugin resources not found in upstream app; skipping Browser Use"
+        info "Browser Use bundled plugin resources not present in upstream app; skipping Browser Use"
         return 1
     fi
 
@@ -706,10 +726,48 @@ if (includeBrowser) {
 
 if (includeChrome) {
   const chrome = sourcePlugins.find((plugin) => plugin.name === "chrome");
-  if (chrome == null) {
-    throw new Error("Bundled marketplace does not contain chrome plugin");
+  if (chrome != null) {
+    plugins.push(chrome);
+  } else {
+    let name = "chrome";
+    let category = "Productivity";
+    const stagedManifestPath = path.join(
+      path.dirname(destinationPath),
+      "..",
+      "..",
+      "plugins",
+      "chrome",
+      ".codex-plugin",
+      "plugin.json",
+    );
+    try {
+      const manifest = JSON.parse(fs.readFileSync(stagedManifestPath, "utf8"));
+      if (typeof manifest.name === "string" && manifest.name.length > 0) {
+        name = manifest.name;
+      }
+      const manifestCategory =
+        manifest && manifest.interface ? manifest.interface.category : undefined;
+      if (typeof manifestCategory === "string" && manifestCategory.length > 0) {
+        category = manifestCategory;
+      }
+    } catch (_err) {
+      // Fall through to defaults when the staged plugin manifest is
+      // missing or malformed — stage_chrome_plugin_from_upstream only
+      // existence-checks plugin.json, so it can still be unparseable here.
+    }
+    plugins.push({
+      name,
+      source: {
+        source: "local",
+        path: "./plugins/chrome",
+      },
+      policy: {
+        installation: "AVAILABLE",
+        authentication: "ON_INSTALL",
+      },
+      category,
+    });
   }
-  plugins.push(chrome);
 }
 
 if (includeComputerUse) {

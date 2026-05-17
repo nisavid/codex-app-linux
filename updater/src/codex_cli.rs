@@ -6,6 +6,7 @@ use crate::{
 };
 use anyhow::{anyhow, Context, Result};
 use chrono::{Duration, Utc};
+use semver::Version;
 use std::{
     ffi::OsString,
     fs,
@@ -143,7 +144,7 @@ pub fn preflight(
     };
 
     state.cli_latest_version = Some(latest_version.clone());
-    if installed_version == latest_version {
+    if installed_cli_version_satisfies_latest(&installed_version, &latest_version) {
         state.cli_status = CliStatus::UpToDate;
         state.cli_error_message = None;
         persist_state(paths, state)?;
@@ -526,10 +527,28 @@ fn cached_latest_version_matches_install(
 
 fn refresh_cli_status_from_latest(state: &mut PersistedState, installed_version: &str) {
     state.cli_status = match state.cli_latest_version.as_deref() {
-        Some(latest_version) if latest_version == installed_version => CliStatus::UpToDate,
+        Some(latest_version)
+            if installed_cli_version_satisfies_latest(installed_version, latest_version) =>
+        {
+            CliStatus::UpToDate
+        }
         Some(_) => CliStatus::UpdateRequired,
         None => CliStatus::Unknown,
     };
+}
+
+fn installed_cli_version_satisfies_latest(installed_version: &str, latest_version: &str) -> bool {
+    if installed_version == latest_version {
+        return true;
+    }
+
+    match (
+        Version::parse(installed_version),
+        Version::parse(latest_version),
+    ) {
+        (Ok(installed), Ok(latest)) => installed >= latest,
+        _ => false,
+    }
 }
 
 fn read_installed_version(cli_path: &Path) -> Result<String> {
@@ -900,6 +919,17 @@ mod tests {
     }
 
     #[test]
+    fn installed_cli_version_satisfies_equal_or_newer_semver() {
+        assert!(installed_cli_version_satisfies_latest("0.42.1", "0.42.1"));
+        assert!(installed_cli_version_satisfies_latest("0.43.0", "0.42.1"));
+        assert!(!installed_cli_version_satisfies_latest("0.42.0", "0.42.1"));
+        assert!(!installed_cli_version_satisfies_latest(
+            "custom-build",
+            "0.42.1"
+        ));
+    }
+
+    #[test]
     fn skips_registry_lookup_when_previous_check_is_fresh_for_same_cli_version() {
         let mut state = PersistedState::new(true);
         state.cli_installed_version = Some("0.42.0".to_string());
@@ -1224,6 +1254,54 @@ mod tests {
         let loaded = PersistedState::load_or_default(&paths.state_file, true)?;
         assert_eq!(loaded.cli_status, CliStatus::Failed);
         assert_eq!(loaded.cli_error_message, state.cli_error_message);
+        Ok(())
+    }
+
+    #[test]
+    fn reconcile_if_present_does_not_downgrade_newer_cli() -> Result<()> {
+        let _env_guard = env_lock();
+        let temp = tempdir()?;
+        let paths = test_runtime_paths(temp.path());
+        paths.ensure_dirs()?;
+
+        let bin_dir = temp.path().join("bin");
+        fs::create_dir_all(&bin_dir)?;
+
+        let codex_path = bin_dir.join("codex");
+        write_executable_script(
+            &codex_path,
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ] || [ \"$1\" = \"version\" ]; then\n  echo 'codex-cli v0.43.0'\n  exit 0\nfi\nexit 1\n",
+        )?;
+
+        let npm_path = bin_dir.join("npm");
+        write_executable_script(
+            &npm_path,
+            "#!/bin/sh\nif [ \"$1\" = \"view\" ] && [ \"$2\" = \"@openai/codex\" ] && [ \"$3\" = \"version\" ]; then\n  echo '0.42.1'\n  exit 0\nfi\necho 'npm install should not run for newer installed Codex CLI' >&2\nexit 42\n",
+        )?;
+
+        let _home_guard = EnvVarGuard::set(&_env_guard, "HOME", temp.path());
+        let _path_guard = EnvVarGuard::set(
+            &_env_guard,
+            "PATH",
+            std::env::join_paths([bin_dir.clone()])?,
+        );
+        let _nvm_dir_guard = EnvVarGuard::remove(&_env_guard, "NVM_DIR");
+        let _codex_cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
+
+        assert_eq!(npm_program(), npm_path);
+
+        let mut state = PersistedState::new(true);
+        state.cli_path = Some(codex_path.clone());
+
+        let config = test_runtime_config(&paths);
+        let updated = reconcile_if_present(&config, &mut state, &paths)?;
+
+        assert!(!updated);
+        assert_eq!(state.cli_path.as_deref(), Some(codex_path.as_path()));
+        assert_eq!(state.cli_installed_version.as_deref(), Some("0.43.0"));
+        assert_eq!(state.cli_latest_version.as_deref(), Some("0.42.1"));
+        assert_eq!(state.cli_status, CliStatus::UpToDate);
+        assert_eq!(read_installed_version(&codex_path)?, "0.43.0");
         Ok(())
     }
 }

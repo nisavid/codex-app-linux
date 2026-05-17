@@ -62,6 +62,9 @@ repo has a `.git` directory or worktree pointer, so packaged-install preferences
 do not silently change local development builds or tests. For one-off builds,
 set `CODEX_LINUX_FEATURES_CONFIG=/path/to/file.json` to point at an explicit
 config file.
+Native packages preserve the enabled feature id list in the packaged
+update-builder bundle, so `codex-app-updater` rebuilds keep the same opt-in
+features across auto-updates.
 
 Each feature directory should include:
 

@@ -289,6 +289,7 @@ Build a specific format:
 make deb
 make rpm
 make pacman
+make appimage
 ```
 
 You can also run builders directly:
@@ -297,6 +298,7 @@ You can also run builders directly:
 ./scripts/build-deb.sh
 ./scripts/build-rpm.sh
 ./scripts/build-pacman.sh
+./scripts/build-appimage.sh
 ```
 
 Set `PACKAGE_WITH_UPDATER=0` when you need a native package that does not
@@ -333,11 +335,16 @@ Expected outputs:
 dist/codex-app_<upstream-version>_<arch>.deb
 dist/codex-app-<upstream-version>-1.<arch>.rpm
 dist/codex-app-<upstream-version>-1-<arch>.pkg.tar.zst
+dist/codex-app-<upstream-version>-<arch>.AppImage
 ```
 
 Architecture names follow the package format: Debian uses `amd64`, `arm64`, or
 `armhf`; RPM uses `x86_64`, `aarch64`, or `armv7hl`; pacman uses `x86_64` or
 `aarch64`.
+
+AppImages are manual-update artifacts. They omit `codex-app-updater`, the
+systemd user service, polkit policy, and the native-package update-builder
+bundle.
 
 Native packages are named `codex-app`. They declare replacement metadata for
 the older `codex-desktop` package name where the package format supports it,

@@ -17,7 +17,6 @@ DEV_APP_BIN ?= $(CURDIR)/bin/$(DEV_APP_ID)
 DEB_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)_*.deb
 RPM_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-*.rpm
 PACMAN_GLOB := $(CURDIR)/dist/$(PACMAN_PACKAGE_NAME)-[0-9]*.pkg.tar.*
-
 .DEFAULT_GOAL := help
 
 NATIVE_PKG_FORMAT_CMD = format=""; \
@@ -52,7 +51,7 @@ if [ -z "$$format" ]; then \
 fi; \
 printf '%s\n' "$$format"
 
-.PHONY: help check test build-updater maybe-build-updater update rebuild rebuild-install inspect-upstream build-app rebuild-next run-app build-dev-app run-dev-app deb rpm pacman package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
+.PHONY: help check test build-updater maybe-build-updater update rebuild rebuild-install inspect-upstream build-app build-app-fresh bootstrap-native install-native update-native rebuild-next run-app build-dev-app run-dev-app deb rpm pacman appimage package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
 
 help:
 	@printf '\nCodex App Linux Make Targets\n\n'
@@ -63,7 +62,11 @@ help:
 	@printf '  %-18s %s\n' "make rebuild" "Inspect a DMG and build a side-by-side candidate"
 	@printf '  %-18s %s\n' "make rebuild-install" "Find a DMG, rebuild, and install into codex-app/"
 	@printf '  %-18s %s\n' "make inspect-upstream" "Inspect a DMG and write rebuild reports without changing codex-app/"
-	@printf '  %-18s %s\n' "make build-app" "Run install.sh and regenerate codex-app/"
+	@printf '  %-18s %s\n' "make build-app" "Run install.sh and regenerate codex-app/ (reuses cached Codex.dmg)"
+	@printf '  %-18s %s\n' "make build-app-fresh" "Remove cached Codex.dmg and regenerate codex-app/"
+	@printf '  %-18s %s\n' "make bootstrap-native" "Install deps, fresh-build, package, and install"
+	@printf '  %-18s %s\n' "make install-native" "Fresh-build, package, and install"
+	@printf '  %-18s %s\n' "make update-native" "Pull trusted checkout, fresh-build, package, and install"
 	@printf '  %-18s %s\n' "make rebuild-next" "Build a side-by-side candidate in codex-app-next/"
 	@printf '  %-18s %s\n' "make run-app" "Launch the local generated Electron app from codex-app/"
 	@printf '  %-18s %s\n' "make build-dev-app" "Build a side-by-side test app with a distinct app id/bin"
@@ -71,6 +74,7 @@ help:
 	@printf '  %-18s %s\n' "make deb" "Build the Debian package into dist/"
 	@printf '  %-18s %s\n' "make rpm" "Build the RPM package into dist/ (Fedora/openSUSE)"
 	@printf '  %-18s %s\n' "make pacman" "Build the pacman package into dist/ (Arch)"
+	@printf '  %-18s %s\n' "make appimage" "Build the AppImage into dist/ (local self-build)"
 	@printf '  %-18s %s\n' "make package" "Build native package (auto-detects deb, rpm, or pacman)"
 	@printf '  %-18s %s\n' "make apple-dmg-verify" "Run macOS Apple trust checks for the upstream DMG"
 	@printf '  %-18s %s\n' "make release-gate" "Verify DMG hash, generated app security, package metadata, checksums, and optional signature"
@@ -87,8 +91,9 @@ help:
 	@printf '  %-18s %s\n' "REBUILD_REPORT_DIR=..." "Override inspect/rebuild report output directory"
 	@printf '  %-18s %s\n' "DEV_APP_ID=..." "Override side-by-side test app id/bin (default: codex-cua-lab)"
 	@printf '  %-18s %s\n' "DEV_APP_NAME=..." "Override side-by-side test app display name"
-	@printf '  %-18s %s\n' "PACKAGE_VERSION=..." "Override the package version for make deb / make rpm / make pacman"
+	@printf '  %-18s %s\n' "PACKAGE_VERSION=..." "Override the package version for make deb / make rpm / make pacman / make appimage"
 	@printf '  %-18s %s\n' "PACKAGE_WITH_UPDATER=0" "Build packages without codex-app-updater or the updater service"
+	@printf '  %-18s %s\n' "APPIMAGETOOL=..." "Override the appimagetool executable for make appimage"
 	@printf '  %-18s %s\n' "DEB=/path/file.deb" "Override the .deb used by make install"
 	@printf '  %-18s %s\n' "RPM=/path/file.rpm" "Override the .rpm used by make install"
 	@printf '  %-18s %s\n' "PKG=/path/file.pkg.tar.zst" "Override the pacman package used by make install"
@@ -97,6 +102,10 @@ help:
 	@printf '  %s\n' "make rebuild-install"
 	@printf '  %s\n' "make rebuild DMG=/tmp/Codex.dmg"
 	@printf '  %s\n' "make build-app DMG=/tmp/Codex.dmg"
+	@printf '  %s\n' "make build-app-fresh"
+	@printf '  %s\n' "make bootstrap-native"
+	@printf '  %s\n' "make install-native"
+	@printf '  %s\n' "PACKAGE_WITH_UPDATER=0 make update-native"
 	@printf '  %s\n' "make inspect-upstream DMG=/tmp/Codex.dmg"
 	@printf '  %s\n' "make rebuild-next DMG=/tmp/Codex.dmg"
 	@printf '  %s\n' "make run-app"
@@ -105,6 +114,7 @@ help:
 	@printf '  %s\n' "make deb"
 	@printf '  %s\n' "make rpm"
 	@printf '  %s\n' "make pacman"
+	@printf '  %s\n' "make appimage"
 	@printf '  %s\n' "make install"
 	@printf '  %s\n\n' "make service-enable"
 
@@ -151,6 +161,26 @@ build-app:
 	@echo "[make] Regenerating codex-app from DMG"
 	./install.sh "$(DMG)"
 
+build-app-fresh:
+	@echo "[make] Regenerating codex-app from fresh DMG"
+	./install.sh --fresh "$(DMG)"
+
+bootstrap-native:
+	@echo "[make] Installing native build dependencies"
+	bash scripts/install-deps.sh
+	PATH="$$HOME/.cargo/bin:$$PATH" $(MAKE) install-native
+
+install-native:
+	$(MAKE) build-app-fresh
+	$(MAKE) package
+	$(MAKE) install
+	@echo "[make] Native package install complete"
+
+update-native:
+	@echo "[make] Updating trusted checkout"
+	git pull --ff-only
+	$(MAKE) install-native
+
 rebuild-next:
 	@echo "[make] Building side-by-side rebuild candidate"
 	CODEX_INSTALL_DIR="$(NEXT_APP_DIR)" \
@@ -191,6 +221,10 @@ pacman: maybe-build-updater
 	@echo "[make] Building pacman package"
 	PACKAGE_NAME="$(PACMAN_PACKAGE_NAME)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-pacman.sh
 
+appimage:
+	@echo "[make] Building AppImage"
+	PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-appimage.sh
+
 package: maybe-build-updater
 	@echo "[make] Building native package (auto-detecting distro)"
 	@format="$$( $(NATIVE_PKG_FORMAT_CMD) )"; \
@@ -219,16 +253,23 @@ release-gate:
 
 install:
 	@echo "[make] Installing latest native package"
-	@format="$$( $(NATIVE_PKG_FORMAT_CMD) )"; \
+	@latest_matching_file() { \
+		local pattern="$$1"; \
+		local matches; \
+		matches="$$(compgen -G "$$pattern" || true)"; \
+		[ -n "$$matches" ] || return 0; \
+		printf '%s\n' "$$matches" | sort -V | tail -n 1; \
+	}; \
+	format="$$( $(NATIVE_PKG_FORMAT_CMD) )"; \
 	if [ "$$format" = "pacman" ]; then \
-		pkg="$${PKG:-$$(ls -1 $(PACMAN_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
+		pkg="$${PKG:-$$(latest_matching_file "$(PACMAN_GLOB)")}"; \
 		if [ -z "$$pkg" ]; then \
 			echo "[make] No pacman package found. Run 'make pacman' first." >&2; exit 1; \
 		fi; \
 		echo "[make] Installing $$pkg"; \
 		sudo pacman -U --noconfirm "$$pkg"; \
 	elif [ "$$format" = "rpm" ] && { command -v dnf5 >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1; }; then \
-		rpm="$${RPM:-$$(ls -1 $(RPM_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
+		rpm="$${RPM:-$$(latest_matching_file "$(RPM_GLOB)")}"; \
 		if [ -z "$$rpm" ]; then \
 			echo "[make] No RPM package found. Run 'make rpm' first." >&2; exit 1; \
 		fi; \
@@ -239,7 +280,7 @@ install:
 			sudo dnf install -y "$$rpm"; \
 		fi; \
 	elif [ "$$format" = "rpm" ] && command -v zypper >/dev/null 2>&1; then \
-		rpm="$${RPM:-$$(ls -1 $(RPM_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
+		rpm="$${RPM:-$$(latest_matching_file "$(RPM_GLOB)")}"; \
 		if [ -z "$$rpm" ]; then \
 			echo "[make] No RPM package found. Run 'make rpm' first." >&2; exit 1; \
 		fi; \
@@ -254,14 +295,14 @@ install:
 		echo "[make] Installing $$rpm"; \
 		sudo zypper "$$@" install -y "$$rpm"; \
 	elif [ "$$format" = "rpm" ]; then \
-		rpm="$${RPM:-$$(ls -1 $(RPM_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
+		rpm="$${RPM:-$$(latest_matching_file "$(RPM_GLOB)")}"; \
 		if [ -z "$$rpm" ]; then \
 			echo "[make] No RPM package found. Run 'make rpm' first." >&2; exit 1; \
 		fi; \
 		echo "[make] Installing $$rpm"; \
 		sudo rpm -Uvh "$$rpm"; \
 	elif [ "$$format" = "deb" ]; then \
-		deb="$${DEB:-$$(ls -1 $(DEB_GLOB) 2>/dev/null | sort -V | tail -n 1)}"; \
+		deb="$${DEB:-$$(latest_matching_file "$(DEB_GLOB)")}"; \
 		if [ -z "$$deb" ]; then \
 			echo "[make] No Debian package found. Run 'make deb' first." >&2; exit 1; \
 		fi; \
