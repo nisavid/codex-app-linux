@@ -1584,7 +1584,7 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/Makefile" '$(origin PACKAGE_ENABLE_UPDATER)'
     assert_not_contains "$REPO_DIR/scripts/lib/package-common.sh" "package_updater_enabled()"
     assert_contains "$REPO_DIR/launcher/start.sh.template" 'python3 "$SCRIPT_DIR/.codex-linux/webview-server.py" "$CODEX_LINUX_WEBVIEW_PORT" --bind 127.0.0.1'
-    assert_contains "$REPO_DIR/launcher/start.sh.template" '*/webview-server.py'
+    assert_contains "$REPO_DIR/launcher/start.sh.template" '*/.codex-linux/webview-server.py'
     assert_not_contains "$REPO_DIR/launcher/start.sh.template" 'chmod -R'
     assert_not_contains "$REPO_DIR/launcher/start.sh.template" 'monitor_bundled_marketplace_tmp_permissions'
     assert_contains "$REPO_DIR/launcher/start.sh.template" '[ ! -L "$path" ] || return 0'
@@ -1701,8 +1701,10 @@ if "running_app_is_active" not in stop_body or "Preserving webview server" not i
     raise SystemExit("stop_owned_webview_server must not stop the live app webview server")
 if "stale_webview_server_pid" not in source or "stop_stale_webview_server" not in source:
     raise SystemExit("launcher must detect stale deleted webview servers left behind by previous installs")
-if "WEBVIEW_PID_FILE" not in identity_body or "webview-server.py" not in identity_body:
+if "WEBVIEW_PID_FILE" not in identity_body or ".codex-linux/webview-server.py" not in identity_body:
     raise SystemExit("stale webview detection must require launcher pid ownership or Codex webview-server identity")
+if "*/webview-server.py) return 0" in identity_body:
+    raise SystemExit("stale webview identity must not match arbitrary webview-server.py paths")
 if 'current_webview_dir="$(canonical_path "$WEBVIEW_DIR")"' not in stale_body:
     raise SystemExit("stale webview detection must compare against the current bundle path")
 if 'readlink "/proc/$pid/cwd"' not in stale_body:

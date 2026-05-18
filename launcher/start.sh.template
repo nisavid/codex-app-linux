@@ -1353,7 +1353,7 @@ pid_has_codex_webview_server_identity() {
     mapfile -d '' -t argv < "/proc/$pid/cmdline" 2>/dev/null || return 1
     for arg in "${argv[@]}"; do
         case "$arg" in
-            */.codex-linux/webview-server.py|*/webview-server.py) return 0 ;;
+            */.codex-linux/webview-server.py) return 0 ;;
         esac
     done
 
