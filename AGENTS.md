@@ -15,6 +15,20 @@ Linux work.
 
 Treat this file as always-loaded agent policy. Keep detailed package recipes, runtime notes, and validation matrices in maintainer docs when those docs exist.
 
+## Agent skills
+
+### Issue tracker
+
+Engineering skills publish issues and PRDs to GitHub Issues for `nisavid/codex-app-linux`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The triage vocabulary uses the five default engineering-skill labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo. See `docs/agents/domain.md`.
+
 ## Hard Rules
 
 - `main` is protected. Before starting work, create and switch to a task branch.
