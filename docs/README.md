@@ -38,9 +38,8 @@ Use this index to choose the smallest document that matches your goal.
   and validation.
 - [Threat Model](maintainers/threat-model.md) is the repository-scoped security
   model for scans and reviews.
-- [Security Backlog](maintainers/security-backlog.md) tracks unresolved
-  security hardening work and routes supply-chain review through
-  `@codex-security`.
+- [Security Backlog](maintainers/security-backlog.md) points to security
+  backlog issues and routes supply-chain review through `@codex-security`.
 - [Agentic Maintenance Policy](policies/agentic-maintenance.md) explains what
   belongs in tracked docs, what belongs in agent policy, and what should remain
   local session evidence.
@@ -48,8 +47,8 @@ Use this index to choose the smallest document that matches your goal.
 ## Pick Up Agent Work
 
 - Read [AGENTS.md](../AGENTS.md) first. It is the always-loaded policy surface.
-- [Backlog](backlog.md) tracks non-security follow-up until the queue moves to
-  GitHub Issues.
+- [Backlog](backlog.md) points to open GitHub Issues for non-security and
+  security follow-up.
 - Use the package maintenance reference for details that are too large or too
   situational for `AGENTS.md`.
 - Use repo-local skills under `.agents/skills/` when the task touches package
