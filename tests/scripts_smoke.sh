@@ -275,12 +275,14 @@ JSON
 const fs = require("node:fs");
 const configPath = process.argv[2];
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+const keys = Object.keys(config).sort();
 function sameMembers(actual, expected) {
   return Array.isArray(actual) &&
     actual.length === expected.length &&
     actual.slice().sort().join("\0") === expected.slice().sort().join("\0");
 }
-if (!sameMembers(config.enabled, ["example-feature"]) ||
+if (JSON.stringify(keys) !== JSON.stringify(["disabled", "enabled"]) ||
+    !sameMembers(config.enabled, ["example-feature"]) ||
     !sameMembers(config.disabled, ["open-target-discovery"])) {
   process.exit(1);
 }
@@ -2281,7 +2283,7 @@ JSON
         WORK_DIR="$workspace/work"
         ARCH="x86_64"
         ICON_SOURCE="$workspace/missing-icon.png"
-        CODEX_APP_ID="codex-desktop"
+        CODEX_APP_ID="codex-app"
         mkdir -p "$WORK_DIR"
         warn() { echo "[WARN] $*" >&2; }
         info() { echo "[INFO] $*" >&2; }
@@ -3866,6 +3868,56 @@ EOF
     )
 }
 
+test_user_local_prepare_build_repo_uses_source_when_overlay_base_is_missing() {
+    info "Checking user-local managed checkout falls back to source without overlay base"
+    local workspace="$TMP_DIR/user-local-missing-overlay-base"
+    local origin_repo="$workspace/origin.git"
+    local source_repo="$workspace/source"
+    local managed_repo="$workspace/xdg-data/codex-app/managed-repo"
+    local install_env="$workspace/install.env"
+
+    mkdir -p "$workspace"
+    git init --bare --initial-branch=main "$origin_repo" >/dev/null
+    git clone "$origin_repo" "$source_repo" >/dev/null 2>&1
+    git -C "$source_repo" config user.name "Smoke Test"
+    git -C "$source_repo" config user.email "smoke@example.com"
+
+    printf '%s\n' base > "$source_repo/tracked.txt"
+    git -C "$source_repo" add tracked.txt
+    git -C "$source_repo" commit -m "base" >/dev/null
+    git -C "$source_repo" push -u origin main >/dev/null
+
+    printf '%s\n' local-commit > "$source_repo/tracked.txt"
+    git -C "$source_repo" commit -am "local commit" >/dev/null
+    git -C "$source_repo" update-ref -d refs/remotes/origin/main
+    git -C "$source_repo" remote set-head origin -d >/dev/null 2>&1 || true
+
+    (
+        export HOME="$workspace/home"
+        export XDG_DATA_HOME="$workspace/xdg-data"
+        export XDG_STATE_HOME="$workspace/xdg-state"
+        mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
+
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/contrib/user-local-install/files/share/common.sh"
+
+        INSTALL_CONFIG_FILE="$install_env"
+        cat > "$INSTALL_CONFIG_FILE" <<EOF
+SOURCE_REPO_DIR=$(printf '%q' "$source_repo")
+MANAGED_REPO_DIR=$(printf '%q' "$managed_repo")
+REPO_ORIGIN_URL=$(printf '%q' "$origin_repo")
+REPO_DEFAULT_BRANCH=$(printf '%q' "main")
+OPT_ROOT=$(printf '%q' "$workspace/opt")
+EOF
+
+        prepare_build_repo
+        [ "$BUILD_REPO_DIR" = "$source_repo" ] \
+            || fail "Expected missing overlay base to build directly from source checkout"
+        [ "$(cat "$BUILD_REPO_DIR/tracked.txt")" = "local-commit" ] \
+            || fail "Expected source checkout committed state to be preserved"
+    )
+}
+
 test_user_local_install_from_update_defers_record_only_metadata() {
     info "Checking user-local helper refresh does not record metadata before update success"
     local workspace="$TMP_DIR/user-local-from-update-record-only"
@@ -3880,7 +3932,7 @@ set -euo pipefail
 : "${RECORD_ONLY_MARKER:?}"
 mkdir -p "$(dirname "$RECORD_ONLY_MARKER")"
 printf '%s\n' "attempted" > "$RECORD_ONLY_MARKER"
-exit 1
+exit 0
 SCRIPT
     printf '#!/usr/bin/env bash\nexit 0\n' > "$fake_bin/systemctl"
     printf '#!/usr/bin/env bash\nexit 0\n' > "$fake_bin/update-desktop-database"
@@ -4248,6 +4300,7 @@ main() {
     test_user_local_prepare_build_repo_detects_default_branch_without_recorded_branch
     test_user_local_prepare_build_repo_ignores_stale_recorded_default_branch
     test_user_local_prepare_build_repo_ignores_stale_source_origin_head
+    test_user_local_prepare_build_repo_uses_source_when_overlay_base_is_missing
     test_user_local_install_from_update_defers_record_only_metadata
     test_user_local_prepare_build_repo_updates_existing_single_branch_fetch_refspec
     test_user_local_prepare_build_repo_handles_deleted_overlay_paths

@@ -381,6 +381,10 @@ prepare_build_repo() {
         BUILD_REPO_DIR="$SOURCE_REPO_DIR"
         return 0
     fi
+    if [ -d "$SOURCE_REPO_DIR/.git" ] && ! source_repo_overlay_base_ref >/dev/null 2>&1; then
+        BUILD_REPO_DIR="$SOURCE_REPO_DIR"
+        return 0
+    fi
 
     ensure_managed_repo
     branch="$(repo_default_branch)"
