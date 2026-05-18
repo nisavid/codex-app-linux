@@ -211,6 +211,10 @@ install_native_modules_from_source() {
         error "Prebuilt node-pty version mismatch: expected $expected_node_pty_version, got ${actual_node_pty_version:-unknown}"
 
     validate_native_module_source_metadata "$source_dir" "$expected_better_sqlite3_version" "$expected_node_pty_version"
+    native_module_source_has_node_artifact "$source_better_sqlite3" || \
+        error "Prebuilt better-sqlite3 native artifact missing under $source_better_sqlite3"
+    native_module_source_has_node_artifact "$source_node_pty" || \
+        error "Prebuilt node-pty native artifact missing under $source_node_pty"
 
     info "Using prebuilt native modules from $source_dir"
     rm -rf "$app_extracted/node_modules/better-sqlite3"
@@ -220,6 +224,11 @@ install_native_modules_from_source() {
     chmod -R u+w "$app_extracted/node_modules/better-sqlite3" "$app_extracted/node_modules/node-pty"
     prune_native_module_build_artifacts "$app_extracted/node_modules/better-sqlite3"
     prune_native_module_build_artifacts "$app_extracted/node_modules/node-pty"
+}
+
+native_module_source_has_node_artifact() {
+    local module_dir="$1"
+    [ -n "$(find "$module_dir" -type f -name "*.node" -print -quit)" ]
 }
 
 native_modules_metadata_value() {

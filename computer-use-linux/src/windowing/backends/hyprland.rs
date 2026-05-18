@@ -111,7 +111,9 @@ fn hyprctl_output(args: &[&str]) -> std::io::Result<std::process::Output> {
 fn infer_hyprland_instance_signature() -> Option<String> {
     let runtime = xdg_runtime_dir()?;
     let hypr_dir = runtime.join("hypr");
-    let wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+    let wayland_display = std::env::var("WAYLAND_DISPLAY")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
     let candidates = fs::read_dir(hypr_dir)
         .ok()?
         .filter_map(|entry| {

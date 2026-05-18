@@ -236,7 +236,7 @@ test("patched Linux device-key provider can create, sign with, and delete a key"
     const client = context.module.exports;
     const created = await client.createDeviceKey("allow_os_protected_nonextractable");
     assert.equal(created.algorithm, "ecdsa_p256_sha256");
-    assert.equal(created.protectionClass, "os_protected_nonextractable");
+    assert.equal(created.protectionClass, "exportable");
     assert.match(created.publicKeySpkiDerBase64, /^[A-Za-z0-9+/]+=*$/);
 
     const readBack = await client.getDeviceKeyPublic(created.keyId);

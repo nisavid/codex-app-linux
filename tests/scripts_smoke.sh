@@ -1442,6 +1442,54 @@ EOF
     [ ! -f "$app_dir/node_modules/node-pty/build/Release/junk.o" ] || fail "Expected node-pty build junk to be pruned"
 }
 
+test_native_module_rebuild_rejects_prebuilt_source_without_native_artifacts() {
+    info "Checking native module rebuild rejects prebuilt source without native artifacts"
+    local workspace="$TMP_DIR/native-module-prebuilt-source-missing-artifacts"
+    local app_dir="$workspace/app-extracted"
+    local source_dir="$workspace/prebuilt"
+    local output_log="$workspace/output.log"
+    local rc
+
+    mkdir -p \
+        "$app_dir/node_modules/better-sqlite3" \
+        "$app_dir/node_modules/node-pty" \
+        "$source_dir/better-sqlite3/build/Release" \
+        "$source_dir/node-pty/build/Release"
+    printf '%s\n' '{"version":"12.10.0"}' > "$app_dir/node_modules/better-sqlite3/package.json"
+    printf '%s\n' '{"version":"1.1.0"}' > "$app_dir/node_modules/node-pty/package.json"
+    printf '%s\n' '{"version":"12.10.0"}' > "$source_dir/better-sqlite3/package.json"
+    printf '%s\n' '{"version":"1.1.0"}' > "$source_dir/node-pty/package.json"
+    cat > "$source_dir/codex-native-modules.env" <<'EOF'
+ELECTRON_VERSION=42.0.1
+ELECTRON_ARCH=x64
+BETTER_SQLITE3_VERSION=12.10.0
+NODE_PTY_VERSION=1.1.0
+EOF
+    : > "$source_dir/better-sqlite3/build/Release/better_sqlite3.node"
+
+    set +e
+    (
+        WORK_DIR="$workspace/work"
+        ARCH="x86_64"
+        ELECTRON_VERSION="42.0.1"
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_41="12.9.0"
+        MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42="12.10.0"
+        CODEX_NATIVE_MODULES_SOURCE="$source_dir"
+        mkdir -p "$WORK_DIR"
+        info() { echo "[INFO] $*" >&2; }
+        warn() { echo "[WARN] $*" >&2; }
+        error() { echo "[ERROR] $*" >&2; exit 1; }
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/native-modules.sh"
+        build_native_modules "$app_dir"
+    ) > "$output_log" 2>&1
+    rc=$?
+    set -e
+
+    [ "$rc" -ne 0 ] || fail "Expected prebuilt native modules without .node artifacts to fail"
+    assert_contains "$output_log" "Prebuilt node-pty native artifact missing"
+}
+
 test_bundled_plugin_builders_accept_prebuilt_binaries() {
     info "Checking bundled plugin builders accept prebuilt binaries"
     local workspace="$TMP_DIR/bundled-plugin-prebuilt-binaries"
@@ -1475,6 +1523,42 @@ test_bundled_plugin_builders_accept_prebuilt_binaries() {
     assert_contains "$output_log" "$backend"
     assert_contains "$output_log" "$cosmic"
     assert_contains "$output_log" "$host"
+}
+
+test_bundled_plugin_builders_fallback_from_invalid_chrome_host_override() {
+    info "Checking bundled plugin builders fall back from invalid Chrome host override"
+    local workspace="$TMP_DIR/bundled-plugin-invalid-chrome-host"
+    local script_dir="$workspace/source"
+    local cargo="$workspace/fake-cargo"
+    local invalid_host="$workspace/not-executable-host"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$script_dir"
+    printf '%s\n' "not executable" > "$invalid_host"
+    cat > "$cargo" <<SCRIPT
+#!/usr/bin/env bash
+mkdir -p "$script_dir/target/release"
+printf '#!/usr/bin/env bash\n' > "$script_dir/target/release/codex-chrome-extension-host"
+chmod +x "$script_dir/target/release/codex-chrome-extension-host"
+SCRIPT
+    chmod +x "$cargo"
+
+    (
+        ARCH="x86_64"
+        SCRIPT_DIR="$script_dir"
+        CODEX_CHROME_EXTENSION_HOST_SOURCE="$invalid_host"
+        info() { echo "[INFO] $*" >&2; }
+        warn() { echo "[WARN] $*" >&2; }
+        error() { echo "[ERROR] $*" >&2; exit 1; }
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/bundled-plugins.sh"
+        find_cargo_for_linux_computer_use() { printf '%s\n' "$cargo"; }
+        build_chrome_extension_host
+    ) > "$output_log" 2>&1
+
+    assert_contains "$output_log" "CODEX_CHROME_EXTENSION_HOST_SOURCE is not executable"
+    assert_contains "$output_log" "Building Chrome extension host"
+    assert_contains "$output_log" "$script_dir/target/release/codex-chrome-extension-host"
 }
 
 test_launcher_template_sanity() {
@@ -1567,8 +1651,13 @@ background_preflight_body = source.split("run_cli_preflight_background() {", 1)[
 reconcile_body = source.split("reconcile_runtime_state() {", 1)[1].split("set_electron_defaults() {", 1)[0]
 if 'LAUNCHER_ARGS=()' not in source:
     raise SystemExit("launcher must keep a sanitized argv for launcher-only flags")
-if 'configure_multi_launch_instance "$@"' not in source:
-    raise SystemExit("launcher must configure multi-launch before deriving WEBVIEW_ORIGIN")
+parse_args_index = source.index('parse_launcher_args "$@"')
+help_index = source.index('if [[ "${LAUNCHER_ARGS[0]:-}" == "--help"')
+side_by_side_index = source.index('\nconfigure_side_by_side_app_env\n')
+multi_call_index = source.index('\nconfigure_multi_launch_instance\n')
+webview_origin_index = source.index('WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"', multi_call_index)
+if not (parse_args_index < help_index < side_by_side_index < multi_call_index < webview_origin_index):
+    raise SystemExit("launcher must parse args, handle help, normalize side-by-side env, configure multi-launch, then derive WEBVIEW_ORIGIN")
 if '$((CODEX_LINUX_WEBVIEW_PORT + 4))' not in source:
     raise SystemExit("multi-launch default range must cap the default at five ports")
 if 'CODEX_LINUX_INSTANCE_ID="port-$CODEX_LINUX_WEBVIEW_PORT"' not in multi_body:
@@ -3525,7 +3614,7 @@ test_webview_probe_equivalence() {
     # python3 http.server fixture, and asserts the verdicts match the
     # python3 reference implementation across every input class (open/closed
     # port, marker-OK, 404, wrong title, missing loader, dead port) plus
-    # confirms the watchdog cap still fires within its 150-500 ms window.
+    # confirms the watchdog cap still fires within its 100-1000 ms window.
     bash "$REPO_DIR/tests/webview_probe_equivalence.sh" \
         || fail "webview probe equivalence harness reported a verdict mismatch or unbounded watchdog"
 }
@@ -3560,6 +3649,10 @@ EOF
 local-overlay
 EOF
     git -C "$source_repo" commit -am "local overlay" >/dev/null
+    cat > "$source_repo/untracked.txt" <<'EOF'
+untracked-overlay
+EOF
+    ln -s untracked.txt "$source_repo/untracked-link"
 
     git clone "$origin_repo" "$upstream_repo" >/dev/null 2>&1
     git -C "$upstream_repo" config user.name "Smoke Test"
@@ -3602,6 +3695,10 @@ EOF
             || fail "Expected upstream-only change to remain intact in managed checkout"
         [ "$(cat "$MANAGED_REPO_DIR/remote-only.txt")" = "remote-only" ] \
             || fail "Expected upstream-only added file to remain in managed checkout"
+        [ "$(cat "$MANAGED_REPO_DIR/untracked.txt")" = "untracked-overlay" ] \
+            || fail "Expected untracked overlay file to be copied into managed checkout"
+        [ "$(readlink "$MANAGED_REPO_DIR/untracked-link")" = "untracked.txt" ] \
+            || fail "Expected untracked overlay symlink to be copied into managed checkout"
         [ -n "$(source_repo_overlay_signature)" ] \
             || fail "Expected committed local overlay to produce a non-empty overlay signature"
     )
@@ -4087,7 +4184,9 @@ main() {
     test_better_sqlite3_electron_42_source_patch
     test_native_module_rebuild_uses_local_electron_rebuild_toolchain
     test_native_module_rebuild_accepts_prebuilt_source
+    test_native_module_rebuild_rejects_prebuilt_source_without_native_artifacts
     test_bundled_plugin_builders_accept_prebuilt_binaries
+    test_bundled_plugin_builders_fallback_from_invalid_chrome_host_override
     test_browser_use_node_repl_fallback_runtime
     test_chrome_plugin_staging
     test_chrome_browser_client_profile_root_variants

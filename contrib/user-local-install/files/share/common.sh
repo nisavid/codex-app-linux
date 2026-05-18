@@ -280,12 +280,19 @@ source_repo_overlay_signature() {
         printf '\n--worktree--\n'
         git -C "$SOURCE_REPO_DIR" diff --binary HEAD --
         printf '\n--untracked--\n'
-        while IFS= read -r path; do
+        while IFS= read -r -d '' path; do
             [ -n "$path" ] || continue
-            [ -f "$SOURCE_REPO_DIR/$path" ] || continue
+            [ -e "$SOURCE_REPO_DIR/$path" ] || [ -L "$SOURCE_REPO_DIR/$path" ] || continue
             printf 'path=%s\n' "$path"
-            sha256sum "$SOURCE_REPO_DIR/$path"
-        done < <(git -C "$SOURCE_REPO_DIR" ls-files --others --exclude-standard)
+            printf 'mode=%s\n' "$(stat -c '%f' -- "$SOURCE_REPO_DIR/$path")"
+            if [ -L "$SOURCE_REPO_DIR/$path" ]; then
+                printf 'symlink=%s\n' "$(readlink -- "$SOURCE_REPO_DIR/$path")"
+            elif [ -f "$SOURCE_REPO_DIR/$path" ]; then
+                sha256sum "$SOURCE_REPO_DIR/$path"
+            else
+                printf 'type=other\n'
+            fi
+        done < <(git -C "$SOURCE_REPO_DIR" ls-files --others --exclude-standard -z)
     } | sha256sum | awk '{ print $1 }'
 }
 

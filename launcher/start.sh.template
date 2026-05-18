@@ -177,7 +177,6 @@ parse_launcher_args() {
 }
 
 configure_multi_launch_instance() {
-    parse_launcher_args "$@"
     [ "$MULTI_LAUNCH_REQUESTED" -eq 1 ] || return 0
 
     local base_state_dir="$APP_STATE_DIR"
@@ -207,8 +206,7 @@ configure_multi_launch_instance() {
     export CODEX_ELECTRON_USER_DATA_DIR
 }
 
-configure_multi_launch_instance "$@"
-WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"
+parse_launcher_args "$@"
 
 ensure_runtime_dirs
 STARTED_WEBVIEW_PID=""
@@ -255,13 +253,6 @@ HELP
     exit 0
 fi
 
-exec >>"$LOG_FILE" 2>&1
-
-echo "[$(date -Is)] Starting $CODEX_LINUX_APP_DISPLAY_NAME launcher"
-if [ "$MULTI_LAUNCH_ACTIVE" -eq 1 ]; then
-    echo "Multi-launch instance: id=$CODEX_LINUX_INSTANCE_ID webview_port=$CODEX_LINUX_WEBVIEW_PORT state_dir=$APP_STATE_DIR user_data_dir=$CODEX_ELECTRON_USER_DATA_DIR"
-fi
-
 now_ms() {
     local value seconds nanos
     value="$(date +%s%N 2>/dev/null || true)"
@@ -274,8 +265,6 @@ now_ms() {
             ;;
     esac
 }
-
-LAUNCHER_START_MS="$(now_ms)"
 
 log_phase() {
     local phase="$1"
@@ -1921,6 +1910,17 @@ launch_electron() {
 
 hydrate_graphical_session_env
 configure_side_by_side_app_env
+configure_multi_launch_instance
+WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"
+ensure_runtime_dirs
+LAUNCHER_START_MS="$(now_ms)"
+exec >>"$LOG_FILE" 2>&1
+
+echo "[$(date -Is)] Starting $CODEX_LINUX_APP_DISPLAY_NAME launcher"
+if [ "$MULTI_LAUNCH_ACTIVE" -eq 1 ]; then
+    echo "Multi-launch instance: id=$CODEX_LINUX_INSTANCE_ID webview_port=$CODEX_LINUX_WEBVIEW_PORT state_dir=$APP_STATE_DIR user_data_dir=$CODEX_ELECTRON_USER_DATA_DIR"
+fi
+
 load_packaged_runtime_helper
 prepend_managed_node_runtime_to_path
 register_url_scheme_handlers

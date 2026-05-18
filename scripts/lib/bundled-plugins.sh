@@ -519,13 +519,13 @@ build_chrome_extension_host() {
     local cargo_cmd=""
 
     if [ -n "${CODEX_CHROME_EXTENSION_HOST_SOURCE:-}" ]; then
-        [ -x "$CODEX_CHROME_EXTENSION_HOST_SOURCE" ] || {
+        if [ -x "$CODEX_CHROME_EXTENSION_HOST_SOURCE" ]; then
+            info "Using prebuilt Chrome extension host"
+            printf '%s\n' "$CODEX_CHROME_EXTENSION_HOST_SOURCE"
+            return 0
+        else
             warn "CODEX_CHROME_EXTENSION_HOST_SOURCE is not executable: $CODEX_CHROME_EXTENSION_HOST_SOURCE"
-            return 1
-        }
-        info "Using prebuilt Chrome extension host"
-        printf '%s\n' "$CODEX_CHROME_EXTENSION_HOST_SOURCE"
-        return 0
+        fi
     fi
 
     if ! cargo_cmd="$(find_cargo_for_linux_computer_use)"; then

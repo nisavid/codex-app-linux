@@ -69,7 +69,7 @@ function linuxDeviceKeyProviderSource({ cryptoVar, fsVar, pathVar }) {
     "let t=codexLinuxReadRemoteControlDeviceKeyStore();",
     `let{publicKey:n,privateKey:r}=(0,${cryptoVar}.generateKeyPairSync)(\`ec\`,{namedCurve:\`P-256\`});`,
     `let i=(0,${cryptoVar}.randomUUID)(),a=n.export({type:\`spki\`,format:\`der\`}).toString(\`base64\`),o=r.export({type:\`pkcs8\`,format:\`pem\`});`,
-    "let c={algorithm:`ecdsa_p256_sha256`,keyId:i,protectionClass:`os_protected_nonextractable`,publicKeySpkiDerBase64:a,privateKeyPkcs8Pem:o,createdAt:new Date().toISOString()};",
+    "let c={algorithm:`ecdsa_p256_sha256`,keyId:i,protectionClass:`exportable`,publicKeySpkiDerBase64:a,privateKeyPkcs8Pem:o,createdAt:new Date().toISOString()};",
     "t.keys={...t.keys,[i]:c},codexLinuxWriteRemoteControlDeviceKeyStore(t);",
     "return codexLinuxRemoteControlPublicDeviceKey(c)",
     "},",
