@@ -23,12 +23,14 @@ If `CONTEXT.md` or `docs/adr/` does not exist, proceed silently. Do not request 
 
 ```text
 /
-├── CONTEXT.md
-├── docs/adr/
+├── CONTEXT.md          (when present)
+├── docs/adr/           (when present)
 └── docs/
     ├── README.md
+    ├── agents/
     ├── maintainers/
-    └── policies/
+    ├── policies/
+    └── usage/
 ```
 
 ## Use the glossary vocabulary
