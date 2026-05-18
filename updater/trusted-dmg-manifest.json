@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "dmgs": [
+    {
+      "url": "https://persistent.oaistatic.com/codex-app-prod/Codex.dmg",
+      "version": "26.513.31313",
+      "sha256": "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a",
+      "approved_at": "2026-05-18T00:00:00Z",
+      "notes": "Maintainer-approved DMG digest mirrored from the current flake.nix codexDmg pin."
+    }
+  ]
+}

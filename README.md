@@ -385,7 +385,7 @@ Native packages install `codex-app-updater`, a `systemd --user` service that
 checks for newer upstream DMGs, rebuilds the matching Linux package locally, and
 uses `pkexec` only for the final package install step.
 
-Current updater crate version: `0.8.0`.
+Current updater crate version: `0.9.0`.
 
 Useful service commands after installing a native package:
 

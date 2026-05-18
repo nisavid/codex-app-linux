@@ -332,11 +332,11 @@ and clear that local installation does not bypass OpenAI feature flags.
 ### 12. Release, Security, And Supply-Chain Verification
 
 **Fork delta:** The fork adds and wires release/security workflow around the
-mutable upstream DMG: trusted DMG hash input, generated app and ASAR
-inspection, package metadata checks, checksums, optional detached checksum
-signing, public key export, macOS Apple DMG verification, reviewed
-hash-refresh PRs, safer DMG URL validation, download limits, partial-file
-downloads, and sanitized URL logging.
+mutable upstream DMG: trusted DMG hash input, packaged trusted DMG metadata for
+unattended updater rebuilds, generated app and ASAR inspection, package metadata
+checks, checksums, optional detached checksum signing, public key export, macOS
+Apple DMG verification, reviewed hash-refresh PRs, safer DMG URL validation,
+download limits, partial-file downloads, and sanitized URL logging.
 
 **Upstream baseline:** Upstream already downloads and converts the DMG. This
 fork adds extra verification and review gates around that inherited supply
@@ -351,6 +351,7 @@ presenting unverified artifacts as trusted.
 `.github/workflows/updater.yml`, `Makefile`, `flake.nix`,
 `scripts/release-gate.sh`, `scripts/verify-apple-dmg.sh`,
 `scripts/inspect-electron-security.js`, `scripts/lib/dmg.sh`,
+`updater/trusted-dmg-manifest.json`, `updater/src/trust.rs`,
 `updater/src/upstream.rs`, `updater/src/app.rs`,
 `docs/maintainers/security-backlog.md`, `docs/maintainers/threat-model.md`.
 
