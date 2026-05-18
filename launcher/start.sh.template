@@ -103,7 +103,7 @@ validate_tcp_port() {
     normalize_tcp_port "$1" "$2" >/dev/null
 }
 
-if ! CODEX_LINUX_WEBVIEW_PORT="$(normalize_tcp_port "CODEX_WEBVIEW_PORT" "$CODEX_LINUX_WEBVIEW_PORT")"; then
+if ! CODEX_LINUX_WEBVIEW_PORT="$(normalize_tcp_port "CODEX_LINUX_WEBVIEW_PORT" "$CODEX_LINUX_WEBVIEW_PORT")"; then
     exit 1
 fi
 
@@ -248,7 +248,7 @@ Environment:
                               Override --force-renderer-accessibility; auto skips it under WSLg
   CODEX_MULTI_LAUNCH=1        Treat normal launches like --new-instance
   CODEX_MULTI_LAUNCH_PORT_RANGE=START-END
-                              Port allocation range for --new-instance (default: CODEX_WEBVIEW_PORT through +4)
+                              Port allocation range for --new-instance (default: CODEX_LINUX_WEBVIEW_PORT through +4)
 
 Logs: $LOG_FILE
 HELP

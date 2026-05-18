@@ -389,7 +389,7 @@ function applyPersistentRateLimitFooterPatch(currentSource) {
   }
 
   const previousBrokenCurrentCall =
-    /\(0,Q\.jsx\)\(codexLinuxRateLimitFooter,\{rateLimitEntries:[A-Za-z_$][\w$]*,activeLimitName:[A-Za-z_$][\w$]*,selectedModel:[A-Za-z_$][\w$]*\}\)/g;
+    /\(0,Q\.jsx\)\(codexLinuxRateLimitFooter,\{rateLimitEntries:[A-Za-z_$][\w$]*,activeLimitName:[A-Za-z_$][\w$]*,selectedModel:[A-Za-z_$][\w$]*\}\)/;
   if (
     currentFooterFunction != null &&
     previousBrokenCurrentCall.test(patchedSource) &&

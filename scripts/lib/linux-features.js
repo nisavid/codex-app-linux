@@ -168,6 +168,15 @@ function enabledLinuxFeatureIds(options = {}) {
   return ids;
 }
 
+function resolvedLinuxFeaturesConfig(options = {}) {
+  const featuresRoot = linuxFeaturesRoot(options);
+  const knownFeatureIds = new Set(discoverLinuxFeatureIds(featuresRoot));
+  const config = readLinuxFeaturesConfig(featuresRoot);
+  const enabled = enabledLinuxFeatureIds({ ...options, featuresRoot });
+  const disabled = config.disabled.filter((id) => knownFeatureIds.has(id));
+  return { enabled, disabled };
+}
+
 function loadLinuxFeatureManifest(featuresRoot, id) {
   const featureDir = path.join(featuresRoot, id);
   const manifestPath = path.join(featureDir, "feature.json");
@@ -390,5 +399,6 @@ module.exports = {
   linuxFeaturesConfigPath,
   linuxFeaturesRoot,
   linuxFeaturesUserConfigPath,
+  resolvedLinuxFeaturesConfig,
   resolveFeatureEntrypoint,
 };

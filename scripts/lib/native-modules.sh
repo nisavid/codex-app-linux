@@ -6,7 +6,7 @@
 
 # ---- Build native modules in a clean directory ----
 ELECTRON_REBUILD_PACKAGE="@electron/rebuild@4.0.4"
-ELECTRON_REBUILD_NODE_ABI_PACKAGE="node-abi@^4.31.0"
+ELECTRON_REBUILD_NODE_ABI_PACKAGE="node-abi@4.31.0"
 
 version_lt() {
     [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]
@@ -210,6 +210,8 @@ install_native_modules_from_source() {
     [ "$actual_node_pty_version" = "$expected_node_pty_version" ] || \
         error "Prebuilt node-pty version mismatch: expected $expected_node_pty_version, got ${actual_node_pty_version:-unknown}"
 
+    validate_native_module_source_metadata "$source_dir" "$expected_better_sqlite3_version" "$expected_node_pty_version"
+
     info "Using prebuilt native modules from $source_dir"
     rm -rf "$app_extracted/node_modules/better-sqlite3"
     rm -rf "$app_extracted/node_modules/node-pty"
@@ -218,6 +220,50 @@ install_native_modules_from_source() {
     chmod -R u+w "$app_extracted/node_modules/better-sqlite3" "$app_extracted/node_modules/node-pty"
     prune_native_module_build_artifacts "$app_extracted/node_modules/better-sqlite3"
     prune_native_module_build_artifacts "$app_extracted/node_modules/node-pty"
+}
+
+native_modules_metadata_value() {
+    local metadata="$1"
+    local key="$2"
+    sed -n "s/^${key}=//p" "$metadata" | tail -n 1
+}
+
+expected_electron_arch() {
+    case "$ARCH" in
+        x86_64)  echo "x64" ;;
+        aarch64) echo "arm64" ;;
+        armv7l)  echo "armv7l" ;;
+        *)       error "Unsupported architecture: $ARCH" ;;
+    esac
+}
+
+validate_native_module_source_metadata() {
+    local source_dir="$1"
+    local expected_better_sqlite3_version="$2"
+    local expected_node_pty_version="$3"
+    local metadata="$source_dir/codex-native-modules.env"
+    local source_electron_version=""
+    local source_electron_arch=""
+    local source_better_sqlite3_version=""
+    local source_node_pty_version=""
+    local electron_arch=""
+
+    [ -f "$metadata" ] || error "Prebuilt native modules metadata missing: $metadata"
+
+    source_electron_version="$(native_modules_metadata_value "$metadata" "ELECTRON_VERSION")"
+    source_electron_arch="$(native_modules_metadata_value "$metadata" "ELECTRON_ARCH")"
+    source_better_sqlite3_version="$(native_modules_metadata_value "$metadata" "BETTER_SQLITE3_VERSION")"
+    source_node_pty_version="$(native_modules_metadata_value "$metadata" "NODE_PTY_VERSION")"
+    electron_arch="$(expected_electron_arch)"
+
+    [ "$source_electron_version" = "$ELECTRON_VERSION" ] || \
+        error "Prebuilt native modules Electron version mismatch: expected $ELECTRON_VERSION, got ${source_electron_version:-unknown}"
+    [ "$source_electron_arch" = "$electron_arch" ] || \
+        error "Prebuilt native modules architecture mismatch: expected $electron_arch, got ${source_electron_arch:-unknown}"
+    [ "$source_better_sqlite3_version" = "$expected_better_sqlite3_version" ] || \
+        error "Prebuilt native modules metadata better-sqlite3 mismatch: expected $expected_better_sqlite3_version, got ${source_better_sqlite3_version:-unknown}"
+    [ "$source_node_pty_version" = "$expected_node_pty_version" ] || \
+        error "Prebuilt native modules metadata node-pty mismatch: expected $expected_node_pty_version, got ${source_node_pty_version:-unknown}"
 }
 
 # ---- Download Linux Electron ----
@@ -238,7 +284,7 @@ download_electron() {
         info "Using Electron runtime archive: $CODEX_ELECTRON_ZIP_SOURCE"
         cp "$CODEX_ELECTRON_ZIP_SOURCE" "$WORK_DIR/electron.zip"
         mkdir -p "$INSTALL_DIR"
-        cd "$INSTALL_DIR"
+        cd "$INSTALL_DIR" || error "Failed to change to install directory: $INSTALL_DIR"
         unzip -qo "$WORK_DIR/electron.zip"
         info "Electron ready"
         return 0

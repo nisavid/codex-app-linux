@@ -232,7 +232,7 @@ SCRIPT
 }
 
 test_update_builder_preserves_enabled_linux_features_config() {
-    info "Checking update-builder preserves sanitized enabled Linux feature config"
+    info "Checking update-builder preserves sanitized Linux feature config"
     local workspace="$TMP_DIR/update-builder-linux-features"
     local root="$workspace/root"
     local app_dir="$workspace/app"
@@ -245,6 +245,9 @@ test_update_builder_preserves_enabled_linux_features_config() {
 {
   "enabled": [
     "example-feature"
+  ],
+  "disabled": [
+    "open-target-discovery"
   ],
   "localComment": "should not be packaged"
 }
@@ -269,7 +272,7 @@ JSON
 const fs = require("node:fs");
 const configPath = process.argv[2];
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-if (JSON.stringify(config) !== JSON.stringify({ enabled: ["open-target-discovery", "example-feature"] })) {
+if (JSON.stringify(config) !== JSON.stringify({ enabled: ["example-feature"], disabled: ["open-target-discovery"] })) {
   process.exit(1);
 }
 NODE
@@ -1104,7 +1107,7 @@ SCRIPT
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "Expected launcher validation to reject oversized CODEX_WEBVIEW_PORT"
-    assert_contains "$launcher_stderr" "CODEX_WEBVIEW_PORT must be between 1 and 65535"
+    assert_contains "$launcher_stderr" "CODEX_LINUX_WEBVIEW_PORT must be between 1 and 65535"
     assert_not_contains "$launcher_stderr" "integer expected"
 
     cat > "$launcher_probe_script" <<'SCRIPT'
@@ -1364,6 +1367,7 @@ SCRIPT
         NATIVE_TOOLCHAIN_LOG="$toolchain_log"
         export NATIVE_TOOLCHAIN_LOG
         WORK_DIR="$workspace/work"
+        ARCH="x86_64"
         ELECTRON_VERSION="42.0.1"
         MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_41="12.9.0"
         MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42="12.10.0"
@@ -1378,7 +1382,7 @@ SCRIPT
     ) > "$output_log" 2>&1
 
     assert_contains "$toolchain_log" "@electron/rebuild@4.0.4"
-    assert_contains "$toolchain_log" "node-abi@^4.31.0"
+    assert_contains "$toolchain_log" "node-abi@4.31.0"
     assert_contains "$toolchain_log" "electron-rebuild -v 42.0.1 --force --dist-url https://example.invalid/electron"
     assert_contains "$output_log" "Native modules built successfully"
     assert_file_exists "$app_dir/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
@@ -1403,6 +1407,12 @@ test_native_module_rebuild_accepts_prebuilt_source() {
 
     printf '%s\n' '{"version":"12.10.0"}' > "$source_dir/better-sqlite3/package.json"
     printf '%s\n' '{"version":"1.1.0"}' > "$source_dir/node-pty/package.json"
+    cat > "$source_dir/codex-native-modules.env" <<'EOF'
+ELECTRON_VERSION=42.0.1
+ELECTRON_ARCH=x64
+BETTER_SQLITE3_VERSION=12.10.0
+NODE_PTY_VERSION=1.1.0
+EOF
     : > "$source_dir/better-sqlite3/build/Release/better_sqlite3.node"
     : > "$source_dir/better-sqlite3/build/Release/junk.o"
     : > "$source_dir/node-pty/build/Release/pty.node"
@@ -1410,6 +1420,7 @@ test_native_module_rebuild_accepts_prebuilt_source() {
 
     (
         WORK_DIR="$workspace/work"
+        ARCH="x86_64"
         ELECTRON_VERSION="42.0.1"
         MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_41="12.9.0"
         MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42="12.10.0"
@@ -1484,7 +1495,7 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "better_sqlite3_build_version"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "patch_better_sqlite3_for_v8_external_pointer_api"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "@electron/rebuild@4.0.4"
-    assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "node-abi@^4.31.0"
+    assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "node-abi@4.31.0"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" 'node_modules/@electron/rebuild/lib/cli.js'
     assert_not_contains "$REPO_DIR/scripts/lib/native-modules.sh" "npx --yes @electron/rebuild"
     assert_contains "$REPO_DIR/scripts/lib/native-modules.sh" "prune_native_module_build_artifacts"
@@ -3977,8 +3988,8 @@ EOF
     )
 }
 
-test_user_local_prepare_build_repo_skips_unmerged_overlay_paths() {
-    info "Checking user-local managed checkout skips unmerged overlay paths"
+test_user_local_prepare_build_repo_fails_on_unmerged_overlay_paths() {
+    info "Checking user-local managed checkout fails on unmerged overlay paths"
     local workspace="$TMP_DIR/user-local-unmerged-overlay"
     local origin_repo="$workspace/origin.git"
     local source_repo="$workspace/source"
@@ -4033,11 +4044,17 @@ REPO_DEFAULT_BRANCH=$(printf '%q' "main")
 OPT_ROOT=$(printf '%q' "$workspace/opt")
 EOF
 
-        prepare_build_repo
+        local output_log="$workspace/prepare-build-repo.log"
+        local rc
 
-        [ "$(cat "$MANAGED_REPO_DIR/conflict.txt")" = "base" ] \
-            || fail "Expected managed checkout to keep clean upstream content for unmerged overlay paths"
-        assert_not_contains "$MANAGED_REPO_DIR/conflict.txt" "<<<<<<<"
+        set +e
+        prepare_build_repo >"$output_log" 2>&1
+        rc=$?
+        set -e
+
+        [ "$rc" -ne 0 ] \
+            || fail "Expected managed checkout preparation to fail with unmerged source paths"
+        assert_contains "$output_log" "Source checkout has unmerged paths"
     )
 }
 
@@ -4100,7 +4117,7 @@ main() {
     test_user_local_prepare_build_repo_updates_existing_single_branch_fetch_refspec
     test_user_local_prepare_build_repo_handles_deleted_overlay_paths
     test_user_local_prepare_build_repo_removes_rename_source_paths
-    test_user_local_prepare_build_repo_skips_unmerged_overlay_paths
+    test_user_local_prepare_build_repo_fails_on_unmerged_overlay_paths
     info "All script smoke tests passed"
 }
 

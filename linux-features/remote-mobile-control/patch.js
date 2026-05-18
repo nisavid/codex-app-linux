@@ -133,10 +133,11 @@ function applyLinuxRemoteControlPreserveConfigPatch(source) {
 }
 
 function applyLinuxRemoteControlVisibilityPatch(source) {
+  const remoteControlLinuxVisibilityRegex =
+    /remoteControlConnectionsState[\s\S]{0,200}navigator\.userAgent\.includes\(`Linux`\)|navigator\.userAgent\.includes\(`Linux`\)[\s\S]{0,200}remoteControlConnectionsState/u;
   if (
     source.includes(REMOTE_CONTROL_VISIBILITY_REPLACEMENT) ||
-    source.includes("remoteControlConnectionsState") &&
-      source.includes("navigator.userAgent.includes(`Linux`)")
+    remoteControlLinuxVisibilityRegex.test(source)
   ) {
     return source;
   }

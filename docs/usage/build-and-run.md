@@ -398,6 +398,7 @@ make run-app
 make deb
 make rpm
 make pacman
+make appimage
 make package
 make apple-dmg-verify
 make release-gate
@@ -409,8 +410,13 @@ make clean-dist
 make clean-state
 ```
 
-`make package` detects the native package manager on the host and builds the
-matching package type. `make release-gate` verifies the reviewed upstream DMG
+`make appimage` builds a manual-update AppImage through
+`./scripts/build-appimage.sh`; it consumes the generated `codex-app/` tree,
+stages the AppDir templates under `packaging/appimage/`, and writes the
+resulting `.AppImage` to `dist/`. `APPIMAGETOOL=/path/to/appimagetool` can
+override the AppImage tool command. `make package` detects the native package
+manager on the host and builds the matching package type. `make release-gate`
+verifies the reviewed upstream DMG
 hash, scans the generated app, validates package metadata, writes
 `dist/SHA256SUMS`, and signs that checksum file whenever
 `CODEX_RELEASE_GPG_KEY` is set. `REQUIRE_RELEASE_SIGNATURE=1` makes the gate
@@ -430,7 +436,8 @@ The build flow is:
 4. rebuild native Node.js modules for Linux;
 5. download a Linux Electron runtime;
 6. write `codex-app/start.sh`;
-7. optionally package `codex-app/` as a Debian, RPM, or pacman package;
+7. optionally package `codex-app/` as a Debian, RPM, pacman, or AppImage
+   artifact;
 8. when installed from a native package, run `codex-app-updater` as a
    `systemd --user` service for local update checks and package rebuilds.
 

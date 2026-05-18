@@ -26,10 +26,14 @@ build_linux_computer_use_backend() {
     local cargo_cmd=""
 
     if [ -n "${CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE:-}" ] || [ -n "${CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE:-}" ]; then
-        [ -n "${CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE:-}" ] || warn "CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE is not set"
-        [ -n "${CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE:-}" ] || warn "CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE is not set"
-        [ -x "${CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE:-}" ] || return 1
-        [ -x "${CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE:-}" ] || return 1
+        [ -n "${CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE:-}" ] || warn "CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE is not set; falling back to source build"
+        [ -n "${CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE:-}" ] || warn "CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE is not set; falling back to source build"
+        [ -z "${CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE:-}" ] || [ -x "$CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE" ] || warn "CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE is not executable: $CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE"
+        [ -z "${CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE:-}" ] || [ -x "$CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE" ] || warn "CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE is not executable: $CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE"
+    fi
+
+    if [ -n "${CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE:-}" ] && [ -x "$CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE" ] &&
+        [ -n "${CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE:-}" ] && [ -x "$CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE" ]; then
         info "Using prebuilt Linux Computer Use backend"
         printf '%s\n%s\n' "$CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE" "$CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE"
         return 0

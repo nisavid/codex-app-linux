@@ -200,11 +200,15 @@ source_repo_overlay_paths() {
         {
             git -C "$SOURCE_REPO_DIR" diff --name-only --diff-filter="$diff_filter" "$base_ref...HEAD" --
             git -C "$SOURCE_REPO_DIR" diff --name-only --diff-filter="$diff_filter" HEAD --
+            git -C "$SOURCE_REPO_DIR" ls-files --others --exclude-standard
         } | awk 'NF && !seen[$0]++'
         return 0
     fi
 
-    git -C "$SOURCE_REPO_DIR" diff --name-only --diff-filter="$diff_filter" HEAD --
+    {
+        git -C "$SOURCE_REPO_DIR" diff --name-only --diff-filter="$diff_filter" HEAD --
+        git -C "$SOURCE_REPO_DIR" ls-files --others --exclude-standard
+    } | awk 'NF && !seen[$0]++'
 }
 
 source_repo_overlay_remove_paths() {
@@ -232,6 +236,14 @@ source_repo_path_is_unmerged() {
     git -C "$SOURCE_REPO_DIR" ls-files -u -- "$path" | grep -q .
 }
 
+source_repo_unmerged_paths() {
+    git -C "$SOURCE_REPO_DIR" ls-files -u | awk '{ print $4 }' | awk 'NF && !seen[$0]++'
+}
+
+source_repo_has_untracked_paths() {
+    git -C "$SOURCE_REPO_DIR" ls-files --others --exclude-standard | grep -q .
+}
+
 source_repo_has_overlay() {
     local base_ref=""
 
@@ -242,7 +254,8 @@ source_repo_has_overlay() {
         return 0
     fi
 
-    ! git -C "$SOURCE_REPO_DIR" diff --quiet --no-ext-diff HEAD --
+    ! git -C "$SOURCE_REPO_DIR" diff --quiet --no-ext-diff HEAD -- && return 0
+    source_repo_has_untracked_paths
 }
 
 source_repo_overlay_signature() {
@@ -251,11 +264,11 @@ source_repo_overlay_signature() {
     [ -d "$SOURCE_REPO_DIR/.git" ] || return 0
     base_ref="$(source_repo_overlay_base_ref 2>/dev/null || true)"
 
-    if [ -z "$base_ref" ] && git -C "$SOURCE_REPO_DIR" diff --quiet --no-ext-diff HEAD --; then
+    if [ -z "$base_ref" ] && git -C "$SOURCE_REPO_DIR" diff --quiet --no-ext-diff HEAD -- && ! source_repo_has_untracked_paths; then
         return 0
     fi
 
-    if [ -n "$base_ref" ] && git -C "$SOURCE_REPO_DIR" diff --quiet --no-ext-diff "$base_ref...HEAD" -- && git -C "$SOURCE_REPO_DIR" diff --quiet --no-ext-diff HEAD --; then
+    if [ -n "$base_ref" ] && git -C "$SOURCE_REPO_DIR" diff --quiet --no-ext-diff "$base_ref...HEAD" -- && git -C "$SOURCE_REPO_DIR" diff --quiet --no-ext-diff HEAD -- && ! source_repo_has_untracked_paths; then
         return 0
     fi
 
@@ -266,6 +279,13 @@ source_repo_overlay_signature() {
         fi
         printf '\n--worktree--\n'
         git -C "$SOURCE_REPO_DIR" diff --binary HEAD --
+        printf '\n--untracked--\n'
+        while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            [ -f "$SOURCE_REPO_DIR/$path" ] || continue
+            printf 'path=%s\n' "$path"
+            sha256sum "$SOURCE_REPO_DIR/$path"
+        done < <(git -C "$SOURCE_REPO_DIR" ls-files --others --exclude-standard)
     } | sha256sum | awk '{ print $1 }'
 }
 
@@ -292,14 +312,21 @@ ensure_managed_repo() {
 }
 
 apply_source_overlay() {
-    local path target_path base_ref
+    local path target_path base_ref unmerged_paths
+    if [ -d "$SOURCE_REPO_DIR/.git" ]; then
+        unmerged_paths="$(source_repo_unmerged_paths)"
+        if [ -n "$unmerged_paths" ]; then
+            printf '%s\n' "Source checkout has unmerged paths; resolve conflicts before preparing a managed build overlay" >&2
+            return 1
+        fi
+    fi
+
     source_repo_has_overlay || return 0
     base_ref="$(source_repo_overlay_base_ref 2>/dev/null || true)"
 
     while IFS= read -r path; do
         [ -n "$path" ] || continue
         [ -e "$SOURCE_REPO_DIR/$path" ] || continue
-        source_repo_path_is_unmerged "$path" && continue
         target_path="$MANAGED_REPO_DIR/$path"
         mkdir -p "$(dirname "$target_path")"
         rm -rf "$target_path"
@@ -335,7 +362,7 @@ prepare_build_repo() {
     fi
     git -C "$MANAGED_REPO_DIR" reset --hard "$managed_ref" >/dev/null
     git -C "$MANAGED_REPO_DIR" clean -fdx >/dev/null
-    apply_source_overlay
+    apply_source_overlay || return 1
     BUILD_REPO_DIR="$MANAGED_REPO_DIR"
 }
 

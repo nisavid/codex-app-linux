@@ -323,8 +323,8 @@ Linux feature opt-ins that are normally read from the git-ignored
 
 ```bash
 nix run github:nisavid/codex-app-linux#codex-app-computer-use-ui
-nix run github:nisavid/codex-app-linux#remote-mobile-control
-nix run github:nisavid/codex-app-linux#computer-use-ui-remote-mobile-control
+nix run github:nisavid/codex-app-linux#codex-app-remote-mobile-control
+nix run github:nisavid/codex-app-linux#codex-app-computer-use-ui-remote-mobile-control
 nix run github:nisavid/codex-app-linux#installer
 ```
 

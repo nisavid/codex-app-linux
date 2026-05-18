@@ -188,7 +188,12 @@ fi"
 		pacman -Qlp "$pkg_file" >&2
 	fi
 
-	ln -sfn "$(basename "$pkg_file")" "$DIST_DIR/${PACKAGE_NAME}-latest.pkg.tar.zst"
+	local pkg_basename
+	local latest_suffix
+	pkg_basename="$(basename "$pkg_file")"
+	latest_suffix="${pkg_basename#${PACKAGE_NAME}-${PACMAN_PKGVER}-${PACMAN_PKGREL}-${arch}}"
+	[ -n "$latest_suffix" ] || latest_suffix=".pkg.tar.zst"
+	ln -sfn "$pkg_basename" "$DIST_DIR/${PACKAGE_NAME}-latest${latest_suffix}"
 
 	info "Built package: $pkg_file"
 	printf '%s\n' "$pkg_file"

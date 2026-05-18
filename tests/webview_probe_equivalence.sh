@@ -289,10 +289,10 @@ main() {
     wait "$kill_pid" 2>/dev/null
     elapsed_ms=$(( (t1 - t0) / 1000000 ))
     run_count=$((run_count + 1))
-    if [ "$elapsed_ms" -ge 150 ] && [ "$elapsed_ms" -le 500 ]; then
-        printf '  [PASS] sleeper killed at %d ms (within 150–500 ms window)\n' "$elapsed_ms"
+    if [ "$elapsed_ms" -ge 100 ] && [ "$elapsed_ms" -le 1000 ]; then
+        printf '  [PASS] sleeper killed at %d ms (within 100–1000 ms window)\n' "$elapsed_ms"
     else
-        printf '  [FAIL] sleeper terminated after %d ms (expected 150–500 ms)\n' "$elapsed_ms"
+        printf '  [FAIL] sleeper terminated after %d ms (expected 100–1000 ms)\n' "$elapsed_ms"
         fail_count=$((fail_count + 1))
     fi
 

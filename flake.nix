@@ -44,6 +44,20 @@
           hash = electronPlatform.hash;
         };
 
+        runtimeNodePlatform =
+          {
+            x86_64-linux = {
+              sharp = "linux-x64";
+              sharpLibvips = "linux-x64";
+              canvas = "linux-x64-gnu";
+            };
+            aarch64-linux = {
+              sharp = "linux-arm64";
+              sharpLibvips = "linux-arm64";
+              canvas = "linux-arm64-gnu";
+            };
+          }.${system} or (throw "codex-app-linux runtime library paths are not supported on ${system}");
+
         electronHeaders = pkgs.fetchurl {
           url = "https://artifacts.electronjs.org/headers/dist/v${electronVersion}/node-v${electronVersion}-headers.tar.gz";
           hash = "sha256-yQBrv98qtbQ8cdZpuqx2uyP1mkIAVhLlUFjI/vxh9gA=";
@@ -167,6 +181,12 @@
             mkdir -p "$out"
             cp -R node_modules/better-sqlite3 "$out/better-sqlite3"
             cp -R node_modules/node-pty "$out/node-pty"
+            cat > "$out/codex-native-modules.env" <<EOF
+ELECTRON_VERSION=${electronVersion}
+ELECTRON_ARCH=${electronPlatform.arch}
+BETTER_SQLITE3_VERSION=12.10.0
+NODE_PTY_VERSION=1.1.0
+EOF
             find "$out/better-sqlite3/build" -type f ! -name "*.node" -delete 2>/dev/null || true
             find "$out/node-pty/build" -type f ! -name "*.node" -delete 2>/dev/null || true
             find "$out" -type d -empty -delete 2>/dev/null || true
@@ -252,9 +272,9 @@ codex_nixos_add_runtime_library_dirs() {\
         "$runtime_root/dependencies/python/lib" \\\
         "$runtime_root/dependencies/python/lib/python${pkgs.python3.pythonVersion}/site-packages/pillow.libs" \\\
         "$runtime_root/dependencies/python/lib/python${pkgs.python3.pythonVersion}/site-packages/numpy.libs" \\\
-        "$runtime_root/dependencies/node/node_modules/@img/sharp-libvips-linux-x64/lib" \\\
-        "$runtime_root/dependencies/node/node_modules/@img/sharp-linux-x64/lib" \\\
-        "$runtime_root/dependencies/node/node_modules/@napi-rs/canvas-linux-x64-gnu"; do\
+        "$runtime_root/dependencies/node/node_modules/@img/sharp-libvips-${runtimeNodePlatform.sharpLibvips}/lib" \\\
+        "$runtime_root/dependencies/node/node_modules/@img/sharp-${runtimeNodePlatform.sharp}/lib" \\\
+        "$runtime_root/dependencies/node/node_modules/@napi-rs/canvas-${runtimeNodePlatform.canvas}"; do\
         if [ -d "$dir" ]; then\
             LD_LIBRARY_PATH="$dir:''${LD_LIBRARY_PATH:-}"\
         fi\
