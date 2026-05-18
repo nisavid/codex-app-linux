@@ -27,6 +27,8 @@ mod state;
 #[cfg(all(test, unix))]
 mod test_util;
 #[cfg(unix)]
+mod trust;
+#[cfg(unix)]
 mod upstream;
 
 #[cfg(unix)]

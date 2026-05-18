@@ -34,16 +34,16 @@ The highest-risk areas are:
 The repository already has meaningful hardening: HTTPS-only non-loopback DMG
 URLs, URL redaction, partial downloads, package metadata checks, private staged
 install copies, package payload symlink rejection, package mode normalization,
-builder-root permission checks, default-enabled Electron sandboxing, release
-gate checks, Apple DMG verification tooling, descriptor-based required patch
+builder-root permission checks, trusted DMG metadata gating for unattended
+updater rebuilds and installs, default-enabled Electron sandboxing, release gate
+checks, Apple DMG verification tooling, descriptor-based required patch
 validation, sanitized Linux desktop-target launches, loopback-only no-cache
 webview serving, no-updater transition cleanup under package-owned support
 paths, opt-in remote-control UI/mobile patching, and `0600` Linux
 remote-control device-key storage under XDG config. The remaining critical gaps
-are trusted upstream metadata, digest binding for privileged installs,
-generated app security review evidence, public artifact provenance, and a
-general-readiness review for the experimental remote-control/mobile host
-boundary.
+are package digest binding for privileged installs, generated app security
+review evidence, public artifact provenance, and a general-readiness review for
+the experimental remote-control/mobile host boundary.
 
 ## Scope
 
@@ -295,13 +295,14 @@ or published as trusted.
 run user-context Electron/updater code.
 
 **Existing mitigations:** HTTPS-only non-loopback updater URLs, userinfo
-rejection, redacted URL logging, download size limits, partial downloads, Nix
-fixed-output hash, release-gate hash check, Apple DMG verification script and
-workflow.
+rejection, redacted URL logging, download size limits, partial downloads,
+repo-trusted `updater/trusted-dmg-manifest.json` gating before unattended
+rebuild and install, persisted `dmg_verification` state, Nix fixed-output hash,
+release-gate hash check, Apple DMG verification script and workflow.
 
-**Gaps:** No Linux-enforced signed manifest or trusted upstream metadata before
-updater rebuild/install; hash-refresh PRs still need machine-attached upstream
-version/signature evidence.
+**Gaps:** No online signed metadata channel for default DMG publications beyond
+the packaged repo-trusted allowlist; hash-refresh PRs still need
+machine-attached upstream version/signature evidence.
 
 **Priority:** High.
 
@@ -544,21 +545,20 @@ still contain arbitrary sensitive values.
 
 ## Recommended Review Order
 
-1. Authenticate updater DMG inputs before rebuild and install.
-2. Bind privileged installs to a verified package digest and identity.
-3. Attach Apple signature/notarization and version evidence to hash-refresh PRs.
-4. Review generated app Electron security settings before public releases.
-5. Reduce fixed-port local webview spoofing.
-6. Add package signing, checksums, and hosted provenance for public artifacts.
-7. Review Computer Use command routing, screenshots, and input backends whenever
+1. Bind privileged installs to a verified package digest and identity.
+2. Attach Apple signature/notarization and version evidence to hash-refresh PRs.
+3. Review generated app Electron security settings before public releases.
+4. Reduce fixed-port local webview spoofing.
+5. Add package signing, checksums, and hosted provenance for public artifacts.
+6. Review Computer Use command routing, screenshots, and input backends whenever
    that surface changes.
-8. Review opt-in remote-control/mobile host enrollment, UI gates, and Linux
+7. Review opt-in remote-control/mobile host enrollment, UI gates, and Linux
    device-key storage before promoting the feature beyond experimental use.
-9. Review Linux open-target discovery heuristics and launch environment
+8. Review Linux open-target discovery heuristics and launch environment
    sanitization when adding target families or `.desktop` handling.
-10. Review npm CLI auto-upgrade trust and add an approved-version or consent
+9. Review npm CLI auto-upgrade trust and add an approved-version or consent
    path.
-11. Redact credential-looking subprocess output before persistence.
+10. Redact credential-looking subprocess output before persistence.
 
 ## Focus Paths For Manual Security Review
 

@@ -190,16 +190,27 @@ The config file is an overlay, so users can set only
 `cli_path = "/path/to/codex"` without copying the full default configuration.
 
 The daemon uses a kernel-backed `check.lock` to avoid overlapping upstream
-checks. It checks upstream headers, downloads new DMGs, prepares a workspace,
-runs the bundled `install.sh`, builds the native package for the host package
-manager, and records the package path in `state.json`. `install.sh` reads
-`Codex.app/Contents/Info.plist` and writes `codex-app/codex-app-version.env`;
-package builders use `CODEX_APP_PACKAGE_VERSION` from that file unless
-`PACKAGE_VERSION` is set explicitly for a deliberate test build. That package
-version must track the OpenAI DMG app's `CFBundleShortVersionString`; do not
-replace it with local timestamp versions during upstream syncs. Generated
-metadata must stay three or four numeric dot-separated segments because the
-updater's installed-version comparison depends on that shape.
+checks. It checks upstream headers, downloads new DMGs, verifies each downloaded
+DMG against `updater/trusted-dmg-manifest.json` from the active builder bundle,
+prepares a workspace, runs the bundled `install.sh`, builds the native package
+for the host package manager, and records the package path in `state.json`. The
+trusted DMG manifest is packaged under
+`/usr/lib/codex-app/update-builder/updater/trusted-dmg-manifest.json` and is
+the repo-approved allowlist for unattended rebuilds: the downloaded URL and
+SHA-256 must match an approved manifest entry before rebuild continues.
+Unavailable or mismatched trusted metadata marks the update as failed before
+package build or install. Successful and failed checks record `dmg_verification`
+with the result, manifest path, digest, version when known, timestamp, and a
+log-safe message.
+
+`install.sh` reads `Codex.app/Contents/Info.plist` and writes
+`codex-app/codex-app-version.env`; package builders use
+`CODEX_APP_PACKAGE_VERSION` from that file unless `PACKAGE_VERSION` is set
+explicitly for a deliberate test build. That package version must track the
+OpenAI DMG app's `CFBundleShortVersionString` and match the trusted manifest
+version for the approved DMG. Generated metadata must stay three or four
+numeric dot-separated segments because the updater's installed-version
+comparison depends on that shape.
 
 The packaged user service sets a constrained `PATH` with system directories and
 `%h/.local/bin`, `PrivateTmp=yes`,
@@ -226,8 +237,12 @@ expected package filename shapes, copy the package into a private temporary
 staging directory, validate package identity from format-specific metadata, and
 then install that staged copy. Debian installs use `apt` or `dpkg`; RPM installs
 use `dnf`/`dnf5`, then `zypper`, then `rpm -Uvh`; pacman installs use
-`pacman -U --noconfirm`. This reduces source replacement races, but the updater
-still needs a trusted digest/artifact binding before the privileged install.
+`pacman -U --noconfirm`. Ready updates must retain a successful
+`dmg_verification` record whose version and digest match `candidate_version` and
+`dmg_sha256`; missing or failed DMG verification blocks install. This reduces
+source replacement races, but the updater still needs a package digest binding
+between the rebuilt package artifact and updater-reviewed state before the
+privileged install.
 
 State handling matters:
 
@@ -246,7 +261,7 @@ State handling matters:
 ## Crate Versioning Policy
 
 The updater crate version is in `updater/Cargo.toml`. The current version is
-`0.8.0`. Keep the changelog and any user-facing version references in sync.
+`0.9.0`. Keep the changelog and any user-facing version references in sync.
 
 Use:
 

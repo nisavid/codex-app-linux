@@ -6,13 +6,14 @@ use crate::{
     codex_cli,
     config::{RuntimeConfig, RuntimePaths},
     install, install_rollback, liveness, logging, notify, rollback,
-    state::{CliStatus, PersistedState, UpdateStatus},
-    upstream,
+    state::{CliStatus, DmgVerification, DmgVerificationResult, PersistedState, UpdateStatus},
+    trust, upstream,
 };
 use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, Utc};
 use fs4::{FileExt, TryLockError};
 use reqwest::Client;
+use sha2::{Digest, Sha256};
 use std::{
     ffi::OsString,
     fs::{self, OpenOptions},
@@ -21,6 +22,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
+use tokio::io::AsyncReadExt;
 use tokio::time::{self, Duration};
 use tracing::{error, info, warn};
 
@@ -124,6 +126,119 @@ fn mark_failed_and_persist(
 ) -> Result<()> {
     state.mark_failed(message);
     persist_state(paths, state)
+}
+
+fn record_verified_dmg(state: &mut PersistedState, verified: &trust::VerifiedDmg) {
+    state.dmg_verification = Some(DmgVerification {
+        result: DmgVerificationResult::Verified,
+        version: Some(verified.version.clone()),
+        sha256: Some(verified.sha256.clone()),
+        manifest_path: Some(verified.manifest_path.clone()),
+        verified_at: Some(Utc::now()),
+        message: Some("Downloaded DMG matched repo-trusted metadata".to_string()),
+    });
+}
+
+fn record_failed_dmg_verification(
+    state: &mut PersistedState,
+    downloaded_sha256: &str,
+    manifest_path: PathBuf,
+    message: String,
+) {
+    state.dmg_verification = Some(DmgVerification {
+        result: DmgVerificationResult::Failed,
+        version: None,
+        sha256: Some(downloaded_sha256.to_string()),
+        manifest_path: Some(manifest_path),
+        verified_at: Some(Utc::now()),
+        message: Some(message),
+    });
+}
+
+fn ensure_ready_update_has_verified_dmg(state: &PersistedState) -> Result<()> {
+    let Some(verification) = state.dmg_verification.as_ref() else {
+        anyhow::bail!("Ready update is missing trusted DMG verification");
+    };
+    if verification.result != DmgVerificationResult::Verified {
+        anyhow::bail!("Ready update is not backed by successful trusted DMG verification");
+    }
+    let Some(verified_version) = verification.version.as_deref() else {
+        anyhow::bail!("Ready update trusted DMG verification is missing a version");
+    };
+    let Some(candidate_version) = state.candidate_version.as_deref() else {
+        anyhow::bail!("Ready update is missing a candidate version");
+    };
+    if verified_version != candidate_version {
+        anyhow::bail!("Ready update version does not match trusted DMG verification");
+    }
+    let Some(verified_sha256) = verification.sha256.as_deref() else {
+        anyhow::bail!("Ready update trusted DMG verification is missing a digest");
+    };
+    let Some(dmg_sha256) = state.dmg_sha256.as_deref() else {
+        anyhow::bail!("Ready update is missing a DMG digest");
+    };
+    if verified_sha256 != dmg_sha256 {
+        anyhow::bail!("Ready update digest does not match trusted DMG verification");
+    }
+    Ok(())
+}
+
+fn state_has_verified_current_dmg(state: &PersistedState) -> bool {
+    let Some(verification) = state.dmg_verification.as_ref() else {
+        return false;
+    };
+    verification.result == DmgVerificationResult::Verified
+        && verification.version.is_some()
+        && state
+            .candidate_version
+            .as_deref()
+            .is_none_or(|candidate| verification.version.as_deref() == Some(candidate))
+        && verification.sha256.as_deref() == state.dmg_sha256.as_deref()
+}
+
+async fn file_sha256(path: &Path) -> Result<String> {
+    let mut file = tokio::fs::File::open(path).await.with_context(|| {
+        format!(
+            "Failed to open {} for trusted DMG hash check",
+            path.display()
+        )
+    })?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+
+    loop {
+        let bytes_read = file.read(&mut buffer).await.with_context(|| {
+            format!(
+                "Failed to read {} for trusted DMG hash check",
+                path.display()
+            )
+        })?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>())
+}
+
+async fn ensure_downloaded_dmg_still_matches_verified_metadata(
+    path: &Path,
+    verified: &trust::VerifiedDmg,
+) -> Result<()> {
+    let current_sha256 = file_sha256(path).await?;
+    if current_sha256 != verified.sha256 {
+        anyhow::bail!(
+            "Downloaded DMG changed after trusted metadata verification: expected {}, found {}",
+            verified.sha256,
+            current_sha256
+        );
+    }
+    Ok(())
 }
 
 fn packaged_runtime_removed(config: &RuntimeConfig) -> bool {
@@ -583,6 +698,7 @@ async fn run_check_cycle(
 
         if previous_headers_fingerprint.as_deref() == Some(metadata.headers_fingerprint.as_str())
             && state.dmg_sha256.is_some()
+            && state_has_verified_current_dmg(state)
             && !retrying_failed_update
         {
             set_status(state, paths, UpdateStatus::Idle)?;
@@ -595,20 +711,50 @@ async fn run_check_cycle(
         let downloads_dir = config.workspace_root.join("downloads");
         let downloaded =
             upstream::download_dmg(&client, &config.dmg_url, &downloads_dir, Utc::now()).await?;
+        let manifest_path = trust::trusted_dmg_manifest_path(&config.builder_bundle_root);
+        let verified = match trust::verify_downloaded_dmg_with_manifest(
+            &manifest_path,
+            &config.dmg_url,
+            &downloaded.sha256,
+        ) {
+            Ok(verified) => {
+                record_verified_dmg(state, &verified);
+                info!(
+                    candidate_version = %verified.version,
+                    dmg_sha256 = %verified.sha256,
+                    manifest = %verified.manifest_path.display(),
+                    "verified downloaded DMG against repo-trusted metadata"
+                );
+                verified
+            }
+            Err(error) => {
+                record_failed_dmg_verification(
+                    state,
+                    &downloaded.sha256,
+                    manifest_path,
+                    error.to_string(),
+                );
+                return Err(error);
+            }
+        };
 
-        if candidate_is_blocked_by_rollback(
+        if downloaded_dmg_is_blocked_by_rollback(
             state,
+            &verified.version,
             &downloaded.candidate_version,
             &downloaded.sha256,
         ) {
+            state.candidate_version = None;
+            state.dmg_sha256 = Some(verified.sha256.clone());
+            state.artifact_paths.dmg_path = Some(downloaded.path.clone());
             state.status = UpdateStatus::Idle;
             state.error_message = Some(format!(
                 "Candidate {} was rolled back and will not be reinstalled automatically",
-                downloaded.candidate_version
+                verified.version
             ));
             persist_state(paths, state)?;
             info!(
-                candidate_version = %downloaded.candidate_version,
+                candidate_version = %verified.version,
                 "skipping candidate blocked by rollback"
             );
             return Ok(());
@@ -626,8 +772,8 @@ async fn run_check_cycle(
 
         rollback::record_current_package_as_known_good(state);
         state.status = UpdateStatus::UpdateDetected;
-        state.candidate_version = Some(downloaded.candidate_version);
-        state.dmg_sha256 = Some(downloaded.sha256);
+        state.candidate_version = Some(verified.version.clone());
+        state.dmg_sha256 = Some(verified.sha256.clone());
         state.artifact_paths.dmg_path = Some(downloaded.path.clone());
         state.notified_events.clear();
         state.save(&paths.state_file)?;
@@ -645,7 +791,17 @@ async fn run_check_cycle(
             .candidate_version
             .clone()
             .expect("candidate version should be set before local build");
+        ensure_downloaded_dmg_still_matches_verified_metadata(&downloaded.path, &verified).await?;
         builder::build_update(config, state, paths, &candidate_version, &downloaded.path).await?;
+        if state.candidate_version.as_deref() != Some(verified.version.as_str()) {
+            let message = format!(
+                "Built package version {} did not match trusted DMG metadata version {}",
+                state.candidate_version.as_deref().unwrap_or("unknown"),
+                verified.version
+            );
+            mark_failed_and_persist(state, paths, message.clone())?;
+            return Err(anyhow::anyhow!(message));
+        }
         maybe_notify_update_ready(state, paths, config.notifications)?;
         Ok(())
     }
@@ -690,6 +846,11 @@ async fn reconcile_pending_install(
                 return Ok(());
             }
 
+            if let Err(error) = ensure_ready_update_has_verified_dmg(state) {
+                mark_failed_and_persist(state, paths, error.to_string())?;
+                return Ok(());
+            }
+
             // The persisted `auto_install_on_app_exit` key is kept for config
             // compatibility. In this flow it controls whether the updater
             // nudges a running app; installation still requires an explicit
@@ -722,6 +883,11 @@ async fn reconcile_pending_install(
                         package_path.display()
                     ),
                 )?;
+                return Ok(());
+            }
+
+            if let Err(error) = ensure_ready_update_has_verified_dmg(state) {
+                mark_failed_and_persist(state, paths, error.to_string())?;
                 return Ok(());
             }
 
@@ -824,6 +990,13 @@ async fn run_install_ready(
         return Err(anyhow::anyhow!(message));
     }
 
+    if let Err(error) = ensure_ready_update_has_verified_dmg(state) {
+        let message = error.to_string();
+        mark_failed_and_persist(state, paths, message.clone())?;
+        maybe_send_notification(config.notifications, "Codex update failed", &message);
+        return Err(anyhow::anyhow!(message));
+    }
+
     if liveness::is_app_running(config)? {
         clear_install_auth_required_event(state, paths)?;
         set_status(state, paths, UpdateStatus::WaitingForAppExit)?;
@@ -859,6 +1032,16 @@ fn complete_pending_install_if_already_installed(
 
     let candidate_is_installed =
         installed_version_matches_candidate(&state.installed_version, &candidate_version);
+    if candidate_is_installed
+        && state_has_verified_current_dmg(state)
+        && state
+            .artifact_paths
+            .package_path
+            .as_ref()
+            .is_some_and(|package_path| package_path.exists())
+    {
+        return Ok(false);
+    }
 
     state.status = UpdateStatus::Installed;
     state.candidate_version = None;
@@ -1094,9 +1277,10 @@ fn maybe_send_notification(enabled: bool, summary: &str, body: &str) {
     }
 }
 
-fn candidate_is_blocked_by_rollback(
+fn downloaded_dmg_is_blocked_by_rollback(
     state: &PersistedState,
-    candidate_version: &str,
+    trusted_version: &str,
+    legacy_download_candidate_version: &str,
     dmg_sha256: &str,
 ) -> bool {
     state
@@ -1107,8 +1291,32 @@ fn candidate_is_blocked_by_rollback(
             .rollback_blocked_candidate_version
             .as_deref()
             .is_some_and(|blocked| {
-                installed_version_satisfies_candidate(blocked, candidate_version)
+                rollback_version_satisfies_candidate(blocked, trusted_version)
+                    || rollback_version_satisfies_candidate(
+                        blocked,
+                        legacy_download_candidate_version,
+                    )
             })
+}
+
+fn rollback_version_satisfies_candidate(blocked: &str, candidate: &str) -> bool {
+    match (
+        parse_generated_version(blocked),
+        parse_generated_version(candidate),
+    ) {
+        (Some(blocked_parts), Some(candidate_parts))
+            if blocked_parts.len() == 3 && candidate_parts.len() == 3 =>
+        {
+            false
+        }
+        (Some(blocked_parts), Some(candidate_parts))
+            if blocked_parts.len() == candidate_parts.len() =>
+        {
+            installed_version_satisfies_candidate(blocked, candidate)
+        }
+        (Some(_), Some(_)) => false,
+        _ => blocked == candidate,
+    }
 }
 
 async fn trigger_install(
@@ -1245,6 +1453,23 @@ fn notify_failure(
 mod tests {
     use super::*;
 
+    const TRUSTED_TEST_DMG_SHA256: &str =
+        "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a";
+
+    fn mark_test_dmg_verified(state: &mut PersistedState, version: &str) {
+        state.dmg_sha256 = Some(TRUSTED_TEST_DMG_SHA256.to_string());
+        state.dmg_verification = Some(DmgVerification {
+            result: DmgVerificationResult::Verified,
+            version: Some(version.to_string()),
+            sha256: Some(TRUSTED_TEST_DMG_SHA256.to_string()),
+            manifest_path: Some(PathBuf::from(
+                "/usr/lib/codex-app/update-builder/updater/trusted-dmg-manifest.json",
+            )),
+            verified_at: Some(Utc::now()),
+            message: Some("Downloaded DMG matched repo-trusted metadata".to_string()),
+        });
+    }
+
     #[test]
     fn upstream_check_freshness_respects_configured_interval() {
         let config = RuntimeConfig {
@@ -1372,6 +1597,209 @@ mod tests {
             assert_eq!(state.last_check_at, None);
         }
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_check_cycle_fails_when_downloaded_dmg_has_no_trusted_metadata() -> Result<()> {
+        use wiremock::{
+            matchers::{method, path},
+            Mock, MockServer, ResponseTemplate,
+        };
+
+        let server = MockServer::start().await;
+        Mock::given(method("HEAD"))
+            .and(path("/Codex.dmg"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("ETag", "\"untrusted\"")
+                    .insert_header("Content-Length", "13"),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/Codex.dmg"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"untrusted-dmg".to_vec()))
+            .mount(&server)
+            .await;
+
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: format!("{}/Codex.dmg", server.uri()),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: true,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(true);
+        let error = run_check_cycle(&config, &mut state, &paths)
+            .await
+            .expect_err("untrusted DMG should fail before local rebuild");
+
+        assert!(error
+            .to_string()
+            .contains("Failed to read trusted DMG metadata"));
+        assert_eq!(state.status, UpdateStatus::Failed);
+        assert!(state
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Failed to read trusted DMG metadata"));
+        assert_eq!(state.artifact_paths.package_path, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_check_cycle_rechecks_unchanged_headers_without_verification_state() -> Result<()> {
+        use wiremock::{
+            matchers::{method, path},
+            Mock, MockServer, ResponseTemplate,
+        };
+
+        let server = MockServer::start().await;
+        Mock::given(method("HEAD"))
+            .and(path("/Codex.dmg"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("ETag", "\"stable\"")
+                    .insert_header("Content-Length", "13"),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/Codex.dmg"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"untrusted-dmg".to_vec()))
+            .mount(&server)
+            .await;
+
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: format!("{}/Codex.dmg", server.uri()),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: true,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(true);
+        state.remote_headers_fingerprint =
+            Some("etag=\"stable\"|last_modified=|content_length=13".to_string());
+        state.dmg_sha256 =
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string());
+
+        let error = run_check_cycle(&config, &mut state, &paths)
+            .await
+            .expect_err("state without trusted DMG verification should be rechecked");
+
+        assert!(error
+            .to_string()
+            .contains("Failed to read trusted DMG metadata"));
+        assert_eq!(state.status, UpdateStatus::Failed);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_check_cycle_rechecks_unchanged_headers_with_incomplete_verification_state(
+    ) -> Result<()> {
+        use wiremock::{
+            matchers::{method, path},
+            Mock, MockServer, ResponseTemplate,
+        };
+
+        let server = MockServer::start().await;
+        Mock::given(method("HEAD"))
+            .and(path("/Codex.dmg"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("ETag", "\"stable\"")
+                    .insert_header("Content-Length", "13"),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/Codex.dmg"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"untrusted-dmg".to_vec()))
+            .mount(&server)
+            .await;
+
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: format!("{}/Codex.dmg", server.uri()),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: true,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(true);
+        state.remote_headers_fingerprint =
+            Some("etag=\"stable\"|last_modified=|content_length=13".to_string());
+        state.dmg_sha256 = Some(TRUSTED_TEST_DMG_SHA256.to_string());
+        state.dmg_verification = Some(DmgVerification {
+            result: DmgVerificationResult::Verified,
+            version: None,
+            sha256: Some(TRUSTED_TEST_DMG_SHA256.to_string()),
+            manifest_path: Some(PathBuf::from(
+                "/usr/lib/codex-app/update-builder/updater/trusted-dmg-manifest.json",
+            )),
+            verified_at: Some(Utc::now()),
+            message: Some("Downloaded DMG matched repo-trusted metadata".to_string()),
+        });
+
+        let error = run_check_cycle(&config, &mut state, &paths)
+            .await
+            .expect_err("incomplete trusted DMG verification should be rechecked");
+
+        assert!(error
+            .to_string()
+            .contains("Failed to read trusted DMG metadata"));
+        assert_eq!(state.status, UpdateStatus::Failed);
         Ok(())
     }
 
@@ -1511,7 +1939,8 @@ mod tests {
 
         let mut state = PersistedState::new(true);
         state.status = UpdateStatus::ReadyToInstall;
-        state.candidate_version = Some("2999.03.25.010203+deadbeef".to_string());
+        state.candidate_version = Some("2999.03.25.010203".to_string());
+        mark_test_dmg_verified(&mut state, "2999.03.25.010203");
         state.artifact_paths.package_path = Some(package_path);
 
         reconcile_pending_install(&config, &mut state, &paths).await?;
@@ -1557,16 +1986,134 @@ mod tests {
 
         let mut state = PersistedState::new(false);
         state.status = UpdateStatus::ReadyToInstall;
-        state.candidate_version = Some("2999.03.25.010203+deadbeef".to_string());
+        state.candidate_version = Some("2999.03.25.010203".to_string());
+        mark_test_dmg_verified(&mut state, "2999.03.25.010203");
         state.artifact_paths.package_path = Some(package_path);
         state
             .notified_events
-            .insert("install_auth_required:2999.03.25.010203+deadbeef".to_string());
+            .insert("install_auth_required:2999.03.25.010203".to_string());
 
         run_install_ready(&config, &mut state, &paths).await?;
 
         assert_eq!(state.status, UpdateStatus::WaitingForAppExit);
         assert!(!install_auth_retry_is_blocked(&state));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn install_ready_fails_when_ready_update_has_no_trusted_dmg_verification() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let package_path = temp.path().join("dist/codex.deb");
+        std::fs::create_dir_all(
+            package_path
+                .parent()
+                .expect("package path should have parent"),
+        )?;
+        std::fs::write(&package_path, b"deb")?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(false);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.candidate_version = Some("2999.03.25.010203".to_string());
+        state.dmg_sha256 = Some(TRUSTED_TEST_DMG_SHA256.to_string());
+        state.artifact_paths.package_path = Some(package_path);
+
+        let error = run_install_ready(&config, &mut state, &paths)
+            .await
+            .expect_err("ready update without trusted DMG verification should fail");
+
+        assert!(error
+            .to_string()
+            .contains("Ready update is missing trusted DMG verification"));
+        assert_eq!(state.status, UpdateStatus::Failed);
+        assert!(state
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Ready update is missing trusted DMG verification"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn install_ready_fails_when_verified_dmg_record_is_missing_digest() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let package_path = temp.path().join("dist/codex.deb");
+        std::fs::create_dir_all(
+            package_path
+                .parent()
+                .expect("package path should have parent"),
+        )?;
+        std::fs::write(&package_path, b"deb")?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(false);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.candidate_version = Some("2999.03.25.010203".to_string());
+        state.dmg_sha256 = None;
+        state.artifact_paths.package_path = Some(package_path);
+        state.dmg_verification = Some(DmgVerification {
+            result: DmgVerificationResult::Verified,
+            version: Some("2999.03.25.010203".to_string()),
+            sha256: None,
+            manifest_path: Some(PathBuf::from(
+                "/usr/lib/codex-app/update-builder/updater/trusted-dmg-manifest.json",
+            )),
+            verified_at: Some(Utc::now()),
+            message: Some("Downloaded DMG matched repo-trusted metadata".to_string()),
+        });
+
+        let error = run_install_ready(&config, &mut state, &paths)
+            .await
+            .expect_err("verified DMG record without digest should fail");
+
+        assert!(error
+            .to_string()
+            .contains("Ready update trusted DMG verification is missing a digest"));
+        assert_eq!(state.status, UpdateStatus::Failed);
         Ok(())
     }
 
@@ -1872,6 +2419,67 @@ mod tests {
     }
 
     #[test]
+    fn verified_same_version_pending_install_is_not_auto_completed() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let mut state = PersistedState::new(true);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.installed_version = "26.513.31313".to_string();
+        state.candidate_version = Some("26.513.31313".to_string());
+        state.dmg_sha256 = Some(TRUSTED_TEST_DMG_SHA256.to_string());
+        let package_path = temp.path().join("dist/codex.pkg.tar.zst");
+        std::fs::create_dir_all(
+            package_path
+                .parent()
+                .expect("package path should have parent"),
+        )?;
+        std::fs::write(&package_path, b"pkg")?;
+        state.artifact_paths.package_path = Some(package_path);
+        state.dmg_verification = Some(DmgVerification {
+            result: DmgVerificationResult::Verified,
+            version: Some("26.513.31313".to_string()),
+            sha256: Some(TRUSTED_TEST_DMG_SHA256.to_string()),
+            manifest_path: Some(temp.path().join("trusted-dmg-manifest.json")),
+            verified_at: Some(Utc::now()),
+            message: Some("Downloaded DMG matched repo-trusted metadata".to_string()),
+        });
+
+        assert!(!complete_pending_install_if_already_installed(
+            &mut state, &paths
+        )?);
+
+        assert_eq!(state.status, UpdateStatus::ReadyToInstall);
+        assert_eq!(state.candidate_version.as_deref(), Some("26.513.31313"));
+        Ok(())
+    }
+
+    #[test]
+    fn verified_current_dmg_requires_matching_candidate_version() {
+        let mut state = PersistedState::new(true);
+        state.candidate_version = Some("26.513.31314".to_string());
+        state.dmg_sha256 = Some(TRUSTED_TEST_DMG_SHA256.to_string());
+        state.dmg_verification = Some(DmgVerification {
+            result: DmgVerificationResult::Verified,
+            version: Some("26.513.31313".to_string()),
+            sha256: Some(TRUSTED_TEST_DMG_SHA256.to_string()),
+            manifest_path: Some(PathBuf::from("trusted-dmg-manifest.json")),
+            verified_at: Some(Utc::now()),
+            message: Some("Downloaded DMG matched repo-trusted metadata".to_string()),
+        });
+
+        assert!(!state_has_verified_current_dmg(&state));
+    }
+
+    #[test]
     fn pending_install_is_cleared_when_installed_version_is_newer() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let paths = RuntimePaths {
@@ -1938,13 +2546,15 @@ mod tests {
         let mut state = PersistedState::new(true);
         state.rollback_blocked_dmg_sha256 = Some("badcafe0".repeat(8));
 
-        assert!(candidate_is_blocked_by_rollback(
+        assert!(downloaded_dmg_is_blocked_by_rollback(
             &state,
+            "26.513.31313",
             "2026.05.07.091500+fresh123",
             &"badcafe0".repeat(8),
         ));
-        assert!(!candidate_is_blocked_by_rollback(
+        assert!(!downloaded_dmg_is_blocked_by_rollback(
             &state,
+            "26.513.31313",
             "2026.05.07.091500+fresh123",
             &"feedface".repeat(8),
         ));
@@ -1955,11 +2565,82 @@ mod tests {
         let mut state = PersistedState::new(true);
         state.rollback_blocked_candidate_version = Some("2026.05.06.120000+badcafe0".to_string());
 
-        assert!(candidate_is_blocked_by_rollback(
+        assert!(downloaded_dmg_is_blocked_by_rollback(
             &state,
+            "26.513.31313",
             "2026.05.06.120000+fresh123",
             &"feedface".repeat(8),
         ));
+    }
+
+    #[test]
+    fn rollback_block_keeps_legacy_download_candidate_version_fallback() {
+        let mut state = PersistedState::new(true);
+        state.rollback_blocked_candidate_version = Some("2026.05.06.120000+badcafe0".to_string());
+
+        assert!(downloaded_dmg_is_blocked_by_rollback(
+            &state,
+            "26.513.31313",
+            "2026.05.06.120000+fresh123",
+            &"feedface".repeat(8),
+        ));
+    }
+
+    #[test]
+    fn rollback_block_does_not_compare_legacy_timestamp_to_trusted_app_version() {
+        let mut state = PersistedState::new(true);
+        state.rollback_blocked_candidate_version = Some("2026.05.06.120000+badcafe0".to_string());
+
+        assert!(!downloaded_dmg_is_blocked_by_rollback(
+            &state,
+            "26.513.31313",
+            "2026.05.07.120000+fresh123",
+            &"feedface".repeat(8),
+        ));
+    }
+
+    #[test]
+    fn rollback_block_does_not_block_same_app_version_with_different_digest() {
+        let mut state = PersistedState::new(true);
+        state.rollback_blocked_candidate_version = Some("26.513.31313".to_string());
+        state.rollback_blocked_dmg_sha256 = Some("badcafe0".repeat(8));
+
+        assert!(!downloaded_dmg_is_blocked_by_rollback(
+            &state,
+            "26.513.31313",
+            "2026.05.07.120000+fresh123",
+            &"feedface".repeat(8),
+        ));
+        assert!(downloaded_dmg_is_blocked_by_rollback(
+            &state,
+            "26.513.31313",
+            "2026.05.07.120000+fresh123",
+            &"badcafe0".repeat(8),
+        ));
+    }
+
+    #[tokio::test]
+    async fn trusted_dmg_recheck_fails_when_cached_file_changes() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let dmg_path = temp.path().join("Codex.dmg");
+        tokio::fs::write(&dmg_path, b"trusted bytes").await?;
+        let expected_sha256 = file_sha256(&dmg_path).await?;
+        let verified = trust::VerifiedDmg {
+            version: "26.513.31313".to_string(),
+            sha256: expected_sha256,
+            manifest_path: temp.path().join("trusted-dmg-manifest.json"),
+        };
+
+        ensure_downloaded_dmg_still_matches_verified_metadata(&dmg_path, &verified).await?;
+
+        tokio::fs::write(&dmg_path, b"changed bytes").await?;
+        let error = ensure_downloaded_dmg_still_matches_verified_metadata(&dmg_path, &verified)
+            .await
+            .expect_err("changed cached DMG should fail the rebuild-time hash check");
+        assert!(error
+            .to_string()
+            .contains("Downloaded DMG changed after trusted metadata verification"));
+        Ok(())
     }
 
     #[tokio::test]

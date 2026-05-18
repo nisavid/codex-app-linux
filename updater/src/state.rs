@@ -63,6 +63,25 @@ pub struct ArtifactPaths {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+/// Result of matching a downloaded DMG against repo-trusted metadata.
+pub enum DmgVerificationResult {
+    Verified,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Last trusted-metadata verification result for a downloaded DMG.
+pub struct DmgVerification {
+    pub result: DmgVerificationResult,
+    pub version: Option<String>,
+    pub sha256: Option<String>,
+    pub manifest_path: Option<PathBuf>,
+    pub verified_at: Option<DateTime<Utc>>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Full updater state stored on disk between daemon runs.
 pub struct PersistedState {
     pub installed_version: String,
@@ -72,6 +91,8 @@ pub struct PersistedState {
     pub last_successful_check_at: Option<DateTime<Utc>>,
     pub remote_headers_fingerprint: Option<String>,
     pub dmg_sha256: Option<String>,
+    #[serde(default)]
+    pub dmg_verification: Option<DmgVerification>,
     pub artifact_paths: ArtifactPaths,
     pub error_message: Option<String>,
     pub notified_events: BTreeSet<String>,
@@ -111,6 +132,7 @@ impl PersistedState {
             last_successful_check_at: None,
             remote_headers_fingerprint: None,
             dmg_sha256: None,
+            dmg_verification: None,
             artifact_paths: ArtifactPaths::default(),
             error_message: None,
             notified_events: BTreeSet::new(),
@@ -258,6 +280,7 @@ mod tests {
   "last_successful_check_at": null,
   "remote_headers_fingerprint": null,
   "dmg_sha256": null,
+  "dmg_verification": null,
   "artifact_paths": {"dmg_path": null, "workspace_dir": null, "deb_path": null},
   "error_message": null,
   "notified_events": [],
@@ -271,6 +294,56 @@ mod tests {
         assert_eq!(loaded.cli_latest_version, None);
         assert_eq!(loaded.cli_error_message, None);
         Ok(())
+    }
+
+    #[test]
+    fn loads_legacy_state_without_dmg_verification() -> Result<()> {
+        let temp = tempdir()?;
+        let path = temp.path().join("state.json");
+        fs::write(
+            &path,
+            r#"{
+  "installed_version": "2026.03.24",
+  "candidate_version": null,
+  "status": "idle",
+  "last_check_at": null,
+  "last_successful_check_at": null,
+  "remote_headers_fingerprint": null,
+  "dmg_sha256": null,
+  "artifact_paths": {"dmg_path": null,"workspace_dir": null,"deb_path": null},
+  "error_message": null,
+  "notified_events": [],
+  "auto_install_on_app_exit": true
+}"#,
+        )?;
+
+        let loaded = PersistedState::load_or_default(&path, true)?;
+
+        assert_eq!(loaded.dmg_verification, None);
+        Ok(())
+    }
+
+    #[test]
+    fn serialises_dmg_verification_result() {
+        let verification = DmgVerification {
+            result: DmgVerificationResult::Verified,
+            version: Some("26.513.31313".to_string()),
+            sha256: Some(
+                "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a".to_string(),
+            ),
+            manifest_path: Some(PathBuf::from(
+                "/usr/lib/codex-app/update-builder/updater/trusted-dmg-manifest.json",
+            )),
+            verified_at: None,
+            message: Some("Downloaded DMG matched repo-trusted metadata".to_string()),
+        };
+        let json = serde_json::to_string(&verification).expect("should serialise");
+
+        assert!(json.contains(r#""result":"verified""#));
+        assert!(json.contains(r#""version":"26.513.31313""#));
+        assert!(json.contains(
+            r#""sha256":"6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a""#
+        ));
     }
 
     #[test]
