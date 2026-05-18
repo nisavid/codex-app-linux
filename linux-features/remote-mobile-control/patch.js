@@ -61,8 +61,8 @@ function linuxDeviceKeyProviderSource({ cryptoVar, fsVar, pathVar }) {
     "}catch{return{keys:{}}}",
     "}",
     "function codexLinuxWithRemoteControlDeviceKeyStoreLock(e){",
-    "let t=`${codexLinuxRemoteControlDeviceKeyStorePath()}.lock`,n=typeof SharedArrayBuffer==`function`?new Int32Array(new SharedArrayBuffer(4)):null;",
-    `for(let r=0;r<50;r++)try{${fsVar}.mkdirSync(t,{mode:448});try{return e()}finally{try{${fsVar}.rmdirSync(t)}catch{}}}catch(e){if(e?.code!==\`EEXIST\`)throw e;n&&typeof Atomics==\`object\`&&typeof Atomics.wait==\`function\`?Atomics.wait(n,0,0,20+r*10):0}throw Error(\`Timed out waiting for Linux remote control device key store lock\`)`,
+    "let t=`${codexLinuxRemoteControlDeviceKeyStorePath()}.lock`,n=`${t}/pid`,r=typeof SharedArrayBuffer==`function`?new Int32Array(new SharedArrayBuffer(4)):null;",
+    `for(let i=0;i<50;i++)try{${fsVar}.mkdirSync(t,{mode:448}),${fsVar}.writeFileSync(n,String(process.pid),{encoding:\`utf8\`,mode:384});try{return e()}finally{try{${fsVar}.rmSync(n,{force:!0})}catch{}try{${fsVar}.rmdirSync(t)}catch{}}}catch(e){if(e?.code!==\`EEXIST\`)throw e;try{let e=Number(${fsVar}.readFileSync(n,\`utf8\`));if(Number.isInteger(e)&&e>0)try{process.kill(e,0)}catch{${fsVar}.rmSync(t,{recursive:!0,force:!0});continue}}catch{}try{if(Date.now()-${fsVar}.statSync(t).mtimeMs>3e4){${fsVar}.rmSync(t,{recursive:!0,force:!0});continue}}catch{}r&&typeof Atomics==\`object\`&&typeof Atomics.wait==\`function\`?Atomics.wait(r,0,0,20+i*10):0}throw Error(\`Timed out waiting for Linux remote control device key store lock\`)`,
     "}",
     "function codexLinuxWriteRemoteControlDeviceKeyStore(e){",
     "let t=codexLinuxRemoteControlDeviceKeyStorePath(),n=`${t}.tmp-${process.pid}-${Date.now()}`;",
@@ -138,14 +138,14 @@ function applyLinuxRemoteControlPreserveConfigPatch(source) {
 function applyLinuxRemoteControlVisibilityPatch(source) {
   const remoteControlLinuxVisibilityRegex =
     /remoteControlConnectionsState[\s\S]{0,200}navigator\.userAgent\.includes\(`Linux`\)|navigator\.userAgent\.includes\(`Linux`\)[\s\S]{0,200}remoteControlConnectionsState/u;
+  if (source.includes(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT)) {
+    return source.replace(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT, REMOTE_CONTROL_VISIBILITY_REPLACEMENT);
+  }
   if (
     source.includes(REMOTE_CONTROL_VISIBILITY_REPLACEMENT) ||
     remoteControlLinuxVisibilityRegex.test(source)
   ) {
     return source;
-  }
-  if (source.includes(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT)) {
-    return source.replace(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT, REMOTE_CONTROL_VISIBILITY_REPLACEMENT);
   }
   if (!source.includes(REMOTE_CONTROL_VISIBILITY_NEEDLE)) {
     if (!source.includes("remoteControlConnectionsState")) {

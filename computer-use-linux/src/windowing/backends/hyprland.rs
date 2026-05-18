@@ -187,7 +187,9 @@ fn select_hyprland_instance(
 
 fn xdg_runtime_dir() -> Option<PathBuf> {
     if let Some(value) = std::env::var_os("XDG_RUNTIME_DIR") {
-        return Some(PathBuf::from(value));
+        if !value.is_empty() {
+            return Some(PathBuf::from(value));
+        }
     }
     let uid = fs::metadata("/proc/self").ok()?.uid();
     Some(PathBuf::from(format!("/run/user/{uid}")))

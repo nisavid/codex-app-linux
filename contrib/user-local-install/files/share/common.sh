@@ -37,6 +37,31 @@ load_install_config() {
     REPO_DEFAULT_BRANCH="${REPO_DEFAULT_BRANCH-}"
 }
 
+validate_managed_repo_dir() {
+    local resolved
+    case "${MANAGED_REPO_DIR:-}" in
+        "")
+            printf '%s\n' "MANAGED_REPO_DIR must not be empty" >&2
+            return 1
+            ;;
+        /*) ;;
+        *)
+            printf '%s\n' "MANAGED_REPO_DIR must be an absolute path: $MANAGED_REPO_DIR" >&2
+            return 1
+            ;;
+    esac
+
+    if resolved="$(realpath -m -- "$MANAGED_REPO_DIR" 2>/dev/null)"; then
+        if [ "$resolved" = "/" ]; then
+            printf '%s\n' "MANAGED_REPO_DIR must not resolve to /" >&2
+            return 1
+        fi
+    elif [ "$MANAGED_REPO_DIR" = "/" ]; then
+        printf '%s\n' "MANAGED_REPO_DIR must not be /" >&2
+        return 1
+    fi
+}
+
 load_metadata() {
     if [ -f "$METADATA_FILE" ]; then
         # shellcheck disable=SC1090
@@ -304,6 +329,7 @@ ensure_managed_repo() {
     local origin_url branch
     origin_url="$(repo_origin_url)" || return 1
     branch="$(repo_default_branch)"
+    validate_managed_repo_dir || return 1
 
     mkdir -p "$(dirname "$MANAGED_REPO_DIR")"
     if [ -d "$MANAGED_REPO_DIR/.git" ]; then
@@ -320,6 +346,7 @@ ensure_managed_repo() {
 
 apply_source_overlay() {
     local path target_path base_ref unmerged_paths
+    validate_managed_repo_dir || return 1
     if [ -d "$SOURCE_REPO_DIR/.git" ]; then
         unmerged_paths="$(source_repo_unmerged_paths)"
         if [ -n "$unmerged_paths" ]; then

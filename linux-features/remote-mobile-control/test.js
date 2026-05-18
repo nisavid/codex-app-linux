@@ -163,6 +163,16 @@ test("Linux remote-control visibility patch allows Linux when upstream marks ava
   assert.equal(applyLinuxRemoteControlVisibilityPatch(patched), patched);
 });
 
+test("Linux remote-control visibility patch upgrades the old Linux condition", () => {
+  const oldPatched =
+    "function a({remoteControlConnectionsState:e,slingshotEnabled:t}){let n=typeof navigator!=`undefined`&&navigator.userAgent.includes(`Linux`);return t&&(n||(e?.available??!0))&&e?.accessRequired!==!0}";
+  const patched = applyLinuxRemoteControlVisibilityPatch(oldPatched);
+
+  assert.notEqual(patched, oldPatched);
+  assert.match(patched, /\(n\|\|t\)&&\(n\|\|\(e\?\.available\?\?!0\)\)&&e\?\.accessRequired!==!0/);
+  assert.equal(applyLinuxRemoteControlVisibilityPatch(patched), patched);
+});
+
 test("Linux remote-control visibility patch handles current settings bundle shape", () => {
   const source = syntheticCurrentVisibilityBundle();
   const patched = applyLinuxRemoteControlVisibilityPatch(source);

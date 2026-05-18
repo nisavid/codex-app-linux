@@ -4164,6 +4164,33 @@ EOF
     )
 }
 
+test_user_local_prepare_build_repo_rejects_unsafe_managed_repo_dir() {
+    info "Checking user-local managed checkout rejects unsafe managed repo paths"
+    local workspace="$TMP_DIR/user-local-unsafe-managed-repo"
+    local output_log="$workspace/output.log"
+    local rc
+
+    mkdir -p "$workspace"
+
+    set +e
+    (
+        export HOME="$workspace/home"
+        export XDG_DATA_HOME="$workspace/xdg-data"
+        export XDG_STATE_HOME="$workspace/xdg-state"
+        mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
+
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/contrib/user-local-install/files/share/common.sh"
+        MANAGED_REPO_DIR="/"
+        validate_managed_repo_dir
+    ) >"$output_log" 2>&1
+    rc=$?
+    set -e
+
+    [ "$rc" -ne 0 ] || fail "Expected root MANAGED_REPO_DIR to be rejected"
+    assert_contains "$output_log" "MANAGED_REPO_DIR must not resolve to /"
+}
+
 main() {
     test_common_helper_sourcing
     test_desktop_renderer_preserves_non_updater_actions
@@ -4226,6 +4253,7 @@ main() {
     test_user_local_prepare_build_repo_handles_deleted_overlay_paths
     test_user_local_prepare_build_repo_removes_rename_source_paths
     test_user_local_prepare_build_repo_fails_on_unmerged_overlay_paths
+    test_user_local_prepare_build_repo_rejects_unsafe_managed_repo_dir
     info "All script smoke tests passed"
 }
 
