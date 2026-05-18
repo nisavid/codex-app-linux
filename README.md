@@ -336,14 +336,20 @@ after the bot has had time to run; if it still fails, open an issue.
 ## Linux Computer Use
 
 Linux Computer Use support is packaged from upstream's Rust MCP backend. The
-backend can inspect apps through AT-SPI, capture screenshots through GNOME Shell
-or XDG Desktop Portal paths, and synthesize input through `ydotool` when the
-host is configured for it.
+backend can inspect apps through AT-SPI, capture screenshots through XDG Desktop
+Portal or compositor paths, and synthesize input through `ydotool` when the host
+is configured for it.
 
 Runtime readiness depends on the host. Input synthesis usually requires
 `ydotool`/`ydotoold`, `/dev/uinput` access, and a socket usable by your desktop
 user. Non-GNOME desktops usually also need the matching XDG Desktop Portal
 backend, such as the KDE or wlroots portal.
+
+Keyboard input follows the desktop's active keyboard layout and remapping. When
+troubleshooting literal keys or shortcuts on a non-QWERTY layout, retry once with
+a standard US/QWERTY layout before debugging lower-level input services. Some
+apps also expose only sparse AT-SPI trees even when the backend is ready;
+screenshot and pointer paths can still work for those apps.
 
 The plugin manifest gate is applied by default so the backend can register on
 Linux. The in-app Computer Use UI controls are opt-in because they touch
