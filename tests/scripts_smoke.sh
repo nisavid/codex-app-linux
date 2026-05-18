@@ -1935,6 +1935,7 @@ PY
     assert_contains "$REPO_DIR/scripts/build-rpm.sh" "stage_common_package_files"
     assert_contains "$REPO_DIR/scripts/build-rpm.sh" "PACKAGED_RUNTIME_SOURCE"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "env -u BASH_FUNC_ml%%%% -u BASH_FUNC_module%%%%"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app %u"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "Actions=CheckForUpdates;InstallReadyUpdate;"
