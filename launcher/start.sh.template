@@ -50,6 +50,7 @@ refresh_runtime_paths() {
     LOG_FILE="$LOG_DIR/launcher.log"
     APP_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$CODEX_LINUX_APP_ID"
     APP_SETTINGS_FILE="$APP_CONFIG_DIR/settings.json"
+    CODEX_LINUX_SETTINGS_FILE="$APP_SETTINGS_FILE"
     APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_LINUX_APP_ID"
     APP_PID_FILE="$APP_STATE_DIR/app.pid"
     WEBVIEW_PID_FILE="$APP_STATE_DIR/webview.pid"

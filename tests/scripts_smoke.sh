@@ -1655,6 +1655,9 @@ if 'local default_end=$((CODEX_LINUX_WEBVIEW_PORT + 4))' not in source or 'defau
     raise SystemExit("multi-launch default range must cap at five ports without exceeding 65535")
 if 'unset CODEX_LINUX_MULTI_LAUNCH' not in source.split('parse_launcher_args() {', 1)[0]:
     raise SystemExit("launcher must clear inherited internal multi-launch markers before parsing args")
+refresh_body = source.split("refresh_runtime_paths() {", 1)[1].split("ensure_runtime_dirs() {", 1)[0]
+if 'CODEX_LINUX_SETTINGS_FILE="$APP_SETTINGS_FILE"' not in refresh_body:
+    raise SystemExit("runtime path refresh must keep CODEX_LINUX_SETTINGS_FILE aligned with remapped app config")
 if 'CODEX_LINUX_INSTANCE_ID="port-$CODEX_LINUX_WEBVIEW_PORT"' not in multi_body:
     raise SystemExit("multi-launch must derive a stable instance id from the allocated port")
 if 'CODEX_LINUX_MULTI_LAUNCH=1' not in multi_body:
