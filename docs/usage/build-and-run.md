@@ -219,6 +219,23 @@ requires `ydotool`/`ydotoold`, `/dev/uinput` access, and a socket usable by your
 desktop user. Non-GNOME desktops usually also need the matching XDG Desktop
 Portal backend, such as the KDE or wlroots portal.
 
+Treat Computer Use readiness as a set of independent paths. `doctor` can report
+that AT-SPI, screenshots, window targeting, and input are available even when a
+specific target app exposes only a sparse accessibility tree. In that case,
+semantic actions may be unavailable while screenshots, window focus, and pointer
+input still work.
+
+Some non-GNOME sessions still use the historical
+`org.gnome.desktop.interface toolkit-accessibility` setting to enable toolkit
+accessibility bridges. The setting name does not imply that GNOME Shell is
+required.
+
+Raw key synthesis is evaluated by the active desktop layout after the backend
+sends the key event. Non-QWERTY layouts, remapped keys, and custom Compose keys
+can change both literal key output and shortcuts such as paste. For predictable
+literal-key testing, record the current layout, switch temporarily to a standard
+US/QWERTY layout, retry the action, then restore the original layout.
+
 After building the app, inspect local readiness with:
 
 ```bash
