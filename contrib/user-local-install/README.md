@@ -56,6 +56,18 @@ To also enable the weekly auto-update timer, pass `--enable-timer`:
 ./contrib/user-local-install/install-user-local.sh --enable-timer
 ```
 
+To persistently force the user-local launcher through X11/XWayland, pass `--force-x11`:
+
+```bash
+./contrib/user-local-install/install-user-local.sh --force-x11
+```
+
+To return to the default generated launcher behavior, pass `--no-force-x11`:
+
+```bash
+./contrib/user-local-install/install-user-local.sh --no-force-x11
+```
+
 The installer:
 
 1. copies standalone helper scripts into `${XDG_DATA_HOME:-~/.local/share}/codex-app`
@@ -83,4 +95,5 @@ codex-app-version
 - The icon is not committed as a binary asset here. It is generated locally from `Codex.dmg`.
 - The helper scripts track both upstream wrapper changes and upstream `Codex.dmg` headers.
 - The helper scripts are copied into `${XDG_DATA_HOME:-~/.local/share}/codex-app` and do not run from the git checkout directly.
+- The X11/XWayland preference is stored in `${XDG_CONFIG_HOME:-~/.config}/codex-app/user-local.env` and is preserved across updater refreshes.
 - The weekly timer runs `codex-app-update --quiet`. It is opt-in: pass `--enable-timer` to `install-user-local.sh` to activate it, or run `systemctl --user enable --now codex-app-update.timer` manually after install.

@@ -4,4 +4,29 @@ set -euo pipefail
 XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 INSTALL_ROOT="${CODEX_USER_INSTALL_ROOT:-${XDG_DATA_HOME}/codex-app}"
 APP_DIR="${INSTALL_ROOT}/app"
-exec "${APP_DIR}/start.sh" "$@"
+CONFIG_FILE="${XDG_CONFIG_HOME:-${HOME}/.config}/codex-app/user-local.env"
+
+USER_LOCAL_OZONE_PLATFORM_OVERRIDE="${CODEX_USER_LOCAL_OZONE_PLATFORM:-}"
+if [ -f "$CONFIG_FILE" ]; then
+    # shellcheck disable=SC1090
+    source "$CONFIG_FILE"
+fi
+if [ -n "$USER_LOCAL_OZONE_PLATFORM_OVERRIDE" ]; then
+    CODEX_USER_LOCAL_OZONE_PLATFORM="$USER_LOCAL_OZONE_PLATFORM_OVERRIDE"
+fi
+
+case "${CODEX_USER_LOCAL_OZONE_PLATFORM:-auto}" in
+    auto|"")
+        exec "${APP_DIR}/start.sh" "$@"
+        ;;
+    x11)
+        exec "${APP_DIR}/start.sh" --x11 "$@"
+        ;;
+    wayland)
+        exec "${APP_DIR}/start.sh" --wayland "$@"
+        ;;
+    *)
+        echo "Invalid CODEX_USER_LOCAL_OZONE_PLATFORM='${CODEX_USER_LOCAL_OZONE_PLATFORM}'; expected auto, x11, or wayland" >&2
+        exec "${APP_DIR}/start.sh" "$@"
+        ;;
+esac

@@ -23,6 +23,10 @@ const {
   patchLinuxAppUpdaterBridge,
 } = require("./lib/linux-update-bridge-patch.js");
 const {
+  applyLinuxMultiInstanceBootstrapPatch,
+  patchLinuxMultiInstanceBootstrap,
+} = require("./patches/bootstrap.js");
+const {
   applyLinuxChromePluginAutoInstallPatch,
 } = require("./patches/chrome-plugin.js");
 const {
@@ -170,6 +174,7 @@ module.exports = {
   applyLinuxKeybindOverridesRuntimePatch,
   applyLinuxLaunchActionArgsPatch,
   applyLinuxMenuPatch,
+  applyLinuxMultiInstanceBootstrapPatch,
   applyLinuxOpaqueBackgroundPatch,
   applyLinuxOpaqueWindowsDefaultPatch,
   applyLinuxQuitGuardPatch,
@@ -199,6 +204,7 @@ module.exports = {
   patchCommentPreloadBundle,
   patchExtractedApp,
   patchKeybindsSettingsAssets,
+  patchLinuxMultiInstanceBootstrap,
   patchLinuxAppUpdaterBridge,
   patchMainBundleSource,
   patchPackageJson,

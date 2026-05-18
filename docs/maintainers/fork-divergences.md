@@ -9,7 +9,7 @@ while this fork preserves local names, paths, updater policy, hardening,
 security review, packaging polish, and maintainer taste.
 
 The current comparison baseline is upstream commit
-`ccaa31fb16217f5706ee1f5113445ca475ea4e34` (2026-05-17). Claims below describe
+`81dbd59673b986065a248c8df23f5d7d237942b0` (2026-05-18). Claims below describe
 the current tree's diff against that
 baseline, with current source files taking precedence over generated output.
 

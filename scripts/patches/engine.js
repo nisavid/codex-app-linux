@@ -13,8 +13,10 @@ const {
   patchAssetFiles,
 } = require("./shared.js");
 
-const SKIPPED_TARGET = "skipped-target";
+const FAILED_REQUIRED = "failed-required";
 const REQUIRED_UPSTREAM = "required-upstream";
+const SKIPPED_OPTIONAL = "skipped-optional";
+const SKIPPED_TARGET = "skipped-target";
 
 function descriptorId(descriptor) {
   return descriptor.id ?? descriptor.name;
@@ -123,24 +125,32 @@ function patchTargetSummary(descriptor, context) {
     : `conditional-linux:${linuxTargetSummary(context.linux)}`;
 }
 
-function recordDescriptorPatch(report, descriptor, status, reason, context) {
-  recordPatch(report, descriptor.id, status, reason, {
-    phase: descriptor.phase,
-    targetSummary: patchTargetSummary(descriptor, context),
-  });
+function descriptorFailureStatus(descriptor) {
+  return descriptor.ciPolicy === REQUIRED_UPSTREAM ? FAILED_REQUIRED : SKIPPED_OPTIONAL;
 }
 
-function descriptorPatchStatusFromChange(descriptor, changed, warnings) {
+function patchStatusFromDescriptorChange(descriptor, changed, warnings) {
   if (changed) {
     return "applied";
   }
-  if (warnings.length > 0 && descriptor.ciPolicy === REQUIRED_UPSTREAM) {
-    return "failed-required";
-  }
   if (warnings.length > 0) {
-    return "skipped-optional";
+    return descriptorFailureStatus(descriptor);
   }
   return "already-applied";
+}
+
+function normalizeDescriptorStatus(descriptor, status) {
+  if (descriptor.ciPolicy === REQUIRED_UPSTREAM && status === SKIPPED_OPTIONAL) {
+    return FAILED_REQUIRED;
+  }
+  return status;
+}
+
+function recordDescriptorPatch(report, descriptor, status, reason, context) {
+  recordPatch(report, descriptor.id, normalizeDescriptorStatus(descriptor, status), reason, {
+    phase: descriptor.phase,
+    targetSummary: patchTargetSummary(descriptor, context),
+  });
 }
 
 function descriptorAppliesTo(descriptor, context) {
@@ -176,7 +186,7 @@ function applyMainBundlePatchDescriptors(source, descriptors, context, report) {
     recordDescriptorPatch(
       report,
       descriptor,
-      descriptorPatchStatusFromChange(descriptor, patched !== before, result.warnings),
+      patchStatusFromDescriptorChange(descriptor, patched !== before, result.warnings),
       result.warnings[0] ?? null,
       context,
     );
@@ -192,14 +202,13 @@ function defaultWebviewMissingWarning(extractedDir, descriptor) {
 
 function recordAssetDescriptorPatch(report, descriptor, patchResult, warnings, context) {
   if (patchResult.matched === 0) {
-    const status = descriptor.ciPolicy === REQUIRED_UPSTREAM ? "failed-required" : "skipped-optional";
-    recordDescriptorPatch(report, descriptor, status, warnings[0] ?? "no matching bundle found", context);
+    recordDescriptorPatch(report, descriptor, descriptorFailureStatus(descriptor), warnings[0] ?? "no matching bundle found", context);
     return;
   }
   recordDescriptorPatch(
     report,
     descriptor,
-    descriptorPatchStatusFromChange(descriptor, patchResult.changed > 0, warnings),
+    patchStatusFromDescriptorChange(descriptor, patchResult.changed > 0, warnings),
     warnings[0] ?? null,
     context,
   );
@@ -242,7 +251,7 @@ function applyExtractedAppPatchDescriptors(extractedDir, descriptors, context, r
     const statusResult = typeof descriptor.status === "function"
       ? descriptor.status(result, warnings, context)
       : result?.changed != null
-        ? descriptorPatchStatusFromChange(descriptor, Boolean(result.changed), warnings)
+        ? patchStatusFromDescriptorChange(descriptor, Boolean(result.changed), warnings)
         : "applied";
     let status = typeof statusResult === "object" && statusResult != null
       ? statusResult.status
@@ -266,11 +275,11 @@ module.exports = {
   descriptorAppliesTo,
   descriptorEnabled,
   descriptorId,
-  descriptorPatchStatusFromChange,
   discoverCorePatchDescriptors,
   discoverPatchFiles,
   normalizeDescriptor,
   normalizePatchDescriptors,
+  patchStatusFromDescriptorChange,
   patchTargetSummary,
   sortPatchDescriptors,
 };

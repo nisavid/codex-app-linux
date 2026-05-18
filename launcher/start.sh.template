@@ -24,6 +24,8 @@ LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$CODEX_LINUX_APP_ID"
 LOG_FILE="$LOG_DIR/launcher.log"
 APP_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$CODEX_LINUX_APP_ID"
 APP_SETTINGS_FILE="$APP_CONFIG_DIR/settings.json"
+CODEX_LINUX_SETTINGS_FILE="$APP_SETTINGS_FILE"
+export CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_WEBVIEW_PORT CODEX_LINUX_SETTINGS_FILE
 APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_LINUX_APP_ID"
 APP_PID_FILE="$APP_STATE_DIR/app.pid"
 WEBVIEW_PID_FILE="$APP_STATE_DIR/webview.pid"
@@ -48,6 +50,7 @@ refresh_runtime_paths() {
     LOG_FILE="$LOG_DIR/launcher.log"
     APP_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$CODEX_LINUX_APP_ID"
     APP_SETTINGS_FILE="$APP_CONFIG_DIR/settings.json"
+    CODEX_LINUX_SETTINGS_FILE="$APP_SETTINGS_FILE"
     APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_LINUX_APP_ID"
     APP_PID_FILE="$APP_STATE_DIR/app.pid"
     WEBVIEW_PID_FILE="$APP_STATE_DIR/webview.pid"
@@ -66,6 +69,9 @@ ensure_runtime_dirs() {
 }
 
 refresh_runtime_paths
+
+# Internal marker consumed by patched Electron bundles; never trust inheritance.
+unset CODEX_LINUX_MULTI_LAUNCH
 
 early_truthy_env_value() {
     case "${1:-}" in
@@ -209,6 +215,7 @@ configure_multi_launch_instance() {
     CODEX_LINUX_WEBVIEW_PORT="$selected_port"
     CODEX_LINUX_INSTANCE_ID="port-$CODEX_LINUX_WEBVIEW_PORT"
     MULTI_LAUNCH_ACTIVE=1
+    CODEX_LINUX_MULTI_LAUNCH=1
 
     APP_STATE_DIR="$base_state_dir/instances/$CODEX_LINUX_INSTANCE_ID"
     APP_PID_FILE="$APP_STATE_DIR/app.pid"
@@ -226,7 +233,7 @@ configure_multi_launch_instance() {
     else
         CODEX_ELECTRON_USER_DATA_DIR="$APP_STATE_DIR/electron-user-data"
     fi
-    export CODEX_ELECTRON_USER_DATA_DIR
+    export CODEX_ELECTRON_USER_DATA_DIR CODEX_LINUX_INSTANCE_ID CODEX_LINUX_MULTI_LAUNCH CODEX_LINUX_WEBVIEW_PORT
 }
 
 parse_launcher_args "$@"
