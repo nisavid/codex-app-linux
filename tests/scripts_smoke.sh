@@ -1634,6 +1634,7 @@ detect_body = source.split("detect_warm_start() {", 1)[1].split("send_warm_start
 launch_body = source.split("launch_electron() {", 1)[1].split("load_packaged_runtime_helper", 1)[0]
 runtime_body = source.split("trap cleanup_launcher EXIT", 1)[1].split("launch_electron", 1)[0]
 stop_body = source.split("stop_owned_webview_server() {", 1)[1].split("owned_webview_server_pid() {", 1)[0]
+identity_body = source.split("pid_has_codex_webview_server_identity() {", 1)[1].split("pid_is_webview_server() {", 1)[0]
 stale_body = source.split("pid_is_stale_webview_server() {", 1)[1].split("stop_owned_webview_server() {", 1)[0]
 multi_body = source.split("configure_multi_launch_instance() {", 1)[1].split('WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"', 1)[0]
 adopt_body = source.split("adopt_existing_webview_server() {", 1)[1].split("ensure_webview_server() {", 1)[0]
@@ -1650,8 +1651,8 @@ multi_call_index = source.index('\nconfigure_multi_launch_instance\n')
 webview_origin_index = source.index('WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"', multi_call_index)
 if not (parse_args_index < help_index < side_by_side_index < multi_call_index < webview_origin_index):
     raise SystemExit("launcher must parse args, handle help, normalize side-by-side env, configure multi-launch, then derive WEBVIEW_ORIGIN")
-if '$((CODEX_LINUX_WEBVIEW_PORT + 4))' not in source:
-    raise SystemExit("multi-launch default range must cap the default at five ports")
+if 'local default_end=$((CODEX_LINUX_WEBVIEW_PORT + 4))' not in source or 'default_end=65535' not in source:
+    raise SystemExit("multi-launch default range must cap at five ports without exceeding 65535")
 if 'CODEX_LINUX_INSTANCE_ID="port-$CODEX_LINUX_WEBVIEW_PORT"' not in multi_body:
     raise SystemExit("multi-launch must derive a stable instance id from the allocated port")
 if 'APP_STATE_DIR="$base_state_dir/instances/$CODEX_LINUX_INSTANCE_ID"' not in multi_body:
@@ -1700,12 +1701,14 @@ if "running_app_is_active" not in stop_body or "Preserving webview server" not i
     raise SystemExit("stop_owned_webview_server must not stop the live app webview server")
 if "stale_webview_server_pid" not in source or "stop_stale_webview_server" not in source:
     raise SystemExit("launcher must detect stale deleted webview servers left behind by previous installs")
+if "WEBVIEW_PID_FILE" not in identity_body or "webview-server.py" not in identity_body:
+    raise SystemExit("stale webview detection must require launcher pid ownership or Codex webview-server identity")
 if 'current_webview_dir="$(canonical_path "$WEBVIEW_DIR")"' not in stale_body:
     raise SystemExit("stale webview detection must compare against the current bundle path")
 if 'readlink "/proc/$pid/cwd"' not in stale_body:
     raise SystemExit("stale webview detection must preserve the kernel deleted-cwd suffix")
-if '[ -f "$WEBVIEW_PID_FILE" ] || return 1' not in stale_body:
-    raise SystemExit("stale webview detection must restrict non-deleted bundle cleanup to launcher-owned pid files")
+if 'pid_has_codex_webview_server_identity "$pid" || return 1' not in stale_body:
+    raise SystemExit("stale webview detection must restrict cleanup to Codex-owned webview processes")
 if '[ "$cwd" != "$current_webview_dir" ]' not in stale_body:
     raise SystemExit("stale webview detection must catch servers moved into backup bundle directories")
 if 'ADOPTED_WEBVIEW_PID="$pid"' not in adopt_body:
@@ -1846,6 +1849,8 @@ PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" '/dev/tcp/127.0.0.1/"$CODEX_LINUX_WEBVIEW_PORT"'
     assert_contains "$REPO_DIR/launcher/start.sh.template" "kill -9 \"\$probe_pid\""
     assert_contains "$REPO_DIR/launcher/start.sh.template" 'curl --disable --noproxy 127.0.0.1,localhost --silent --show-error --fail --max-time 2'
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "verify_webview_origin_with_python"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "urllib.request.ProxyHandler({})"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "for attempt in \$(seq 1 250)"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "sleep 0.02"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "Webview origin verified."

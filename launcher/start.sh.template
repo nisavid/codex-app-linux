@@ -130,8 +130,14 @@ launcher_port_is_open() {
 }
 
 choose_multi_launch_port() {
-    local range="${CODEX_MULTI_LAUNCH_PORT_RANGE:-$CODEX_LINUX_WEBVIEW_PORT-$((CODEX_LINUX_WEBVIEW_PORT + 4))}"
+    local default_end=$((CODEX_LINUX_WEBVIEW_PORT + 4))
+    local range
     local start end port
+
+    if [ "$default_end" -gt 65535 ]; then
+        default_end=65535
+    fi
+    range="${CODEX_MULTI_LAUNCH_PORT_RANGE:-$CODEX_LINUX_WEBVIEW_PORT-$default_end}"
 
     case "$range" in
         *-*)
@@ -1251,8 +1257,41 @@ wait_for_webview_server() {
     return 1
 }
 
+verify_webview_origin_with_python() {
+    local url="$1"
+
+    python3 - "$url" <<'PY'
+import sys
+import urllib.request
+
+url = sys.argv[1]
+required_markers = ("<title>Codex</title>", "startup-loader")
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+try:
+    with opener.open(url, timeout=2) as response:
+        body = response.read(8192).decode("utf-8", "ignore")
+except Exception as error:
+    print(f"Webview origin validation failed for {url}; {error}", file=sys.stderr)
+    sys.exit(1)
+
+missing = [marker for marker in required_markers if marker not in body]
+if missing:
+    print(
+        f"Webview origin validation failed for {url}; missing markers: {', '.join(missing)}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+}
+
 verify_webview_origin() {
     local url="$1"
+    local body err detail
+
+    if ! command -v curl >/dev/null 2>&1; then
+        verify_webview_origin_with_python "$url"
+        return $?
+    fi
 
     # curl with built-in --max-time replaces python3 urllib (~7 ms vs ~38 ms).
     # --fail rejects non-2xx; --max-time 2 mirrors urllib.urlopen(timeout=2).
@@ -1264,7 +1303,6 @@ verify_webview_origin() {
     # --noproxy keeps loopback validation pointed at the embedded webview
     # server even when the user's shell exports http_proxy/ALL_PROXY without a
     # localhost NO_PROXY exemption.
-    local body err detail
     err=$(mktemp 2>/dev/null) || err="${TMPDIR:-/tmp}/codex-curl-err.$$"
     if ! body="$(curl --disable --noproxy 127.0.0.1,localhost --silent --show-error --fail --max-time 2 "$url" 2>"$err")"; then
         detail=$(< "$err" 2>/dev/null)
@@ -1303,6 +1341,25 @@ pid_has_webview_server_cmdline() {
     [ "$has_http_server" -eq 1 ] && [ "$has_port" -eq 1 ]
 }
 
+pid_has_codex_webview_server_identity() {
+    local pid="$1"
+    local argv=()
+    local arg
+
+    if [ -f "$WEBVIEW_PID_FILE" ] && [ "$(cat "$WEBVIEW_PID_FILE" 2>/dev/null || true)" = "$pid" ]; then
+        return 0
+    fi
+
+    mapfile -d '' -t argv < "/proc/$pid/cmdline" 2>/dev/null || return 1
+    for arg in "${argv[@]}"; do
+        case "$arg" in
+            */.codex-linux/webview-server.py|*/webview-server.py) return 0 ;;
+        esac
+    done
+
+    return 1
+}
+
 pid_is_webview_server() {
     local pid="$1"
     local cwd
@@ -1319,6 +1376,7 @@ pid_is_stale_webview_server() {
     local deleted_webview_dir
 
     pid_has_webview_server_cmdline "$pid" || return 1
+    pid_has_codex_webview_server_identity "$pid" || return 1
     cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
     [ -n "$cwd" ] || return 1
 
@@ -1328,8 +1386,6 @@ pid_is_stale_webview_server() {
         return 0
     fi
 
-    [ -f "$WEBVIEW_PID_FILE" ] || return 1
-    [ "$(cat "$WEBVIEW_PID_FILE" 2>/dev/null || true)" = "$pid" ] || return 1
     [ "$cwd" != "$current_webview_dir" ]
 }
 

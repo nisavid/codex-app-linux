@@ -2,8 +2,8 @@
 # tests/webview_probe_equivalence.sh
 #
 # Behavioral equivalence test for the webview readiness probes in
-# launcher/start.sh.template — the bash /dev/tcp + curl implementations that
-# replaced the original python3 socket/urllib heredocs.
+# launcher/start.sh.template — the bash /dev/tcp and curl/Python origin probes
+# that replaced the original python3 socket/urllib heredocs.
 #
 # This test pins the verdict equivalence on the full set of inputs the
 # launcher exercises on cold and warm start paths, plus a self-test that the
@@ -35,7 +35,7 @@ fail() { echo "[probe-eq][FAIL] $*" >&2; exit 1; }
 
 [ -r "$TEMPLATE" ] || fail "cannot read $TEMPLATE"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required to run the reference impl"
-command -v curl    >/dev/null 2>&1 || fail "curl is required (and is a hard runtime dep of the launcher)"
+command -v curl    >/dev/null 2>&1 || fail "curl is required to run this test fixture"
 
 # ─── Reference implementation: verbatim python3 from before the bash port ───
 # These are the bodies that lived in launcher/start.sh.template before the
@@ -93,11 +93,13 @@ load_new_impls() {
     extracted=$(mktemp) || fail "mktemp failed"
     {
         extract_function webview_port_is_open
+        extract_function verify_webview_origin_with_python
         extract_function verify_webview_origin
     } > "$extracted"
 
     # Sanity check: extraction must have produced both function definitions.
     grep -q '^webview_port_is_open() {$'  "$extracted" || { rm -f "$extracted"; fail "webview_port_is_open not extracted from template"; }
+    grep -q '^verify_webview_origin_with_python() {$' "$extracted" || { rm -f "$extracted"; fail "verify_webview_origin_with_python not extracted from template"; }
     grep -q '^verify_webview_origin() {$' "$extracted" || { rm -f "$extracted"; fail "verify_webview_origin not extracted from template"; }
 
     # shellcheck source=/dev/null
@@ -106,6 +108,7 @@ load_new_impls() {
 
     # Rename so we can call both side-by-side in the same shell.
     eval "$(declare -f webview_port_is_open  | sed '1s/^webview_port_is_open /webview_port_is_open__new /')"
+    eval "$(declare -f verify_webview_origin_with_python | sed '1s/^verify_webview_origin_with_python /verify_webview_origin_with_python__new /')"
     eval "$(declare -f verify_webview_origin | sed '1s/^verify_webview_origin /verify_webview_origin__new /')"
     unset -f webview_port_is_open verify_webview_origin
 }
@@ -144,6 +147,18 @@ with_bad_loopback_proxy_env() {
     no_proxy="" \
     NO_PROXY="" \
     "$@"
+}
+
+with_no_curl_path() {
+    local bin_dir
+    local python_bin
+    bin_dir=$(mktemp -d) || fail "mktemp -d failed for no-curl path"
+    python_bin=$(python3 -c 'import sys; print(sys.executable)') || fail "could not resolve python executable"
+    ln -s "$python_bin" "$bin_dir/python3"
+    PATH="$bin_dir" "$@"
+    local rc=$?
+    rm -rf "$bin_dir"
+    return "$rc"
 }
 
 find_closed_tcp_port() {
@@ -267,6 +282,7 @@ main() {
     printf '%s\n' 'output = "curlrc-out"' > "$CURLRC_HOME/.curlrc"
     assert_rc "new   ok markers ignores .curlrc" 0 with_home "$CURLRC_HOME" verify_webview_origin__new "$URL_OK"
     assert_rc "new   ok markers ignores proxy env" 0 with_bad_loopback_proxy_env verify_webview_origin__new "$URL_OK"
+    assert_rc "new   ok markers without curl" 0 with_bad_loopback_proxy_env with_no_curl_path verify_webview_origin__new "$URL_OK"
     assert_rc "orig  404 path"               1 verify_webview_origin__orig "$URL_404"
     assert_rc "new   404 path"               1 verify_webview_origin__new  "$URL_404"
     assert_rc "orig  wrong title"            1 verify_webview_origin__orig "$URL_BADTITLE"
