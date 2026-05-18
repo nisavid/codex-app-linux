@@ -1653,8 +1653,14 @@ if not (parse_args_index < help_index < side_by_side_index < multi_call_index < 
     raise SystemExit("launcher must parse args, handle help, normalize side-by-side env, configure multi-launch, then derive WEBVIEW_ORIGIN")
 if 'local default_end=$((CODEX_LINUX_WEBVIEW_PORT + 4))' not in source or 'default_end=65535' not in source:
     raise SystemExit("multi-launch default range must cap at five ports without exceeding 65535")
+if 'unset CODEX_LINUX_MULTI_LAUNCH' not in source.split('parse_launcher_args() {', 1)[0]:
+    raise SystemExit("launcher must clear inherited internal multi-launch markers before parsing args")
 if 'CODEX_LINUX_INSTANCE_ID="port-$CODEX_LINUX_WEBVIEW_PORT"' not in multi_body:
     raise SystemExit("multi-launch must derive a stable instance id from the allocated port")
+if 'CODEX_LINUX_MULTI_LAUNCH=1' not in multi_body:
+    raise SystemExit("multi-launch must export an app-visible multi-launch marker")
+if 'export CODEX_ELECTRON_USER_DATA_DIR CODEX_LINUX_INSTANCE_ID CODEX_LINUX_MULTI_LAUNCH CODEX_LINUX_WEBVIEW_PORT' not in multi_body:
+    raise SystemExit("multi-launch must export instance identity for Electron")
 if 'APP_STATE_DIR="$base_state_dir/instances/$CODEX_LINUX_INSTANCE_ID"' not in multi_body:
     raise SystemExit("multi-launch must isolate app pid/webview state per allocated port")
 if 'LAUNCH_ACTION_RUNTIME_DIR="$XDG_RUNTIME_DIR/$CODEX_LINUX_APP_ID/instances/$CODEX_LINUX_INSTANCE_ID"' not in multi_body:
@@ -1943,6 +1949,12 @@ PY
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "@USER_BIN_DIR@/codex-app %U"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" 'INSTALL_ROOT="${CODEX_USER_INSTALL_ROOT:-${XDG_DATA_HOME}/codex-app}"'
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" "CODEX_USER_LOCAL_OZONE_PLATFORM"
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" 'exec "${APP_DIR}/start.sh" --x11 "$@"'
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" 'exec "${APP_DIR}/start.sh" --wayland "$@"'
+    assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "--force-x11"
+    assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "user-local.env"
+    assert_contains "$REPO_DIR/contrib/user-local-install/README.md" "--force-x11"
 }
 
 test_user_local_installer_uses_xdg_data_home() {
@@ -1991,6 +2003,8 @@ test_side_by_side_launcher_identity() {
     assert_contains "$app_dir/start.sh" "CODEX_LINUX_APP_ID=codex-cua-lab"
     assert_contains "$app_dir/start.sh" "CODEX_LINUX_APP_DISPLAY_NAME=Codex\\ CUA\\ Lab"
     assert_contains "$app_dir/start.sh" 'CODEX_LINUX_WEBVIEW_PORT=${CODEX_WEBVIEW_PORT:-5176}'
+    assert_contains "$app_dir/start.sh" 'CODEX_LINUX_SETTINGS_FILE="$APP_SETTINGS_FILE"'
+    assert_contains "$app_dir/start.sh" 'export CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_WEBVIEW_PORT CODEX_LINUX_SETTINGS_FILE'
     assert_contains "$app_dir/start.sh" 'WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"'
     assert_contains "$app_dir/start.sh" 'ELECTRON_RENDERER_URL="${ELECTRON_RENDERER_URL:-$WEBVIEW_ORIGIN/}"'
     assert_contains "$app_dir/start.sh" "resolve_script_dir"
@@ -2950,7 +2964,7 @@ JS
     make_fake_extracted_asar "$extracted" "$bundle_body"
 
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
-    assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&!n.app.requestSingleInstanceLock()'
+    assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&process.env.CODEX_LINUX_MULTI_LAUNCH!==`1`&&!n.app.requestSingleInstanceLock()'
     assert_contains "$extracted/.vite/build/main-test.js" 'codexLinuxHandleLaunchActionArgs'
     assert_contains "$extracted/.vite/build/main-test.js" 'e.includes(`--new-chat`)'
     assert_contains "$extracted/.vite/build/main-test.js" 'e.includes(`--quick-chat`)'
@@ -3910,6 +3924,74 @@ EOF
     )
 }
 
+test_user_local_prepare_build_repo_handles_relative_origin_url() {
+    info "Checking user-local managed checkout handles relative origin URLs"
+    local workspace="$TMP_DIR/user-local-relative-origin"
+    local origin_repo="$workspace/origin.git"
+    local source_repo="$workspace/source"
+    local moved_source_repo="$workspace/source-moved"
+    local updater_repo="$workspace/updater"
+    local managed_repo="$workspace/xdg-data/codex-app/managed-repo"
+    local install_env="$workspace/install.env"
+
+    mkdir -p "$workspace"
+    git init --bare --initial-branch=main "$origin_repo" >/dev/null
+    git clone "$origin_repo" "$source_repo" >/dev/null 2>&1
+    git -C "$source_repo" config user.name "Smoke Test"
+    git -C "$source_repo" config user.email "smoke@example.com"
+    cat > "$source_repo/relative.txt" <<'EOF'
+relative-origin
+EOF
+    git -C "$source_repo" add relative.txt
+    git -C "$source_repo" commit -m "base" >/dev/null
+    git -C "$source_repo" push -u origin main >/dev/null
+    git -C "$source_repo" remote set-head origin -a >/dev/null 2>&1 || true
+    git -C "$source_repo" remote set-url origin ../origin.git
+
+    (
+        export HOME="$workspace/home"
+        export XDG_DATA_HOME="$workspace/xdg-data"
+        export XDG_STATE_HOME="$workspace/xdg-state"
+        mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
+
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/contrib/user-local-install/files/share/common.sh"
+
+        INSTALL_CONFIG_FILE="$install_env"
+        cat > "$INSTALL_CONFIG_FILE" <<EOF
+SOURCE_REPO_DIR=$(printf '%q' "$source_repo")
+MANAGED_REPO_DIR=$(printf '%q' "$managed_repo")
+REPO_ORIGIN_URL=$(printf '%q' "../origin.git")
+REPO_DEFAULT_BRANCH=$(printf '%q' "main")
+OPT_ROOT=$(printf '%q' "$workspace/opt")
+EOF
+
+        prepare_build_repo
+
+        [ "$(cat "$MANAGED_REPO_DIR/relative.txt")" = "relative-origin" ] \
+            || fail "Expected managed checkout contents from relative origin URL"
+        [ "$(git -C "$MANAGED_REPO_DIR" remote get-url origin)" = "$origin_repo" ] \
+            || fail "Expected first relative-origin checkout to store an absolute managed origin URL"
+
+        mv "$source_repo" "$moved_source_repo"
+        git clone "$origin_repo" "$updater_repo" >/dev/null 2>&1
+        git -C "$updater_repo" config user.name "Smoke Test"
+        git -C "$updater_repo" config user.email "smoke@example.com"
+        cat > "$updater_repo/relative.txt" <<'EOF'
+relative-origin-updated
+EOF
+        git -C "$updater_repo" commit -am "advance remote" >/dev/null
+        git -C "$updater_repo" push origin main >/dev/null
+
+        prepare_build_repo
+
+        [ "$(cat "$MANAGED_REPO_DIR/relative.txt")" = "relative-origin-updated" ] \
+            || fail "Expected managed checkout to update after source checkout moved away"
+        [ "$(git -C "$MANAGED_REPO_DIR" remote get-url origin)" = "$origin_repo" ] \
+            || fail "Expected moved-source update to keep using the absolute managed origin URL"
+    )
+}
+
 test_user_local_install_from_update_defers_record_only_metadata() {
     info "Checking user-local helper refresh does not record metadata before update success"
     local workspace="$TMP_DIR/user-local-from-update-record-only"
@@ -3949,6 +4031,49 @@ SCRIPT
         CODEX_USER_LOCAL_SOURCE_REPO_DIR="$REPO_DIR" \
         bash "$REPO_DIR/contrib/user-local-install/install-user-local.sh" >/dev/null
     assert_file_exists "$marker"
+}
+
+test_user_local_install_preserves_persisted_x11_preference_on_refresh() {
+    info "Checking user-local X11 fallback preference persists across helper refreshes"
+    local workspace="$TMP_DIR/user-local-x11-preference"
+    local stub_bin="$workspace/bin"
+    local home="$workspace/home"
+    local config_home="$workspace/config"
+    local preference_file="$config_home/codex-app/user-local.env"
+
+    mkdir -p "$stub_bin"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$stub_bin/7z"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$stub_bin/systemctl"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$stub_bin/update-desktop-database"
+    chmod +x "$stub_bin/7z" "$stub_bin/systemctl" "$stub_bin/update-desktop-database"
+
+    PATH="$stub_bin:$PATH" \
+        HOME="$home" \
+        XDG_CONFIG_HOME="$config_home" \
+        XDG_DATA_HOME="$workspace/data" \
+        XDG_STATE_HOME="$workspace/state" \
+        CODEX_USER_LOCAL_SOURCE_REPO_DIR="$REPO_DIR" \
+        bash "$REPO_DIR/contrib/user-local-install/install-user-local.sh" --force-x11 >/dev/null
+    assert_file_exists "$preference_file"
+    assert_contains "$preference_file" "CODEX_USER_LOCAL_OZONE_PLATFORM=x11"
+
+    PATH="$stub_bin:$PATH" \
+        HOME="$home" \
+        XDG_CONFIG_HOME="$config_home" \
+        XDG_DATA_HOME="$workspace/data" \
+        XDG_STATE_HOME="$workspace/state" \
+        CODEX_USER_LOCAL_SOURCE_REPO_DIR="$REPO_DIR" \
+        bash "$REPO_DIR/contrib/user-local-install/install-user-local.sh" --from-update >/dev/null
+    assert_contains "$preference_file" "CODEX_USER_LOCAL_OZONE_PLATFORM=x11"
+
+    PATH="$stub_bin:$PATH" \
+        HOME="$home" \
+        XDG_CONFIG_HOME="$config_home" \
+        XDG_DATA_HOME="$workspace/data" \
+        XDG_STATE_HOME="$workspace/state" \
+        CODEX_USER_LOCAL_SOURCE_REPO_DIR="$REPO_DIR" \
+        bash "$REPO_DIR/contrib/user-local-install/install-user-local.sh" --no-force-x11 >/dev/null
+    assert_contains "$preference_file" "CODEX_USER_LOCAL_OZONE_PLATFORM=auto"
 }
 
 test_user_local_prepare_build_repo_updates_existing_single_branch_fetch_refspec() {
@@ -4293,7 +4418,9 @@ main() {
     test_user_local_prepare_build_repo_ignores_stale_recorded_default_branch
     test_user_local_prepare_build_repo_ignores_stale_source_origin_head
     test_user_local_prepare_build_repo_uses_source_when_overlay_base_is_missing
+    test_user_local_prepare_build_repo_handles_relative_origin_url
     test_user_local_install_from_update_defers_record_only_metadata
+    test_user_local_install_preserves_persisted_x11_preference_on_refresh
     test_user_local_prepare_build_repo_updates_existing_single_branch_fetch_refspec
     test_user_local_prepare_build_repo_handles_deleted_overlay_paths
     test_user_local_prepare_build_repo_removes_rename_source_paths
