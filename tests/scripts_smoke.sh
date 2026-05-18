@@ -3977,6 +3977,8 @@ EOF
             || fail "Expected first relative-origin checkout to store an absolute managed origin URL"
 
         mv "$source_repo" "$moved_source_repo"
+        [ "$(resolve_repo_origin_url "../origin.git" "$source_repo")" = "$origin_repo" ] \
+            || fail "Expected relative origin resolution to normalize moved source paths"
         git clone "$origin_repo" "$updater_repo" >/dev/null 2>&1
         git -C "$updater_repo" config user.name "Smoke Test"
         git -C "$updater_repo" config user.email "smoke@example.com"

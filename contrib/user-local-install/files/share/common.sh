@@ -116,7 +116,7 @@ repo_origin_url_is_relative_local() {
 resolve_repo_origin_url() {
     local origin_url="$1"
     local base_dir="$2"
-    local base_abs candidate target_dir target_name
+    local base_abs candidate normalized_candidate target_dir target_name
 
     if ! repo_origin_url_is_relative_local "$origin_url" || [ -z "$base_dir" ]; then
         printf '%s\n' "$origin_url"
@@ -130,6 +130,11 @@ resolve_repo_origin_url() {
     fi
 
     candidate="$base_abs/$origin_url"
+    if normalized_candidate="$(realpath -m -- "$candidate" 2>/dev/null)"; then
+        candidate="$normalized_candidate"
+    elif normalized_candidate="$(readlink -m -- "$candidate" 2>/dev/null)"; then
+        candidate="$normalized_candidate"
+    fi
     target_dir="$(dirname "$candidate")"
     target_name="$(basename "$candidate")"
     if [ -d "$target_dir" ]; then
