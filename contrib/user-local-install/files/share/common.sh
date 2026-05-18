@@ -333,7 +333,7 @@ apply_source_overlay() {
 
     while IFS= read -r path; do
         [ -n "$path" ] || continue
-        [ -e "$SOURCE_REPO_DIR/$path" ] || continue
+        [ -e "$SOURCE_REPO_DIR/$path" ] || [ -L "$SOURCE_REPO_DIR/$path" ] || continue
         target_path="$MANAGED_REPO_DIR/$path"
         mkdir -p "$(dirname "$target_path")"
         rm -rf "$target_path"

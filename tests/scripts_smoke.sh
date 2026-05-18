@@ -5,9 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 if [ "${CODEX_SCRIPTS_SMOKE_ENV_CLEANED:-0}" != "1" ]; then
+    bash_func_unset_args=()
+    while IFS= read -r env_name; do
+        bash_func_unset_args+=("-u" "$env_name")
+    done < <(env | sed -n 's/^\(BASH_FUNC_[^=]*\)=.*/\1/p')
     exec env \
-        -u 'BASH_FUNC_ml%%' \
-        -u 'BASH_FUNC_module%%' \
+        "${bash_func_unset_args[@]}" \
         CODEX_SCRIPTS_SMOKE_ENV_CLEANED=1 \
         bash "$0" "$@"
 fi
@@ -272,7 +275,13 @@ JSON
 const fs = require("node:fs");
 const configPath = process.argv[2];
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-if (JSON.stringify(config) !== JSON.stringify({ enabled: ["example-feature"], disabled: ["open-target-discovery"] })) {
+function sameMembers(actual, expected) {
+  return Array.isArray(actual) &&
+    actual.length === expected.length &&
+    actual.slice().sort().join("\0") === expected.slice().sort().join("\0");
+}
+if (!sameMembers(config.enabled, ["example-feature"]) ||
+    !sameMembers(config.disabled, ["open-target-discovery"])) {
   process.exit(1);
 }
 NODE

@@ -125,7 +125,11 @@ fn infer_hyprland_instance_signature() -> Option<String> {
         .collect::<Vec<_>>();
 
     if wayland_display.is_some() {
-        return select_hyprland_instance(candidates).map(|candidate| candidate.signature);
+        let matches = candidates
+            .into_iter()
+            .filter(|candidate| candidate.wayland_display_matches)
+            .collect::<Vec<_>>();
+        return select_hyprland_instance(matches).map(|candidate| candidate.signature);
     }
 
     match candidates.as_slice() {
