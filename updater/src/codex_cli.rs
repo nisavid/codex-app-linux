@@ -547,6 +547,8 @@ fn installed_cli_version_satisfies_latest(installed_version: &str, latest_versio
         Version::parse(latest_version),
     ) {
         (Ok(installed), Ok(latest)) => installed >= latest,
+        // Non-semver values cannot be ordered safely against the npm registry
+        // version, so the updater leaves them eligible for an explicit refresh.
         _ => false,
     }
 }

@@ -109,7 +109,24 @@ fi
 
 launcher_port_is_open() {
     local port="$1"
-    ( exec 3<>/dev/tcp/127.0.0.1/"$port" ) 2>/dev/null
+    local probe_pid kill_pid rc=1 self_pid=$$
+
+    ( exec 3<>/dev/tcp/127.0.0.1/"$port" ) 2>/dev/null &
+    probe_pid=$!
+    (
+        sleep 0.2
+        [ -r "/proc/$probe_pid/stat" ] || exit 0
+        local stat_line rest
+        stat_line=$(< "/proc/$probe_pid/stat") || exit 0
+        rest=${stat_line##*) }
+        set -- $rest
+        [ "${2:-}" = "$self_pid" ] && kill -9 "$probe_pid" 2>/dev/null
+    ) 2>/dev/null &
+    kill_pid=$!
+    if wait "$probe_pid" 2>/dev/null; then rc=0; fi
+    kill "$kill_pid" 2>/dev/null
+    wait "$kill_pid" 2>/dev/null
+    return $rc
 }
 
 choose_multi_launch_port() {
@@ -1302,13 +1319,17 @@ pid_is_stale_webview_server() {
     local deleted_webview_dir
 
     pid_has_webview_server_cmdline "$pid" || return 1
-    cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
     [ -n "$cwd" ] || return 1
 
     current_webview_dir="$(canonical_path "$WEBVIEW_DIR")"
     deleted_webview_dir="$current_webview_dir (deleted)"
-    [ "$cwd" = "$deleted_webview_dir" ] && return 0
+    if [ "$cwd" = "$deleted_webview_dir" ]; then
+        return 0
+    fi
 
+    [ -f "$WEBVIEW_PID_FILE" ] || return 1
+    [ "$(cat "$WEBVIEW_PID_FILE" 2>/dev/null || true)" = "$pid" ] || return 1
     [ "$cwd" != "$current_webview_dir" ]
 }
 
@@ -1396,7 +1417,7 @@ stop_stale_webview_server() {
     running_app_is_active && return 0
 
     while pid="$(stale_webview_server_pid)"; do
-        cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+        cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
         echo "Stopping stale webview server pid=$pid cwd=$cwd"
         kill "$pid" 2>/dev/null || true
         for _ in $(seq 1 20); do

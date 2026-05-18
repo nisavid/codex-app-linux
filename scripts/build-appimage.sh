@@ -16,7 +16,7 @@ ICON_SOURCE="$REPO_DIR/assets/codex.png"
 PACKAGE_NAME="${PACKAGE_NAME:-codex-app}"
 PACKAGE_DISPLAY_NAME="${PACKAGE_DISPLAY_NAME:-Codex App}"
 PACKAGE_COMMENT="${PACKAGE_COMMENT:-Run Codex App on Linux}"
-PACKAGE_VERSION="${PACKAGE_VERSION:-$(date -u +%Y.%m.%d.%H%M%S)}"
+PACKAGE_VERSION="${PACKAGE_VERSION:-$(default_package_version)}"
 
 map_arch() {
     case "$(uname -m)" in

@@ -104,43 +104,11 @@ package_with_updater_enabled() {
     [ "$(package_with_updater_value)" = "1" ]
 }
 
-package_node_binary() {
-    local managed_node="${APP_DIR:-}/resources/node-runtime/bin/node"
-    if [ -x "$managed_node" ] && [ "$("$managed_node" -e 'process.stdout.write("ok")' 2>/dev/null || true)" = "ok" ]; then
-        printf '%s\n' "$managed_node"
-        return 0
-    fi
-
-    command -v node >/dev/null 2>&1 || error "node is required"
-    command -v node
-}
-
-stage_update_builder_linux_features_config() {
+clear_update_builder_linux_features_config() {
     local update_builder_root="$1"
-    local helper="$REPO_DIR/scripts/lib/linux-features.js"
     local target="$update_builder_root/linux-features/features.json"
-    local node_bin
 
-    [ -f "$helper" ] || error "Missing Linux features helper: $helper"
-
-    node_bin="$(package_node_binary)"
-    "$node_bin" - "$helper" "$target" <<'NODE'
-const fs = require("node:fs");
-const path = require("node:path");
-
-const helperPath = path.resolve(process.argv[2]);
-const targetPath = path.resolve(process.argv[3]);
-const { resolvedLinuxFeaturesConfig } = require(helperPath);
-
-const resolvedConfig = resolvedLinuxFeaturesConfig();
-if (resolvedConfig.enabled.length === 0 && resolvedConfig.disabled.length === 0) {
-  fs.rmSync(targetPath, { force: true });
-  process.exit(0);
-}
-
-fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-fs.writeFileSync(targetPath, `${JSON.stringify(resolvedConfig, null, 2)}\n`);
-NODE
+    rm -f "$target"
 }
 
 render_desktop_entry() {
@@ -608,7 +576,7 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postinst" "$update_builder_root/packaging/linux/codex-app-updater.postinst"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.prerm" "$update_builder_root/packaging/linux/codex-app-updater.prerm"
     cp -r "$REPO_DIR/linux-features/." "$update_builder_root/linux-features/"
-    stage_update_builder_linux_features_config "$update_builder_root"
+    clear_update_builder_linux_features_config "$update_builder_root"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postrm" "$update_builder_root/packaging/linux/codex-app-updater.postrm"
     cp "$REPO_DIR/assets/codex.png" "$update_builder_root/assets/codex.png"
     if [ -d "$node_runtime_source" ]; then

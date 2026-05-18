@@ -223,8 +223,7 @@ SCRIPT
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/launcher/webview-server.py"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/linux-features/README.md"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/linux-features/example-feature/feature.json"
-    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/linux-features/features.json"
-    assert_contains "$pkg_root/usr/lib/codex-app/update-builder/linux-features/features.json" "open-target-discovery"
+    assert_file_not_exists "$pkg_root/usr/lib/codex-app/update-builder/linux-features/features.json"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/node-runtime/bin/node"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/computer-use-linux/Cargo.toml"
@@ -234,8 +233,8 @@ SCRIPT
     assert_file_exists "$pkg_root/opt/codex-app/resources/node-runtime/bin/node"
 }
 
-test_update_builder_preserves_enabled_linux_features_config() {
-    info "Checking update-builder preserves sanitized Linux feature config"
+test_update_builder_omits_build_time_linux_features_config() {
+    info "Checking update-builder omits build-time Linux feature config"
     local workspace="$TMP_DIR/update-builder-linux-features"
     local root="$workspace/root"
     local app_dir="$workspace/app"
@@ -267,26 +266,8 @@ JSON
         stage_update_builder_bundle "$root"
     )
 
-    assert_file_exists "$staged_config"
-    assert_contains "$staged_config" "example-feature"
-    assert_not_contains "$staged_config" "localComment"
-
-    node - "$staged_config" <<'NODE' || fail "Expected staged Linux features config to be sanitized"
-const fs = require("node:fs");
-const configPath = process.argv[2];
-const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-const keys = Object.keys(config).sort();
-function sameMembers(actual, expected) {
-  return Array.isArray(actual) &&
-    actual.length === expected.length &&
-    actual.slice().sort().join("\0") === expected.slice().sort().join("\0");
-}
-if (JSON.stringify(keys) !== JSON.stringify(["disabled", "enabled"]) ||
-    !sameMembers(config.enabled, ["example-feature"]) ||
-    !sameMembers(config.disabled, ["open-target-discovery"])) {
-  process.exit(1);
-}
-NODE
+    assert_file_not_exists "$staged_config"
+    assert_file_exists "$root/usr/lib/codex-app/update-builder/linux-features/features.example.json"
 }
 
 test_deb_builder_respects_package_identity() {
@@ -583,13 +564,13 @@ SCRIPT
         bash "$REPO_DIR/scripts/build-pacman.sh"
     )"
 
-    assert_file_exists "$dist_dir/codex-app-2026.03.24.120000+manual-1-x86_64.pkg.tar.zst"
-    [ "$package_path" = "$dist_dir/codex-app-2026.03.24.120000+manual-1-x86_64.pkg.tar.zst" ] || fail "Expected build-pacman.sh to print built package path, got: $package_path"
+    assert_file_exists "$dist_dir/codex-app-2026.03.24.120000_manual-1-x86_64.pkg.tar.zst"
+    [ "$package_path" = "$dist_dir/codex-app-2026.03.24.120000_manual-1-x86_64.pkg.tar.zst" ] || fail "Expected build-pacman.sh to print built package path, got: $package_path"
     assert_file_exists "$dist_dir/codex-app-latest.pkg.tar.zst"
-    [ "$(readlink "$dist_dir/codex-app-latest.pkg.tar.zst")" = "codex-app-2026.03.24.120000+manual-1-x86_64.pkg.tar.zst" ] || fail "Expected latest pacman symlink to point at built package"
+    [ "$(readlink "$dist_dir/codex-app-latest.pkg.tar.zst")" = "codex-app-2026.03.24.120000_manual-1-x86_64.pkg.tar.zst" ] || fail "Expected latest pacman symlink to point at built package"
     assert_file_exists "$capture_dir/PKGBUILD"
     assert_file_exists "$capture_dir/codex-app.install"
-    assert_contains "$capture_dir/PKGBUILD" "pkgver=2026.03.24.120000+manual"
+    assert_contains "$capture_dir/PKGBUILD" "pkgver=2026.03.24.120000_manual"
     assert_contains "$capture_dir/PKGBUILD" "pkgrel=1"
     assert_contains "$capture_dir/PKGBUILD" "ampersand&tmp"
     assert_not_contains "$capture_dir/PKGBUILD" "__STAGING_DIR__"
@@ -1721,6 +1702,10 @@ if "stale_webview_server_pid" not in source or "stop_stale_webview_server" not i
     raise SystemExit("launcher must detect stale deleted webview servers left behind by previous installs")
 if 'current_webview_dir="$(canonical_path "$WEBVIEW_DIR")"' not in stale_body:
     raise SystemExit("stale webview detection must compare against the current bundle path")
+if 'readlink "/proc/$pid/cwd"' not in stale_body:
+    raise SystemExit("stale webview detection must preserve the kernel deleted-cwd suffix")
+if '[ -f "$WEBVIEW_PID_FILE" ] || return 1' not in stale_body:
+    raise SystemExit("stale webview detection must restrict non-deleted bundle cleanup to launcher-owned pid files")
 if '[ "$cwd" != "$current_webview_dir" ]' not in stale_body:
     raise SystemExit("stale webview detection must catch servers moved into backup bundle directories")
 if 'ADOPTED_WEBVIEW_PID="$pid"' not in adopt_body:
@@ -4247,7 +4232,7 @@ main() {
     test_common_helper_sourcing
     test_desktop_renderer_preserves_non_updater_actions
     test_deb_builder_smoke
-    test_update_builder_preserves_enabled_linux_features_config
+    test_update_builder_omits_build_time_linux_features_config
     test_deb_builder_respects_package_identity
     test_deb_builder_can_disable_updater
     test_rpm_builder_smoke
