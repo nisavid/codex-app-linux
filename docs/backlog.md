@@ -1,28 +1,15 @@
 # Backlog
 
-This backlog tracks non-security follow-up until the queue moves to GitHub
-Issues. Keep it short, current, and ordered by what should be picked up next.
-Security-specific work lives in
-[Security Backlog](maintainers/security-backlog.md).
+Open follow-up work now lives in GitHub Issues.
 
-One-time plans and postmortems should not stay here as completed history. Once
-their useful facts are represented in maintained docs or issues, delete the
-one-time source.
+- [All backlog issues](https://github.com/nisavid/codex-app-linux/issues?q=is%3Aissue%20is%3Aopen%20label%3Abacklog)
+- [Maintainer-facing backlog issues](https://github.com/nisavid/codex-app-linux/issues?q=is%3Aissue%20is%3Aopen%20label%3Abacklog%20label%3Aaudience%2Fmaintainer)
+- [Security backlog index](maintainers/security-backlog.md)
 
-## Current Follow-Up
+## Non-Security Follow-Up
 
-### Migrate backlogs to GitHub Issues
+- [Evaluate richer README visuals](https://github.com/nisavid/codex-app-linux/issues/52)
 
-Move this file and the security backlog into GitHub Issues after the current
-docs cleanup. Preserve priority, audience, and links to maintained docs. After
-the migration, replace these files with issue-index pointers or remove them
-once [Documentation Index](README.md) and [AGENTS.md](../AGENTS.md) point to
-the relevant labels.
-
-### Evaluate richer README visuals
-
-The README icon and title now present the project more cleanly, but a future
-visual pass could show the app in a Linux desktop, the native updater, Browser
-Use, and Computer Use through a compact screenshot collage or animation. Treat
-this as polish after stable capture assets are easy to produce. Keep the tone
-modern, clean, utilitarian, and appropriate for users and distro maintainers.
+Keep new durable work items in GitHub Issues with the `backlog` label instead
+of adding task detail here. Use this file only as the repository-local pointer
+to the active queue.
