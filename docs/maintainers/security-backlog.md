@@ -138,6 +138,27 @@ Desired state:
 - docs and diagnostics keep local opt-in, account availability, host
   accessibility, and desktop input permissions distinct.
 
+### Review experimental remote-control and Codex mobile host boundary
+
+The upstream sync adds opt-in Linux feature patches for remote-control UI
+surfaces and Codex mobile host enrollment. The Linux path uses software device
+keys under XDG config instead of the macOS native key module, and exposes UI
+surfaces that are still governed by upstream account, enrollment, and
+remote-access policy.
+
+Desired state:
+
+- `@codex-security` reviews remote-control UI gates, Codex mobile setup copy,
+  app-server config preservation, generated bundle patch descriptors, and the
+  Linux device-key provider before the feature is treated as general-ready;
+- the Linux device-key store remains under
+  `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/` with owner-only file modes and
+  no key material in logs or patch reports;
+- fork-side UI patches do not fabricate connected clients, MFA completion,
+  enrollment, access-required, or remote-environment state;
+- docs keep experimental fork-side enablement distinct from upstream account
+  availability and mobile-client authorization.
+
 ### Review bundled browser and Chrome native-host boundary
 
 The generated app stages Browser Use resources and the upstream Chrome plugin

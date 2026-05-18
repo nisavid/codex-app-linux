@@ -32,6 +32,7 @@ jobs:
           bash -n scripts/build-deb.sh
           bash -n scripts/build-rpm.sh
           bash -n scripts/build-pacman.sh
+          bash -n scripts/build-appimage.sh
           bash -n tests/fixtures/create-packaged-app-fixture.sh
           bash -n tests/scripts_smoke.sh
           bash -n launcher/start.sh.template
@@ -48,6 +49,7 @@ jobs:
           bash -n contrib/user-local-install/files/.local/bin/codex-app-version
           bash -n contrib/user-local-install/files/share/common.sh
           bash -n scripts/ci/update-nix-hashes.sh
+          bash -n scripts/ci/validate-nix-pins.sh
 
       - name: Check Node patcher syntax
         run: |
@@ -123,6 +125,44 @@ jobs:
             echo "- Built: \`$(basename "$deb_file")\`"
             echo "- Verified updater binary, user service, update-builder bundle, and packaged runtime helper."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  nix:
+    name: Nix Package Builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      NIX_CONFIG: experimental-features = nix-command flakes
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: cachix/install-nix-action@v27
+
+      - name: Install validation dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+
+      - name: Validate Nix pins against upstream DMG
+        run: scripts/ci/validate-nix-pins.sh
+
+      - name: Check flake evaluation
+        run: nix flake check --no-build
+
+      - name: Build Nix package outputs
+        run: |
+          nix build \
+            .#codex-app \
+            .#codex-app-computer-use-ui \
+            .#codex-app-remote-mobile-control \
+            .#codex-app-computer-use-ui-remote-mobile-control \
+            .#installer \
+            --no-link \
+            --print-build-logs
 
   package-rpm:
     name: Build RPM Package

@@ -30,9 +30,8 @@ map_arch() {
 	esac
 }
 
-# Arch pkgver must not contain '+' or '-'; split on '+' and use the base as pkgver.
 pacman_version_parts() {
-	PACMAN_PKGVER="${PACKAGE_VERSION%%+*}"
+	PACMAN_PKGVER="${PACKAGE_VERSION//+/_}"
 	PACMAN_PKGREL="1"
 }
 
@@ -74,6 +73,21 @@ main() {
 	stage_optional_update_builder_bundle "$staging_root"
 	write_launcher_stub "$staging_root"
 
+	local package_name
+	local package_provides
+	local package_conflicts
+	local pacman_pkgver
+	local pacman_pkgrel
+	local staging_dir
+	local arch_replacement
+	package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
+	package_provides="$(sed_escape_replacement "$PACKAGE_PROVIDES")"
+	package_conflicts="$(sed_escape_replacement "$PACKAGE_CONFLICTS")"
+	pacman_pkgver="$(sed_escape_replacement "$PACMAN_PKGVER")"
+	pacman_pkgrel="$(sed_escape_replacement "$PACMAN_PKGREL")"
+	staging_dir="$(sed_escape_replacement "$staging_root")"
+	arch_replacement="$(sed_escape_replacement "$arch")"
+
 	local pacman_updater_depends=""
 	if package_with_updater_enabled; then
 		pacman_updater_depends="    'p7zip'
@@ -83,13 +97,15 @@ main() {
     'gcc'
     'make'"
 	fi
-	AWK_PACKAGE_NAME="$PACKAGE_NAME" \
-	AWK_PACKAGE_PROVIDES="$PACKAGE_PROVIDES" \
-	AWK_PACKAGE_CONFLICTS="$PACKAGE_CONFLICTS" \
-	AWK_PKGVER="$PACMAN_PKGVER" \
-	AWK_PKGREL="$PACMAN_PKGREL" \
-	AWK_STAGING_DIR="$staging_root" \
-	AWK_ARCH="$arch" \
+	sed \
+		-e "s/__PACKAGE_NAME__/$package_name/g" \
+		-e "s/__PACKAGE_PROVIDES__/$package_provides/g" \
+		-e "s/__PACKAGE_CONFLICTS__/$package_conflicts/g" \
+		-e "s/__PKGVER__/$pacman_pkgver/g" \
+		-e "s/__PKGREL__/$pacman_pkgrel/g" \
+		-e "s|__STAGING_DIR__|$staging_dir|g" \
+		-e "s/__ARCH__/$arch_replacement/g" \
+		"$PKGBUILD_TEMPLATE" | \
 	AWK_PACMAN_UPDATER_DEPENDS="$pacman_updater_depends" \
 	awk '
 		function emit_env(name) {
@@ -99,16 +115,9 @@ main() {
 		}
 		{
 			if ($0 == "__PACMAN_UPDATER_DEPENDS__") { emit_env("AWK_PACMAN_UPDATER_DEPENDS"); next }
-			gsub(/__PACKAGE_NAME__/, ENVIRON["AWK_PACKAGE_NAME"])
-			gsub(/__PACKAGE_PROVIDES__/, ENVIRON["AWK_PACKAGE_PROVIDES"])
-			gsub(/__PACKAGE_CONFLICTS__/, ENVIRON["AWK_PACKAGE_CONFLICTS"])
-			gsub(/__PKGVER__/, ENVIRON["AWK_PKGVER"])
-			gsub(/__PKGREL__/, ENVIRON["AWK_PKGREL"])
-			gsub(/__STAGING_DIR__/, ENVIRON["AWK_STAGING_DIR"])
-			gsub(/__ARCH__/, ENVIRON["AWK_ARCH"])
 			print
 		}
-	' "$PKGBUILD_TEMPLATE" >"$build_root/PKGBUILD"
+	' >"$build_root/PKGBUILD"
 
 	local updater_service_preamble=""
 	local updater_post_install=""
@@ -176,7 +185,15 @@ fi"
 		pacman -Qlp "$pkg_file" >&2
 	fi
 
+	local pkg_basename
+	local latest_suffix
+	pkg_basename="$(basename "$pkg_file")"
+	latest_suffix="${pkg_basename#${PACKAGE_NAME}-${PACMAN_PKGVER}-${PACMAN_PKGREL}-${arch}}"
+	[ -n "$latest_suffix" ] || latest_suffix=".pkg.tar.zst"
+	ln -sfn "$pkg_basename" "$DIST_DIR/${PACKAGE_NAME}-latest${latest_suffix}"
+
 	info "Built package: $pkg_file"
+	printf '%s\n' "$pkg_file"
 }
 
 main "$@"

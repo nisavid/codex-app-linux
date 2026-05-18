@@ -9,17 +9,41 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: update-nix-upstream-hashes
+  cancel-in-progress: false
+
 jobs:
   update-hash:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       NIX_CONFIG: experimental-features = nix-command flakes
+      CACHIX_CACHE_NAME: codex-app-linux
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
       - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
 
-      - name: Refresh Nix fixed-output hashes
+      - name: Configure Cachix for hash refresh builds
+        if: env.CACHIX_AUTH_TOKEN != ''
+        uses: cachix/cachix-action@v17
+        with:
+          name: ${{ env.CACHIX_CACHE_NAME }}
+          authToken: ${{ env.CACHIX_AUTH_TOKEN }}
+
+      - name: Install validation dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+
+      - name: Refresh Nix upstream hash
         run: scripts/ci/update-nix-hashes.sh
 
       - name: Commit refreshed hashes
@@ -34,7 +58,6 @@ jobs:
           fi
 
           CODEX_DMG_HASH="$(scripts/ci/update-nix-hashes.sh read-flake-hash 'codexDmg = pkgs.fetchurl {' 'hash = ')"
-          PAYLOAD_HASH="$(scripts/ci/update-nix-hashes.sh read-flake-hash 'codexAppPayload = pkgs.stdenv.mkDerivation {' 'outputHash = ')"
 
           git config user.name  "codex-dmg-hash-bot"
           git config user.email "actions@github.com"
@@ -45,14 +68,12 @@ jobs:
           git commit \
             -m "fix(nix): update upstream Nix hashes" \
             -m "Refreshed Codex.dmg SRI hash to $CODEX_DMG_HASH." \
-            -m "Refreshed codexAppPayload recursive outputHash to $PAYLOAD_HASH." \
+            -m "Verified all Codex App Linux Nix package outputs against the refreshed DMG." \
             -m "[skip ci]" \
             -m "Co-authored-by: Codex <noreply@openai.com>"
           git push --force-with-lease origin "$BRANCH"
 
           PR_BODY="Refreshed Codex.dmg SRI hash to \`$CODEX_DMG_HASH\`.
-
-          Refreshed codexAppPayload recursive outputHash to \`$PAYLOAD_HASH\`.
 
           This scheduled workflow pushes refreshed hashes to \`$BRANCH\` and attempts to open or update a PR for maintainer review."
 

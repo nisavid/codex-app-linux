@@ -9,7 +9,7 @@ while this fork preserves local names, paths, updater policy, hardening,
 security review, packaging polish, and maintainer taste.
 
 The current comparison baseline is upstream commit
-`43c8bd1b5d4ab2eb4be8eb474528d6050c51db9a` (2026-05-14). Claims below describe
+`ccaa31fb16217f5706ee1f5113445ca475ea4e34` (2026-05-17). Claims below describe
 the current tree's diff against that
 baseline, with current source files taking precedence over generated output.
 
@@ -116,30 +116,35 @@ user expectations should track the upstream app version, not local build time.
 plain `make deb`, `make rpm`, and `make pacman` are the normal path. Keep
 `PACKAGE_VERSION=...` documented only as a deliberate override.
 
-### 4. Native Package Builder Hardening
+### 4. Package Builder Hardening
 
-**Fork delta:** The Debian, RPM, and pacman builders keep local names,
-replacement metadata, package output names, and staged payloads aligned across
-formats. The shared staging helper validates package inputs, rejects unsafe app
-payload symlinks, normalizes payload modes, avoids preserving local build
-ownership into pacman packages, and prints package metadata/content inspection
-where tools support it.
+**Fork delta:** The Debian, RPM, pacman, and AppImage builders keep local
+names, replacement metadata, package output names, and staged payloads aligned
+with their intended package surfaces. The shared staging helper validates
+native package inputs, rejects unsafe app payload symlinks, normalizes payload
+modes, avoids preserving local build ownership into pacman packages, and prints
+package metadata/content inspection where tools support it. AppImage stays a
+manual-update artifact without updater service, polkit, or update-builder
+payload.
 
-**Upstream baseline:** Upstream already builds native packages. This fork adds
-hardening, local identity, and payload consistency constraints.
+**Upstream baseline:** Upstream already builds native packages and now carries a
+local AppImage target. This fork adds hardening, local identity, and payload
+consistency constraints.
 
 **Why it matters:** Native packages must install with package-manager-owned
 system paths, predictable modes, and aligned payloads across formats.
 
 **Current paths:** `scripts/build-deb.sh`, `scripts/build-rpm.sh`,
-`scripts/build-pacman.sh`, `scripts/lib/package-common.sh`,
-`packaging/linux/control`, `packaging/linux/codex-app.spec`,
-`packaging/linux/PKGBUILD.template`, `packaging/linux/codex-app.install`,
+`scripts/build-pacman.sh`, `scripts/build-appimage.sh`,
+`scripts/lib/package-common.sh`, `packaging/linux/control`,
+`packaging/linux/codex-app.spec`, `packaging/linux/PKGBUILD.template`,
+`packaging/linux/codex-app.install`, `packaging/appimage/`,
 `tests/scripts_smoke.sh`.
 
 **Preservation checks:** Build the affected package format and inspect metadata
 plus the first file-listing page. For pacman, check that package ownership is
-not inherited from the local build user.
+not inherited from the local build user. For AppImage, check that updater-only
+service and polkit files are absent.
 
 ### 5. Updater Privilege Boundary And Install Hardening
 
@@ -244,12 +249,15 @@ checkout builds or race pending updater install state.
 **Fork delta:** ASAR patches remain fail-soft for volatile upstream bundle
 shapes. The current fork delta includes local identity updates, sanitized
 generated keybind literals, `CODEX_APP_LAUNCH_ACTION_SOCKET`, Linux window
-default refinements, default-enabled Electron sandboxing with an explicit
-compatibility opt-out, and default-enabled Linux open-target discovery through
-the feature registry. It also keeps the Linux Computer Use plugin manifest gate
-default-on while keeping Computer Use UI patches opt-in through
+default refinements, opt-in multi-instance launch support, default-enabled
+Electron sandboxing with an explicit compatibility opt-out, and default-enabled
+Linux open-target discovery through the feature registry. It also keeps the
+Linux Computer Use plugin manifest gate default-on while keeping Computer Use UI
+patches opt-in through
 `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` or the persisted
-`codex-linux-computer-use-ui-enabled` setting.
+`codex-linux-computer-use-ui-enabled` setting. Remote-control UI and mobile
+remote-control host patches stay opt-in Linux features and keep private
+device-key material under `${XDG_CONFIG_HOME:-~/.config}/codex-app`.
 
 **Upstream baseline:** Upstream already carries Linux ASAR patching. This fork
 maintains local patch safety and selected Linux behavior changes on top of that
@@ -262,6 +270,7 @@ generation unless a required invariant fails.
 **Current paths:** `scripts/patch-linux-window-ui.js`,
 `scripts/patch-linux-window-ui.test.js`, `scripts/lib/asar-patch.sh`,
 `scripts/lib/linux-features.js`, `linux-features/open-target-discovery/`,
+`linux-features/remote-control-ui/`, `linux-features/remote-mobile-control/`,
 `linux-features/features.example.json`, `install.sh`,
 `launcher/start.sh.template`, `tests/scripts_smoke.sh`,
 `docs/usage/troubleshooting.md`.

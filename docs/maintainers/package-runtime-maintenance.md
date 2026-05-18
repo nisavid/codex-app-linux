@@ -19,6 +19,7 @@ paths.
 | Debian package | `scripts/build-deb.sh`, `packaging/linux/control`, Debian maintainer scripts | `dist/*.deb`, `dist/deb-root/` |
 | RPM package | `scripts/build-rpm.sh`, `packaging/linux/codex-app.spec` | `dist/*.rpm`, temporary `rpmbuild` roots |
 | pacman package | `scripts/build-pacman.sh`, `packaging/linux/PKGBUILD.template`, `packaging/linux/codex-app.install` | `dist/codex-app-*.pkg.tar.*`, temporary `makepkg` roots |
+| AppImage package | `scripts/build-appimage.sh`, `packaging/appimage/` | `dist/codex-app-*.AppImage`, temporary AppDir roots |
 | Shared staged package files | `scripts/lib/package-common.sh` | `/opt/codex-app`, `/usr/bin/codex-app`, `/usr/bin/codex-app-updater` |
 | Packaged-only launcher behavior | `packaging/linux/codex-packaged-runtime.sh` | `/usr/lib/codex-app/packaged-runtime.sh` |
 | User service lifecycle | `packaging/linux/codex-app-updater.service`, maintainer scripts, `packaging/linux/codex-app-updater-user-service.sh` | `systemd --user` service state |
@@ -86,6 +87,10 @@ symlinks and normalizes generated app directory/file modes before package
 creation. When package contents move, update every affected builder and template
 together.
 
+AppImage builds use `packaging/appimage/` and intentionally omit
+`codex-app-updater`, the systemd user service, polkit policy, and the
+update-builder bundle. Keep that path as a manual-update packaging target.
+
 ## Current Runtime Behaviors
 
 The generated launcher starts from `codex-app/start.sh` for checkout builds and
@@ -112,6 +117,9 @@ Important launcher behavior:
   `http://127.0.0.1:5175/index.html` contains expected Codex startup markers
   before Electron launches. Warm starts can reuse an existing verified webview
   server from the same app directory.
+- `--new-instance` and `CODEX_MULTI_LAUNCH=1` intentionally bypass the normal
+  warm-start reuse path by selecting a free port in a bounded range and using
+  per-port pid, socket, log, and Electron user-data paths.
 - It discovers the Codex CLI in this order: `CODEX_CLI_PATH`, updater config
   `cli_path`, valid persisted updater state, launch `PATH`, then known user
   package-manager fallback paths. Invalid environment or config paths fail
@@ -147,10 +155,11 @@ The ASAR patch step currently:
   `"codex-linux-computer-use-ui-enabled": true`.
 - applies `open-target-discovery` by default through `linux-features/` so the
   app can discover Linux terminals, editors, and file managers for the Open
-  menus. A checkout `linux-features/features.json`, a packaged/update-builder
-  `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` override,
-  or an explicit `CODEX_LINUX_FEATURES_CONFIG` file can disable it before
-  rebuild.
+  menus. Checkout builds use `linux-features/features.json` or an explicit
+  `CODEX_LINUX_FEATURES_CONFIG` file. Native package update-builder bundles do
+  not ship a generated `features.json`; they resolve
+  `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` at rebuild
+  time, then fall back to `linux-features/features.example.json`.
 
 ## Updater Boundary
 
@@ -237,7 +246,7 @@ State handling matters:
 ## Crate Versioning Policy
 
 The updater crate version is in `updater/Cargo.toml`. The current version is
-`0.7.1`. Keep the changelog and any user-facing version references in sync.
+`0.8.0`. Keep the changelog and any user-facing version references in sync.
 
 Use:
 

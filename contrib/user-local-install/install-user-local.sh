@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FILES_DIR="${SCRIPT_DIR}/files"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+SCRIPT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+SOURCE_REPO_ROOT="${CODEX_USER_LOCAL_SOURCE_REPO_DIR:-$SCRIPT_REPO_ROOT}"
 XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
@@ -11,6 +12,7 @@ INSTALL_ROOT="${CODEX_USER_INSTALL_ROOT:-${XDG_DATA_HOME}/codex-app}"
 APP_BIN_DIR="${INSTALL_ROOT}/bin"
 APP_LIB_DIR="${INSTALL_ROOT}/lib"
 USER_BIN_DIR="${HOME}/.local/bin"
+MANAGED_REPO_DIR="${INSTALL_ROOT}/managed-repo"
 STATE_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/codex-app"
 FROM_UPDATE=0
 ENABLE_TIMER=0
@@ -36,6 +38,27 @@ copy_file() {
     local dst="$2"
     mkdir -p "$(dirname "$dst")"
     cp "$src" "$dst"
+}
+
+repo_origin_url() {
+    if [ -d "${SOURCE_REPO_ROOT}/.git" ]; then
+        git -C "$SOURCE_REPO_ROOT" remote get-url origin 2>/dev/null || true
+    fi
+}
+
+detected_repo_default_branch() {
+    local branch=""
+    if [ -d "${SOURCE_REPO_ROOT}/.git" ]; then
+        branch="$(git -C "$SOURCE_REPO_ROOT" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+        branch="${branch#origin/}"
+        if [ -z "$branch" ]; then
+            branch="$(git -C "$SOURCE_REPO_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+            if [ -n "$branch" ] && ! git -C "$SOURCE_REPO_ROOT" rev-parse --verify --quiet "refs/remotes/origin/$branch" >/dev/null; then
+                branch=""
+            fi
+        fi
+    fi
+    printf '%s\n' "$branch"
 }
 
 install_manager_files() {
@@ -83,7 +106,11 @@ EOF
     copy_file "${FILES_DIR}/.config/systemd/user/codex-app-update.timer" "${systemd_user_dir}/codex-app-update.timer"
 
     cat > "${STATE_DIR}/install.env" <<EOF
-REPO_DIR=$(printf '%q' "$REPO_ROOT")
+REPO_DIR=$(printf '%q' "$SOURCE_REPO_ROOT")
+SOURCE_REPO_DIR=$(printf '%q' "$SOURCE_REPO_ROOT")
+MANAGED_REPO_DIR=$(printf '%q' "$MANAGED_REPO_DIR")
+REPO_ORIGIN_URL=$(printf '%q' "$(repo_origin_url)")
+REPO_DEFAULT_BRANCH=$(printf '%q' "$(detected_repo_default_branch)")
 INSTALL_ROOT=$(printf '%q' "$INSTALL_ROOT")
 XDG_DATA_HOME=$(printf '%q' "$XDG_DATA_HOME")
 EOF
@@ -113,7 +140,7 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "${XDG_DATA_HOME}/applications" >/dev/null 2>&1 || true
 fi
 
-if [ -x "${USER_BIN_DIR}/codex-app-update" ]; then
+if [ "$FROM_UPDATE" -eq 0 ] && [ -x "${USER_BIN_DIR}/codex-app-update" ]; then
     "${USER_BIN_DIR}/codex-app-update" --record-only >/dev/null 2>&1 || true
 fi
 

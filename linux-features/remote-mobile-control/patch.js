@@ -1,0 +1,234 @@
+"use strict";
+
+function requireName(source, moduleName) {
+  const escaped = moduleName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(new RegExp(`([A-Za-z_$][\\w$]*)=require\\(\`${escaped}\`\\)`));
+  return match?.[1] ?? null;
+}
+
+const DEVICE_KEY_CLIENT_MARKER = "codexLinuxRemoteControlDeviceKeyClient";
+const DEVICE_KEY_GUARD =
+  "if(process.platform!==`darwin`)throw Error(`Remote control device keys are only available on macOS`);";
+const DEVICE_KEY_GUARD_REPLACEMENT =
+  "if(process.platform===`linux`)return codexLinuxRemoteControlDeviceKeyClient();if(process.platform!==`darwin`)throw Error(`Remote control device keys are only available on macOS`);";
+const DEVICE_KEY_REQUIRE_NEEDLE =
+  /(?:var|let|const)\s+[A-Za-z_$][\w$]*=\(0,[A-Za-z_$][\w$]*\.createRequire\)\(__filename\),[A-Za-z_$][\w$]*=`remote-control-device-key\.node`/u;
+const REMOTE_CONTROL_VISIBILITY_NEEDLE =
+  "function a({remoteControlConnectionsState:e,slingshotEnabled:t}){return t&&(e?.available??!0)&&e?.accessRequired!==!0}";
+const REMOTE_CONTROL_VISIBILITY_REPLACEMENT =
+  "function a({remoteControlConnectionsState:e,slingshotEnabled:t}){let n=typeof navigator!=`undefined`&&navigator.userAgent.includes(`Linux`);return(n||t)&&(n||(e?.available??!0))&&e?.accessRequired!==!0}";
+const REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT =
+  "function a({remoteControlConnectionsState:e,slingshotEnabled:t}){let n=typeof navigator!=`undefined`&&navigator.userAgent.includes(`Linux`);return t&&(n||(e?.available??!0))&&e?.accessRequired!==!0}";
+const REMOTE_CONTROL_SETTINGS_VISIBILITY_NEEDLE =
+  /function ([A-Za-z_$][\w$]*)\(\{remoteControlConnectionsState:([A-Za-z_$][\w$]*),slingshotEnabled:([A-Za-z_$][\w$]*)\}\)\{return \3&&\(\2\?\.available\?\?!0\)\}/u;
+const REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS = [
+  ["defaultMessage:`Mac`", "defaultMessage:`Linux`"],
+  ["Keep this Mac awake", "Keep this Linux desktop awake"],
+  ["Devices that can control this Mac", "Devices that can control this Linux desktop"],
+  ["Control this Mac from your phone or other device", "Control this Linux desktop from your phone or other device"],
+  ["Add device to control this Mac remotely", "Add device to control this Linux desktop remotely"],
+  ["Control other devices from this Mac", "Control other devices from this Linux desktop"],
+  ["Authorize this Mac to control other devices signed in to your ChatGPT account", "Authorize this Linux desktop to control other devices signed in to your ChatGPT account"],
+  ["Allow this Mac to be discovered and controlled", "Allow this Linux desktop to be discovered and controlled"],
+  ["Control this Mac", "Control this Linux desktop"],
+  ["Devices you can control from this Mac", "Devices you can control from this Linux desktop"],
+  ["SSH connections from this Mac", "SSH connections from this Linux desktop"],
+  ["Use your Mac apps while locked", "Use your Linux apps while locked"],
+  ["Control Mac apps from your phone", "Control Linux apps from your phone"],
+  ["Let Codex control the apps on your Mac.", "Let Codex control apps on this Linux desktop."],
+  ["Let Codex control the apps on your Mac", "Let Codex control apps on this Linux desktop"],
+  ["Connect a device to this Mac", "Connect a device to this Linux desktop"],
+  ["Connect your phone to this Mac", "Connect your phone to this Linux desktop"],
+];
+
+function linuxDeviceKeyProviderSource({ cryptoVar, fsVar, pathVar }) {
+  return [
+    "function codexLinuxRemoteControlDeviceKeyStorePath(){",
+    `let e=process.env.XDG_CONFIG_HOME&&process.env.XDG_CONFIG_HOME.trim()?process.env.XDG_CONFIG_HOME.trim():process.env.HOME?${pathVar}.join(process.env.HOME,\`.config\`):null;`,
+    "if(e==null)throw Error(`Linux remote control device keys require HOME or XDG_CONFIG_HOME`);",
+    `${fsVar}.mkdirSync(${pathVar}.join(e,\`codex-app\`),{recursive:!0,mode:448});`,
+    `return ${pathVar}.join(e,\`codex-app\`,\`remote-control-device-keys-v1.json\`)`,
+    "}",
+    "function codexLinuxRemoteControlPublicDeviceKey(e){",
+    "return{algorithm:e.algorithm,keyId:e.keyId,protectionClass:e.protectionClass,publicKeySpkiDerBase64:e.publicKeySpkiDerBase64}",
+    "}",
+    "function codexLinuxReadRemoteControlDeviceKeyStore(){",
+    "let e=codexLinuxRemoteControlDeviceKeyStorePath();",
+    `if(!${fsVar}.existsSync(e))return{keys:{}};`,
+    "try{",
+    `let t=JSON.parse(${fsVar}.readFileSync(e,\`utf8\`));`,
+    "return t&&typeof t==`object`&&!Array.isArray(t)&&t.keys&&typeof t.keys==`object`&&!Array.isArray(t.keys)?t:{keys:{}}",
+    "}catch{return{keys:{}}}",
+    "}",
+    "function codexLinuxWithRemoteControlDeviceKeyStoreLock(e){",
+    "let t=`${codexLinuxRemoteControlDeviceKeyStorePath()}.lock`,n=`${t}/pid`,r=typeof SharedArrayBuffer==`function`?new Int32Array(new SharedArrayBuffer(4)):null;",
+    `for(let i=0;i<50;i++)try{${fsVar}.mkdirSync(t,{mode:448}),${fsVar}.writeFileSync(n,String(process.pid),{encoding:\`utf8\`,mode:384});try{return e()}finally{try{${fsVar}.rmSync(n,{force:!0})}catch{}try{${fsVar}.rmdirSync(t)}catch{}}}catch(e){if(e?.code!==\`EEXIST\`)throw e;try{let e=Number(${fsVar}.readFileSync(n,\`utf8\`));if(Number.isInteger(e)&&e>0)try{process.kill(e,0)}catch{${fsVar}.rmSync(t,{recursive:!0,force:!0});continue}}catch{}try{if(Date.now()-${fsVar}.statSync(t).mtimeMs>3e4){${fsVar}.rmSync(t,{recursive:!0,force:!0});continue}}catch{}r&&typeof Atomics==\`object\`&&typeof Atomics.wait==\`function\`?Atomics.wait(r,0,0,20+i*10):0}throw Error(\`Timed out waiting for Linux remote control device key store lock\`)`,
+    "}",
+    "function codexLinuxWriteRemoteControlDeviceKeyStore(e){",
+    "let t=codexLinuxRemoteControlDeviceKeyStorePath(),n=`${t}.tmp-${process.pid}-${Date.now()}`;",
+    `try{${fsVar}.writeFileSync(n,JSON.stringify(e,null,2)+\`\\n\`,{encoding:\`utf8\`,mode:384}),${fsVar}.chmodSync(n,384),${fsVar}.renameSync(n,t),${fsVar}.chmodSync(t,384)}catch(e){try{${fsVar}.rmSync(n,{force:!0})}catch{}throw e}`,
+    "}",
+    "function codexLinuxRemoteControlDeviceKeyClient(){return{",
+    "createDeviceKey:async e=>{",
+    `let{publicKey:n,privateKey:r}=(0,${cryptoVar}.generateKeyPairSync)(\`ec\`,{namedCurve:\`P-256\`});`,
+    `let i=(0,${cryptoVar}.randomUUID)(),a=n.export({type:\`spki\`,format:\`der\`}).toString(\`base64\`),o=r.export({type:\`pkcs8\`,format:\`pem\`});`,
+    "let c={algorithm:`ecdsa_p256_sha256`,keyId:i,protectionClass:`exportable`,publicKeySpkiDerBase64:a,privateKeyPkcs8Pem:o,createdAt:new Date().toISOString()};",
+    "codexLinuxWithRemoteControlDeviceKeyStoreLock(()=>{let e=codexLinuxReadRemoteControlDeviceKeyStore();e.keys={...e.keys,[i]:c},codexLinuxWriteRemoteControlDeviceKeyStore(e)});",
+    "return codexLinuxRemoteControlPublicDeviceKey(c)",
+    "},",
+    "deleteDeviceKey:async e=>{codexLinuxWithRemoteControlDeviceKeyStoreLock(()=>{let t=codexLinuxReadRemoteControlDeviceKeyStore();t.keys&&delete t.keys[e],codexLinuxWriteRemoteControlDeviceKeyStore(t)})},",
+    "getDeviceKeyPublic:async e=>{let t=codexLinuxReadRemoteControlDeviceKeyStore().keys?.[e];if(t==null)throw Error(`Linux remote control device key not found`);return codexLinuxRemoteControlPublicDeviceKey(t)},",
+    `signDeviceKey:async(e,t)=>{let n=codexLinuxReadRemoteControlDeviceKeyStore().keys?.[e];if(n==null)throw Error(\`Linux remote control device key not found\`);let r=(0,${cryptoVar}.createPrivateKey)(n.privateKeyPkcs8Pem),i=(0,${cryptoVar}.sign)(\`sha256\`,t,r).toString(\`base64\`);return{algorithm:n.algorithm,signatureDerBase64:i}}`,
+    "}}",
+  ].join("");
+}
+
+function applyLinuxRemoteControlDeviceKeyPatch(source) {
+  if (source.includes(DEVICE_KEY_CLIENT_MARKER)) {
+    return source;
+  }
+
+  const cryptoVar = requireName(source, "node:crypto");
+  const fsVar = requireName(source, "node:fs");
+  const pathVar = requireName(source, "node:path");
+  if (cryptoVar == null || fsVar == null || pathVar == null) {
+    console.warn("WARN: Could not find Node module aliases - skipping Linux remote-control device-key patch");
+    return source;
+  }
+
+  const insertionNeedle = source.match(DEVICE_KEY_REQUIRE_NEEDLE)?.[0] ?? null;
+  if (insertionNeedle == null || !source.includes(DEVICE_KEY_GUARD)) {
+    console.warn("WARN: Could not find remote-control device-key bundle needles - skipping Linux remote-control device-key patch");
+    return source;
+  }
+
+  const provider = linuxDeviceKeyProviderSource({ cryptoVar, fsVar, pathVar });
+  return source
+    .replace(insertionNeedle, `${provider}${insertionNeedle}`)
+    .replace(DEVICE_KEY_GUARD, DEVICE_KEY_GUARD_REPLACEMENT);
+}
+
+function applyLinuxRemoteControlPreserveConfigPatch(source) {
+  const stripperGuardRegex =
+    /async function [A-Za-z_$][\w$]*\(\{codexHome:[A-Za-z_$][\w$]*,hostConfig:([A-Za-z_$][\w$]*),logger:[A-Za-z_$][\w$]*=[^}]*\}\)\{if\(\1\.kind===`local`\)try\{/gu;
+  const patched = source.replace(stripperGuardRegex, (needle, hostConfigVar) =>
+    needle.replace(
+      `if(${hostConfigVar}.kind===\`local\`)try{`,
+      `if(${hostConfigVar}.kind===\`local\`&&process.platform!==\`linux\`)try{`,
+    ),
+  );
+  if (patched !== source) {
+    return patched;
+  }
+
+  const alreadyPatchedRegex =
+    /async function [A-Za-z_$][\w$]*\(\{codexHome:[A-Za-z_$][\w$]*,hostConfig:([A-Za-z_$][\w$]*),logger:[A-Za-z_$][\w$]*=[^}]*\}\)\{if\(\1\.kind===`local`&&process\.platform!==`linux`\)try\{/u;
+  if (
+    alreadyPatchedRegex.test(source) ||
+    !source.includes("Removed remote_control from config before app-server start") &&
+      !source.includes("Failed to remove remote_control before app-server start")
+  ) {
+    return source;
+  }
+
+  console.warn("WARN: Could not find remote-control config stripping needle - skipping Linux remote-control config patch");
+  return source;
+}
+
+function applyLinuxRemoteControlVisibilityPatch(source) {
+  const remoteControlLinuxVisibilityRegex =
+    /remoteControlConnectionsState[\s\S]{0,200}navigator\.userAgent\.includes\(`Linux`\)|navigator\.userAgent\.includes\(`Linux`\)[\s\S]{0,200}remoteControlConnectionsState/u;
+  if (source.includes(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT)) {
+    return source.replace(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT, REMOTE_CONTROL_VISIBILITY_REPLACEMENT);
+  }
+  if (
+    source.includes(REMOTE_CONTROL_VISIBILITY_REPLACEMENT) ||
+    remoteControlLinuxVisibilityRegex.test(source)
+  ) {
+    return source;
+  }
+  if (!source.includes(REMOTE_CONTROL_VISIBILITY_NEEDLE)) {
+    if (!source.includes("remoteControlConnectionsState")) {
+      return source;
+    }
+
+    const settingsVisibilityMatch = source.match(REMOTE_CONTROL_SETTINGS_VISIBILITY_NEEDLE);
+    if (settingsVisibilityMatch == null) {
+      console.warn("WARN: Could not find remote-control visibility gate - skipping Linux remote-control visibility patch");
+      return source;
+    }
+
+    const [, functionName, stateVar, slingshotVar] = settingsVisibilityMatch;
+    return source.replace(
+      REMOTE_CONTROL_SETTINGS_VISIBILITY_NEEDLE,
+      `function ${functionName}({remoteControlConnectionsState:${stateVar},slingshotEnabled:${slingshotVar}}){let n=typeof navigator!=\`undefined\`&&navigator.userAgent.includes(\`Linux\`);return(n||${slingshotVar})&&(n||(${stateVar}?.available??!0))}`,
+    );
+  }
+  return source.replace(REMOTE_CONTROL_VISIBILITY_NEEDLE, REMOTE_CONTROL_VISIBILITY_REPLACEMENT);
+}
+
+function applyLinuxRemoteControlCopyPatch(source) {
+  const hasMacCopy = REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS.some(([macCopy]) =>
+    source.includes(macCopy),
+  );
+  if (!hasMacCopy && (source.includes("this Linux desktop") || source.includes("Linux apps"))) {
+    return source;
+  }
+
+  let patched = source;
+  let changed = false;
+  for (const [macCopy, linuxCopy] of REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS) {
+    if (patched.includes(macCopy)) {
+      patched = patched.split(macCopy).join(linuxCopy);
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    console.warn("WARN: Could not find remote-control Mac copy - skipping Linux remote-control copy patch");
+    return source;
+  }
+  return patched;
+}
+
+module.exports = [
+  {
+    id: "linux-remote-control-device-key",
+    phase: "main-bundle",
+    order: 20_100,
+    ciPolicy: "optional",
+    apply: applyLinuxRemoteControlDeviceKeyPatch,
+  },
+  {
+    id: "linux-remote-control-preserve-config",
+    phase: "main-bundle",
+    order: 20_110,
+    ciPolicy: "optional",
+    apply: applyLinuxRemoteControlPreserveConfigPatch,
+  },
+  {
+    id: "linux-remote-control-visibility",
+    phase: "webview-asset",
+    pattern: /^(?:remote-control-connections-visibility|remote-connections-settings)-.*\.js$/,
+    order: 20_120,
+    ciPolicy: "optional",
+    missingDescription: "remote-control connections visibility bundle",
+    skipDescription: "Linux remote-control visibility patch",
+    apply: applyLinuxRemoteControlVisibilityPatch,
+  },
+  {
+    id: "linux-remote-control-copy",
+    phase: "webview-asset",
+    pattern: /^(?:codex-mobile-setup-flow|remote-connections-settings|use-codex-mobile-connected-settings)-.*\.js$/,
+    order: 20_130,
+    ciPolicy: "optional",
+    missingDescription: "remote-control settings or mobile setup bundle",
+    skipDescription: "Linux remote-control copy patch",
+    apply: applyLinuxRemoteControlCopyPatch,
+  },
+];
+
+module.exports.applyLinuxRemoteControlDeviceKeyPatch = applyLinuxRemoteControlDeviceKeyPatch;
+module.exports.applyLinuxRemoteControlPreserveConfigPatch = applyLinuxRemoteControlPreserveConfigPatch;
+module.exports.applyLinuxRemoteControlVisibilityPatch = applyLinuxRemoteControlVisibilityPatch;
+module.exports.applyLinuxRemoteControlCopyPatch = applyLinuxRemoteControlCopyPatch;

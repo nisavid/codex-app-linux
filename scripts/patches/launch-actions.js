@@ -18,6 +18,13 @@ const {
 const linuxQuitStateHelpers =
   "let codexLinuxQuitInProgress=!1,codexLinuxExplicitQuitApproved=!1,codexLinuxMarkQuitInProgress=()=>{codexLinuxQuitInProgress=!0},codexLinuxPrepareForExplicitQuit=()=>{codexLinuxExplicitQuitApproved=!0,codexLinuxMarkQuitInProgress()},codexLinuxShouldBypassQuitPrompt=()=>codexLinuxExplicitQuitApproved===!0,codexLinuxIsQuitInProgress=()=>codexLinuxQuitInProgress===!0,";
 
+function inferElectronAppVar(currentSource, prefix = currentSource) {
+  return inferModuleAlias(currentSource, "electron") ??
+    findLastRegexMatch(prefix, /([A-Za-z_$][\w$]*)\.app\.whenReady\(\)/g)?.[1] ??
+    currentSource.match(/await ([A-Za-z_$][\w$]*)\.app\.whenReady\(\)/)?.[1] ??
+    null;
+}
+
 function applyLinuxSettingsPersistencePatch(currentSource) {
   let patchedSource = currentSource;
 
@@ -114,19 +121,26 @@ function buildSemanticLinuxLaunchActionPatch({
   fsVar,
   netVar,
   appVar,
+  beforeQuitAppVar,
 }) {
   const notificationPrefix = notificationVar == null
     ? ""
     : `${notificationVar}.desktopNotificationManager.dismissByNavigationPath(e),`;
   const quitState = quitStatePrefix;
+  const beforeQuitVar = beforeQuitAppVar ?? appVar;
+  const beforeQuitHandler = beforeQuitVar == null
+    ? ""
+    : `,codexLinuxBeforeQuitHandler=()=>{typeof codexLinuxMarkQuitInProgress===\`function\`&&codexLinuxMarkQuitInProgress()}`;
   const directHandler = appVar == null
     ? ""
-    : `,codexLinuxSecondInstanceHandler=(e,t)=>{codexLinuxHandleLaunchActionArgsFallback(t,()=>{${fallbackFn}()})},codexLinuxBeforeQuitHandler=()=>{typeof codexLinuxMarkQuitInProgress===\`function\`&&codexLinuxMarkQuitInProgress()}`;
-  const startup = appVar == null
-    ? `process.platform===\`linux\`&&codexLinuxStartLaunchActionSocket();${setterVar}(e=>{codexLinuxHandleLaunchActionArgsFallback(e,()=>{${fallbackFn}()})});`
-    : `process.platform===\`linux\`&&(${appVar}.app.on(\`before-quit\`,codexLinuxBeforeQuitHandler),${disposableVar}.add(()=>{${appVar}.app.off(\`before-quit\`,codexLinuxBeforeQuitHandler)}),codexLinuxStartLaunchActionSocket(),${appVar}.app.on(\`second-instance\`,codexLinuxSecondInstanceHandler),${disposableVar}.add(()=>{${appVar}.app.off(\`second-instance\`,codexLinuxSecondInstanceHandler)}));${setterVar}(e=>{codexLinuxHandleLaunchActionArgsFallback(e,()=>{${fallbackFn}()})});`;
+    : `,codexLinuxSecondInstanceHandler=(e,t)=>{codexLinuxHandleLaunchActionArgsFallback(t,()=>{${fallbackFn}()})}`;
+  const startup = appVar != null
+    ? `process.platform===\`linux\`&&(${appVar}.app.on(\`before-quit\`,codexLinuxBeforeQuitHandler),${disposableVar}.add(()=>{${appVar}.app.off(\`before-quit\`,codexLinuxBeforeQuitHandler)}),codexLinuxStartLaunchActionSocket(),${appVar}.app.on(\`second-instance\`,codexLinuxSecondInstanceHandler),${disposableVar}.add(()=>{${appVar}.app.off(\`second-instance\`,codexLinuxSecondInstanceHandler)}));${setterVar}(e=>{codexLinuxHandleLaunchActionArgsFallback(e,()=>{${fallbackFn}()})});`
+    : beforeQuitVar != null
+      ? `process.platform===\`linux\`&&(${beforeQuitVar}.app.on(\`before-quit\`,codexLinuxBeforeQuitHandler),${disposableVar}.add(()=>{${beforeQuitVar}.app.off(\`before-quit\`,codexLinuxBeforeQuitHandler)}),codexLinuxStartLaunchActionSocket());${setterVar}(e=>{codexLinuxHandleLaunchActionArgsFallback(e,()=>{${fallbackFn}()})});`
+      : `process.platform===\`linux\`&&codexLinuxStartLaunchActionSocket();${setterVar}(e=>{codexLinuxHandleLaunchActionArgsFallback(e,()=>{${fallbackFn}()})});`;
 
-  return `${quitState}codexLinuxGetSetting=e=>process.platform!==\`linux\`||${globalStateExpr}.get(e)!==!1,codexLinuxIsTrayEnabled=()=>codexLinuxGetSetting(\`${linuxSettingsKeys.systemTray}\`),codexLinuxIsWarmStartEnabled=()=>codexLinuxGetSetting(\`${linuxSettingsKeys.warmStart}\`),codexLinuxIsPromptWindowEnabled=()=>codexLinuxGetSetting(\`${linuxSettingsKeys.promptWindow}\`),${openerFn}=async(e,t)=>{${windowManagerVar}.hotkeyWindowLifecycleManager.hide();let ${currentWindowVar}=${windowManagerVar}.getPrimaryWindow(${hostExpr}),${createdWindowVar}=${currentWindowVar}??await ${windowManagerVar}.createFreshLocalWindow(e);${createdWindowVar}!=null&&(${notificationPrefix}${currentWindowVar}!=null&&t.navigateExistingWindow&&${routeVar}.navigateToRoute(${createdWindowVar},e),${focusFn}(${createdWindowVar}))},codexLinuxGetHotkeyWindowController=()=>typeof ${windowManagerVar}.hotkeyWindowLifecycleManager.ensureHotkeyWindowController===\`function\`?${windowManagerVar}.hotkeyWindowLifecycleManager.ensureHotkeyWindowController():${windowManagerVar}.hotkeyWindowLifecycleManager,codexLinuxShowHotkeyWindow=async()=>{let e=codexLinuxGetHotkeyWindowController();typeof e.openHome===\`function\`?await e.openHome():typeof e.show===\`function\`?await e.show():await ${windowManagerVar}.ensureHostWindow(${hostExpr})},codexLinuxOpenQuickChat=async()=>{${windowManagerVar}.hotkeyWindowLifecycleManager.hide();let e=${windowManagerVar}.getPrimaryWindow(${hostExpr}),t=e??await ${windowManagerVar}.createFreshLocalWindow(\`/\`);t!=null&&(${windowManagerVar}.windowManager.sendMessageToWindow(t,{type:\`new-quick-chat\`}),${focusFn}(t))},codexLinuxHasDeepLink=e=>Array.isArray(e)&&e.some(e=>typeof e===\`string\`&&(e.startsWith(\`codex://\`)||e.startsWith(\`codex-browser-sidebar://\`))),codexLinuxHandleLaunchActionArgs=async e=>(typeof codexLinuxIsQuitInProgress===\`function\`&&codexLinuxIsQuitInProgress())?!0:codexLinuxHasDeepLink(e)&&${deepLinksVar}.deepLinks.queueProcessArgs(e)?!0:Array.isArray(e)&&(e.includes(\`--prompt-chat\`)||e.includes(\`--hotkey-window\`))?(codexLinuxIsPromptWindowEnabled()?(await codexLinuxShowHotkeyWindow(),!0):!1):Array.isArray(e)&&e.includes(\`--quick-chat\`)?(await codexLinuxOpenQuickChat(),!0):Array.isArray(e)&&e.includes(\`--new-chat\`)?(await ${openerFn}(\`/\`,{navigateExistingWindow:!0}),!0):!1,codexLinuxHandleLaunchActionArgsFallback=(e,t)=>{if(typeof codexLinuxIsQuitInProgress===\`function\`&&codexLinuxIsQuitInProgress())return;codexLinuxHandleLaunchActionArgs(e).then(e=>{e||t()}).catch(e=>{${reporterVar}.reportNonFatal(e instanceof Error?e:\`Failed to handle Linux launch action\`,{kind:\`linux-launch-action-failed\`}),t()})},codexLinuxPrewarmHotkeyWindow=()=>{if(!codexLinuxIsPromptWindowEnabled())return;try{let e=codexLinuxGetHotkeyWindowController();typeof e.prewarm===\`function\`&&e.prewarm()}catch(e){${reporterVar}.reportNonFatal(e instanceof Error?e:\`Failed to prewarm Linux hotkey window\`,{kind:\`linux-hotkey-window-prewarm-failed\`})}},codexLinuxStartLaunchActionSocket=()=>{let e=process.env.CODEX_APP_LAUNCH_ACTION_SOCKET?.trim();if(process.platform!==\`linux\`||!e||!codexLinuxIsWarmStartEnabled())return;try{${fsVar}.mkdirSync(${pathVar}.default.dirname(e),{recursive:!0,mode:448}),${fsVar}.rmSync(e,{force:!0});let t=${netVar}.default.createServer(t=>{let n=\`\`,r=!1,i=()=>{if(r)return;r=!0;let i=[];try{let e=JSON.parse(n.trim());Array.isArray(e.argv)&&(i=e.argv.filter(e=>typeof e===\`string\`))}catch(e){t.end?.(\`error\\n\`);return}codexLinuxHandleLaunchActionArgs(i).then(e=>e?void 0:${fallbackFn}()).then(()=>{t.end?.(\`ok\\n\`)}).catch(e=>{${reporterVar}.reportNonFatal(e instanceof Error?e:\`Failed to handle Linux launch action socket\`,{kind:\`linux-launch-action-socket-failed\`}),t.end?.(\`error\\n\`)})};t.setEncoding?.(\`utf8\`),t.on(\`data\`,e=>{n+=e,n.includes(\`\\n\`)?i():n.length>65536&&t.destroy()}),t.on(\`end\`,i)});t.on(\`error\`,e=>{${reporterVar}.reportNonFatal(e instanceof Error?e:\`Failed Linux launch action socket\`,{kind:\`linux-launch-action-socket-error\`})}),t.listen(e),${disposableVar}.add(()=>{t.close(),${fsVar}.rmSync(e,{force:!0})})}catch(e){${reporterVar}.reportNonFatal(e instanceof Error?e:\`Failed to start Linux launch action socket\`,{kind:\`linux-launch-action-socket-start-failed\`})}}${directHandler};${startup}`;
+  return `${quitState}codexLinuxGetSetting=e=>process.platform!==\`linux\`||${globalStateExpr}.get(e)!==!1,codexLinuxIsTrayEnabled=()=>codexLinuxGetSetting(\`${linuxSettingsKeys.systemTray}\`),codexLinuxIsWarmStartEnabled=()=>codexLinuxGetSetting(\`${linuxSettingsKeys.warmStart}\`),codexLinuxIsPromptWindowEnabled=()=>codexLinuxGetSetting(\`${linuxSettingsKeys.promptWindow}\`),${openerFn}=async(e,t)=>{${windowManagerVar}.hotkeyWindowLifecycleManager.hide();let ${currentWindowVar}=${windowManagerVar}.getPrimaryWindow(${hostExpr}),${createdWindowVar}=${currentWindowVar}??await ${windowManagerVar}.createFreshLocalWindow(e);${createdWindowVar}!=null&&(${notificationPrefix}${currentWindowVar}!=null&&t.navigateExistingWindow&&${routeVar}.navigateToRoute(${createdWindowVar},e),${focusFn}(${createdWindowVar}))},codexLinuxGetHotkeyWindowController=()=>typeof ${windowManagerVar}.hotkeyWindowLifecycleManager.ensureHotkeyWindowController===\`function\`?${windowManagerVar}.hotkeyWindowLifecycleManager.ensureHotkeyWindowController():${windowManagerVar}.hotkeyWindowLifecycleManager,codexLinuxShowHotkeyWindow=async()=>{let e=codexLinuxGetHotkeyWindowController();typeof e.openHome===\`function\`?await e.openHome():typeof e.show===\`function\`?await e.show():await ${windowManagerVar}.ensureHostWindow(${hostExpr})},codexLinuxOpenQuickChat=async()=>{${windowManagerVar}.hotkeyWindowLifecycleManager.hide();let e=${windowManagerVar}.getPrimaryWindow(${hostExpr}),t=e??await ${windowManagerVar}.createFreshLocalWindow(\`/\`);t!=null&&(${windowManagerVar}.windowManager.sendMessageToWindow(t,{type:\`new-quick-chat\`}),${focusFn}(t))},codexLinuxHasDeepLink=e=>Array.isArray(e)&&e.some(e=>typeof e===\`string\`&&(e.startsWith(\`codex://\`)||e.startsWith(\`codex-browser-sidebar://\`))),codexLinuxHandleLaunchActionArgs=async e=>(typeof codexLinuxIsQuitInProgress===\`function\`&&codexLinuxIsQuitInProgress())?!0:codexLinuxHasDeepLink(e)&&${deepLinksVar}.deepLinks.queueProcessArgs(e)?!0:Array.isArray(e)&&(e.includes(\`--prompt-chat\`)||e.includes(\`--hotkey-window\`))?(codexLinuxIsPromptWindowEnabled()?(await codexLinuxShowHotkeyWindow(),!0):!1):Array.isArray(e)&&e.includes(\`--quick-chat\`)?(await codexLinuxOpenQuickChat(),!0):Array.isArray(e)&&e.includes(\`--new-chat\`)?(await ${openerFn}(\`/\`,{navigateExistingWindow:!0}),!0):!1,codexLinuxHandleLaunchActionArgsFallback=(e,t)=>{if(typeof codexLinuxIsQuitInProgress===\`function\`&&codexLinuxIsQuitInProgress())return;codexLinuxHandleLaunchActionArgs(e).then(e=>{e||t()}).catch(e=>{${reporterVar}.reportNonFatal(e instanceof Error?e:\`Failed to handle Linux launch action\`,{kind:\`linux-launch-action-failed\`}),t()})},codexLinuxPrewarmHotkeyWindow=()=>{if(!codexLinuxIsPromptWindowEnabled())return;try{let e=codexLinuxGetHotkeyWindowController();typeof e.prewarm===\`function\`&&e.prewarm()}catch(e){${reporterVar}.reportNonFatal(e instanceof Error?e:\`Failed to prewarm Linux hotkey window\`,{kind:\`linux-hotkey-window-prewarm-failed\`})}},codexLinuxStartLaunchActionSocket=()=>{let e=process.env.CODEX_APP_LAUNCH_ACTION_SOCKET?.trim();if(process.platform!==\`linux\`||!e||!codexLinuxIsWarmStartEnabled())return;try{${fsVar}.mkdirSync(${pathVar}.default.dirname(e),{recursive:!0,mode:448}),${fsVar}.rmSync(e,{force:!0});let t=${netVar}.default.createServer(t=>{let n=\`\`,r=!1,i=()=>{if(r)return;r=!0;let i=[];try{let e=JSON.parse(n.trim());Array.isArray(e.argv)&&(i=e.argv.filter(e=>typeof e===\`string\`))}catch(e){t.end?.(\`error\\n\`);return}codexLinuxHandleLaunchActionArgs(i).then(e=>e?void 0:${fallbackFn}()).then(()=>{t.end?.(\`ok\\n\`)}).catch(e=>{${reporterVar}.reportNonFatal(e instanceof Error?e:\`Failed to handle Linux launch action socket\`,{kind:\`linux-launch-action-socket-failed\`}),t.end?.(\`error\\n\`)})};t.setEncoding?.(\`utf8\`),t.on(\`data\`,e=>{n+=e,n.includes(\`\\n\`)?i():n.length>65536&&t.destroy()}),t.on(\`end\`,i)});t.on(\`error\`,e=>{${reporterVar}.reportNonFatal(e instanceof Error?e:\`Failed Linux launch action socket\`,{kind:\`linux-launch-action-socket-error\`})}),t.listen(e),${disposableVar}.add(()=>{t.close(),${fsVar}.rmSync(e,{force:!0})})}catch(e){${reporterVar}.reportNonFatal(e instanceof Error?e:\`Failed to start Linux launch action socket\`,{kind:\`linux-launch-action-socket-start-failed\`})}}${directHandler}${beforeQuitHandler};${startup}`;
 }
 
 function applySemanticLinuxLaunchActionArgsPatch(currentSource) {
@@ -211,6 +225,7 @@ function applySemanticLinuxLaunchActionArgsPatch(currentSource) {
       fsVar,
       netVar,
       appVar,
+      beforeQuitAppVar: appVar,
     });
     const suffix = separator === "," ? "let " : "";
     return currentSource.slice(0, replaceStart) + replacement + suffix + currentSource.slice(openerEnd + 2);
@@ -239,7 +254,7 @@ function applyCurrentSemanticLinuxLaunchActionArgsPatch(currentSource) {
 
     const openerText = currentSource.slice(openerLetIndex, openerEnd + 1);
     const openerVars = openerText.match(
-      /([A-Za-z_$][\w$]*)\.hotkeyWindowLifecycleManager\.hide\(\);let ([A-Za-z_$][\w$]*)=\1\.getPrimaryWindow\(([^)]+)\),([A-Za-z_$][\w$]*)=\2\?\?await \1\.createFreshLocalWindow\(e\);/,
+      /([A-Za-z_$][\w$]*)\.hotkeyWindowLifecycleManager\.hide\(\);let ([A-Za-z_$][\w$]*)=\1\.getPrimaryWindow\(([^)]*)\),([A-Za-z_$][\w$]*)=\2\?\?await \1\.createFreshLocalWindow\(e\);/,
     );
     if (openerVars == null) {
       continue;
@@ -289,6 +304,7 @@ function applyCurrentSemanticLinuxLaunchActionArgsPatch(currentSource) {
       fsVar,
       netVar,
       appVar: null,
+      beforeQuitAppVar: inferElectronAppVar(currentSource, prefix),
     });
     const suffix = separator === "," ? "let " : "";
     return currentSource.slice(0, match.index) + replacement + suffix + currentSource.slice(openerEnd + 2);
@@ -377,48 +393,33 @@ function applyLinuxLaunchActionArgsPatch(currentSource) {
     return patchedSource;
   }
 
-  // Try cheap exact-string legacy needles first; only fall through to the
-  // semantic regex+capture pass if no known shape matches.
-  if (patchedSource.includes(oldLaunchActionPatch)) {
-    patchedSource = patchedSource.replace(oldLaunchActionPatch, launchActionPatch);
-  } else if (patchedSource.includes(deepLinkFirstLaunchActionPatch)) {
-    patchedSource = patchedSource.replace(deepLinkFirstLaunchActionPatch, launchActionPatch);
-  } else if (patchedSource.includes(deepLinkAwareExistingWindowLaunchActionPatch)) {
-    patchedSource = patchedSource.replace(deepLinkAwareExistingWindowLaunchActionPatch, launchActionPatch);
-  } else if (patchedSource.includes(openHomeHotkeyWindowLaunchActionPatch)) {
-    patchedSource = patchedSource.replace(openHomeHotkeyWindowLaunchActionPatch, launchActionPatch);
-  } else if (patchedSource.includes(socketHotkeyWindowLaunchActionPatch)) {
-    patchedSource = patchedSource.replace(socketHotkeyWindowLaunchActionPatch, launchActionPatch);
-  } else if (patchedSource.includes(showBasedHotkeyWindowLaunchActionPatch)) {
-    patchedSource = patchedSource.replace(showBasedHotkeyWindowLaunchActionPatch, launchActionPatch);
-  } else if (patchedSource.includes(freshWindowLaunchActionPatch)) {
-    patchedSource = patchedSource.replace(freshWindowLaunchActionPatch, launchActionPatch);
-  } else if (patchedSource.includes(launchActionNeedle)) {
-    patchedSource = patchedSource.replace(launchActionNeedle, launchActionPatch);
-  } else {
-    const semanticLaunchActionPatch = applySemanticLinuxLaunchActionArgsPatch(patchedSource);
-    if (semanticLaunchActionPatch !== patchedSource) {
-      return semanticLaunchActionPatch;
+  const legacyLaunchActionPatches = [
+    launchActionNeedle,
+    oldLaunchActionPatch,
+    deepLinkFirstLaunchActionPatch,
+    deepLinkAwareExistingWindowLaunchActionPatch,
+    openHomeHotkeyWindowLaunchActionPatch,
+    socketHotkeyWindowLaunchActionPatch,
+    showBasedHotkeyWindowLaunchActionPatch,
+    freshWindowLaunchActionPatch,
+  ];
+  for (const legacyPatch of legacyLaunchActionPatches) {
+    if (patchedSource.includes(legacyPatch)) {
+      return patchedSource.replace(legacyPatch, launchActionPatch);
     }
-    const currentSemanticLaunchActionPatch = applyCurrentSemanticLinuxLaunchActionArgsPatch(patchedSource);
-    if (currentSemanticLaunchActionPatch !== patchedSource) {
-      return currentSemanticLaunchActionPatch;
-    }
+  }
 
-    const existingLinuxLaunchActionBlock = patchedSource.match(
-      /let ae=async\(e,t\)=>\{P\.hotkeyWindowLifecycleManager\.hide\(\);.*?;let oe=async\(\)=>\{/,
-    )?.[0];
-    if (existingLinuxLaunchActionBlock?.includes("codexLinuxHandleLaunchActionArgs")) {
-      patchedSource = patchedSource.replace(existingLinuxLaunchActionBlock, launchActionPatch);
-    } else if (
-      patchedSource.includes("Launching app") &&
-      patchedSource.includes("deepLinks")
-    ) {
-      console.warn("WARN: Could not find Linux launch action handler - skipping --new-chat/--quick-chat/--prompt-chat patch");
-      return patchedSource;
-    } else {
-      console.warn("WARN: Could not find Linux launch action handler - skipping --new-chat/--quick-chat/--prompt-chat patch");
-    }
+  const currentSemanticLaunchActionPatch = applyCurrentSemanticLinuxLaunchActionArgsPatch(patchedSource);
+  if (currentSemanticLaunchActionPatch !== patchedSource) {
+    return currentSemanticLaunchActionPatch;
+  }
+
+  if (
+    patchedSource.includes("Launching app") &&
+    patchedSource.includes("deepLinks")
+  ) {
+    console.warn("WARN: Could not find Linux launch action handler - skipping --new-chat/--quick-chat/--prompt-chat patch");
+    return patchedSource;
   }
 
   if (patchedSource.includes("Launching app") && !patchedSource.includes("codexLinuxGetSetting=e=>")) {
@@ -435,41 +436,23 @@ function applyLinuxHotkeyWindowPrewarmPatch(currentSource) {
     return patchedSource;
   }
 
-  const startupPrewarmPatch =
-    "process.platform===`linux`&&codexLinuxPrewarmHotkeyWindow(),A=Date.now(),await R.deepLinks.flushPendingDeepLinks()";
-
-  if (patchedSource.includes(startupPrewarmPatch)) {
-    return patchedSource;
-  }
-
   if (
     /process\.platform===`linux`&&codexLinuxPrewarmHotkeyWindow\(\),[A-Za-z_$][\w$]*=Date\.now\(\),await [A-Za-z_$][\w$]*\.deepLinks\.flushPendingDeepLinks\(\)/.test(patchedSource)
   ) {
     return patchedSource;
   }
 
-  const startupPrewarmNeedle =
-    "w(`local window ensured`,A,{hostId:z,localWindowVisible:me?.isVisible()??!1}),A=Date.now(),await R.deepLinks.flushPendingDeepLinks()";
-
-  if (patchedSource.includes(startupPrewarmNeedle)) {
-    patchedSource = patchedSource.replace(startupPrewarmNeedle, `w(\`local window ensured\`,A,{hostId:z,localWindowVisible:me?.isVisible()??!1}),${startupPrewarmPatch}`);
-  } else if (
-    patchedSource.includes("process.platform===`linux`&&codexLinuxPrewarmHotkeyWindow(),A=Date.now(),await R.deepLinks.flushPendingDeepLinks()")
-  ) {
-    // Already patched by an older run.
+  const dynamicStartupPrewarmRegex =
+    /(w\(`local window ensured`,([A-Za-z_$][\w$]*),\{hostId:[^,{}]+,localWindowVisible:[^}]+\}\),)\2=Date\.now\(\),await ([A-Za-z_$][\w$]*)\.deepLinks\.flushPendingDeepLinks\(\)/;
+  const dynamicStartupPrewarmMatch = patchedSource.match(dynamicStartupPrewarmRegex);
+  if (dynamicStartupPrewarmMatch != null) {
+    const [, prefix, timeVar, deepLinksVar] = dynamicStartupPrewarmMatch;
+    patchedSource = patchedSource.replace(
+      dynamicStartupPrewarmRegex,
+      `${prefix}process.platform===\`linux\`&&codexLinuxPrewarmHotkeyWindow(),${timeVar}=Date.now(),await ${deepLinksVar}.deepLinks.flushPendingDeepLinks()`,
+    );
   } else {
-    const dynamicStartupPrewarmRegex =
-      /(w\(`local window ensured`,([A-Za-z_$][\w$]*),\{hostId:([A-Za-z_$][\w$]*),localWindowVisible:[^}]+\}\),)\2=Date\.now\(\),await ([A-Za-z_$][\w$]*)\.deepLinks\.flushPendingDeepLinks\(\)/;
-    const dynamicStartupPrewarmMatch = patchedSource.match(dynamicStartupPrewarmRegex);
-    if (dynamicStartupPrewarmMatch != null) {
-      const [, prefix, timeVar, , deepLinksVar] = dynamicStartupPrewarmMatch;
-      patchedSource = patchedSource.replace(
-        dynamicStartupPrewarmRegex,
-        `${prefix}process.platform===\`linux\`&&codexLinuxPrewarmHotkeyWindow(),${timeVar}=Date.now(),await ${deepLinksVar}.deepLinks.flushPendingDeepLinks()`,
-      );
-    } else {
-      console.warn("WARN: Could not find Linux hotkey window prewarm insertion point — skipping startup prewarm patch");
-    }
+    console.warn("WARN: Could not find Linux hotkey window prewarm insertion point — skipping startup prewarm patch");
   }
 
   return patchedSource;
@@ -480,5 +463,4 @@ module.exports = {
   applyLinuxLaunchActionArgsPatch,
   applyLinuxSettingsPersistencePatch,
   applyLinuxTrayCloseSettingPatch,
-  applySemanticLinuxLaunchActionArgsPatch,
 };

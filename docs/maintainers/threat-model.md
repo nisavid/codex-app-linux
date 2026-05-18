@@ -1,6 +1,6 @@
 # Codex App Linux Threat Model
 
-Date: 2026-05-14
+Date: 2026-05-17
 
 This repository adapts the official OpenAI `Codex.dmg` into a Linux Electron
 app, builds native Linux packages, and ships `codex-app-updater` to check,
@@ -25,9 +25,11 @@ The highest-risk areas are:
    invokes `pkexec` install subcommands. Anything crossing that boundary must be
    tightly bound to a verified package identity and digest.
 3. **Desktop and renderer containment.** The generated Electron app, local
-   webview server, Codex CLI, and Linux Computer Use backend all run with the
-   user's desktop privileges. A renderer, plugin, localhost, or CLI compromise
-   can affect local files, screenshots, input, and user processes.
+   webview server, Codex CLI, Linux Computer Use backend, and opt-in
+   remote-control/mobile feature patches all run with the user's desktop
+   privileges. A renderer, plugin, localhost, CLI, or same-user XDG config
+   compromise can affect local files, screenshots, input, remote-control device
+   keys, and user processes.
 
 The repository already has meaningful hardening: HTTPS-only non-loopback DMG
 URLs, URL redaction, partial downloads, package metadata checks, private staged
@@ -35,10 +37,13 @@ install copies, package payload symlink rejection, package mode normalization,
 builder-root permission checks, default-enabled Electron sandboxing, release
 gate checks, Apple DMG verification tooling, descriptor-based required patch
 validation, sanitized Linux desktop-target launches, loopback-only no-cache
-webview serving, and no-updater transition cleanup under package-owned support
-paths. The remaining critical gaps are trusted upstream metadata, digest
-binding for privileged installs, generated app security review evidence, and
-public artifact provenance.
+webview serving, no-updater transition cleanup under package-owned support
+paths, opt-in remote-control UI/mobile patching, and `0600` Linux
+remote-control device-key storage under XDG config. The remaining critical gaps
+are trusted upstream metadata, digest binding for privileged installs,
+generated app security review evidence, public artifact provenance, and a
+general-readiness review for the experimental remote-control/mobile host
+boundary.
 
 ## Scope
 
@@ -59,7 +64,8 @@ In scope:
 - Linux Computer Use backend and bundled plugin resources:
   `computer-use-linux/` and `plugins/openai-bundled/plugins/computer-use/`.
 - Linux feature patches: `linux-features/`, including default-enabled desktop
-  target discovery and feature-specific generated-app patches.
+  target discovery, opt-in remote-control/mobile patches, and feature-specific
+  generated-app patches.
 - Release, CI, and Nix trust roots: `.github/workflows/`, `Makefile`,
   `flake.nix`, `flake.lock`, `Cargo.toml`, and `Cargo.lock`.
 - Maintainer docs that define security workflow, package behavior, and fork
@@ -73,7 +79,8 @@ templates, updater code, or workflows.
 Out of scope:
 
 - Security guarantees made by OpenAI backend services, account rollout policy,
-  or the upstream macOS app outside the local conversion and packaging path.
+  remote-control enrollment policy, mobile clients, or the upstream macOS app
+  outside the local conversion and packaging path.
 - Claims about a specific generated `app.asar` bundle until it has been built
   from a specific DMG and inspected.
 - Host package-manager, polkit, npm registry, Electron release, GitHub Actions,
@@ -91,6 +98,11 @@ Out of scope:
 - A malicious renderer, plugin, CLI, or same-user process can matter even when
   it cannot directly become root.
 - LAN attackers matter if any future local service binds beyond loopback.
+- Remote-control/mobile Linux patches remain experimental and opt-in. Account
+  policy, enrollment, MFA, connected-client state, and remote-access decisions
+  remain owned by upstream services and generated app flows.
+- Linux remote-control device keys are software keys stored under XDG config.
+  They are not hardware-backed or protected from same-user compromise.
 
 Open questions that materially affect risk:
 
@@ -127,12 +139,20 @@ Open questions that materially affect risk:
   open-target behavior to discover terminals, IDEs, file managers, and
   `.desktop` entries, sanitize the launch environment, and invoke targets with
   argument vectors.
+- **Opt-in remote-control and Codex mobile patches:** Linux feature patches can
+  expose upstream remote-control UI surfaces, preserve `remote_control` config
+  for the local app-server, and replace the macOS native device-key module with
+  a Linux software key store at
+  `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/remote-control-device-keys-v1.json`.
 - **Linux Computer Use backend:** Rust MCP backend and plugin resources that can
   inspect accessibility state, capture screenshots, and synthesize desktop
   input through AT-SPI, GNOME/KDE portal, and ydotool-style backends when
   upstream UI/account gating enables the feature.
 - **Native package builders:** convert a generated app tree into `.deb`, `.rpm`,
   or pacman packages under the `codex-app` identity.
+- **AppImage builder:** creates a local manual AppImage under the `codex-app`
+  identity without the updater service, polkit policy, privileged install
+  helpers, or update-builder bundle.
 - **Updater daemon:** `codex-app-updater daemon` runs as a `systemd --user`
   service, checks upstream metadata, downloads DMGs, rebuilds packages, tracks
   state, prompts/notifies, and coordinates install after app exit.
@@ -154,6 +174,7 @@ Open questions that materially affect risk:
 | Generated app bundle | extracted upstream app and patched ASAR | Linux Electron runtime | Renderer isolation, IPC, navigation, local file access |
 | Local webview origin | loopback HTTP server | Electron renderer | Same-user port spoofing, stale assets, marker spoofing |
 | Linux feature patches | generated app bundle | desktop launch helpers and platform integrations | Descriptor drift, command launch semantics, unsafe environment inheritance |
+| Remote-control/mobile patches | upstream app and account/mobile service state | local UI gates, app-server config, XDG device-key store | Software key theft, misleading availability, confused authorization state |
 | User config/state/cache | XDG user-writable files | updater decisions and rebuild inputs | Path substitution, stale state, developer-mode misuse, secret leakage |
 | Updater rebuild | unprivileged user service | package builder scripts and artifacts | Builder-root trust, PATH/tool influence, package identity |
 | Privileged install | unprivileged updater/package path | `pkexec` and system package manager | TOCTOU, package substitution, root-owned payload install |
@@ -173,7 +194,9 @@ flowchart LR
   W --> E["Electron renderer"]
   E --> C["Codex CLI"]
   E --> M["Computer Use MCP backend"]
+  E --> RC["Remote-control/mobile feature patches"]
   M --> H["Desktop state, screenshots, input"]
+  RC --> K["XDG software device-key store"]
   U --> B["Package builder"]
   B --> P["Native package"]
   P --> X["pkexec install-*"]
@@ -197,6 +220,9 @@ flowchart LR
   upstream DMG and reviewed patch set.
 - **Renderer and desktop-control boundary:** keep Electron, webview, CLI, and
   Computer Use behavior constrained to intended user-consented actions.
+- **Remote-control device keys and enrollment state:** protect software private
+  keys, preserved app-server remote-control config, and UI state that implies
+  whether another device can control or be controlled by this desktop.
 - **Public artifact trust:** publish verifiable packages, checksums,
   signatures, and provenance where public consumers rely on this fork.
 - **Logs and docs:** avoid persisting secrets, and keep security workflow and
@@ -214,6 +240,8 @@ flowchart LR
   processes.
 - Generated ASAR/webview content, renderer messages, plugin manifests, and
   Computer Use requests.
+- Remote-control feature config, app-server config values, generated remote UI
+  bundle state, mobile enrollment messages, and XDG device-key files.
 - `.desktop` entries, icon files, PATH entries, XDG desktop/session variables,
   and Linux feature configuration used when discovering desktop targets.
 - Package paths passed to privileged install subcommands.
@@ -244,6 +272,10 @@ flowchart LR
   as same-user trust inputs.
 - Computer Use must remain locally scoped, account/host-gated, and bound to
   user-consented desktop-control semantics.
+- Remote-control/mobile patches must remain opt-in until reviewed as a general
+  feature, must not fabricate connected clients, MFA, enrollment, or remote
+  environment state, and must store Linux device keys under private XDG config
+  paths with owner-only file modes.
 - Logs and state must not store credential-bearing URLs or credential-looking
   subprocess output.
 
@@ -395,6 +427,37 @@ added.
 
 **Priority:** Medium when changing open-target discovery; Low otherwise.
 
+### T5b: Remote-Control Or Mobile Host Enrollment Misstates Trust
+
+**Entry points:** opt-in `remote-control-ui` and `remote-mobile-control`
+features, generated remote-control and Codex mobile webview bundles,
+app-server config preservation, Linux software device-key store, upstream
+account/mobile enrollment flows.
+
+**Abuse path:** a same-user process steals the Linux software private key, a
+patched UI implies a remote-control state that upstream has not authorized, or
+bundle drift causes the fork to bypass an account-side availability, access, or
+enrollment guard instead of only exposing Linux host plumbing.
+
+**Impact:** Medium to High. Successful abuse can affect whether another device
+can control the local desktop or whether this host can sign remote-control
+enrollment payloads, although upstream account-side controls remain part of the
+end-to-end authorization path.
+
+**Existing mitigations:** features are disabled unless explicitly enabled,
+patches are descriptor-scoped and fail soft, UI patches do not fabricate
+connected-client or MFA state, Linux device keys are stored in a per-user XDG
+config file with `0600` mode, and tests cover key creation, signing, deletion,
+visibility gating, and Linux-specific copy.
+
+**Gaps:** Linux keys are software-only and same-user readable; fork-side tests
+cannot prove upstream account/mobile authorization semantics; remote-control
+patches need fresh security review before being treated as general-ready
+functionality.
+
+**Priority:** High when touching remote-control/mobile behavior; Medium
+otherwise.
+
 ### T6: User Config, State, Or Cache Misleads The Updater
 
 **Entry points:** `~/.config/codex-app-updater/config.toml`,
@@ -489,11 +552,13 @@ still contain arbitrary sensitive values.
 6. Add package signing, checksums, and hosted provenance for public artifacts.
 7. Review Computer Use command routing, screenshots, and input backends whenever
    that surface changes.
-8. Review Linux open-target discovery heuristics and launch environment
+8. Review opt-in remote-control/mobile host enrollment, UI gates, and Linux
+   device-key storage before promoting the feature beyond experimental use.
+9. Review Linux open-target discovery heuristics and launch environment
    sanitization when adding target families or `.desktop` handling.
-9. Review npm CLI auto-upgrade trust and add an approved-version or consent
+10. Review npm CLI auto-upgrade trust and add an approved-version or consent
    path.
-10. Redact credential-looking subprocess output before persistence.
+11. Redact credential-looking subprocess output before persistence.
 
 ## Focus Paths For Manual Security Review
 
@@ -510,6 +575,10 @@ still contain arbitrary sensitive values.
   port/bind assumptions.
 - `linux-features/open-target-discovery/`: Linux desktop target discovery,
   `.desktop` parsing, argument-vector launches, and environment sanitization.
+- `linux-features/remote-control-ui/` and
+  `linux-features/remote-mobile-control/`: opt-in remote-control/mobile UI
+  gates, app-server config preservation, Linux device-key storage, and
+  generated-copy patches.
 - `scripts/lib/dmg.sh`: installer DMG download and version extraction.
 - `scripts/lib/native-modules.sh`: native dependency version floors and
   Electron-specific temporary source compatibility patches.

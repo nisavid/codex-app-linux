@@ -289,6 +289,7 @@ Build a specific format:
 make deb
 make rpm
 make pacman
+make appimage
 ```
 
 You can also run builders directly:
@@ -297,6 +298,7 @@ You can also run builders directly:
 ./scripts/build-deb.sh
 ./scripts/build-rpm.sh
 ./scripts/build-pacman.sh
+./scripts/build-appimage.sh
 ```
 
 Set `PACKAGE_WITH_UPDATER=0` when you need a native package that does not
@@ -333,11 +335,16 @@ Expected outputs:
 dist/codex-app_<upstream-version>_<arch>.deb
 dist/codex-app-<upstream-version>-1.<arch>.rpm
 dist/codex-app-<upstream-version>-1-<arch>.pkg.tar.zst
+dist/codex-app-<upstream-version>-<arch>.AppImage
 ```
 
 Architecture names follow the package format: Debian uses `amd64`, `arm64`, or
 `armhf`; RPM uses `x86_64`, `aarch64`, or `armv7hl`; pacman uses `x86_64` or
 `aarch64`.
+
+AppImages are manual-update artifacts. They omit `codex-app-updater`, the
+systemd user service, polkit policy, and the native-package update-builder
+bundle.
 
 Native packages are named `codex-app`. They declare replacement metadata for
 the older `codex-desktop` package name where the package format supports it,
@@ -391,6 +398,7 @@ make run-app
 make deb
 make rpm
 make pacman
+make appimage
 make package
 make apple-dmg-verify
 make release-gate
@@ -402,8 +410,13 @@ make clean-dist
 make clean-state
 ```
 
-`make package` detects the native package manager on the host and builds the
-matching package type. `make release-gate` verifies the reviewed upstream DMG
+`make appimage` builds a manual-update AppImage through
+`./scripts/build-appimage.sh`; it consumes the generated `codex-app/` tree,
+stages the AppDir templates under `packaging/appimage/`, and writes the
+resulting `.AppImage` to `dist/`. `APPIMAGETOOL=/path/to/appimagetool` can
+override the AppImage tool command. `make package` detects the native package
+manager on the host and builds the matching package type. `make release-gate`
+verifies the reviewed upstream DMG
 hash, scans the generated app, validates package metadata, writes
 `dist/SHA256SUMS`, and signs that checksum file whenever
 `CODEX_RELEASE_GPG_KEY` is set. `REQUIRE_RELEASE_SIGNATURE=1` makes the gate
@@ -423,7 +436,8 @@ The build flow is:
 4. rebuild native Node.js modules for Linux;
 5. download a Linux Electron runtime;
 6. write `codex-app/start.sh`;
-7. optionally package `codex-app/` as a Debian, RPM, or pacman package;
+7. optionally package `codex-app/` as a Debian, RPM, pacman, or AppImage
+   artifact;
 8. when installed from a native package, run `codex-app-updater` as a
    `systemd --user` service for local update checks and package rebuilds.
 

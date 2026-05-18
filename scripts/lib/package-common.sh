@@ -104,6 +104,13 @@ package_with_updater_enabled() {
     [ "$(package_with_updater_value)" = "1" ]
 }
 
+clear_update_builder_linux_features_config() {
+    local update_builder_root="$1"
+    local target="$update_builder_root/linux-features/features.json"
+
+    rm -f "$target"
+}
+
 render_desktop_entry() {
     local target="$1"
     local package_name
@@ -569,7 +576,7 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postinst" "$update_builder_root/packaging/linux/codex-app-updater.postinst"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.prerm" "$update_builder_root/packaging/linux/codex-app-updater.prerm"
     cp -r "$REPO_DIR/linux-features/." "$update_builder_root/linux-features/"
-    rm -f "$update_builder_root/linux-features/features.json"
+    clear_update_builder_linux_features_config "$update_builder_root"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postrm" "$update_builder_root/packaging/linux/codex-app-updater.postrm"
     cp "$REPO_DIR/assets/codex.png" "$update_builder_root/assets/codex.png"
     if [ -d "$node_runtime_source" ]; then

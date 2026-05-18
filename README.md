@@ -49,15 +49,17 @@ native packages.
 | --- | --- | --- |
 | Standard Codex app UI | Working | Built from the upstream macOS DMG and patched to launch under Linux Electron. |
 | Native Linux packages | Working | Builds `.deb`, `.rpm`, and pacman packages under the `codex-app` identity and install layout. |
+| AppImage self-build | Working | `make appimage` builds a local `dist/codex-app-*.AppImage`; AppImages are manual-update artifacts and do not bundle the updater service. |
 | Local updater | Working | Native packages install `codex-app-updater`, adapted from upstream update-manager work to check DMGs and rebuild local packages. |
 | Managed Node.js runtime | Working | Generated apps and native packages bundle the Node runtime used by Browser Use, CLI install/update, and updater rebuilds. |
 | Codex CLI preflight | Working | The launcher and updater find or install `@openai/codex` when host tools allow it. |
-| Tray, warm start, and Linux keybinds | Working with desktop variance | Desktop-environment support can vary, especially around tray and window behavior. |
+| Tray, warm start, multi-instance, and Linux keybinds | Working with desktop variance | Normal launches reuse the running app; `--new-instance` or `CODEX_MULTI_LAUNCH=1` opens an isolated profile and bounded webview port. |
 | Browser annotations | Working where upstream support is enabled | Uses the bundled browser resources shipped with the generated app. |
 | Chrome plugin native host | Working | Stages the upstream Chrome plugin with Linux native-messaging support for Chrome, Brave, and Chromium. |
 | Linux Computer Use | Packaged; UI controls opt-in | Uses upstream Linux Computer Use support with local packaging/manifest compatibility fixes; requires host accessibility/input support. |
+| Remote control UI and mobile-control host patches | Opt-in experiment | Linux feature modules can expose upstream remote-control surfaces on Linux, but they do not bypass OpenAI account, rollout, MFA, or host-network requirements. |
 | Linux feature registry | Working | `open-target-discovery` is enabled by default; feature config can disable it or enable other optional integrations before build. |
-| NixOS flake | Working with pinned DMG hash | The fixed-output hash can temporarily lag after OpenAI republishes the DMG. |
+| NixOS flake | Working with pinned DMG metadata | The flake exposes default, Computer Use UI, remote-mobile-control, combined, and installer outputs. |
 | OpenAI server-gated features | Gated by account and rollout | Installing this fork cannot bypass upstream feature flags or account policy. |
 
 ## About This Fork
@@ -147,6 +149,16 @@ make build-dev-app
 make run-dev-app
 ```
 
+Normal launches reuse a running app through the warm-start handoff. To start an
+additional isolated instance instead, pass `--new-instance` or set
+`CODEX_MULTI_LAUNCH=1`; the launcher chooses the first free webview port in a
+bounded range and uses per-port pid, socket, log, and Electron user-data paths.
+
+```bash
+./codex-app/start.sh --new-instance
+CODEX_MULTI_LAUNCH=1 CODEX_MULTI_LAUNCH_PORT_RANGE=5175-5199 ./codex-app/start.sh
+```
+
 ## Linux Features
 
 Linux-side feature modules live in `linux-features/`. This fork enables
@@ -162,6 +174,12 @@ override shape; checkout builds ignore that persistent user file and use
 `linux-features/features.json` or `CODEX_LINUX_FEATURES_CONFIG` instead.
 See [`linux-features/README.md`](linux-features/README.md) for the feature
 contract.
+
+The `remote-control-ui` and `remote-mobile-control` feature modules are
+experimental opt-ins for upstream remote-control surfaces on Linux. Treat them
+as UI/runtime integration patches, not as an account-policy bypass: OpenAI
+rollouts, MFA state, connected-client state, and host network exposure still
+come from upstream services and your local environment.
 
 ## Build A Native Package
 
@@ -181,6 +199,18 @@ make deb
 make rpm
 make pacman
 ```
+
+For a full host bootstrap that installs dependencies, regenerates the app from a
+fresh upstream DMG, builds the matching native package, and installs the newest
+artifact from `dist/`, run:
+
+```bash
+make bootstrap-native
+```
+
+If dependencies are already installed, `make install-native` skips the
+dependency bootstrap and runs the fresh app build, package build, and install
+flow.
 
 For a fresh package build, start by removing the generated app tree, cached DMG,
 and old package outputs:
@@ -211,6 +241,7 @@ Package outputs land in `dist/`:
 | Debian | `dist/codex-app_<upstream-version>_<arch>.deb` |
 | RPM / Fedora / openSUSE | `dist/codex-app-<upstream-version>-1.<arch>.rpm` |
 | Arch Linux | `dist/codex-app-<upstream-version>-1-<arch>.pkg.tar.zst` |
+| AppImage | `dist/codex-app-<upstream-version>-<arch>.AppImage` |
 
 Architecture names follow the package format: Debian uses `amd64`, `arm64`, or
 `armhf`; RPM uses `x86_64`, `aarch64`, or `armv7hl`; pacman uses `x86_64` or
@@ -228,6 +259,18 @@ The installed launcher is `/usr/bin/codex-app`, and the app lives under
 Native packages bundle the managed Node.js runtime used by the launcher, Browser
 Use, Codex CLI install/update flow, and local auto-update rebuilds. They do not
 hard-depend on distro `nodejs` or `npm`.
+
+For atomic desktops or systems where installing a native package is awkward,
+build a local AppImage after `codex-app/` exists:
+
+```bash
+make appimage
+./dist/codex-app-*.AppImage
+```
+
+The AppImage flow omits `codex-app-updater`, the systemd user service, polkit
+policy, and the native-package update-builder bundle. Rebuild it manually when
+you want a newer upstream Codex app.
 
 Before publishing packages, run the release gate with a trusted upstream DMG
 hash. Set `CODEX_RELEASE_GPG_KEY` to produce detached signatures, and set
@@ -260,7 +303,8 @@ make install
 
 ## NixOS
 
-The flake handles dependencies and Electron patching:
+The flake handles dependencies and Electron patching under the local
+`codex-app` identity:
 
 ```bash
 nix run github:nisavid/codex-app-linux
@@ -273,10 +317,21 @@ a development shell:
 nix develop github:nisavid/codex-app-linux
 ```
 
-If `nix run` reports a fixed-output `hash mismatch`, the upstream DMG was likely
-republished after the pinned hash changed. A scheduled GitHub Actions job
-refreshes that hash on `main` once every 24 hours. Retry after the bot has had
-time to run; if it still fails, open an issue.
+Feature-specific outputs are available when you want the generated app to carry
+Linux feature opt-ins that are normally read from the git-ignored
+`linux-features/features.json`:
+
+```bash
+nix run github:nisavid/codex-app-linux#codex-app-computer-use-ui
+nix run github:nisavid/codex-app-linux#codex-app-remote-mobile-control
+nix run github:nisavid/codex-app-linux#codex-app-computer-use-ui-remote-mobile-control
+nix run github:nisavid/codex-app-linux#installer
+```
+
+If `nix run` reports a DMG metadata mismatch, the upstream DMG was likely
+republished after the pinned metadata changed. A scheduled GitHub Actions job
+refreshes that metadata and verifies the Nix package outputs on `main`. Retry
+after the bot has had time to run; if it still fails, open an issue.
 
 ## Linux Computer Use
 
@@ -348,7 +403,7 @@ Native packages install `codex-app-updater`, a `systemd --user` service that
 checks for newer upstream DMGs, rebuilds the matching Linux package locally, and
 uses `pkexec` only for the final package install step.
 
-Current updater crate version: `0.7.1`.
+Current updater crate version: `0.8.0`.
 
 Useful service commands after installing a native package:
 
@@ -391,6 +446,10 @@ Common next steps:
 - stale app tree: rebuild with `./install.sh --fresh`;
 - Computer Use readiness: run the backend `doctor` command and check
   `ydotoold`, `/dev/uinput`, portal, and AT-SPI status;
+- Fedora Computer Use input issue: some Fedora releases package the daemon as
+  `ydotool.service` rather than `ydotoold.service`; if `doctor` reports
+  `ydotool_socket: Permission denied`, confirm the socket is usable by users in
+  the `input` group;
 - updater service issue: inspect
   `~/.local/state/codex-app-updater/service.log`.
 

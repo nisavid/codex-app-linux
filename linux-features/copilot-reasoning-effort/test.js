@@ -73,7 +73,10 @@ function withTempFeatureConfig(enabled, fn) {
   const originalConfig = process.env.CODEX_LINUX_FEATURES_CONFIG;
   return withTempDir((tmp) => {
     process.env.CODEX_LINUX_FEATURES_CONFIG = path.join(tmp, "features.json");
-    fs.writeFileSync(process.env.CODEX_LINUX_FEATURES_CONFIG, JSON.stringify({ enabled }, null, 2));
+    fs.writeFileSync(
+      process.env.CODEX_LINUX_FEATURES_CONFIG,
+      JSON.stringify({ enabled, disabled: ["open-target-discovery"] }, null, 2),
+    );
     try {
       return fn();
     } finally {

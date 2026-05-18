@@ -168,6 +168,15 @@ function enabledLinuxFeatureIds(options = {}) {
   return ids;
 }
 
+function resolvedLinuxFeaturesConfig(options = {}) {
+  const featuresRoot = linuxFeaturesRoot(options);
+  const knownFeatureIds = new Set(discoverLinuxFeatureIds(featuresRoot));
+  const config = readLinuxFeaturesConfig(featuresRoot);
+  const enabled = enabledLinuxFeatureIds({ ...options, featuresRoot });
+  const disabled = config.disabled.filter((id) => knownFeatureIds.has(id));
+  return { enabled, disabled };
+}
+
 function loadLinuxFeatureManifest(featuresRoot, id) {
   const featureDir = path.join(featuresRoot, id);
   const manifestPath = path.join(featureDir, "feature.json");
@@ -259,9 +268,11 @@ function wrapFeaturePatchDescriptor(feature, descriptor, sourcePath, index, feat
     return null;
   }
 
+  const wrappedId = prefixedFeaturePatchId(feature, descriptorId);
   const wrapped = {
     ...descriptor,
-    id: prefixedFeaturePatchId(feature, descriptorId),
+    id: wrappedId,
+    name: descriptor.name ?? wrappedId,
     ciPolicy: descriptor.ciPolicy ?? "optional",
     order: descriptor.order ?? 20_000 + featureIndex * 100 + index * 10,
     sourcePath,
@@ -306,8 +317,28 @@ function featurePatchDescriptorListFromExports(feature, moduleExports, sourcePat
 function loadLinuxFeaturePatchDescriptors(options = {}) {
   const descriptors = [];
   for (const [featureIndex, feature] of loadEnabledLinuxFeatures(options).entries()) {
-    const loaded = loadFeatureEntrypointModule(feature, "patchDescriptors");
+    const loaded = loadFeatureEntrypointModule(feature, "patchDescriptors") ??
+      loadFeatureEntrypointModule(feature, "patches");
     if (loaded == null) {
+      const legacyLoaded = loadFeatureEntrypointModule(feature, "mainBundlePatch");
+      if (legacyLoaded == null) {
+        continue;
+      }
+
+      const moduleExports = legacyLoaded.moduleExports;
+      const apply = moduleExports.applyMainBundlePatch ?? moduleExports.apply ?? moduleExports;
+      if (typeof apply !== "function") {
+        console.warn(`WARN: Linux feature '${feature.id}' mainBundlePatch must export a function`);
+        continue;
+      }
+
+      descriptors.push({
+        id: `feature:${feature.id}`,
+        name: `feature:${feature.id}`,
+        phase: "main-bundle",
+        ciPolicy: "optional",
+        apply: (source, context) => apply(source, featureContext(context, feature)),
+      });
       continue;
     }
     descriptors.push(
@@ -323,27 +354,9 @@ function loadLinuxFeaturePatchDescriptors(options = {}) {
 }
 
 function loadLinuxFeatureMainBundlePatches(options = {}) {
-  const patches = [];
-  for (const feature of loadEnabledLinuxFeatures(options)) {
-    const loaded = loadFeatureEntrypointModule(feature, "mainBundlePatch");
-    if (loaded == null) {
-      continue;
-    }
-
-    const moduleExports = loaded.moduleExports;
-    const apply = moduleExports.applyMainBundlePatch ?? moduleExports.apply ?? moduleExports;
-    if (typeof apply !== "function") {
-      console.warn(`WARN: Linux feature '${feature.id}' mainBundlePatch must export a function`);
-      continue;
-    }
-
-    patches.push({
-      name: `feature:${feature.id}`,
-      ciPolicy: "optional",
-      apply: (source, context) => apply(source, { ...context, feature }),
-    });
-  }
-  return patches;
+  return loadLinuxFeaturePatchDescriptors(options)
+    .filter((patch) => (patch.phase ?? "main-bundle") === "main-bundle")
+    .map(({ apply, ciPolicy, id, name }) => ({ apply, ciPolicy, id, name }));
 }
 
 function enabledLinuxFeatureStageHooks(options = {}) {
@@ -386,5 +399,6 @@ module.exports = {
   linuxFeaturesConfigPath,
   linuxFeaturesRoot,
   linuxFeaturesUserConfigPath,
+  resolvedLinuxFeaturesConfig,
   resolveFeatureEntrypoint,
 };

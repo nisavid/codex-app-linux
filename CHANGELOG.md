@@ -5,6 +5,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Nix builds, installer apps, and dev shells now use modern `7zz`, and the installer dependency check accepts `7zz` without requiring a separate legacy `7z` binary.
+- Codex App no longer removes user-enabled `remote_control = true` from the local Linux config before starting the app server.
+
+## [0.8.0] - 2026-05-16
+
+### Added
+
+- New local AppImage build target for manual-update installs on systems where native packages are awkward.
+- Opt-in multi-instance launcher support via `--new-instance` or `CODEX_MULTI_LAUNCH=1`, with isolated Electron profiles, pid files, sockets, logs, and bounded webview ports.
+- New opt-in Linux features `remote-control-ui` and `remote-mobile-control` that patch upstream remote-control surfaces on Linux without faking backend state, MFA, or connected-client data.
+- `linux-features` can now contribute opt-in `webview-asset` patch descriptors in addition to main-bundle patches, so feature-scoped Linux UI experiments can hook hashed webview assets without being promoted into the core patch registry.
+- Nix outputs for the default app, Computer Use UI, remote mobile control, the combined feature set, and the installer.
+
+### Fixed
+
+- Updater and launcher edge cases around interrupted installs, persisted Linux features, user-local managed checkout metadata, webview origin probes behind proxy settings, and package metadata.
+- Pacman builds now expose a `codex-app-latest.pkg.tar.zst` symlink for the most recent local package artifact.
+- The webview patcher can keep the composer rate-limit footer visible across upstream bundle drift.
+
 ## [0.7.1] - 2026-05-06
 
 ### Fixed

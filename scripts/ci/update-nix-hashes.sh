@@ -5,8 +5,15 @@ REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 FLAKE_FILE="${FLAKE_FILE:-$REPO_DIR/flake.nix}"
 UPSTREAM_DMG_URL="${UPSTREAM_DMG_URL:-https://persistent.oaistatic.com/codex-app-prod/Codex.dmg}"
 UPSTREAM_DMG_PATH="${UPSTREAM_DMG_PATH:-/tmp/Codex.dmg}"
-BUILD_LOG="${BUILD_LOG:-/tmp/codex-nix-build.log}"
 VERIFY_LOG="${VERIFY_LOG:-/tmp/codex-nix-build-verify.log}"
+
+PACKAGE_OUTPUTS=(
+    ".#codex-app"
+    ".#codex-app-computer-use-ui"
+    ".#codex-app-remote-mobile-control"
+    ".#codex-app-computer-use-ui-remote-mobile-control"
+    ".#installer"
+)
 
 validate_sri_hash() {
     local hash="$1"
@@ -79,33 +86,18 @@ raise SystemExit(f"Could not find {key!r} after {anchor!r} in {path}")
 PY
 }
 
-extract_got_sri_hash() {
-    local log_path="$1"
-
-    python3 - "$log_path" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-text = Path(sys.argv[1]).read_text(errors="replace")
-text = re.sub(r"\x1b\[[0-9;]*m", "", text)
-matches = re.findall(r"got:\s*(sha256-[A-Za-z0-9+/=]{44})", text)
-if not matches:
-    raise SystemExit(1)
-print(matches[-1])
-PY
-}
-
 run_nix_build() {
     local log_path="$1"
+    shift
     rm -f "$log_path"
     set +e
     (
         cd "$REPO_DIR" || exit 1
-        nix build .#codex-app --no-link --print-build-logs
-    ) 2>&1 | tee "$log_path"
-    local status="${PIPESTATUS[0]}"
+        nix build "$@" --no-link --print-build-logs
+    ) >"$log_path" 2>&1
+    local status="$?"
     set -e
+    cat "$log_path"
     return "$status"
 }
 
@@ -124,35 +116,13 @@ main() {
     echo "Upstream Codex.dmg hash: $new_dmg_hash"
     replace_flake_hash "codexDmg = pkgs.fetchurl {" "hash = " "$new_dmg_hash"
 
-    # Seed the Nix store so the build can reuse the DMG that was already downloaded
-    # for hashing instead of fetching the same 300MB artifact again.
-    if ! nix-store --add-fixed sha256 "$UPSTREAM_DMG_PATH" >/dev/null; then
-        echo "Warning: failed to seed Codex.dmg into the Nix store; continuing with normal fetch path." >&2
-    fi
+    # Seed the Nix store so the verification build can reuse the DMG that was
+    # already downloaded for hashing instead of fetching the same artifact again.
+    nix-store --add-fixed sha256 "$UPSTREAM_DMG_PATH" >/dev/null
 
-    if run_nix_build "$BUILD_LOG"; then
-        echo "Nix build succeeded with the current payload outputHash."
-        exit 0
-    fi
-
-    new_payload_hash="$(extract_got_sri_hash "$BUILD_LOG" || true)"
-    if [ -z "$new_payload_hash" ]; then
-        echo "Nix build failed without a fixed-output hash mismatch; leaving log at $BUILD_LOG" >&2
-        exit 1
-    fi
-
-    if ! validate_sri_hash "$new_payload_hash"; then
-        echo "Refusing to proceed: extracted payload hash '$new_payload_hash' is not a valid SRI sha256." >&2
-        exit 1
-    fi
-
-    current_payload_hash="$(read_flake_hash "codexAppPayload = pkgs.stdenv.mkDerivation {" "outputHash = ")"
-    echo "Current payload outputHash: $current_payload_hash"
-    echo "Actual payload outputHash:  $new_payload_hash"
-    replace_flake_hash "codexAppPayload = pkgs.stdenv.mkDerivation {" "outputHash = " "$new_payload_hash"
-
-    run_nix_build "$VERIFY_LOG"
-    echo "Nix build succeeded after refreshing the payload outputHash."
+    "$REPO_DIR/scripts/ci/validate-nix-pins.sh" "$UPSTREAM_DMG_PATH"
+    run_nix_build "$VERIFY_LOG" "${PACKAGE_OUTPUTS[@]}"
+    echo "Nix builds succeeded after refreshing the Codex.dmg hash."
 }
 
 case "${1:-}" in
