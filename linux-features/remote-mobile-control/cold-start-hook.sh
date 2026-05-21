@@ -8,6 +8,30 @@ truthy_env_value() {
     esac
 }
 
+cleanup_remote_mobile_control_interactive_symlink() {
+    local codex_home="$1"
+    local home_dir="${HOME:-}"
+    local user_codex=""
+    local resolved_user_codex=""
+    local standalone_root=""
+
+    [ -n "$home_dir" ] || return 0
+    user_codex="$home_dir/.local/bin/codex"
+    [ -L "$user_codex" ] || return 0
+    resolved_user_codex="$(readlink -f "$user_codex" 2>/dev/null || true)"
+    [ -n "$resolved_user_codex" ] || return 0
+    standalone_root="$(readlink -f "$codex_home/packages/standalone" 2>/dev/null || true)"
+    [ -n "$standalone_root" ] || standalone_root="$codex_home/packages/standalone"
+
+    case "$resolved_user_codex" in
+        "$standalone_root"/*)
+            if rm -f "$user_codex"; then
+                echo "Removed remote mobile control standalone symlink from interactive PATH: $user_codex -> $resolved_user_codex"
+            fi
+            ;;
+    esac
+}
+
 install_remote_mobile_control_runtime() {
     local codex_home="$1"
     local private_bin="$codex_home/packages/standalone/.bin"
@@ -57,7 +81,51 @@ install_remote_mobile_control_runtime() {
     fi
 }
 
+remote_mobile_control_daemon_pid() {
+    local pid_file="$1"
+
+    [ -f "$pid_file" ] || return 1
+    sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$pid_file" | head -n 1
+}
+
+cleanup_stale_remote_mobile_daemon_state() {
+    local codex_home="$1"
+    local pid_file=""
+    local pid=""
+
+    for pid_file in \
+        "$codex_home/app-server-daemon/app-server.pid" \
+        "$codex_home/app-server-daemon/app-server-updater.pid"
+    do
+        [ -e "$pid_file" ] || continue
+        pid="$(remote_mobile_control_daemon_pid "$pid_file" || true)"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            continue
+        fi
+        if rm -f "$pid_file"; then
+            echo "Removed stale remote mobile control daemon pid file: $pid_file"
+        fi
+    done
+}
+
+desktop_app_server_remote_control_enabled() {
+    local app_dir="${CODEX_LINUX_APP_DIR:-}"
+    local marker=""
+
+    if truthy_env_value "${CODEX_REMOTE_CONTROL_FORCE_COLD_START_DAEMON:-}"; then
+        return 1
+    fi
+
+    [ -n "$app_dir" ] || return 1
+    marker="$app_dir/.codex-linux/desktop-app-server-remote-control-enabled"
+    [ -f "$marker" ]
+}
+
 remote_mobile_control_main() {
+    local codex_home="${CODEX_HOME:-$HOME/.codex}"
+
+    cleanup_remote_mobile_control_interactive_symlink "$codex_home"
+
     if truthy_env_value "${CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED:-}"; then
         echo "Remote mobile control daemon autostart disabled by CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED"
         return 0
@@ -67,8 +135,12 @@ remote_mobile_control_main() {
         echo "Remote mobile control daemon autostart skipped; codex-remote-control.service is already active"
         return 0
     fi
+    if desktop_app_server_remote_control_enabled; then
+        cleanup_stale_remote_mobile_daemon_state "$codex_home"
+        echo "Remote mobile control daemon autostart skipped; Desktop app-server launches with remote-control enabled"
+        return 0
+    fi
 
-    local codex_home="${CODEX_HOME:-$HOME/.codex}"
     local standalone_codex="${CODEX_REMOTE_CONTROL_CODEX_PATH:-$codex_home/packages/standalone/current/codex}"
 
     if [ ! -x "$standalone_codex" ]; then

@@ -2,6 +2,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -30,10 +31,13 @@ const {
   applyLinuxRemoteMobileAppServerRemoteControlPatch,
   applyLinuxRemoteMobileChromeBridgePatch,
   applyLinuxRemoteMobileConversationHydrationPatch,
+  applyLinuxRemoteMobileProjectlessRemoteTaskPatch,
   applyLinuxRemoteConnectionsRefreshPatch,
   applyLinuxRemoteControlSettingsUxPatch,
   applyLinuxRemoteControlVisibilityPatch,
 } = require("./patch.js");
+
+const REPO_ROOT = path.resolve(__dirname, "../..");
 
 function syntheticMainBundle() {
   return [
@@ -179,6 +183,12 @@ function syntheticAppMainActiveStatusBundle() {
   ].join("");
 }
 
+function syntheticSidebarProjectGroupsBundle() {
+  return [
+    "function X(e,t,n){let r=Q(e,t),i=$(r);if(!i){s.warning(`No owner repo found for remote task`,{safe:{taskId:e.task.id},sensitive:{}});return}let a=i.repoName.toLowerCase();(n.find(e=>I(e.repositoryData?.ownerRepo,i)&&e.repositoryData?.repoPath===``&&e.repositoryData?.rootFolder?.toLowerCase()===a)??null??n.find(e=>I(e.repositoryData?.ownerRepo,i))??Z(i,r,n)).threadKeys.push(e.key)}",
+  ].join("");
+}
+
 function syntheticAppMainEnablementBridgeBundle() {
   return [
     "var DF=`[remote-connections/slingshot-gate-bridge]`;",
@@ -230,10 +240,241 @@ function captureWarnings(fn) {
   }
 }
 
+function runColdStartHook(env) {
+  return spawnSync("bash", [path.join(__dirname, "cold-start-hook.sh"), "--run-main"], {
+    env: { ...process.env, ...env },
+    encoding: "utf8",
+  });
+}
+
+function runStageHook(env) {
+  return spawnSync("bash", [path.join(__dirname, "stage.sh")], {
+    env: { ...process.env, ...env },
+    encoding: "utf8",
+  });
+}
+
+function writeDesktopAppServerRemoteControlMarker(appDir) {
+  const marker = path.join(appDir, ".codex-linux", "desktop-app-server-remote-control-enabled");
+  fs.mkdirSync(path.dirname(marker), { recursive: true });
+  fs.writeFileSync(marker, "desktop-app-server-remote-control\n");
+}
+
 test("remote mobile control feature stays disabled until listed in features.json", () => {
   withTempFeatureRoot([], (root) => {
     assert.deepEqual(loadLinuxFeaturePatchDescriptors({ featuresRoot: root }), []);
   });
+});
+
+test("remote mobile stage hook writes installed Desktop app-server ownership marker from patched app layout", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-stage-"));
+  try {
+    const installDir = path.join(tempRoot, "package", "opt", "codex-desktop");
+    const workDir = path.join(tempRoot, "work");
+    const buildDir = path.join(workDir, "app-extracted", ".vite", "build");
+    const marker = path.join(installDir, ".codex-linux", "desktop-app-server-remote-control-enabled");
+    const coldStartHook = path.join(installDir, ".codex-linux", "cold-start.d", "remote-mobile-control");
+
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.writeFileSync(path.join(buildDir, "main.js"), "globalThis.codexLinuxRemoteMobileAppServerArgs=true;");
+
+    const result = runStageHook({
+      ARCH: "x64",
+      CODEX_UPSTREAM_APP_DIR: path.join(tempRoot, "upstream-app"),
+      INSTALL_DIR: installDir,
+      SCRIPT_DIR: REPO_ROOT,
+      WORK_DIR: workDir,
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(fs.readFileSync(marker, "utf8"), "desktop-app-server-remote-control\n");
+    assert.equal(fs.existsSync(coldStartHook), true);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("remote mobile stage hook leaves Desktop ownership marker absent when patch marker is missing", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-stage-"));
+  try {
+    const installDir = path.join(tempRoot, "package", "opt", "codex-desktop");
+    const workDir = path.join(tempRoot, "work");
+    const buildDir = path.join(workDir, "app-extracted", ".vite", "build");
+    const marker = path.join(installDir, ".codex-linux", "desktop-app-server-remote-control-enabled");
+
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.writeFileSync(path.join(buildDir, "main.js"), "globalThis.someOtherPatch=true;");
+
+    const result = runStageHook({
+      ARCH: "x64",
+      CODEX_UPSTREAM_APP_DIR: path.join(tempRoot, "upstream-app"),
+      INSTALL_DIR: installDir,
+      SCRIPT_DIR: REPO_ROOT,
+      WORK_DIR: workDir,
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(fs.existsSync(marker), false);
+    assert.match(result.stderr, /Desktop app-server remote-control marker not found/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("remote mobile cold-start hook removes leaked standalone codex symlink from interactive PATH", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-cold-start-"));
+  try {
+    const home = path.join(tempRoot, "home");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const standaloneCodex = path.join(codexHome, "packages", "standalone", "current", "codex");
+    const userCodex = path.join(home, ".local", "bin", "codex");
+
+    fs.mkdirSync(path.dirname(standaloneCodex), { recursive: true });
+    fs.mkdirSync(path.dirname(userCodex), { recursive: true });
+    fs.writeFileSync(standaloneCodex, "#!/usr/bin/env sh\nexit 0\n");
+    fs.chmodSync(standaloneCodex, 0o755);
+    fs.symlinkSync(standaloneCodex, userCodex);
+
+    const result = runColdStartHook({
+      CODEX_HOME: codexHome,
+      CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED: "1",
+      HOME: home,
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(fs.existsSync(userCodex), false);
+    assert.match(result.stdout, /Removed remote mobile control standalone symlink from interactive PATH/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("remote mobile cold-start hook preserves user codex symlinks outside the standalone runtime", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-cold-start-"));
+  try {
+    const home = path.join(tempRoot, "home");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const userManagedCodex = path.join(tempRoot, "brew", "bin", "codex");
+    const userCodex = path.join(home, ".local", "bin", "codex");
+
+    fs.mkdirSync(path.dirname(userManagedCodex), { recursive: true });
+    fs.mkdirSync(path.dirname(userCodex), { recursive: true });
+    fs.writeFileSync(userManagedCodex, "#!/usr/bin/env sh\nexit 0\n");
+    fs.chmodSync(userManagedCodex, 0o755);
+    fs.symlinkSync(userManagedCodex, userCodex);
+
+    const result = runColdStartHook({
+      CODEX_HOME: codexHome,
+      CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED: "1",
+      HOME: home,
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(fs.readlinkSync(userCodex), userManagedCodex);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("remote mobile cold-start hook skips daemon when Desktop app-server owns remote-control", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-cold-start-"));
+  try {
+    const home = path.join(tempRoot, "home");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const appDir = path.join(tempRoot, "package", "share", "codex-desktop", "app");
+    const standaloneCodex = path.join(codexHome, "packages", "standalone", "current", "codex");
+    const callsLog = path.join(tempRoot, "calls.log");
+
+    fs.mkdirSync(path.dirname(standaloneCodex), { recursive: true });
+    fs.mkdirSync(home, { recursive: true });
+    fs.mkdirSync(appDir, { recursive: true });
+    writeDesktopAppServerRemoteControlMarker(appDir);
+    fs.writeFileSync(
+      standaloneCodex,
+      `#!/usr/bin/env sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(callsLog)}\nexit 0\n`,
+    );
+    fs.chmodSync(standaloneCodex, 0o755);
+
+    const result = runColdStartHook({
+      CODEX_HOME: codexHome,
+      CODEX_LINUX_APP_DIR: appDir,
+      CODEX_REMOTE_CONTROL_RUNTIME_AUTO_INSTALL_DISABLED: "1",
+      HOME: home,
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(fs.existsSync(callsLog), false);
+    assert.match(result.stdout, /Desktop app-server launches with remote-control enabled/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("remote mobile cold-start hook removes dead standalone daemon pid files when Desktop app-server owns remote-control", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-cold-start-"));
+  try {
+    const home = path.join(tempRoot, "home");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const daemonDir = path.join(codexHome, "app-server-daemon");
+    const appDir = path.join(tempRoot, "package", "share", "codex-desktop", "app");
+
+    fs.mkdirSync(home, { recursive: true });
+    fs.mkdirSync(daemonDir, { recursive: true });
+    fs.mkdirSync(appDir, { recursive: true });
+    writeDesktopAppServerRemoteControlMarker(appDir);
+    fs.writeFileSync(
+      path.join(daemonDir, "app-server.pid"),
+      JSON.stringify({ pid: 999999, processStartTime: "fixture" }),
+    );
+    fs.writeFileSync(
+      path.join(daemonDir, "app-server-updater.pid"),
+      JSON.stringify({ pid: 999998, processStartTime: "fixture" }),
+    );
+
+    const result = runColdStartHook({
+      CODEX_HOME: codexHome,
+      CODEX_LINUX_APP_DIR: appDir,
+      HOME: home,
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(fs.existsSync(path.join(daemonDir, "app-server.pid")), false);
+    assert.equal(fs.existsSync(path.join(daemonDir, "app-server-updater.pid")), false);
+    assert.match(result.stdout, /Removed stale remote mobile control daemon pid file/);
+    assert.match(result.stdout, /Desktop app-server launches with remote-control enabled/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("remote mobile cold-start hook preserves live standalone daemon pid files when Desktop app-server owns remote-control", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-cold-start-"));
+  try {
+    const home = path.join(tempRoot, "home");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const daemonDir = path.join(codexHome, "app-server-daemon");
+    const appDir = path.join(tempRoot, "package", "share", "codex-desktop", "app");
+    const pidFile = path.join(daemonDir, "app-server.pid");
+
+    fs.mkdirSync(home, { recursive: true });
+    fs.mkdirSync(daemonDir, { recursive: true });
+    fs.mkdirSync(appDir, { recursive: true });
+    writeDesktopAppServerRemoteControlMarker(appDir);
+    fs.writeFileSync(pidFile, JSON.stringify({ pid: process.pid, processStartTime: "fixture" }));
+
+    const result = runColdStartHook({
+      CODEX_HOME: codexHome,
+      CODEX_LINUX_APP_DIR: appDir,
+      HOME: home,
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(fs.existsSync(pidFile), true);
+    assert.doesNotMatch(result.stdout, /Removed stale remote mobile control daemon pid file/);
+    assert.match(result.stdout, /Desktop app-server launches with remote-control enabled/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("remote mobile control feature exposes opt-in main-bundle and webview patches", () => {
@@ -255,6 +496,7 @@ test("remote mobile control feature exposes opt-in main-bundle and webview patch
       "feature:remote-mobile-control:linux-remote-mobile-conversation-hydration",
       "feature:remote-mobile-control:linux-remote-control-enablement-bridge",
       "feature:remote-mobile-control:linux-remote-mobile-active-status",
+      "feature:remote-mobile-control:linux-remote-mobile-projectless-remote-task",
     ]);
     assert.deepEqual(descriptors.map((descriptor) => descriptor.phase), [
       "main-bundle",
@@ -262,6 +504,7 @@ test("remote mobile control feature exposes opt-in main-bundle and webview patch
       "main-bundle",
       "main-bundle",
       "extracted-app",
+      "webview-asset",
       "webview-asset",
       "webview-asset",
       "webview-asset",
@@ -652,6 +895,19 @@ test("Linux remote mobile conversation hydration patch upgrades local-path guard
   assert.equal(applyLinuxRemoteMobileConversationHydrationPatch(upgraded), upgraded);
 });
 
+test("Linux remote mobile projectless remote task patch groups tasks without owner repo metadata", () => {
+  const source = syntheticSidebarProjectGroupsBundle();
+  const patched = applyLinuxRemoteMobileProjectlessRemoteTaskPatch(source);
+
+  assert.notEqual(patched, source);
+  assert.match(patched, /codexLinuxRemoteMobileProjectlessRemoteTaskId/);
+  assert.match(patched, /projectId:`remote-task:\$\{codexLinuxRemoteMobileProjectlessRemoteTaskId\}`/);
+  assert.match(patched, /repositoryData:null/);
+  assert.match(patched, /threadKeys:\[\]/);
+  assert.doesNotMatch(patched, /No owner repo found for remote task/);
+  assert.equal(applyLinuxRemoteMobileProjectlessRemoteTaskPatch(patched), patched);
+});
+
 test("Linux remote mobile active-status patch treats active thread status as active without stream role", () => {
   const source = syntheticAppMainActiveStatusBundle();
   const patched = applyLinuxRemoteMobileActiveStatusPatch(source);
@@ -881,6 +1137,10 @@ test("remote mobile control feature participates in ASAR patching and reports", 
             syntheticAppMainEnablementBridgeBundle() +
             syntheticAppMainActiveStatusBundle(),
         );
+        fs.writeFileSync(
+          path.join(assetsDir, "sidebar-project-groups-test.js"),
+          syntheticSidebarProjectGroupsBundle(),
+        );
 
         const report = createPatchReport();
         patchExtractedApp(tempApp, { report });
@@ -918,6 +1178,10 @@ test("remote mobile control feature participates in ASAR patching and reports", 
           path.join(assetsDir, "app-server-manager-signals-test.js"),
           "utf8",
         );
+        const patchedSidebarProjectGroupsFile = fs.readFileSync(
+          path.join(assetsDir, "sidebar-project-groups-test.js"),
+          "utf8",
+        );
         assert.match(patchedFile, /codexLinuxRemoteControlDeviceKeyClient/);
         assert.match(patchedFile, /n\.kind===`local`&&process\.platform!==`linux`/);
         assert.match(patchedAppServerLaunchFile, /codexLinuxRemoteMobileAppServerArgs/);
@@ -935,6 +1199,7 @@ test("remote mobile control feature participates in ASAR patching and reports", 
         assert.match(patchedMobileConnectedSettingsFile, /apps on this Linux desktop/);
         assert.match(patchedSignalsFile, /codexLinuxRemoteMobileHydrateUnknownTurn/);
         assert.match(patchedSignalsFile, /codexLinuxRemoteMobileThreadRuntimeStatus/);
+        assert.match(patchedSidebarProjectGroupsFile, /codexLinuxRemoteMobileProjectlessRemoteTaskId/);
         assert.match(patchedAppMainFile, /codexLinuxRemoteControlEnablementBridge/);
         assert.match(patchedAppMainFile, /codexLinuxRemoteMobileActiveStatus/);
         assert.ok(
@@ -1018,6 +1283,12 @@ test("remote mobile control feature participates in ASAR patching and reports", 
         assert.ok(
           report.patches.some((patch) =>
             patch.name === "feature:remote-mobile-control:linux-remote-mobile-active-status" &&
+            patch.status === "applied",
+          ),
+        );
+        assert.ok(
+          report.patches.some((patch) =>
+            patch.name === "feature:remote-mobile-control:linux-remote-mobile-projectless-remote-task" &&
             patch.status === "applied",
           ),
         );
