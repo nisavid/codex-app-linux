@@ -669,7 +669,12 @@ fn deb_package_name(path: &Path) -> Result<String> {
         .output()
         .context("Failed to inspect Debian package metadata")?;
 
-    package_metadata_field(output, "dpkg-deb", "package name", path)
+    package_metadata_field(output, "dpkg-deb", "package name", path).with_context(|| {
+        format!(
+            "Failed to inspect Debian package metadata for {}",
+            path.display()
+        )
+    })
 }
 
 fn deb_package_version(path: &Path) -> Result<String> {
