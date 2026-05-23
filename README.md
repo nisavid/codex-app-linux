@@ -80,6 +80,19 @@ On hardened systems where `/tmp` is mounted `noexec`, set `TMPDIR` and
 building. See [Troubleshooting](docs/usage/troubleshooting.md) for a compact
 workaround.
 
+For an interactive preflight summary before building, run:
+
+```bash
+make setup-native
+```
+
+The guided setup helper detects the host package manager, desktop session,
+package format, updater hints, Computer Use readiness signals, and optional
+Linux feature config. It can write the git-ignored
+`linux-features/features.json` file for the next build, but it does not run the
+build, package, or install flow unless you explicitly opt in through
+`CODEX_BOOTSTRAP_INSTALL_DEPS=1` or `CODEX_BOOTSTRAP_INSTALL_NATIVE=1`.
+
 ## Highlights
 
 - **Distro-shaped native packages.** Builds `.deb`, `.rpm`, and pacman packages
@@ -109,8 +122,9 @@ workaround.
   local AT-SPI, screenshot portal or compositor support, `ydotool`, and input
   permissions.
 - **Opt-in experiments:** remote-control UI and mobile-control host patches can
-  expose upstream Linux surfaces, but account, rollout, MFA, connected-client,
-  and host-network requirements still apply.
+  expose upstream Linux surfaces; Read Aloud and conversation-mode patches add
+  local Linux experiments. Account, rollout, MFA, connected-client, audio, and
+  host-network requirements still apply.
 - **NixOS:** the flake exposes default, Computer Use UI, remote-mobile-control,
   combined, and installer outputs with pinned DMG metadata.
 - **OpenAI-gated:** installing this fork cannot bypass server-side feature flags
@@ -199,11 +213,12 @@ override shape; checkout builds ignore that persistent user file and use
 See [`linux-features/README.md`](linux-features/README.md) for the feature
 contract.
 
-The `remote-control-ui` and `remote-mobile-control` feature modules are
-experimental opt-ins for upstream remote-control surfaces on Linux. Treat them
-as UI/runtime integration patches, not as an account-policy bypass: OpenAI
-rollouts, MFA state, connected-client state, and host network exposure still
-come from upstream services and your local environment.
+The `remote-control-ui`, `remote-mobile-control`, `read-aloud`,
+`read-aloud-mcp`, and `conversation-mode` feature modules are experimental
+opt-ins for upstream Linux surfaces and local Linux runtime helpers. Treat them
+as UI/runtime integration patches, not as account-policy bypasses: OpenAI
+rollouts, MFA state, connected-client state, audio availability, and host
+network exposure still come from upstream services and your local environment.
 
 ## Native Package Details
 
@@ -336,6 +351,27 @@ nix run github:nisavid/codex-app-linux#codex-app-computer-use-ui-remote-mobile-c
 nix run github:nisavid/codex-app-linux#installer
 ```
 
+For a declarative NixOS or Home Manager install with the mobile remote-control
+app-server managed by systemd, import the flake module:
+
+```nix
+{
+  imports = [
+    inputs.codex-app-linux.homeManagerModules.default
+  ];
+
+  programs.codexAppLinux = {
+    enable = true;
+    computerUseUi.enable = true;
+    remoteMobileControl.enable = true;
+    remoteControl.enable = true;
+  };
+}
+```
+
+`nixosModules.default` is also available for system-level configurations that
+prefer a global user unit.
+
 If `nix run` reports a DMG metadata mismatch, the upstream DMG was likely
 republished after the pinned metadata changed. A scheduled GitHub Actions job
 refreshes that metadata and verifies the Nix package outputs on `main`. Retry
@@ -345,8 +381,9 @@ after the bot has had time to run; if it still fails, open an issue.
 
 Linux Computer Use support is packaged from upstream's Rust MCP backend. The
 backend can inspect apps through AT-SPI, capture screenshots through XDG Desktop
-Portal or compositor paths, and synthesize input through `ydotool` when the host
-is configured for it.
+Portal or compositor paths, and synthesize input through a uinput absolute
+pointer, XDG Desktop Portal RemoteDesktop sessions, or `ydotool` when the host
+is configured for them.
 
 Runtime readiness depends on the host. Input synthesis usually requires
 `ydotool`/`ydotoold`, `/dev/uinput` access, and a socket usable by your desktop

@@ -92,6 +92,12 @@ SCRIPT
     local updater_post=""
     local updater_preun=""
     local updater_postun=""
+    local desktop_doctor_post=""
+    desktop_doctor_post="DESKTOP_ENTRY_DOCTOR=/opt/$PACKAGE_NAME/.codex-linux/codex-app-desktop-entry-doctor.sh
+if [ -f \"\$DESKTOP_ENTRY_DOCTOR\" ]; then
+    . \"\$DESKTOP_ENTRY_DOCTOR\"
+    codex_app_repair_system_package_shadow_entries $PACKAGE_NAME || true
+fi"
     if package_with_updater_enabled; then
         updater_requires="Requires:       /usr/bin/7z, polkit, curl, unzip, gcc-c++, make"
         updater_description="Local auto-updates rebuild a Linux package from the upstream Codex.dmg and therefore
@@ -103,7 +109,8 @@ use the bundled managed Node.js runtime plus the local packaging toolchain liste
 if [ -f \"\$SERVICE_HELPER\" ]; then
     . \"\$SERVICE_HELPER\"
     codex_ensure_user_service_running || true
-fi"
+fi
+$desktop_doctor_post"
         updater_preun="SERVICE_HELPER=/usr/lib/$PACKAGE_NAME/update-builder/packaging/linux/codex-app-updater-user-service.sh
 [ -f \"\$SERVICE_HELPER\" ] && . \"\$SERVICE_HELPER\"
 if [ \$1 -eq 0 ] && [ -f \"\$SERVICE_HELPER\" ]; then
@@ -121,7 +128,8 @@ fi"
 if [ -f \"\$CLEANUP_HELPER\" ]; then
     . \"\$CLEANUP_HELPER\"
     codex_no_updater_cleanup_update_manager_service || true
-fi"
+fi
+$desktop_doctor_post"
         updater_preun="$updater_post"
     fi
     AWK_PACKAGE_NAME="$PACKAGE_NAME" \

@@ -5,6 +5,8 @@ mod app;
 #[cfg(unix)]
 mod builder;
 #[cfg(unix)]
+mod cache_cleanup;
+#[cfg(unix)]
 mod cli;
 #[cfg(unix)]
 mod codex_cli;

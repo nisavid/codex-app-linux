@@ -608,6 +608,7 @@ stage_chrome_plugin_from_upstream() {
     cp -R "$source_plugin" "$target_plugin"
     remove_macos_sidecar_files "$target_plugin"
     patch_chrome_plugin_for_linux "$target_plugin"
+    patch_browser_use_node_repl_env_guard "$target_plugin/scripts/browser-client.mjs"
     patch_browser_use_site_status_allowlist_fallback "$target_plugin/scripts/browser-client.mjs"
     if ! install_chrome_extension_host_resource "$target_plugin"; then
         rm -rf "$target_plugin"
@@ -669,34 +670,124 @@ path.write_text(source[:match.start()] + replacement + source[match.end():], enc
 PY
 }
 
-stage_browser_use_plugin_from_upstream() {
+patch_browser_use_node_repl_env_guard() {
+    local client="$1"
+
+    if grep -Fq 'globalThis.nodeRepl?.env?.[e]' "$client"; then
+        return 0
+    fi
+
+    python3 - "$client" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text(encoding="utf-8")
+old = 'function lu(e){let t=globalThis.nodeRepl?.env[e];return typeof t=="string"?t:void 0}'
+new = 'function lu(e){let t=globalThis.nodeRepl?.env?.[e];return typeof t=="string"?t:void 0}'
+if old not in source:
+    print(
+        "WARN: Could not find Browser Use nodeRepl env guard insertion point — leaving browser-client.mjs unchanged",
+        file=sys.stderr,
+    )
+    raise SystemExit(0)
+
+path.write_text(source.replace(old, new, 1), encoding="utf-8")
+PY
+}
+
+find_browser_plugin_source() {
+    local bundled_root="$1"
+    local source_marketplace="$2"
+
+    node - "$bundled_root" "$source_marketplace" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+
+const bundledRoot = process.argv[2];
+const marketplacePath = process.argv[3];
+const candidates = [];
+
+function pushBundledCandidate(root, localPath) {
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(resolvedRoot, localPath);
+  const relative = path.relative(resolvedRoot, resolved);
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+    candidates.push(resolved);
+  }
+}
+
+try {
+  const marketplace = JSON.parse(fs.readFileSync(marketplacePath, "utf8"));
+  const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
+  const plugin = plugins.find((entry) => entry && entry.name === "browser");
+  const source = plugin && plugin.source;
+  if (
+    source &&
+    source.source === "local" &&
+    typeof source.path === "string" &&
+    source.path.length > 0
+  ) {
+    pushBundledCandidate(bundledRoot, source.path);
+  }
+} catch (_err) {
+  // Fall back to the known upstream directory name below.
+}
+
+candidates.push(path.join(bundledRoot, "plugins", "browser"));
+
+const seen = new Set();
+for (const candidate of candidates) {
+  const normalized = path.normalize(candidate);
+  if (seen.has(normalized)) {
+    continue;
+  }
+  seen.add(normalized);
+
+  if (
+    fs.existsSync(path.join(normalized, ".codex-plugin", "plugin.json")) &&
+    fs.existsSync(path.join(normalized, "scripts", "browser-client.mjs"))
+  ) {
+    console.log(normalized);
+    process.exit(0);
+  }
+}
+
+process.exit(1);
+NODE
+}
+
+stage_browser_plugin_from_upstream() {
     local source_plugin="$1"
     local target_plugins="$2"
-    local target_plugin="$target_plugins/browser-use"
+    local target_name
+    target_name="$(basename "$source_plugin")"
+    local target_plugin="$target_plugins/$target_name"
     local source_client="$source_plugin/scripts/browser-client.mjs"
     local target_client="$target_plugin/scripts/browser-client.mjs"
 
     if [ ! -d "$source_plugin" ]; then
-        info "Browser Use bundled plugin resources not present in upstream app; skipping Browser Use"
+        info "Browser bundled plugin resources not present in upstream app; skipping Browser"
         return 1
     fi
 
     if [ ! -f "$source_plugin/.codex-plugin/plugin.json" ]; then
-        warn "Browser Use plugin manifest not found in upstream app; skipping Browser Use"
+        warn "Browser plugin manifest not found in upstream app; skipping Browser"
         return 1
     fi
 
     if [ ! -f "$source_client" ]; then
-        warn "Browser Use browser-client.mjs not found in upstream app; skipping Browser Use"
+        warn "Browser browser-client.mjs not found in upstream app; skipping Browser"
         return 1
     fi
 
     rm -rf "$target_plugin"
     cp -R "$source_plugin" "$target_plugin"
     remove_macos_sidecar_files "$target_plugin"
+    patch_browser_use_node_repl_env_guard "$target_client"
     patch_browser_use_site_status_allowlist_fallback "$target_client"
 
-    info "Browser Use plugin staged from upstream DMG"
+    info "Browser plugin staged from upstream DMG"
     return 0
 }
 
@@ -721,11 +812,71 @@ const sourcePlugins = marketplace.plugins || [];
 const plugins = [];
 
 if (includeBrowser) {
-  const browserUse = sourcePlugins.find((plugin) => plugin.name === "browser-use");
-  if (browserUse == null) {
-    throw new Error("Bundled marketplace does not contain browser-use plugin");
+  const marketplaceRoot = path.resolve(path.dirname(destinationPath), "..", "..");
+  function stagedLocalManifest(localPath) {
+    const resolved = path.resolve(marketplaceRoot, localPath);
+    const relative = path.relative(marketplaceRoot, resolved);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      return null;
+    }
+    return path.join(resolved, ".codex-plugin", "plugin.json");
   }
-  plugins.push(browserUse);
+  const browser = sourcePlugins.find((plugin) => {
+    if (plugin == null || typeof plugin !== "object") {
+      return false;
+    }
+    if (plugin.name !== "browser") {
+      return false;
+    }
+    const source = plugin.source || {};
+    if (source.source !== "local" || typeof source.path !== "string") {
+      return true;
+    }
+    const stagedManifest = stagedLocalManifest(source.path);
+    return stagedManifest != null && fs.existsSync(stagedManifest);
+  });
+  if (browser == null) {
+    let fallback = null;
+    const stagedManifestPath = path.join(
+      marketplaceRoot,
+      "plugins",
+      "browser",
+      ".codex-plugin",
+      "plugin.json",
+    );
+    try {
+      const manifest = JSON.parse(fs.readFileSync(stagedManifestPath, "utf8"));
+      const name =
+        typeof manifest.name === "string" && manifest.name.length > 0 ? manifest.name : "browser";
+      const category =
+        manifest &&
+        manifest.interface &&
+        typeof manifest.interface.category === "string" &&
+        manifest.interface.category.length > 0
+          ? manifest.interface.category
+          : "Engineering";
+      fallback = {
+        name,
+        source: {
+          source: "local",
+          path: "./plugins/browser",
+        },
+        policy: {
+          installation: "AVAILABLE",
+          authentication: "ON_INSTALL",
+        },
+        category,
+      };
+    } catch (_err) {
+      // Fall through to the explicit error below.
+    }
+    if (fallback == null) {
+      throw new Error("Bundled marketplace does not contain browser plugin");
+    }
+    plugins.push(fallback);
+  } else {
+    plugins.push(browser);
+  }
 }
 
 if (includeChrome) {
@@ -798,8 +949,9 @@ NODE
 install_bundled_plugin_resources() {
     local app_dir="$1"
     local upstream_resources="$app_dir/Contents/Resources"
-    local source_marketplace="$upstream_resources/plugins/openai-bundled/.agents/plugins/marketplace.json"
-    local source_browser_plugin="$upstream_resources/plugins/openai-bundled/plugins/browser-use"
+    local bundled_source_root="$upstream_resources/plugins/openai-bundled"
+    local source_marketplace="$bundled_source_root/.agents/plugins/marketplace.json"
+    local source_browser_plugin=""
     local source_chrome_plugin="$upstream_resources/plugins/openai-bundled/plugins/chrome"
     local resources_dir="$INSTALL_DIR/resources"
     local bundled_plugins_dir="$resources_dir/plugins/openai-bundled"
@@ -814,8 +966,11 @@ install_bundled_plugin_resources() {
 
     mkdir -p "$bundled_plugins_dir/plugins" "$bundled_plugins_dir/.agents/plugins"
 
-    if stage_browser_use_plugin_from_upstream "$source_browser_plugin" "$bundled_plugins_dir/plugins"; then
+    if source_browser_plugin="$(find_browser_plugin_source "$bundled_source_root" "$source_marketplace")" &&
+        stage_browser_plugin_from_upstream "$source_browser_plugin" "$bundled_plugins_dir/plugins"; then
         include_browser=1
+    else
+        info "Browser bundled plugin resources not present in upstream app; skipping Browser"
     fi
 
     if stage_chrome_plugin_from_upstream "$source_chrome_plugin" "$bundled_plugins_dir/plugins"; then

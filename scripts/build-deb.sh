@@ -102,7 +102,10 @@ main() {
     ' "$CONTROL_TEMPLATE" > "$PKG_ROOT/DEBIAN/control"
     chmod 0644 "$PKG_ROOT/DEBIAN/control"
     if package_with_updater_enabled; then
+        local package_name_escaped
+        package_name_escaped="$(sed_escape_replacement "$PACKAGE_NAME")"
         sed \
+            -e "s|__PACKAGE_NAME__|$package_name_escaped|g" \
             -e "s|/opt/codex-app|/opt/$PACKAGE_NAME|g" \
             -e "s|/usr/lib/codex-app|/usr/lib/$PACKAGE_NAME|g" \
             "$POSTINST_TEMPLATE" > "$PKG_ROOT/DEBIAN/postinst"

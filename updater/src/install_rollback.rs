@@ -136,7 +136,7 @@ fn apt_command(path: &Path) -> Result<Command> {
 
 fn dpkg_command(path: &Path) -> Command {
     let mut command = Command::new(program_path(DPKG_CANDIDATES, "dpkg"));
-    command.arg("-i").arg(path.as_os_str());
+    command.arg("-i").arg("--").arg(path.as_os_str());
     command
 }
 
@@ -163,13 +163,17 @@ fn zypper_command(path: &Path) -> Result<Command> {
 
 fn rpm_command(path: &Path) -> Command {
     let mut command = Command::new(program_path(RPM_CANDIDATES, "rpm"));
-    command.args(["-Uvh", "--oldpackage"]).arg(path.as_os_str());
+    command
+        .args(["-Uvh", "--oldpackage", "--"])
+        .arg(path.as_os_str());
     command
 }
 
 fn pacman_command(path: &Path) -> Command {
     let mut command = Command::new(program_path(PACMAN_CANDIDATES, "pacman"));
-    command.args(["-U", "--noconfirm"]).arg(path.as_os_str());
+    command
+        .args(["-U", "--noconfirm", "--"])
+        .arg(path.as_os_str());
     command
 }
 
@@ -418,6 +422,29 @@ mod tests {
             ]
         );
         Ok(())
+    }
+
+    #[test]
+    fn direct_rollback_commands_stop_option_parsing() {
+        assert_eq!(
+            command_args(dpkg_command(Path::new("-evil.deb"))),
+            vec!["-i", "--", "-evil.deb"]
+        );
+        assert_eq!(
+            command_args(rpm_command(Path::new("-evil.rpm"))),
+            vec!["-Uvh", "--oldpackage", "--", "-evil.rpm"]
+        );
+        assert_eq!(
+            command_args(pacman_command(Path::new("-evil.pkg.tar.zst"))),
+            vec!["-U", "--noconfirm", "--", "-evil.pkg.tar.zst"]
+        );
+    }
+
+    fn command_args(command: Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect()
     }
 
     #[test]

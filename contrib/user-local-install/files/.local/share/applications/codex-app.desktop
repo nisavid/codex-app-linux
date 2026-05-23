@@ -12,3 +12,8 @@ Keywords=codex;openai;ai;coding;
 StartupNotify=true
 StartupWMClass=codex-app
 Icon=codex-app
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=@USER_BIN_DIR@/codex-app --new-instance

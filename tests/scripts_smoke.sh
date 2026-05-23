@@ -74,21 +74,62 @@ assert_occurrence_count() {
     [ "$actual" = "$expected" ] || fail "Expected '$pattern' to appear $expected times in $path, found $actual"
 }
 
-make_fake_browser_use_upstream_app() {
+assert_json_enabled_equals() {
+    local path="$1"
+    local expected_json="$2"
+    node - "$path" "$expected_json" <<'NODE' || fail "Expected $path enabled list to equal $expected_json"
+const fs = require("node:fs");
+const path = process.argv[2];
+const expected = JSON.parse(process.argv[3]);
+const actual = JSON.parse(fs.readFileSync(path, "utf8")).enabled;
+if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+  console.error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  process.exit(1);
+}
+NODE
+}
+
+make_wizard_feature_root() {
+    local features_root="$1"
+    mkdir -p \
+        "$features_root/conversation-mode" \
+        "$features_root/example-feature" \
+        "$features_root/read-aloud" \
+        "$features_root/read-aloud-mcp" \
+        "$features_root/remote-mobile-control"
+    printf '%s\n' '{"enabled":[]}' > "$features_root/features.example.json"
+    cat > "$features_root/conversation-mode/feature.json" <<'JSON'
+{"id":"conversation-mode","name":"Conversation mode","description":"Voice conversation loop."}
+JSON
+    cat > "$features_root/example-feature/feature.json" <<'JSON'
+{"id":"example-feature","title":"Example Linux Feature","description":"Developer sample."}
+JSON
+    cat > "$features_root/read-aloud/feature.json" <<'JSON'
+{"id":"read-aloud","name":"Read aloud","description":"Read assistant responses aloud."}
+JSON
+    cat > "$features_root/read-aloud-mcp/feature.json" <<'JSON'
+{"id":"read-aloud-mcp","title":"Read Aloud MCP","description":"Read Aloud MCP plugin staging."}
+JSON
+    cat > "$features_root/remote-mobile-control/feature.json" <<'JSON'
+{"id":"remote-mobile-control","title":"Experimental Remote Mobile Control","description":"Mobile host enrollment patches."}
+JSON
+}
+
+make_fake_browser_upstream_app() {
     local app_dir="$1"
     local resources_dir="$app_dir/Contents/Resources"
     mkdir -p \
         "$resources_dir/plugins/openai-bundled/.agents/plugins" \
-        "$resources_dir/plugins/openai-bundled/plugins/browser-use/.codex-plugin" \
-        "$resources_dir/plugins/openai-bundled/plugins/browser-use/scripts"
+        "$resources_dir/plugins/openai-bundled/plugins/browser/.codex-plugin" \
+        "$resources_dir/plugins/openai-bundled/plugins/browser/scripts"
     cat > "$resources_dir/plugins/openai-bundled/.agents/plugins/marketplace.json" <<'JSON'
-{"plugins":[{"name":"browser-use","source":{"source":"local","path":"./plugins/browser-use"},"policy":{"installation":"AVAILABLE"}}]}
+{"plugins":[{"name":"browser","source":{"source":"local","path":"./plugins/browser"},"policy":{"installation":"AVAILABLE","authentication":"ON_INSTALL"},"category":"Engineering"}]}
 JSON
-    cat > "$resources_dir/plugins/openai-bundled/plugins/browser-use/.codex-plugin/plugin.json" <<'JSON'
-{"name":"browser-use","version":"0.1.0-alpha1"}
+    cat > "$resources_dir/plugins/openai-bundled/plugins/browser/.codex-plugin/plugin.json" <<'JSON'
+{"name":"browser","version":"0.1.0-alpha2","interface":{"category":"Engineering"}}
 JSON
-    cat > "$resources_dir/plugins/openai-bundled/plugins/browser-use/scripts/browser-client.mjs" <<'JS'
-class Uf{async fetchBlocked(e){let r=await bS(e.endpoint,{method:"GET"});if(!r.ok)throw new Error(ae(`Browser Use cannot determine if ${e.displayUrl} is allowed. Please try again later or use another source.`));let n=await r.json();return TF(n)}}export function setupAtlasRuntime() {}
+    cat > "$resources_dir/plugins/openai-bundled/plugins/browser/scripts/browser-client.mjs" <<'JS'
+function lu(e){let t=globalThis.nodeRepl?.env[e];return typeof t=="string"?t:void 0}class Uf{async fetchBlocked(e){let r=await bS(e.endpoint,{method:"GET"});if(!r.ok)throw new Error(ae(`Browser Use cannot determine if ${e.displayUrl} is allowed. Please try again later or use another source.`));let n=await r.json();return TF(n)}}export function setupAtlasRuntime() {}
 JS
 }
 
@@ -201,6 +242,9 @@ SCRIPT
     assert_file_exists "$dist_dir/codex-app_2026.03.24.120000+deadbeef_amd64.deb"
     assert_contains "$pkg_root/DEBIAN/control" "build-essential, curl, dpkg, p7zip-full"
     assert_file_exists "$pkg_root/DEBIAN/prerm"
+    assert_contains "$pkg_root/usr/share/applications/codex-app.desktop" "Name=New Window"
+    assert_contains "$pkg_root/usr/share/applications/codex-app.desktop" "Name=Check for Updates"
+    assert_contains "$pkg_root/usr/share/applications/codex-app.desktop" "Name=Install Ready Update"
     assert_file_exists "$pkg_root/DEBIAN/postrm"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/package-common.sh"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/patch-chrome-plugin.js"
@@ -324,7 +368,8 @@ SCRIPT
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "CHROME_DESKTOP=codex-cua-lab.desktop"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "/usr/bin/codex-cua-lab %u"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
-    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Actions=CheckForUpdates;InstallReadyUpdate;"
+    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Actions=new-window;CheckForUpdates;InstallReadyUpdate;"
+    assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "CODEX_MULTI_LAUNCH=1 /usr/bin/codex-cua-lab --new-instance"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Exec=/usr/bin/codex-app-updater check-now"
     assert_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "Exec=/usr/bin/codex-app-updater install-ready"
     assert_not_contains "$pkg_root/usr/share/applications/codex-cua-lab.desktop" "codex-cua-lab-updater"
@@ -392,6 +437,7 @@ SCRIPT
     assert_file_exists "$pkg_root/usr/lib/codex-app/no-updater-transition-cleanup.sh"
     assert_contains "$pkg_root/usr/lib/codex-app/no-updater-transition-cleanup.sh" "codex_no_updater_cleanup_user_enablement_links"
     assert_contains "$pkg_root/DEBIAN/postinst" "codex_no_updater_cleanup_update_manager_service"
+    assert_contains "$pkg_root/DEBIAN/postinst" "codex_app_repair_system_package_shadow_entries"
     assert_contains "$pkg_root/DEBIAN/prerm" "codex_no_updater_cleanup_update_manager_service"
     assert_contains "$pkg_root/DEBIAN/postrm" "codex_no_updater_cleanup_update_manager_service"
     assert_contains "$pkg_root/DEBIAN/postrm" "update-desktop-database"
@@ -793,6 +839,7 @@ test_native_shortcut_targets_compose_existing_flows() {
     local install_log="$TMP_DIR/make-install-native.log"
     local bootstrap_log="$TMP_DIR/make-bootstrap-native.log"
     local update_log="$TMP_DIR/make-update-native.log"
+    local setup_log="$TMP_DIR/make-setup-native.log"
 
     make -n -C "$REPO_DIR" install-native >"$install_log"
     assert_contains "$install_log" './install.sh --fresh'
@@ -803,10 +850,537 @@ test_native_shortcut_targets_compose_existing_flows() {
     assert_contains "$bootstrap_log" 'bash scripts/install-deps.sh'
     assert_contains "$bootstrap_log" 'PATH="$HOME/.cargo/bin:$PATH"'
     assert_contains "$bootstrap_log" 'install-native'
+    assert_not_contains "$bootstrap_log" 'bootstrap-wizard.sh'
 
     make -n -C "$REPO_DIR" update-native >"$update_log"
     assert_contains "$update_log" 'git pull --ff-only'
     assert_contains "$update_log" 'install-native'
+
+    make -n -C "$REPO_DIR" setup-native >"$setup_log"
+    assert_contains "$setup_log" 'bash scripts/bootstrap-wizard.sh'
+}
+
+test_setup_native_wizard_noninteractive_feature_writer() {
+    info "Checking setup-native wizard non-interactive feature writer"
+    local workspace="$TMP_DIR/setup-native-writer"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+
+    make_wizard_feature_root "$features_root"
+    cat > "$config" <<'JSON'
+{"enabled":["conversation-mode"]}
+JSON
+
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_LINUX_FEATURES="remote-mobile-control,read-aloud" \
+    CODEX_LINUX_DISABLE_FEATURES="conversation-mode" \
+    PACKAGE_WITH_UPDATER=0 \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
+
+    assert_json_enabled_equals "$config" '["remote-mobile-control","read-aloud"]'
+    assert_contains "$output_log" "remote-mobile-control"
+    assert_contains "$output_log" "read-aloud"
+    assert_contains "$output_log" "Manual-update native package mode selected"
+    assert_contains "$output_log" "PACKAGE_WITH_UPDATER=0 make install-native"
+    assert_contains "$output_log" "Feature changes apply after rebuilding and reinstalling"
+}
+
+test_setup_native_wizard_rejects_invalid_feature_ids() {
+    info "Checking setup-native wizard invalid feature validation"
+    local workspace="$TMP_DIR/setup-native-invalid-feature"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":[]}' > "$config"
+
+    if CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+        CODEX_LINUX_FEATURES_ROOT="$features_root" \
+        CODEX_LINUX_FEATURES_CONFIG="$config" \
+        CODEX_LINUX_FEATURES="missing-feature" \
+            bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log" 2>&1; then
+        fail "setup wizard should reject unknown feature ids"
+    fi
+
+    assert_contains "$output_log" "Unknown Linux feature id: missing-feature"
+    assert_json_enabled_equals "$config" '[]'
+}
+
+test_setup_native_wizard_rejects_conflicting_feature_ids() {
+    info "Checking setup-native wizard conflicting feature validation"
+    local workspace="$TMP_DIR/setup-native-conflicting-feature"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":[]}' > "$config"
+
+    if CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+        CODEX_LINUX_FEATURES_ROOT="$features_root" \
+        CODEX_LINUX_FEATURES_CONFIG="$config" \
+        CODEX_LINUX_FEATURES="read-aloud" \
+        CODEX_LINUX_DISABLE_FEATURES="read-aloud" \
+            bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log" 2>&1; then
+        fail "setup wizard should reject conflicting feature ids"
+    fi
+
+    assert_contains "$output_log" "Linux feature ids cannot be both enabled and disabled: read-aloud"
+    assert_json_enabled_equals "$config" '[]'
+}
+
+test_setup_native_wizard_disable_is_non_destructive() {
+    info "Checking setup-native wizard opt-out guidance is non-destructive"
+    local workspace="$TMP_DIR/setup-native-disable-safe"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+    local fake_home="$workspace/home"
+    local key_file="$fake_home/.config/codex-app/remote-control-device-keys-v1.json"
+    local model_file="$fake_home/.local/share/codex-app/read-aloud/kokoro-venv/bin/python"
+    local plugin_cache="$fake_home/.codex/plugins/cache/openai-bundled/read-aloud"
+
+    make_wizard_feature_root "$features_root"
+    cat > "$config" <<'JSON'
+{"enabled":["remote-mobile-control","read-aloud","read-aloud-mcp"]}
+JSON
+    mkdir -p "$(dirname "$key_file")" "$(dirname "$model_file")" "$plugin_cache"
+    printf '%s\n' '{"deviceKeys":[]}' > "$key_file"
+    printf '%s\n' '#!/usr/bin/env python3' > "$model_file"
+    printf '%s\n' 'cache marker' > "$plugin_cache/marker"
+
+    HOME="$fake_home" \
+    XDG_CONFIG_HOME="$fake_home/.config" \
+    XDG_DATA_HOME="$fake_home/.local/share" \
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_LINUX_DISABLE_FEATURES="remote-mobile-control,read-aloud,read-aloud-mcp" \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
+
+    assert_json_enabled_equals "$config" '[]'
+    assert_file_exists "$key_file"
+    assert_file_exists "$model_file"
+    assert_file_exists "$plugin_cache/marker"
+    assert_contains "$output_log" "Not deleting $key_file"
+    assert_contains "$output_log" "Not removing Read Aloud model files, Python runtimes, or plugin caches"
+    assert_contains "$output_log" "$fake_home/.local/share/codex-app/read-aloud"
+    assert_contains "$output_log" "$plugin_cache"
+}
+
+test_setup_native_wizard_summary_keeps_existing_config() {
+    info "Checking setup-native wizard read-only summary keeps existing feature config"
+    local workspace="$TMP_DIR/setup-native-summary"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+
+    make_wizard_feature_root "$features_root"
+    cat > "$config" <<'JSON'
+{"enabled":["remote-mobile-control"]}
+JSON
+
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
+
+    assert_json_enabled_equals "$config" '["remote-mobile-control"]'
+    assert_contains "$output_log" "Enabled Linux features: remote-mobile-control"
+    assert_contains "$output_log" "Default native package mode includes codex-app-updater"
+    assert_contains "$output_log" "make install-native"
+}
+
+test_setup_native_wizard_uses_package_name_for_installed_state() {
+    info "Checking setup-native wizard package-name-aware installed state"
+    local workspace="$TMP_DIR/setup-native-package-name"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+    local bin_dir="$workspace/bin"
+    local dpkg_args="$workspace/dpkg-query.args"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":[]}' > "$config"
+    mkdir -p "$bin_dir"
+    cat > "$bin_dir/dpkg-query" <<SCRIPT
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$dpkg_args"
+if [[ "\$*" != *codex-cua-lab* ]]; then
+    exit 1
+fi
+case "\$*" in
+    *"deb "*)
+        printf 'deb 1.2.3'
+        exit 0
+        ;;
+    *)
+        printf '1.2.3'
+        exit 0
+        ;;
+esac
+SCRIPT
+    chmod +x "$bin_dir/dpkg-query"
+
+    PATH="$bin_dir:$PATH" \
+    PACKAGE_NAME="codex-cua-lab" \
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
+
+    assert_contains "$output_log" "Installed package: deb 1.2.3"
+    assert_contains "$output_log" "ydotoold.service(system)="
+    assert_contains "$output_log" "ydotoold.service(user)="
+    assert_contains "$dpkg_args" "codex-cua-lab"
+    assert_not_contains "$dpkg_args" "codex-desktop"
+}
+
+test_setup_native_wizard_portal_summary_survives_busctl_sigpipe() {
+    info "Checking setup-native wizard portal summary avoids pipefail SIGPIPE false negatives"
+    local workspace="$TMP_DIR/setup-native-portal-sigpipe"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+    local bin_dir="$workspace/bin"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":[]}' > "$config"
+    mkdir -p "$bin_dir"
+    cat > "$bin_dir/pgrep" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 1
+SCRIPT
+    cat > "$bin_dir/busctl" <<'SCRIPT'
+#!/usr/bin/env bash
+if [ "${1:-}" = "--user" ] && [ "${2:-}" = "--list" ]; then
+    printf '%s\n' 'org.freedesktop.portal.Desktop 1234 xdg-desktop-portal'
+    exit 141
+fi
+exit 1
+SCRIPT
+    chmod +x "$bin_dir/pgrep" "$bin_dir/busctl"
+
+    PATH="$bin_dir:$PATH" \
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log" 2>&1
+
+    assert_contains "$output_log" "portal=available on session bus"
+}
+
+test_setup_native_wizard_warns_when_conversation_mode_lacks_read_aloud() {
+    info "Checking setup-native wizard warns about conversation-mode without Read Aloud"
+    local workspace="$TMP_DIR/setup-native-conversation-warning"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":["conversation-mode"]}' > "$config"
+
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log" 2>&1
+
+    assert_contains "$output_log" "conversation-mode is enabled without read-aloud"
+}
+
+test_setup_native_wizard_dry_runs_deps_and_install_native() {
+    info "Checking setup-native wizard dry-run dependency and native install orchestration"
+    local workspace="$TMP_DIR/setup-native-dry-run-install"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":[]}' > "$config"
+
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_BOOTSTRAP_DRY_RUN=1 \
+    CODEX_BOOTSTRAP_INSTALL_DEPS=1 \
+    CODEX_BOOTSTRAP_INSTALL_NATIVE=1 \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    PACKAGE_WITH_UPDATER=0 \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
+
+    assert_contains "$output_log" "Would run: bash scripts/install-deps.sh"
+    assert_contains "$output_log" 'Would run: PATH="$HOME/.cargo/bin:$PATH" PACKAGE_WITH_UPDATER=0 make install-native'
+    assert_contains "$output_log" "Dry-run mode: no dependency install or native package install command was executed."
+}
+
+test_setup_native_wizard_prints_deep_readiness_guidance() {
+    info "Checking setup-native wizard detailed Computer Use and Read Aloud readiness"
+    local workspace="$TMP_DIR/setup-native-readiness"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+    local fake_home="$workspace/home"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":["read-aloud","read-aloud-mcp"]}' > "$config"
+    mkdir -p "$fake_home/.config/codex-app" "$fake_home/.local/share/codex-app/read-aloud"
+
+    HOME="$fake_home" \
+    XDG_CONFIG_HOME="$fake_home/.config" \
+    XDG_DATA_HOME="$fake_home/.local/share" \
+    XDG_CURRENT_DESKTOP=KDE \
+    DESKTOP_SESSION=plasma \
+    XDG_SESSION_DESKTOP=plasma \
+    XDG_SESSION_TYPE=wayland \
+    CODEX_LINUX_SETTINGS_FILE="$fake_home/.config/codex-app/settings.json" \
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
+
+    assert_contains "$output_log" "Computer Use details:"
+    assert_contains "$output_log" "uinput="
+    assert_contains "$output_log" "current user in input group="
+    assert_contains "$output_log" "Window backend hint: KDE/Plasma -> KWin"
+    assert_contains "$output_log" "Suggested ydotool command:"
+    assert_contains "$output_log" "Suggested portal package:"
+    assert_contains "$output_log" "Read Aloud readiness:"
+    assert_contains "$output_log" "Kokoro python:"
+    assert_contains "$output_log" "Read Aloud plugin cache:"
+}
+
+test_setup_native_wizard_uinput_stat_is_bounded() {
+    info "Checking setup-native wizard bounds slow uinput metadata reads"
+    local workspace="$TMP_DIR/setup-native-uinput-stat"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+    local bin_dir="$workspace/bin"
+    local fake_uinput="$workspace/uinput"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":[]}' > "$config"
+    mkdir -p "$bin_dir"
+    printf '%s\n' 'fake uinput' > "$fake_uinput"
+    cat > "$bin_dir/stat" <<'SCRIPT'
+#!/usr/bin/env bash
+sleep 5
+printf '%s\n' 'unexpected stat output'
+SCRIPT
+    chmod +x "$bin_dir/stat"
+
+    PATH="$bin_dir:$PATH" \
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_BOOTSTRAP_UINPUT_PATH="$fake_uinput" \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+        timeout 3 bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
+
+    assert_contains "$output_log" "uinput=read/write access"
+    assert_not_contains "$output_log" "unexpected stat output"
+}
+
+test_setup_native_wizard_read_aloud_paths_match_runtime_defaults() {
+    info "Checking setup-native wizard Read Aloud default paths and Linux app id"
+    local workspace="$TMP_DIR/setup-native-read-aloud-defaults"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+    local fake_home="$workspace/home"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":["read-aloud"]}' > "$config"
+    mkdir -p "$fake_home/.config/codex-cua-lab" "$fake_home/.local/share/kokoro"
+    printf '%s\n' '{"codex-linux-read-aloud-kokoro-python":"/custom/python"}' > "$fake_home/.config/codex-cua-lab/settings.json"
+    printf '%s\n' 'model marker' > "$fake_home/.local/share/kokoro/kokoro-v1.0.onnx"
+    printf '%s\n' 'voices marker' > "$fake_home/.local/share/kokoro/voices-v1.0.bin"
+
+    HOME="$fake_home" \
+    XDG_CONFIG_HOME="$fake_home/.config" \
+    XDG_DATA_HOME="$fake_home/.local/share" \
+    CODEX_LINUX_APP_ID="codex-cua-lab" \
+    CODEX_APP_ID="codex-desktop" \
+    CODEX_LINUX_SETTINGS_FILE="$fake_home/.config/codex-cua-lab/settings.json" \
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
+
+    assert_contains "$output_log" "Settings file: $fake_home/.config/codex-cua-lab/settings.json (file)"
+    assert_contains "$output_log" "Kokoro python: /custom/python (missing)"
+    assert_contains "$output_log" "Kokoro model: $fake_home/.local/share/kokoro/kokoro-v1.0.onnx (file)"
+    assert_contains "$output_log" "Kokoro voices: $fake_home/.local/share/kokoro/voices-v1.0.bin (file)"
+    assert_not_contains "$output_log" "$fake_home/.local/share/codex-app/read-aloud/kokoro/kokoro-v1.0.onnx"
+}
+
+test_setup_native_wizard_sway_hint_is_conservative() {
+    info "Checking setup-native wizard Sway backend hint stays conservative"
+    local workspace="$TMP_DIR/setup-native-sway-hint"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":[]}' > "$config"
+
+    XDG_CURRENT_DESKTOP=sway \
+    DESKTOP_SESSION=sway \
+    XDG_SESSION_DESKTOP=sway \
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
+
+    assert_contains "$output_log" "Sway -> not explicitly supported by the current i3 backend"
+    assert_not_contains "$output_log" "Sway -> i3 IPC backend through swaymsg"
+}
+
+test_setup_native_wizard_cleanup_requires_interactive_confirmation() {
+    info "Checking setup-native wizard cleanup refuses non-interactive deletion"
+    local workspace="$TMP_DIR/setup-native-cleanup-noninteractive"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+    local fake_home="$workspace/home"
+    local key_file="$fake_home/.config/codex-app/remote-control-device-keys-v1.json"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":["remote-mobile-control"]}' > "$config"
+    mkdir -p "$(dirname "$key_file")"
+    printf '%s\n' '{"deviceKeys":[]}' > "$key_file"
+
+    if HOME="$fake_home" \
+        XDG_CONFIG_HOME="$fake_home/.config" \
+        CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+        CODEX_BOOTSTRAP_CLEANUP_FEATURES="remote-mobile-control" \
+        CODEX_LINUX_FEATURES_ROOT="$features_root" \
+        CODEX_LINUX_FEATURES_CONFIG="$config" \
+            bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log" 2>&1; then
+        fail "setup wizard should refuse non-interactive cleanup"
+    fi
+
+    assert_file_exists "$key_file"
+    assert_contains "$output_log" "Cleanup requires an interactive terminal and exact path confirmation."
+}
+
+test_setup_native_wizard_dry_run_cleanup_allows_noninteractive_preview() {
+    info "Checking setup-native wizard non-interactive dry-run cleanup preview"
+    local workspace="$TMP_DIR/setup-native-cleanup-dry-run-noninteractive"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+    local fake_home="$workspace/home"
+    local key_file="$fake_home/.config/codex-app/remote-control-device-keys-v1.json"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":["remote-mobile-control"]}' > "$config"
+    mkdir -p "$(dirname "$key_file")"
+    printf '%s\n' '{"deviceKeys":[]}' > "$key_file"
+
+    HOME="$fake_home" \
+    XDG_CONFIG_HOME="$fake_home/.config" \
+    CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+    CODEX_BOOTSTRAP_DRY_RUN=1 \
+    CODEX_BOOTSTRAP_CLEANUP_FEATURES="remote-mobile-control" \
+    CODEX_LINUX_FEATURES_ROOT="$features_root" \
+    CODEX_LINUX_FEATURES_CONFIG="$config" \
+        bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
+
+    assert_file_exists "$key_file"
+    assert_contains "$output_log" "Would delete: $key_file"
+    assert_not_contains "$output_log" "Cleanup requires an interactive terminal"
+}
+
+test_setup_native_wizard_dry_run_cleanup_does_not_delete_confirmed_paths() {
+    info "Checking setup-native wizard dry-run cleanup is non-destructive"
+    local workspace="$TMP_DIR/setup-native-cleanup-dry-run"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+    local fake_home="$workspace/home"
+    local key_file="$fake_home/.config/codex-app/remote-control-device-keys-v1.json"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":["remote-mobile-control"]}' > "$config"
+    mkdir -p "$(dirname "$key_file")"
+    printf '%s\n' '{"deviceKeys":[]}' > "$key_file"
+
+    if ! command -v script >/dev/null 2>&1; then
+        info "Skipping dry-run cleanup smoke test because script(1) is unavailable"
+        return
+    fi
+
+    (
+        export HOME="$fake_home"
+        export XDG_CONFIG_HOME="$fake_home/.config"
+        export CODEX_BOOTSTRAP_DRY_RUN=1
+        export CODEX_BOOTSTRAP_CLEANUP_FEATURES="remote-mobile-control"
+        export CODEX_LINUX_FEATURES_ROOT="$features_root"
+        export CODEX_LINUX_FEATURES_CONFIG="$config"
+        {
+            printf '\n'
+            printf '\n'
+            printf '\n'
+            printf 'DELETE %s\n' "$key_file"
+        } | script -qefc "bash $REPO_DIR/scripts/bootstrap-wizard.sh" /dev/null >"$output_log"
+    )
+
+    assert_file_exists "$key_file"
+    assert_contains "$output_log" "Would delete: $key_file"
+    assert_not_contains "$output_log" "Deleted $key_file"
+}
+
+test_setup_native_wizard_cleanup_deletes_only_confirmed_paths() {
+    info "Checking setup-native wizard deletes only explicitly confirmed cleanup paths"
+    local workspace="$TMP_DIR/setup-native-cleanup-confirmed"
+    local features_root="$workspace/linux-features"
+    local config="$workspace/features.json"
+    local output_log="$workspace/output.log"
+    local fake_home="$workspace/home"
+    local key_file="$fake_home/.config/codex-app/remote-control-device-keys-v1.json"
+    local read_aloud_data="$fake_home/.local/share/codex-app/read-aloud"
+    local plugin_cache="$fake_home/.codex/plugins/cache/openai-bundled/read-aloud"
+
+    make_wizard_feature_root "$features_root"
+    printf '%s\n' '{"enabled":["remote-mobile-control","read-aloud"]}' > "$config"
+    mkdir -p "$(dirname "$key_file")" "$read_aloud_data" "$plugin_cache"
+    printf '%s\n' '{"deviceKeys":[]}' > "$key_file"
+    printf '%s\n' 'model marker' > "$read_aloud_data/model"
+    printf '%s\n' 'cache marker' > "$plugin_cache/marker"
+
+    if ! command -v script >/dev/null 2>&1; then
+        info "Skipping interactive cleanup smoke test because script(1) is unavailable"
+        return
+    fi
+
+    (
+        export HOME="$fake_home"
+        export XDG_CONFIG_HOME="$fake_home/.config"
+        export XDG_DATA_HOME="$fake_home/.local/share"
+        export CODEX_BOOTSTRAP_CLEANUP_FEATURES="remote-mobile-control,read-aloud"
+        export CODEX_LINUX_FEATURES_ROOT="$features_root"
+        export CODEX_LINUX_FEATURES_CONFIG="$config"
+        {
+            printf '\n'
+            printf '\n'
+            printf '\n'
+            printf 'DELETE %s\n' "$key_file"
+            printf 'DELETE %s\n' "$read_aloud_data"
+            printf '\n'
+            printf '\n'
+            printf '\n'
+        } | script -qefc "bash $REPO_DIR/scripts/bootstrap-wizard.sh" /dev/null >"$output_log"
+    )
+
+    assert_file_not_exists "$key_file"
+    [ ! -e "$read_aloud_data" ] || fail "Expected confirmed Read Aloud data path to be deleted"
+    assert_file_exists "$plugin_cache/marker"
+    assert_contains "$output_log" "Deleted $key_file"
+    assert_contains "$output_log" "Deleted $read_aloud_data"
+    assert_contains "$output_log" "Skipped $plugin_cache"
 }
 
 test_upstream_build_app_workflow_tracks_dmg_metadata() {
@@ -1095,7 +1669,7 @@ SCRIPT
     chmod +x "$start_script"
 
     set +e
-    CODEX_WEBVIEW_PORT="$huge_port" "$start_script" --help >"$launcher_stdout" 2>"$launcher_stderr"
+    CODEX_WEBVIEW_PORT="$huge_port" bash "$start_script" --help >"$launcher_stdout" 2>"$launcher_stderr"
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "Expected launcher validation to reject oversized CODEX_WEBVIEW_PORT"
@@ -1116,7 +1690,7 @@ SCRIPT
 printf '%s\n' "$CODEX_LINUX_WEBVIEW_PORT"
 SCRIPT
     chmod +x "$launcher_probe_script"
-    CODEX_WEBVIEW_PORT=00080 "$launcher_probe_script" >"$launcher_stdout" 2>"$launcher_stderr"
+    CODEX_WEBVIEW_PORT=00080 bash "$launcher_probe_script" >"$launcher_stdout" 2>"$launcher_stderr"
     [ "$(tail -n 1 "$launcher_stdout")" = "80" ] || fail "Expected launcher validation to canonicalize leading-zero CODEX_WEBVIEW_PORT"
     [ ! -s "$launcher_stderr" ] || fail "Expected launcher leading-zero canonicalization to be quiet, got: $(cat "$launcher_stderr")"
 }
@@ -1625,6 +2199,23 @@ NODE
     assert_contains "$REPO_DIR/launcher/start.sh.template" 'launcher-$CODEX_LINUX_INSTANCE_ID.log'
     assert_contains "$REPO_DIR/launcher/start.sh.template" "ADOPTED_WEBVIEW_PID"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "Reusing webview server pid="
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "run_cold_start_hooks"
+    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/feature.json" '"stageHook": "./stage.sh"'
+    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/stage.sh" "cold-start.d"
+    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/stage.sh" "remote-mobile-control"
+    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/stage.sh" "cold-start-hook.sh"
+    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/cold-start-hook.sh" "remote-control start"
+    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/cold-start-hook.sh" "/run/current-system/sw/bin"
+    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/cold-start-hook.sh" "codex-remote-control.service"
+    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/cold-start-hook.sh" "continuing best-effort in the background"
+    assert_contains "$REPO_DIR/flake.nix" "homeManagerModules"
+    assert_contains "$REPO_DIR/flake.nix" "nixosModules"
+    assert_contains "$REPO_DIR/nix/home-manager-module.nix" "codex-remote-control"
+    assert_contains "$REPO_DIR/nix/home-manager-module.nix" "--remote-control"
+    assert_contains "$REPO_DIR/nix/home-manager-module.nix" "CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED"
+    assert_contains "$REPO_DIR/nix/nixos-module.nix" "codex-remote-control"
+    assert_contains "$REPO_DIR/nix/nixos-module.nix" "--remote-control"
+    assert_contains "$REPO_DIR/nix/nixos-module.nix" "CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED"
     python3 - "$REPO_DIR/launcher/start.sh.template" <<'PY'
 import re
 import sys
@@ -1633,6 +2224,8 @@ source = open(sys.argv[1], encoding="utf-8").read()
 detect_body = source.split("detect_warm_start() {", 1)[1].split("send_warm_start_launch_action() {", 1)[0]
 launch_body = source.split("launch_electron() {", 1)[1].split("load_packaged_runtime_helper", 1)[0]
 runtime_body = source.split("trap cleanup_launcher EXIT", 1)[1].split("launch_electron", 1)[0]
+webview_probe_body = source.split("webview_port_is_open() {", 1)[1].split("wait_for_webview_server() {", 1)[0]
+cold_start_hooks_body = source.split("run_cold_start_hooks() {", 1)[1].split("run_cli_preflight() {", 1)[0]
 stop_body = source.split("stop_owned_webview_server() {", 1)[1].split("owned_webview_server_pid() {", 1)[0]
 identity_body = source.split("pid_has_codex_webview_server_identity() {", 1)[1].split("pid_is_webview_server() {", 1)[0]
 stale_body = source.split("pid_is_stale_webview_server() {", 1)[1].split("stop_owned_webview_server() {", 1)[0]
@@ -1682,10 +2275,23 @@ if not re.search(r'if ! linux_setting_enabled "codex-linux-warm-start-enabled" 1
     raise SystemExit("detect_warm_start must not fail when warm start is disabled")
 if "preserving liveness marker for second-instance handoff" not in detect_body:
     raise SystemExit("detect_warm_start must preserve the live app liveness marker")
+if launch_body.count("unset ELECTRON_RUN_AS_NODE") != 2:
+    raise SystemExit("launch_electron must clear ELECTRON_RUN_AS_NODE before both Electron launch paths")
 if 'pid_matches_executable "$RUNNING_APP_PID" "$SCRIPT_DIR/electron"' not in launch_body:
     raise SystemExit("launch_electron must not overwrite APP_PID_FILE for second-instance handoff")
 if 'echo "$ELECTRON_PID" > "$APP_PID_FILE"' not in launch_body:
     raise SystemExit("launch_electron must still write APP_PID_FILE for normal cold launches")
+electron_launch = '"$SCRIPT_DIR/electron" "${ELECTRON_LAUNCH_ARGS[@]}" "${ELECTRON_ARGS[@]}"'
+warm_log = 'echo "Electron warm-start handoff:'
+normal_log = 'echo "Electron launch mode:'
+warm_log_pos = launch_body.index(warm_log)
+warm_unset_pos = launch_body.index("unset ELECTRON_RUN_AS_NODE", warm_log_pos)
+warm_launch_pos = launch_body.index(electron_launch, warm_unset_pos)
+normal_log_pos = launch_body.index(normal_log)
+normal_unset_pos = launch_body.index("unset ELECTRON_RUN_AS_NODE", normal_log_pos)
+normal_launch_pos = launch_body.index(electron_launch + " &", normal_unset_pos)
+if not (warm_log_pos < warm_unset_pos < warm_launch_pos < normal_log_pos < normal_unset_pos < normal_launch_pos):
+    raise SystemExit("launch_electron must clear ELECTRON_RUN_AS_NODE immediately before each Electron launch")
 if "using_second_instance_handoff" not in source or "needs_cold_start" not in source:
     raise SystemExit("launcher must have an explicit second-instance handoff mode")
 if "second_instance_handoff_ready" not in runtime_body:
@@ -1827,7 +2433,7 @@ PY
     [[ "$output" != *"<--ozone-platform-hint=auto>"* ]] || fail "launcher must not add ozone hint when pass-through supplies an ozone platform: $output"
 
     output="$(env -i PATH="$PATH" HOME="$HOME" CODEX_LINUX_RENDERING_MODE=wslg "$launcher_probe" probe)"
-    [[ "$output" == *"mode=wslg"* && "$output" == *"comp=0"* && "$output" == *"gl_added=1"* ]] || fail "forced WSLg profile must disable GPU compositing default and add ANGLE: $output"
+    [[ "$output" == *"mode=wslg"* && "$output" == *"comp=0"* && "$output" == *"gl_added=1"* ]] || fail "forced WSLg profile must keep GPU compositing enabled and add ANGLE: $output"
     [[ "$output" == *"<--ozone-platform=x11>"* && "$output" == *"electron=<--use-gl=angle>"* ]] || fail "forced WSLg profile must use X11 and ANGLE by default: $output"
     [[ "$output" != *"<--disable-gpu-compositing>"* ]] || fail "forced WSLg profile must not add disable-gpu-compositing by default: $output"
 
@@ -1841,6 +2447,9 @@ PY
 
     output="$(env -i PATH="$PATH" HOME="$HOME" CODEX_LINUX_RENDERING_MODE=wslg CODEX_ELECTRON_DISABLE_GPU_COMPOSITING=1 "$launcher_probe" probe)"
     [[ "$output" == *"comp=1"* && "$output" == *"<--disable-gpu-compositing>"* ]] || fail "CODEX_ELECTRON_DISABLE_GPU_COMPOSITING=1 must force the compositor flag: $output"
+
+    output="$(env -i PATH="$PATH" HOME="$HOME" CODEX_LINUX_RENDERING_MODE=default CODEX_ELECTRON_DISABLE_GPU_COMPOSITING=1 "$launcher_probe" probe)"
+    [[ "$output" == *"comp=1"* && "$output" == *"<--disable-gpu-compositing>"* ]] || fail "CODEX_ELECTRON_DISABLE_GPU_COMPOSITING=1 must force the compositor flag under default Linux: $output"
 
     output="$(env -i PATH="$PATH" HOME="$HOME" CODEX_LINUX_RENDERING_MODE=default CODEX_ELECTRON_DISABLE_GPU_COMPOSITING=0 "$launcher_probe" probe)"
     [[ "$output" == *"comp=0"* && "$output" != *"<--disable-gpu-compositing>"* ]] || fail "CODEX_ELECTRON_DISABLE_GPU_COMPOSITING=0 must suppress the compositor flag: $output"
@@ -1947,10 +2556,12 @@ PY
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "env -u BASH_FUNC_ml%%%% -u BASH_FUNC_module%%%%"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app %u"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
-    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "Actions=CheckForUpdates;InstallReadyUpdate;"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "Actions=new-window;CheckForUpdates;InstallReadyUpdate;"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "CODEX_MULTI_LAUNCH=1 /usr/bin/codex-app --new-instance"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app-updater check-now"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app-updater install-ready"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "@USER_BIN_DIR@/codex-app %U"
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "@USER_BIN_DIR@/codex-app --new-instance"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" 'INSTALL_ROOT="${CODEX_USER_INSTALL_ROOT:-${XDG_DATA_HOME}/codex-app}"'
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop" "MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" "CODEX_USER_LOCAL_OZONE_PLATFORM"
@@ -1959,6 +2570,44 @@ PY
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "--force-x11"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "user-local.env"
     assert_contains "$REPO_DIR/contrib/user-local-install/README.md" "--force-x11"
+
+    node - "$REPO_DIR/launcher/start.sh.template" <<'NODE' || fail "Bundled backend plugin cache syncs must expose marketplace plugin links"
+const fs = require("node:fs");
+const launcher = fs.readFileSync(process.argv[2], "utf8");
+
+function functionBody(name, nextName) {
+  const pattern = new RegExp(`${name}\\(\\) \\{([\\s\\S]*?)\\n\\}\\n\\n${nextName}\\(\\) \\{`, "u");
+  const match = launcher.match(pattern);
+  if (match == null) {
+    throw new Error(`missing ${name}`);
+  }
+  return match[1];
+}
+
+function assertCacheLinks({ body, plugin }) {
+  for (const required of [
+    `marketplace_plugin_link="$marketplace_root/plugins/${plugin}"`,
+    'ln -sfn "$version" "$cache_root/latest"',
+    'ln -sfn "$cache_root/latest" "$marketplace_plugin_link"',
+  ]) {
+    if (!body.includes(required)) {
+      throw new Error(`${plugin} sync missing ${required}`);
+    }
+  }
+  if (!body.includes("needs_copy=0")) {
+    throw new Error(`${plugin} sync must refresh links on cache hits`);
+  }
+}
+
+assertCacheLinks({
+  body: functionBody("sync_computer_use_bundled_plugin_cache", "sync_read_aloud_bundled_plugin_cache"),
+  plugin: "computer-use",
+});
+assertCacheLinks({
+  body: functionBody("sync_read_aloud_bundled_plugin_cache", "resolve_browser_use_runtime_env"),
+  plugin: "read-aloud",
+});
+NODE
 }
 
 test_user_local_installer_uses_xdg_data_home() {
@@ -2044,7 +2693,7 @@ test_browser_use_node_repl_fallback_runtime() {
     local archive_sha
 
     mkdir -p "$workspace" "$install_dir/resources" "$archive_root/codex-primary-runtime/dependencies/bin"
-    make_fake_browser_use_upstream_app "$app_dir"
+    make_fake_browser_upstream_app "$app_dir"
 
     # Simulate the current upstream DMG shape: node_repl exists, but it is not a Linux ELF.
     printf '\xfe\xed\xfa\xcf' > "$app_dir/Contents/Resources/node_repl"
@@ -2084,9 +2733,9 @@ test_browser_use_node_repl_fallback_runtime() {
     ) >"$output_log" 2>&1
 
     assert_file_exists "$install_dir/resources/node_repl"
-    assert_file_exists "$install_dir/resources/plugins/openai-bundled/plugins/browser-use/scripts/browser-client.mjs"
+    assert_file_exists "$install_dir/resources/plugins/openai-bundled/plugins/browser/scripts/browser-client.mjs"
     cmp -s /bin/true "$install_dir/resources/node_repl" || fail "Expected fallback node_repl to come from the runtime archive"
-    assert_contains "$install_dir/resources/plugins/openai-bundled/plugins/browser-use/scripts/browser-client.mjs" "codexLinuxSiteStatusAllowlistFallback"
+    assert_contains "$install_dir/resources/plugins/openai-bundled/plugins/browser/scripts/browser-client.mjs" "codexLinuxSiteStatusAllowlistFallback"
     assert_contains "$output_log" "Browser Use node_repl runtime is not a Linux executable for x86_64; skipping"
     assert_not_matches "$output_log" "WARN.*Browser Use node_repl runtime is not a Linux executable"
     assert_contains "$output_log" "Downloading Browser Use node_repl fallback runtime"
@@ -2116,6 +2765,7 @@ JS
 JSON
     cat > "$chrome_dir/scripts/browser-client.mjs" <<'JS'
 import{resolve as GF}from"path";import{homedir as VF,platform as WF}from"os";var Tc=GF(VF(),WF()==="win32"?"AppData\\Local\\Google\\Chrome\\User Data":"Library/Application Support/Google/Chrome");import{ClassicLevel as KF}from"./node_modules/classic-level.mjs";import{resolve as Gf}from"path";import{tmpdir as YF}from"os";import{cp as ZF,mkdtemp as JF,rm as kS}from"fs/promises";import{existsSync as XF}from"fs";var IS=async(t,e)=>{let r=Gf(Tc,t,"Local Extension Settings",e);if(!XF(r))return null;let n=await JF(Gf(QF(),"codex"));await ZF(r,n,{recursive:!0}),await kS(Gf(n,"LOCK"));let o=new KF(n,{createIfMissing:!1,keyEncoding:"utf8",valueEncoding:"utf8"});try{await o.open();let i=await o.get("extensionInstanceId");if(!i)return null;let s=JSON.parse(i);return typeof s!="string"?null:s}finally{await o.close(),await kS(n,{force:!0,recursive:!0})}},QF=()=>"nodeRepl"in globalThis&&globalThis.nodeRepl?globalThis.nodeRepl.tmpDir:YF();var AS=async t=>{if(t.type!=="extension"||!t.metadata?.extensionInstanceId||!t.metadata.extensionId)return t;let e=await rO(t.metadata.extensionId,t.metadata.extensionInstanceId);return e?{...t,metadata:{...t.metadata,profileName:e.name,profileIsLastUsed:e.isLastUsed.toString(),profileOrdering:e.orderingIndex.toString()}}:t},rO=async(t,e)=>(await nO(t)).find(o=>o.instanceId===e)||null,nO=async t=>{let e=await oO();return await Promise.all(e.map(async r=>({...r,instanceId:await IS(r.id,t).catch(n=>(ee(n),null))})))},oO=async()=>{let t=tO(Tc,"Local State"),e=JSON.parse(await eO(t,"utf8"));return e.profile.profiles_order.map((r,n)=>{let o=e.profile.info_cache[r];return o?{id:r,name:o.name,isLastUsed:e.profile.last_used===r,orderingIndex:n,avatarUrl:o.avatar_icon}:null}).filter(r=>!!r)};
+function lu(e){let t=globalThis.nodeRepl?.env[e];return typeof t=="string"?t:void 0}
 async fetchBlocked(e){let r=await bS(e.endpoint,{method:"GET"});if(!r.ok)throw new Error(ae(`Browser Use cannot determine if ${e.displayUrl} is allowed. Please try again later or use another source.`));let n=await r.json();return TF(n)}
 JS
     cat > "$chrome_dir/scripts/check-native-host-manifest.js" <<'JS'
@@ -2234,6 +2884,8 @@ test_chrome_plugin_staging() {
     assert_contains "$chrome_dir/scripts/browser-client.mjs" '"BraveSoftware","Brave-Browser"'
     assert_contains "$chrome_dir/scripts/browser-client.mjs" '".config","chromium"'
     assert_contains "$chrome_dir/scripts/browser-client.mjs" "instanceId:await IS(o.id,t,r)"
+    assert_contains "$chrome_dir/scripts/browser-client.mjs" 'globalThis.nodeRepl?.env?.[e]'
+    assert_not_contains "$chrome_dir/scripts/browser-client.mjs" 'globalThis.nodeRepl?.env[e]'
     assert_contains "$chrome_dir/scripts/browser-client.mjs" "codexLinuxSiteStatusAllowlistFallback"
     assert_contains "$install_dir/resources/plugins/openai-bundled/.agents/plugins/marketplace.json" '"name": "chrome"'
     assert_contains "$output_log" "Chrome plugin staged from upstream DMG"
@@ -2278,7 +2930,7 @@ test_chrome_marketplace_fallback_synthesis() {
     # Upstream marketplace.json lists no chrome entry — exercises the
     # synthesized-fallback path in write_bundled_plugins_marketplace.
     cat > "$app_dir/Contents/Resources/plugins/openai-bundled/.agents/plugins/marketplace.json" <<'JSON'
-{"plugins":[{"name":"browser-use","source":{"source":"local","path":"./plugins/browser-use"},"policy":{"installation":"AVAILABLE"}}]}
+{"plugins":[{"name":"browser","source":{"source":"local","path":"./plugins/browser"},"policy":{"installation":"AVAILABLE"}}]}
 JSON
 
     # Distinctive name + category prove the synthesized entry actually
@@ -2300,6 +2952,12 @@ JSON
         # shellcheck disable=SC1091
         source "$REPO_DIR/scripts/lib/bundled-plugins.sh"
         stage_linux_computer_use_plugin() { return 1; }
+        build_chrome_extension_host() {
+            local fake_host="$workspace/codex-chrome-extension-host"
+            printf '#!/bin/sh\n' > "$fake_host"
+            chmod +x "$fake_host"
+            printf '%s\n' "$fake_host"
+        }
         install_bundled_plugin_resources "$app_dir"
     ) >"$output_log" 2>&1
 
@@ -2369,6 +3027,9 @@ make_fake_extracted_asar() {
     printf 'import{t as e}from"./chunk-test.js";Symbol.for(`react.transitional.element`);export{e as t};\n' > "$root/webview/assets/react-test.js"
     printf 'import{t as e}from"./chunk-test.js";Symbol.for(`react.transitional.element`);export{e as t};\n' > "$root/webview/assets/jsx-runtime-test.js"
     printf 'let marker=`vscode://codex`;async function n(){return{}}export{n};\n' > "$root/webview/assets/vscode-api-test.js"
+    cat > "$root/webview/assets/app-server-manager-signals-test.js" <<'JS'
+function j(e){return e}function B(e){if(e==null||typeof e==`string`)return null;let t=Mi(e);return t==null?null:Ni(t)}function Mi(e){return`subAgent`in e?e.subAgent:null}function Ni(e){return typeof e==`string`?Pi():`thread_spawn`in e?{parentThreadId:j(e.thread_spawn.parent_thread_id),depth:e.thread_spawn.depth,agentNickname:e.thread_spawn.agent_nickname,agentRole:e.thread_spawn.agent_role}:Pi()}function Pi(){return{parentThreadId:null,depth:null,agentNickname:null,agentRole:null}}function Xl(e){return e==null?null:Zl(e.agentNickname)??Zl(B(e.source)?.agentNickname)}function Zl(e){if(e==null)return null;let t=e.trim();return t.length===0?null:t}
+JS
     printf 'let marker=`hotkey-window-hotkey-state`;function i(){}export{i};\n' > "$root/webview/assets/general-settings-hotkey-test.js"
     printf 'function t(){}export{t};\n' > "$root/webview/assets/toggle-test.js"
     printf 'function n(){}export{n};\n' > "$root/webview/assets/settings-row-test.js"
@@ -2401,9 +3062,13 @@ test_linux_file_manager_patch_smoke() {
     assert_contains "$extracted/.vite/build/main-test.js" 'codexLinuxOpenFileManager(e)'
     assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&D.setMenuBarVisibility(!1),'
     assert_contains "$extracted/.vite/build/main-test.js" '&&D.setIcon('
+    assert_contains "$extracted/webview/assets/app-server-manager-signals-test.js" '`subAgent`in e?e.subAgent:`subagent`in e?e.subagent:null'
+    assert_contains "$extracted/webview/assets/app-server-manager-signals-test.js" 'Zl(e.agentNickname)??Zl(e.agent_nickname)??Zl(B(e.source)?.agentNickname)'
     assert_not_contains "$output_log" 'Failed to apply Linux File Manager Patch'
 
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
+    assert_occurrence_count "$extracted/webview/assets/app-server-manager-signals-test.js" '`subagent`in e?e.subagent' '1'
+    assert_occurrence_count "$extracted/webview/assets/app-server-manager-signals-test.js" 'Zl(e.agent_nickname)' '1'
     assert_not_contains "$output_log" 'Failed to apply Linux File Manager Patch'
 }
 
@@ -3998,6 +4663,67 @@ EOF
     )
 }
 
+test_desktop_entry_doctor_repairs_only_legacy_generated_entries() {
+    info "Checking desktop-entry doctor only backs up legacy generated entries"
+    local workspace="$TMP_DIR/desktop-entry-doctor"
+    local desktop_dir="$workspace/applications"
+    local template="$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-app.desktop"
+    local stale_entry="$desktop_dir/stale.desktop"
+    local current_entry="$desktop_dir/current.desktop"
+    local custom_entry="$desktop_dir/custom.desktop"
+
+    mkdir -p "$desktop_dir"
+
+    cat > "$stale_entry" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Codex Desktop
+Exec=/home/tester/.local/bin/codex-desktop %U
+TryExec=/home/tester/.local/bin/codex-desktop
+Terminal=false
+Icon=codex-desktop
+Actions=NewInstance;
+
+[Desktop Action NewInstance]
+Name=Open New Instance
+Exec=env CODEX_MULTI_LAUNCH=1 /home/tester/.local/bin/codex-desktop --new-instance
+EOF
+
+    cat > "$custom_entry" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=My Custom App
+Exec=/usr/bin/custom-app
+Icon=custom-app
+EOF
+
+    (
+        # shellcheck disable=SC1091
+        . "$REPO_DIR/packaging/linux/codex-app-desktop-entry-doctor.sh"
+        codex_app_write_user_local_entry "$template" "$current_entry" "/home/tester"
+        codex_app_repair_shadow_entry "$stale_entry"
+        if codex_app_repair_shadow_entry "$current_entry"; then
+            exit 1
+        fi
+        if codex_app_repair_shadow_entry "$custom_entry"; then
+            exit 1
+        fi
+        if codex_app_repair_shadow_entry "$stale_entry"; then
+            exit 1
+        fi
+    )
+
+    assert_file_not_exists "$stale_entry"
+    assert_file_exists "$stale_entry.bak"
+    assert_contains "$stale_entry.bak" "Actions=NewInstance;"
+    assert_file_exists "$current_entry"
+    assert_contains "$current_entry" "Actions=new-window;"
+    assert_contains "$current_entry" "x-scheme-handler/codex-browser-sidebar"
+    assert_file_exists "$custom_entry"
+    assert_not_contains "$custom_entry" "codex-browser-sidebar"
+    assert_file_not_exists "$stale_entry.bak.1"
+}
+
 test_user_local_install_from_update_defers_record_only_metadata() {
     info "Checking user-local helper refresh does not record metadata before update success"
     local workspace="$TMP_DIR/user-local-from-update-record-only"
@@ -4382,6 +5108,23 @@ main() {
     test_make_build_app_uses_installer_download_flow_by_default
     test_make_build_app_fresh_uses_installer_fresh_flow
     test_native_shortcut_targets_compose_existing_flows
+    test_setup_native_wizard_noninteractive_feature_writer
+    test_setup_native_wizard_rejects_invalid_feature_ids
+    test_setup_native_wizard_rejects_conflicting_feature_ids
+    test_setup_native_wizard_disable_is_non_destructive
+    test_setup_native_wizard_summary_keeps_existing_config
+    test_setup_native_wizard_uses_package_name_for_installed_state
+    test_setup_native_wizard_portal_summary_survives_busctl_sigpipe
+    test_setup_native_wizard_warns_when_conversation_mode_lacks_read_aloud
+    test_setup_native_wizard_dry_runs_deps_and_install_native
+    test_setup_native_wizard_prints_deep_readiness_guidance
+    test_setup_native_wizard_uinput_stat_is_bounded
+    test_setup_native_wizard_read_aloud_paths_match_runtime_defaults
+    test_setup_native_wizard_sway_hint_is_conservative
+    test_setup_native_wizard_cleanup_requires_interactive_confirmation
+    test_setup_native_wizard_dry_run_cleanup_allows_noninteractive_preview
+    test_setup_native_wizard_dry_run_cleanup_does_not_delete_confirmed_paths
+    test_setup_native_wizard_cleanup_deletes_only_confirmed_paths
     test_upstream_build_app_workflow_tracks_dmg_metadata
     test_installer_detects_electron_version_from_plist
     test_installer_writes_package_version_from_app_plist
@@ -4425,6 +5168,7 @@ main() {
     test_user_local_prepare_build_repo_ignores_stale_source_origin_head
     test_user_local_prepare_build_repo_uses_source_when_overlay_base_is_missing
     test_user_local_prepare_build_repo_handles_relative_origin_url
+    test_desktop_entry_doctor_repairs_only_legacy_generated_entries
     test_user_local_install_from_update_defers_record_only_metadata
     test_user_local_install_preserves_persisted_x11_preference_on_refresh
     test_user_local_prepare_build_repo_updates_existing_single_branch_fetch_refspec

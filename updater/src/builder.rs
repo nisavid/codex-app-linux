@@ -15,14 +15,19 @@ use std::{
 use tokio::process::Command;
 use tracing::info;
 
-const REQUIRED_BUNDLE_FILES: [(&str, &str); 16] = [
+const REQUIRED_BUNDLE_FILES: [(&str, &str); 18] = [
     ("Cargo.toml", "Cargo.toml"),
     ("Cargo.lock", "Cargo.lock"),
     ("computer-use-linux", "computer-use-linux"),
+    ("read-aloud-linux", "read-aloud-linux"),
     ("updater", "updater"),
     (
         "plugins/openai-bundled/plugins/computer-use",
         "plugins/openai-bundled/plugins/computer-use",
+    ),
+    (
+        "plugins/openai-bundled/plugins/read-aloud",
+        "plugins/openai-bundled/plugins/read-aloud",
     ),
     ("install.sh", "install.sh"),
     ("launcher/start.sh.template", "launcher/start.sh.template"),
@@ -88,6 +93,14 @@ pub async fn build_update(
             .arg(dmg_path)
             .env("CODEX_INSTALL_DIR", &workspace.app_dir)
             .env(
+                "CODEX_PATCH_REPORT_JSON",
+                workspace.reports_dir.join("patch-report.json"),
+            )
+            .env(
+                "CODEX_REBUILD_REPORT_JSON",
+                workspace.reports_dir.join("rebuild-report.json"),
+            )
+            .env(
                 "CODEX_MANAGED_NODE_SOURCE",
                 workspace.bundle_dir.join("node-runtime"),
             )
@@ -146,6 +159,7 @@ struct BuilderWorkspace {
     bundle_dir: PathBuf,
     dist_dir: PathBuf,
     app_dir: PathBuf,
+    reports_dir: PathBuf,
     install_log: PathBuf,
     build_log: PathBuf,
 }
@@ -157,6 +171,7 @@ impl BuilderWorkspace {
         let dist_dir = workspace_dir.join("dist");
         let app_dir = workspace_dir.join("codex-app");
         let logs_dir = workspace_dir.join("logs");
+        let reports_dir = workspace_dir.join("reports");
         let install_log = logs_dir.join("install.log");
         let build_log = logs_dir.join("build-package.log");
 
@@ -167,12 +182,15 @@ impl BuilderWorkspace {
 
         fs::create_dir_all(&logs_dir)
             .with_context(|| format!("Failed to create {}", logs_dir.display()))?;
+        fs::create_dir_all(&reports_dir)
+            .with_context(|| format!("Failed to create {}", reports_dir.display()))?;
 
         Ok(Self {
             workspace_dir,
             bundle_dir,
             dist_dir,
             app_dir,
+            reports_dir,
             install_log,
             build_log,
         })
@@ -513,7 +531,7 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
     fn write_fake_computer_use_bundle(root: &Path) -> Result<()> {
         fs::write(
             root.join("Cargo.toml"),
-            b"[workspace]\nmembers = [\"computer-use-linux\", \"updater\"]\n",
+            b"[workspace]\nmembers = [\"computer-use-linux\", \"read-aloud-linux\", \"updater\"]\n",
         )?;
         fs::write(root.join("Cargo.lock"), b"# fake lock\n")?;
         fs::create_dir_all(root.join("computer-use-linux/src"))?;
@@ -525,6 +543,12 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
             root.join("computer-use-linux/src/main.rs"),
             b"fn main() {}\n",
         )?;
+        fs::create_dir_all(root.join("read-aloud-linux/src"))?;
+        fs::write(
+            root.join("read-aloud-linux/Cargo.toml"),
+            b"[package]\nname = \"codex-read-aloud-linux\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )?;
+        fs::write(root.join("read-aloud-linux/src/main.rs"), b"fn main() {}\n")?;
         fs::create_dir_all(root.join("updater/src"))?;
         fs::write(
             root.join("updater/Cargo.toml"),
@@ -538,6 +562,15 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         )?;
         fs::write(
             root.join("plugins/openai-bundled/plugins/computer-use/.mcp.json"),
+            b"{\"mcpServers\":{}}\n",
+        )?;
+        fs::create_dir_all(root.join("plugins/openai-bundled/plugins/read-aloud/.codex-plugin"))?;
+        fs::write(
+            root.join("plugins/openai-bundled/plugins/read-aloud/.codex-plugin/plugin.json"),
+            b"{\"name\":\"read-aloud\",\"version\":\"0.1.0\"}\n",
+        )?;
+        fs::write(
+            root.join("plugins/openai-bundled/plugins/read-aloud/.mcp.json"),
             b"{\"mcpServers\":{}}\n",
         )?;
         Ok(())
@@ -631,6 +664,9 @@ mkdir -p "${CODEX_INSTALL_DIR}"
 echo launcher > "${CODEX_INSTALL_DIR}/start.sh"
 chmod +x "${CODEX_INSTALL_DIR}/start.sh"
 echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-version.env"
+mkdir -p "$(dirname "${CODEX_PATCH_REPORT_JSON}")"
+echo '{}' > "${CODEX_PATCH_REPORT_JSON}"
+echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
 "#,
         )?;
         #[cfg(unix)]
@@ -734,6 +770,14 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
             .workspace_dir
             .join("builder/linux-features/features.example.json")
             .exists());
+        assert!(artifacts
+            .workspace_dir
+            .join("reports/patch-report.json")
+            .exists());
+        assert!(artifacts
+            .workspace_dir
+            .join("reports/rebuild-report.json")
+            .exists());
         assert!(
             is_native_package_file(&artifacts.package_path),
             "expected a native package (.deb, .rpm, or .pkg.tar.zst), got {}",
@@ -804,9 +848,13 @@ echo CODEX_APP_PACKAGE_VERSION=26.429.20946 > "${CODEX_INSTALL_DIR}/codex-app-ve
             .join("scripts/patches/registry.js")
             .exists());
         assert!(destination_root.join("computer-use-linux").exists());
+        assert!(destination_root.join("read-aloud-linux").exists());
         assert!(destination_root.join("updater").exists());
         assert!(destination_root
             .join("plugins/openai-bundled/plugins/computer-use/.mcp.json")
+            .exists());
+        assert!(destination_root
+            .join("plugins/openai-bundled/plugins/read-aloud/.mcp.json")
             .exists());
         assert!(destination_root
             .join("scripts/lib/node-runtime.sh")

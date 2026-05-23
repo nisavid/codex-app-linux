@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
+import ctypes
+import ctypes.util
 import functools
 import http.server
+import os
+import signal
 import sys
 
 

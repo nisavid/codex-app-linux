@@ -1,8 +1,14 @@
 __UPDATER_SERVICE_PREAMBLE__
+DESKTOP_ENTRY_DOCTOR="/opt/__PACKAGE_NAME__/.codex-linux/codex-app-desktop-entry-doctor.sh"
 
 post_install() {
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+    fi
+    if [ -f "$DESKTOP_ENTRY_DOCTOR" ]; then
+        # shellcheck source=/opt/__PACKAGE_NAME__/.codex-linux/codex-app-desktop-entry-doctor.sh
+        . "$DESKTOP_ENTRY_DOCTOR"
+        codex_app_repair_system_package_shadow_entries __PACKAGE_NAME__ || true
     fi
 __UPDATER_POST_INSTALL__
 }

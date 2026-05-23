@@ -797,14 +797,24 @@ fn format_command_output(output: &Output) -> String {
 }
 
 fn find_in_path(name: &str, path_env: &OsString) -> Option<PathBuf> {
-    std::env::split_paths(path_env).find_map(|entry| {
-        let candidate = entry.join(name);
-        if is_executable(&candidate) {
-            Some(candidate)
-        } else {
-            None
+    find_all_in_path(name, path_env).into_iter().next()
+}
+
+fn find_all_in_path(name: &str, path_env: &OsString) -> Vec<PathBuf> {
+    std::env::split_paths(path_env)
+        .map(|entry| entry.join(name))
+        .filter(|candidate| is_executable(candidate))
+        .collect()
+}
+
+fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut deduped = Vec::new();
+    for path in paths {
+        if !deduped.iter().any(|existing| existing == &path) {
+            deduped.push(path);
         }
-    })
+    }
+    deduped
 }
 
 fn command_path_env() -> OsString {
@@ -812,6 +822,7 @@ fn command_path_env() -> OsString {
     entries.extend(std::env::split_paths(
         &std::env::var_os("PATH").unwrap_or_default(),
     ));
+    let entries = dedupe_paths(entries);
     std::env::join_paths(entries).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
 }
 

@@ -8,4 +8,11 @@ if [ -f "$SERVICE_HELPER" ]; then
     codex_ensure_user_service_running || true
 fi
 
+DESKTOP_ENTRY_DOCTOR="/opt/__PACKAGE_NAME__/.codex-linux/codex-app-desktop-entry-doctor.sh"
+if [ -f "$DESKTOP_ENTRY_DOCTOR" ]; then
+    # shellcheck source=/opt/__PACKAGE_NAME__/.codex-linux/codex-app-desktop-entry-doctor.sh
+    . "$DESKTOP_ENTRY_DOCTOR"
+    codex_app_repair_system_package_shadow_entries __PACKAGE_NAME__ || true
+fi
+
 exit 0
