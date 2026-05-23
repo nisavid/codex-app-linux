@@ -508,9 +508,7 @@ function currentLaunchActionBundleFixture() {
 
 function currentLaunchActionBundleWithWindowApiDriftFixture() {
   return currentLaunchActionBundleFixture()
-    .replaceAll("createFreshLocalWindow", "createFreshWindow")
-    .replace("getPrimaryWindow()??await M.createFreshWindow(`/`)", "getPrimaryWindow()??await M.createFreshWindow(`/`)")
-    .replace("let n=M.getPrimaryWindow(),r=n??await M.createFreshWindow(e);", "let n=M.getPrimaryWindow(),r=n??await M.createFreshWindow(e);");
+    .replaceAll("createFreshLocalWindow", "createFreshWindow");
 }
 
 function settingsPersistenceBundleFixture() {

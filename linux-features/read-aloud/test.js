@@ -785,7 +785,7 @@ test("general settings patch exports read aloud page without rendering it in Gen
   assert.match(patched, /max:1\.4/);
   assert.match(patched, /codexLinuxReadAloudSetup/);
   assert.match(patched, /kokoro-explicit-v5/);
-  assert.match(patched, /globalThis\.codexLinuxReadAloudSetup=setup/);
+  assert.match(patched, /globalThis\["codexLinuxReadAloudSetup"\]=setup/);
   assert.doesNotThrow(() => new Function("$", "w", "C", "N", "L", "F", "P", "J", "q", patched));
   assert.doesNotMatch(
     patched,
@@ -959,7 +959,7 @@ test("settings asset patch updates current general settings bundle", () => {
     const patched = fs.readFileSync(asset, "utf8");
     assert.match(patched, /codex-linux-read-aloud-enabled/);
     assert.match(patched, /codexLinuxReadAloudSettingsRow/);
-    assert.match(patched, /globalThis\.codexLinuxReadAloudSetup=setup/);
+    assert.match(patched, /globalThis\["codexLinuxReadAloudSetup"\]=setup/);
     assert.doesNotMatch(
       patched,
       /children:\[S,C,w,T,\(0,\$\.jsx\)\(codexLinuxReadAloudSettingsRow,\{\}\),D,O,k,A,j,M,N,P,L\]/,
