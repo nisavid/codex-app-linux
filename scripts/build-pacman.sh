@@ -155,6 +155,7 @@ fi"
 				if ($0 == "__UPDATER_POST_INSTALL__") { emit_env("AWK_UPDATER_POST_INSTALL"); next }
 				if ($0 == "__UPDATER_PRE_REMOVE__") { emit_env("AWK_UPDATER_PRE_REMOVE"); next }
 				if ($0 == "__UPDATER_POST_REMOVE__") { emit_env("AWK_UPDATER_POST_REMOVE"); next }
+				gsub(/__PACKAGE_NAME__/, ENVIRON["AWK_PACKAGE_NAME"])
 				gsub(/\/opt\/codex-app/, "/opt/" ENVIRON["AWK_PACKAGE_NAME"])
 				gsub(/\/usr\/lib\/codex-app/, "/usr/lib/" ENVIRON["AWK_PACKAGE_NAME"])
 				print

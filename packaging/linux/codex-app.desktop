@@ -15,7 +15,11 @@ MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;
 StartupNotify=true
 StartupWMClass=codex-app
 X-GNOME-WMClass=codex-app
-Actions=CheckForUpdates;InstallReadyUpdate;
+Actions=new-window;CheckForUpdates;InstallReadyUpdate;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=env -u BASH_FUNC_ml%%%% -u BASH_FUNC_module%%%% BAMF_DESKTOP_FILE_HINT=/usr/share/applications/codex-app.desktop CHROME_DESKTOP=codex-app.desktop CODEX_MULTI_LAUNCH=1 /usr/bin/codex-app --new-instance
 
 [Desktop Action CheckForUpdates]
 Name=Check for Updates

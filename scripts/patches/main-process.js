@@ -70,12 +70,12 @@ function applyLinuxWindowOptionsPatch(currentSource, iconAsset) {
   const windowOptionsReplacement =
     `...process.platform===\`win32\`||process.platform===\`linux\`?{autoHideMenuBar:!0,...process.platform===\`linux\`?{${iconPathNeedle}}:{}}:{},`;
 
-  if (currentSource.includes(iconPathNeedle)) {
-    return currentSource;
+  if (currentSource.includes(windowOptionsNeedle)) {
+    return currentSource.split(windowOptionsNeedle).join(windowOptionsReplacement);
   }
 
-  if (currentSource.includes(windowOptionsNeedle)) {
-    return currentSource.replace(windowOptionsNeedle, windowOptionsReplacement);
+  if (currentSource.includes(iconPathNeedle)) {
+    return currentSource;
   }
 
   console.warn("WARN: Could not find BrowserWindow autoHideMenuBar snippet — skipping window options patch");
@@ -85,17 +85,20 @@ function applyLinuxWindowOptionsPatch(currentSource, iconAsset) {
 function applyLinuxMenuPatch(currentSource) {
   const menuRegex = /process\.platform===`win32`&&([A-Za-z_$][\w$]*)\.removeMenu\(\),/g;
   let patchedAny = false;
-  const patchedSource = currentSource.replace(menuRegex, (match, windowVar) => {
+  const patchedSource = currentSource.replace(menuRegex, (match, windowVar, offset) => {
     const linuxPatch = `process.platform===\`linux\`&&${windowVar}.setMenuBarVisibility(!1),`;
-    if (currentSource.includes(`${linuxPatch}${match}`)) {
+    if (currentSource.slice(Math.max(0, offset - linuxPatch.length), offset) === linuxPatch) {
       return match;
     }
     patchedAny = true;
     return `${linuxPatch}${match}`;
   });
 
-  if (!patchedAny && menuRegex.test(currentSource) && !currentSource.includes("setMenuBarVisibility(!1),process.platform===`win32`")) {
-    console.warn("WARN: Could not find window menu visibility snippet — skipping menu patch");
+  if (!patchedAny && !currentSource.includes("setMenuBarVisibility(!1)")) {
+    const hasWindowsRemoveMenu = /process\.platform===`win32`&&[A-Za-z_$][\w$]*\.removeMenu\(\),/.test(currentSource);
+    if (hasWindowsRemoveMenu) {
+      console.warn("WARN: Could not find window menu visibility snippet — skipping menu patch");
+    }
   }
 
   return patchedSource;
@@ -107,22 +110,56 @@ function applyLinuxSetIconPatch(currentSource, iconAsset) {
   }
 
   const iconPathExpression = `process.resourcesPath+\`/../content/webview/assets/${iconAsset}\``;
+  const readyRegex = /([A-Za-z_$][\w$]*)\.once\(`ready-to-show`,\(\)=>\{/g;
+  let patchedAny = false;
+  const patchedSource = currentSource.replace(readyRegex, (match, windowVar, offset) => {
+    const linuxPatch = `process.platform===\`linux\`&&${windowVar}.setIcon(${iconPathExpression}),`;
+    if (currentSource.slice(Math.max(0, offset - linuxPatch.length), offset) === linuxPatch) {
+      return match;
+    }
+    patchedAny = true;
+    return `${linuxPatch}${match}`;
+  });
+
+  if (patchedAny) {
+    return patchedSource;
+  }
+
   if (currentSource.includes(`setIcon(${iconPathExpression})`)) {
     return currentSource;
   }
 
-  const readyRegex = /([A-Za-z_$][\w$]*)\.once\(`ready-to-show`,\(\)=>\{/;
-  const match = currentSource.match(readyRegex);
-  if (match == null) {
-    console.warn("WARN: Could not find window setIcon insertion point — skipping setIcon patch");
+  console.warn("WARN: Could not find window setIcon insertion point — skipping setIcon patch");
+  return currentSource;
+}
+
+function applyLinuxReadyToShowWindowStatePatch(currentSource) {
+  const alreadyPatchedRegex =
+    /[A-Za-z_$][\w$]*&&[A-Za-z_$][\w$]*\.once\(`ready-to-show`,\(\)=>\{[A-Za-z_$][\w$]*\.isDestroyed\(\)\|\|[A-Za-z_$][\w$]*\.maximize\(\)\}\)/;
+  if (alreadyPatchedRegex.test(currentSource)) {
     return currentSource;
   }
 
-  const windowVar = match[1];
-  return currentSource.replace(
-    readyRegex,
-    `process.platform===\`linux\`&&${windowVar}.setIcon(${iconPathExpression}),${match[0]}`,
-  );
+  const readyToShowMaximizeRegex =
+    /([A-Za-z_$][\w$]*)\.once\(`ready-to-show`,\(\)=>\{\1\.isDestroyed\(\)\|\|\1\.maximize\(\)\}\)/g;
+  let patchedAny = false;
+  const patchedSource = currentSource.replace(readyToShowMaximizeRegex, (_match, windowVar, offset, source) => {
+    const prefix = source.slice(Math.max(0, offset - 120), offset);
+    const maximizedStateMatch = prefix.match(/([A-Za-z_$][\w$]*)&&process\.platform===`linux`&&[A-Za-z_$][\w$]*\.setIcon\(/);
+    const maximizedStateVar = maximizedStateMatch?.[1] ?? "false";
+    patchedAny = true;
+    return `${maximizedStateVar}&&${windowVar}.once(\`ready-to-show\`,()=>{${windowVar}.isDestroyed()||${windowVar}.maximize()})`;
+  });
+
+  if (patchedAny) {
+    return patchedSource;
+  }
+
+  if (currentSource.includes("ready-to-show") && currentSource.includes(".maximize()")) {
+    console.warn("WARN: Could not find ready-to-show maximize hook — skipping Linux window-state patch");
+  }
+
+  return currentSource;
 }
 
 function applyLinuxOpaqueBackgroundPatch(currentSource) {
@@ -296,24 +333,26 @@ function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {
     "(()=>{let codexLinuxFinalizeQuit=()=>{d(),f.dispose(),n.app.quit()},codexLinuxDrainPromise=Promise.all([...u.values()].map(e=>e.flush()));" +
     `if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise,new Promise(e=>setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===\`number\`?codexLinuxExplicitQuitDrainTimeoutMs:3e3))]).finally(codexLinuxFinalizeQuit);return}` +
     "codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()";
-
-  if (patchedSource.includes("codexLinuxDrainPromise=Promise.all([...u.values()].map(e=>e.flush()))")) {
-    return patchedSource;
-  }
+  let patchedAny = false;
 
   if (patchedSource.includes(originalDrainSnippet)) {
-    return patchedSource.replace(originalDrainSnippet, patchedDrainSnippet);
+    patchedAny = true;
+    patchedSource = patchedSource.split(originalDrainSnippet).join(patchedDrainSnippet);
   }
 
   const drainRegex =
-    /Promise\.all\(\[\.\.\.([A-Za-z_$][\w$]*)\.values\(\)\]\.map\(e=>e\.flush\(\)\)\)\.finally\(\(\)=>\{([A-Za-z_$][\w$]*)\(\),([A-Za-z_$][\w$]*)\.dispose\(\),([A-Za-z_$][\w$]*)\.app\.quit\(\)\}\)/;
-  if (drainRegex.test(patchedSource)) {
-    patchedSource = patchedSource.replace(
-      drainRegex,
-      (_match, globalStatesVar, flushDisposeVar, disposablesVar, electronVar) =>
-        `(()=>{let codexLinuxFinalizeQuit=()=>{${flushDisposeVar}(),${disposablesVar}.dispose(),${electronVar}.app.quit()},codexLinuxDrainPromise=Promise.all([...${globalStatesVar}.values()].map(e=>e.flush()));if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise,new Promise(e=>setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===\`number\`?codexLinuxExplicitQuitDrainTimeoutMs:3e3))]).finally(codexLinuxFinalizeQuit);return}codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()`,
-    );
-  } else if (
+    /Promise\.all\(\[\.\.\.([A-Za-z_$][\w$]*)\.values\(\)\]\.map\(e=>e\.flush\(\)\)\)\.finally\(\(\)=>\{([A-Za-z_$][\w$]*)\(\),([A-Za-z_$][\w$]*)\.dispose\(\),([A-Za-z_$][\w$]*)\.app\.quit\(\)\}\)/g;
+  patchedSource = patchedSource.replace(
+    drainRegex,
+    (_match, globalStatesVar, flushDisposeVar, disposablesVar, electronVar) => {
+      patchedAny = true;
+      return `(()=>{let codexLinuxFinalizeQuit=()=>{${flushDisposeVar}(),${disposablesVar}.dispose(),${electronVar}.app.quit()},codexLinuxDrainPromise=Promise.all([...${globalStatesVar}.values()].map(e=>e.flush()));if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise,new Promise(e=>setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===\`number\`?codexLinuxExplicitQuitDrainTimeoutMs:3e3))]).finally(codexLinuxFinalizeQuit);return}codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()`;
+    },
+  );
+
+  if (
+    !patchedAny &&
+    !patchedSource.includes("codexLinuxDrainPromise=Promise.all(") &&
     patchedSource.includes("n.app.on(`will-quit`,") &&
     patchedSource.includes(".map(e=>e.flush())")
   ) {
@@ -334,23 +373,25 @@ function applyLinuxExplicitQuitPromptBypassPatch(currentSource) {
   const beforeQuitPatch =
     `if(${promptBypassExpression}e||i.canQuitWithoutPrompt()||r||!s&&!c){g=!0,a.markAppQuitting();return}`;
   const beforeQuitRegex =
-    /if\(([A-Za-z_$][\w$]*)\|\|([A-Za-z_$][\w$]*)\.canQuitWithoutPrompt\(\)\|\|([A-Za-z_$][\w$]*)\|\|!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)\)\{([A-Za-z_$][\w$]*)=!0,([A-Za-z_$][\w$]*)\.markAppQuitting\(\);return\}/;
-
-  if (patchedSource.includes(promptBypassGuard)) {
-    return patchedSource;
-  }
+    /if\(([A-Za-z_$][\w$]*)\|\|([A-Za-z_$][\w$]*)\.canQuitWithoutPrompt\(\)\|\|([A-Za-z_$][\w$]*)\|\|!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)\)\{([A-Za-z_$][\w$]*)=!0,([A-Za-z_$][\w$]*)\.markAppQuitting\(\);return\}/g;
+  let patchedAny = false;
 
   if (patchedSource.includes(beforeQuitNeedle)) {
-    return patchedSource.replace(beforeQuitNeedle, beforeQuitPatch);
+    patchedAny = true;
+    patchedSource = patchedSource.split(beforeQuitNeedle).join(beforeQuitPatch);
   }
 
-  if (beforeQuitRegex.test(patchedSource)) {
-    patchedSource = patchedSource.replace(
-      beforeQuitRegex,
-      (_match, updateInstallVar, quitControllerVar, appQuittingVar, activeConversationVar, automationVar, quittingStateVar, appQuittingControllerVar) =>
-        `if(${promptBypassExpression}${updateInstallVar}||${quitControllerVar}.canQuitWithoutPrompt()||${appQuittingVar}||!${activeConversationVar}&&!${automationVar}){${quittingStateVar}=!0,${appQuittingControllerVar}.markAppQuitting();return}`,
-    );
-  } else if (
+  patchedSource = patchedSource.replace(
+    beforeQuitRegex,
+    (_match, updateInstallVar, quitControllerVar, appQuittingVar, activeConversationVar, automationVar, quittingStateVar, appQuittingControllerVar) => {
+      patchedAny = true;
+      return `if(${promptBypassExpression}${updateInstallVar}||${quitControllerVar}.canQuitWithoutPrompt()||${appQuittingVar}||!${activeConversationVar}&&!${automationVar}){${quittingStateVar}=!0,${appQuittingControllerVar}.markAppQuitting();return}`;
+    },
+  );
+
+  if (
+    !patchedAny &&
+    !patchedSource.includes(promptBypassGuard) &&
     patchedSource.includes("showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`]") &&
     patchedSource.includes(".canQuitWithoutPrompt()")
   ) {
@@ -374,23 +415,28 @@ function applyLinuxExplicitTrayQuitPatch(currentSource) {
     /\{label:((?:rB|mH)\([^)]+\)),click:\(\)=>\{([A-Za-z_$][\w$]*)\.app\.quit\(\)\}\}/;
   const genericTrayQuitRegex =
     /\{label:([A-Za-z_$][\w$]*\(this\.appName\)),click:\(\)=>\{([A-Za-z_$][\w$]*)\.app\.quit\(\)\}\}/;
-  if (patchedSource.includes(trayQuitPatch) || patchedTrayQuitRegex.test(patchedSource)) {
-    // Already patched.
-  } else if (patchedSource.includes(trayQuitNeedle)) {
-    patchedSource = patchedSource.replace(trayQuitNeedle, trayQuitPatch);
-  } else if (trayQuitRegex.test(patchedSource)) {
-    patchedSource = patchedSource.replace(
-      trayQuitRegex,
-      (_match, labelExpr, electronVar) =>
-        `{label:${labelExpr},click:()=>{${quitMarkerExpression}${electronVar}.app.quit()}}`,
-    );
-  } else if (genericTrayQuitRegex.test(patchedSource)) {
-    patchedSource = patchedSource.replace(
-      genericTrayQuitRegex,
-      (_match, labelExpression, electronVar) =>
-        `{label:${labelExpression},click:()=>{${quitMarkerExpression}${electronVar}.app.quit()}}`,
-    );
-  } else if (
+  let patchedAny = false;
+  if (patchedSource.includes(trayQuitNeedle)) {
+    patchedAny = true;
+    patchedSource = patchedSource.split(trayQuitNeedle).join(trayQuitPatch);
+  }
+  patchedSource = patchedSource.replace(
+    trayQuitRegex,
+    (_match, labelExpr, electronVar) => {
+      patchedAny = true;
+      return `{label:${labelExpr},click:()=>{${quitMarkerExpression}${electronVar}.app.quit()}}`;
+    },
+  );
+  patchedSource = patchedSource.replace(
+    genericTrayQuitRegex,
+    (_match, labelExpression, electronVar) => {
+      patchedAny = true;
+      return `{label:${labelExpression},click:()=>{${quitMarkerExpression}${electronVar}.app.quit()}}`;
+    },
+  );
+  if (
+    !patchedAny &&
+    !patchedTrayQuitRegex.test(patchedSource) &&
     patchedSource.includes("getNativeTrayMenuItems(){") &&
     (patchedSource.includes("label:rB(") || patchedSource.includes("role:`quit`"))
   ) {
@@ -408,18 +454,22 @@ function applyLinuxExplicitIpcQuitPatch(currentSource) {
   const quitAppNeedle = "if(o.type===`quit-app`){n.app.quit();return}";
   const quitAppPatch = `if(o.type===\`quit-app\`){${quitMarkerExpression}n.app.quit();return}`;
   const quitAppRegex =
-    /if\(([A-Za-z_$][\w$]*)\.type===`quit-app`\)\{([A-Za-z_$][\w$]*)\.app\.quit\(\);return\}/;
-  if (patchedSource.includes(quitAppPatch)) {
-    // Already patched.
-  } else if (patchedSource.includes(quitAppNeedle)) {
-    patchedSource = patchedSource.replace(quitAppNeedle, quitAppPatch);
-  } else if (quitAppRegex.test(patchedSource)) {
-    patchedSource = patchedSource.replace(
-      quitAppRegex,
-      (_match, messageVar, electronVar) =>
-        `if(${messageVar}.type===\`quit-app\`){${quitMarkerExpression}${electronVar}.app.quit();return}`,
-    );
-  } else if (patchedSource.includes("type===`quit-app`")) {
+    /if\(([A-Za-z_$][\w$]*)\.type===`quit-app`\)\{([A-Za-z_$][\w$]*)\.app\.quit\(\);return\}/g;
+  const patchedQuitAppRegex =
+    /if\([A-Za-z_$][\w$]*\.type===`quit-app`\)\{typeof codexLinuxPrepareForExplicitQuit===`function`\?codexLinuxPrepareForExplicitQuit\(\):typeof codexLinuxMarkQuitInProgress===`function`&&codexLinuxMarkQuitInProgress\(\),[A-Za-z_$][\w$]*\.app\.quit\(\);return\}/;
+  let patchedAny = false;
+  if (patchedSource.includes(quitAppNeedle)) {
+    patchedAny = true;
+    patchedSource = patchedSource.split(quitAppNeedle).join(quitAppPatch);
+  }
+  patchedSource = patchedSource.replace(
+    quitAppRegex,
+    (_match, messageVar, electronVar) => {
+      patchedAny = true;
+      return `if(${messageVar}.type===\`quit-app\`){${quitMarkerExpression}${electronVar}.app.quit();return}`;
+    },
+  );
+  if (!patchedAny && !patchedQuitAppRegex.test(patchedSource) && patchedSource.includes("type===`quit-app`")) {
     console.warn("WARN: Could not find quit-app IPC handler — skipping Linux explicit quit-app patch");
   }
 
@@ -460,18 +510,18 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
   }
 
   const patchedCloseToTrayRegex =
-    /if\(\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&!this\.isAppQuitting&&!\(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress\(\)\)&&this\.options\.canHideLastLocalWindowToTray\?\.\(\)===!0&&![A-Za-z_$][\w$]*\)\{[A-Za-z_$][\w$]*\.preventDefault\(\),[A-Za-z_$][\w$]*\.hide\(\);return\}/;
+    /if\(\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&!this\.isAppQuitting&&!\(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress\(\)\)&&this\.options\.canHideLast(?:Local)?WindowToTray\?\.\(\)===!0&&![A-Za-z_$][\w$]*\)\{[A-Za-z_$][\w$]*\.preventDefault\(\),[A-Za-z_$][\w$]*\.hide\(\);return\}/;
   if (patchedCloseToTrayRegex.test(patchedSource)) {
     // Already patched with a newer minifier's window variable.
   } else {
     const closeToTrayRegex =
-      /if\(process\.platform===`win32`&&!this\.isAppQuitting&&this\.options\.canHideLastLocalWindowToTray\?\.\(\)===!0&&!([A-Za-z_$][\w$]*)\)\{([A-Za-z_$][\w$]*)\.preventDefault\(\),([A-Za-z_$][\w$]*)\.hide\(\);return\}/;
+      /if\(process\.platform===`win32`&&!this\.isAppQuitting&&this\.options\.(canHideLast(?:Local)?WindowToTray)\?\.\(\)===!0&&!([A-Za-z_$][\w$]*)\)\{([A-Za-z_$][\w$]*)\.preventDefault\(\),([A-Za-z_$][\w$]*)\.hide\(\);return\}/;
     const closeToTrayMatch = patchedSource.match(closeToTrayRegex);
     if (closeToTrayMatch != null) {
-      const [, hasOtherWindowVar, eventVar, windowVar] = closeToTrayMatch;
+      const [, gateMethodName, hasOtherWindowVar, eventVar, windowVar] = closeToTrayMatch;
       patchedSource = patchedSource.replace(
         closeToTrayRegex,
-        `if((process.platform===\`win32\`||process.platform===\`linux\`)&&!this.isAppQuitting&&!(typeof codexLinuxIsQuitInProgress===\`function\`&&codexLinuxIsQuitInProgress())&&this.options.canHideLastLocalWindowToTray?.()===!0&&!${hasOtherWindowVar}){${eventVar}.preventDefault(),${windowVar}.hide();return}`,
+        `if((process.platform===\`win32\`||process.platform===\`linux\`)&&!this.isAppQuitting&&!(typeof codexLinuxIsQuitInProgress===\`function\`&&codexLinuxIsQuitInProgress())&&this.options.${gateMethodName}?.()===!0&&!${hasOtherWindowVar}){${eventVar}.preventDefault(),${windowVar}.hide();return}`,
       );
     } else {
       console.warn("WARN: Could not find close-to-tray condition — skipping Linux close-to-tray patch");
@@ -647,57 +697,34 @@ function applyLinuxSingleInstancePatch(currentSource) {
 function applyBrowserUseNodeReplApprovalPatch(currentSource) {
   const approvalPatch =
     "startup_timeout_sec:120,tools:{js:{approval_mode:`approve`}},env:{";
-  if (currentSource.includes(approvalPatch)) {
-    return currentSource;
+  const needle = "startup_timeout_sec:120,env:{";
+  let patchedSource = currentSource;
+  if (patchedSource.includes(needle)) {
+    patchedSource = patchedSource.split(needle).join(approvalPatch);
   }
 
-  const needle = "startup_timeout_sec:120,env:{";
-  if (!currentSource.includes(needle)) {
+  const currentRuntimeConfigRegex =
+    /([A-Za-z_$][\w$]*)\.Dn\(\{([^{}]*?)nodeReplPath:([^,{}]+)(,)(?!tools:\{js:\{approval_mode:`approve`\}\})/g;
+  let patchedAnyCurrentRuntimeConfig = false;
+  patchedSource = patchedSource.replace(
+    currentRuntimeConfigRegex,
+    (_match, runtimeFactoryVar, configPrefix, nodeReplPathVar, comma) => {
+      patchedAnyCurrentRuntimeConfig = true;
+      return `${runtimeFactoryVar}.Dn({${configPrefix}nodeReplPath:${nodeReplPathVar}${comma}tools:{js:{approval_mode:\`approve\`}},`;
+    },
+  );
+
+  if (
+    patchedSource === currentSource &&
+    !patchedSource.includes(approvalPatch) &&
+    !patchedAnyCurrentRuntimeConfig
+  ) {
     console.warn(
       "WARN: Could not find Browser Use node_repl config insertion point — skipping node_repl approval patch",
     );
-    return currentSource;
   }
 
-  return currentSource.replace(needle, approvalPatch);
-}
-
-function applyLinuxBrowserUseIabVisibleOnCreatePatch(currentSource) {
-  const marker = "codexLinuxBrowserUseAutoVisible";
-  if (currentSource.includes(marker)) {
-    return currentSource;
-  }
-
-  const visibilityExpr = (hostExpr, sessionExpr) =>
-    `(()=>{try{${hostExpr}.setBrowserVisibleForBrowserUse(!0,${sessionExpr}.turnId)}catch(__codexLinuxErr){console.warn("${marker}",__codexLinuxErr?.message??__codexLinuxErr)}})()`;
-  const createTabRegex =
-    /if\(([A-Za-z_$][\w$]*)!=null\)return await this\.navigateTabToInitialPage\(\1\),this\.serializeTab\(\1\);let ([A-Za-z_$][\w$]*)=this\.getRequiredBrowserHost\(([A-Za-z_$][\w$]*)\);\2\.setBrowserUseActive\(!0,\3\.turnId\);let ([A-Za-z_$][\w$]*)=await \2\.openPageForBrowserUse\(\{startingUrl:this\.initialPageUrl,turnId:\3\.turnId\}\),([A-Za-z_$][\w$]*)=this\.updateTabForPage\(\4,\2\.routeKey\);return/;
-  const match = currentSource.match(createTabRegex);
-  if (match == null) {
-    if (
-      currentSource.includes("createTabForBrowserUse") &&
-      currentSource.includes("openPageForBrowserUse")
-    ) {
-      console.warn(
-        "WARN: Could not find Browser Use IAB tab creation point — skipping Linux IAB visibility patch",
-      );
-    }
-    return currentSource;
-  }
-
-  const [needle, tabVar, hostVar, sessionVar, pageVar, tabInfoVar] = match;
-  const activeTabVisibility = visibilityExpr(
-    `this.getRequiredBrowserHost(${sessionVar})`,
-    sessionVar,
-  );
-  const newTabVisibility = visibilityExpr(hostVar, sessionVar);
-  const replacement =
-    `if(${tabVar}!=null)return await this.navigateTabToInitialPage(${tabVar}),${activeTabVisibility},this.serializeTab(${tabVar});` +
-    `let ${hostVar}=this.getRequiredBrowserHost(${sessionVar});${hostVar}.setBrowserUseActive(!0,${sessionVar}.turnId);` +
-    `let ${pageVar}=await ${hostVar}.openPageForBrowserUse({startingUrl:this.initialPageUrl,turnId:${sessionVar}.turnId}),${tabInfoVar}=this.updateTabForPage(${pageVar},${hostVar}.routeKey);` +
-    `return ${newTabVisibility},`;
-
-  return currentSource.replace(needle, replacement);
+  return patchedSource;
 }
 
 function applyLinuxChromeExtensionStatusPatch(currentSource) {
@@ -856,7 +883,6 @@ function applyLinuxRemoteControlConfigPreservationPatch(currentSource) {
 
 module.exports = {
   applyBrowserUseNodeReplApprovalPatch,
-  applyLinuxBrowserUseIabVisibleOnCreatePatch,
   applyLinuxChromeExtensionStatusPatch,
   applyLinuxExplicitIpcQuitPatch,
   applyLinuxExplicitQuitPromptBypassPatch,
@@ -866,6 +892,7 @@ module.exports = {
   applyLinuxMenuPatch,
   applyLinuxOpaqueBackgroundPatch,
   applyLinuxQuitGuardPatch,
+  applyLinuxReadyToShowWindowStatePatch,
   applyLinuxRemoteControlConfigPreservationPatch,
   applyLinuxSetIconPatch,
   applyLinuxSingleInstancePatch,

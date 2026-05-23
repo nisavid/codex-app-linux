@@ -312,9 +312,6 @@ impl StagedPackage {
 }
 
 pub(crate) fn stage_package_for_privileged_install(path: &Path) -> Result<StagedPackage> {
-    let file_name = path
-        .file_name()
-        .with_context(|| format!("Package path has no file name: {}", path.display()))?;
     let metadata = fs::metadata(path)
         .with_context(|| format!("Failed to inspect package {}", path.display()))?;
     anyhow::ensure!(
@@ -322,22 +319,74 @@ pub(crate) fn stage_package_for_privileged_install(path: &Path) -> Result<Staged
         "Package path is not a regular file: {}",
         path.display()
     );
+    let source_path = package_identity_path(path)?;
+    let requested_kind = PackageKind::from_path(path);
+    let kind = PackageKind::from_path(&source_path);
+    anyhow::ensure!(
+        requested_kind == kind,
+        "Package format changed while resolving {}",
+        path.display()
+    );
+    ensure_codex_package(&source_path)?;
 
     let dir = PrivateStagingDir::create("codex-app-privileged-install-")
         .context("Failed to create private package staging directory")?;
-    let staged_path = dir.path().join(file_name);
-    fs::copy(path, &staged_path).with_context(|| {
+    let staged_path = dir.path().join(stable_file_name(kind, &source_path)?);
+    fs::copy(&source_path, &staged_path).with_context(|| {
         format!(
             "Failed to stage package {} at {}",
-            path.display(),
+            source_path.display(),
             staged_path.display()
         )
     })?;
+    set_private_file_permissions(&staged_path)?;
+    anyhow::ensure!(
+        PackageKind::from_path(&staged_path) == kind,
+        "Package format changed while stabilizing {}",
+        path.display()
+    );
+    ensure_codex_package(&staged_path)?;
 
     Ok(StagedPackage {
         _dir: dir,
         path: staged_path,
     })
+}
+
+fn package_identity_path(path: &Path) -> Result<PathBuf> {
+    fs::canonicalize(path)
+        .with_context(|| format!("Failed to resolve package path {}", path.display()))
+}
+
+pub(crate) fn ensure_codex_package(path: &Path) -> Result<()> {
+    match PackageKind::from_path(path) {
+        PackageKind::Deb => ensure_package_name(&deb_package_name(path)?, path),
+        PackageKind::Rpm => ensure_package_name(&rpm_package_name(path)?, path),
+        PackageKind::Pacman => {
+            pacman_package_version(path)?;
+            ensure_package_name(&pacman_package_name(path)?, path)
+        }
+    }
+}
+
+fn stable_file_name(kind: PackageKind, path: &Path) -> Result<String> {
+    match kind {
+        PackageKind::Deb => Ok("codex-app.deb".to_string()),
+        PackageKind::Rpm => Ok("codex-app.rpm".to_string()),
+        PackageKind::Pacman => path
+            .file_name()
+            .with_context(|| format!("Pacman package path has no file name: {}", path.display()))
+            .map(|name| name.to_string_lossy().into_owned()),
+    }
+}
+
+fn ensure_package_name(package_name: &str, path: &Path) -> Result<()> {
+    anyhow::ensure!(
+        package_name == PACKAGE_NAME,
+        "Refusing to install package {package_name} from {}; expected {PACKAGE_NAME}",
+        path.display()
+    );
+    Ok(())
 }
 
 struct PrivateStagingDir {
@@ -400,6 +449,17 @@ fn create_private_dir(path: &Path) -> io::Result<()> {
 #[cfg(not(unix))]
 fn create_private_dir(path: &Path) -> io::Result<()> {
     fs::create_dir(path)
+}
+
+#[cfg(unix)]
+fn set_private_file_permissions(path: &Path) -> Result<()> {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("Failed to lock down staged package {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn set_private_file_permissions(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 fn installed_version_from_command(program: &Path, args: &[&str]) -> String {
@@ -515,7 +575,7 @@ fn apt_install_command(path: &Path) -> Result<Command> {
 
 fn dpkg_install_command(path: &Path) -> Command {
     let mut command = Command::new(program_path(DPKG_CANDIDATES, "dpkg"));
-    command.arg("-i").arg(path.as_os_str());
+    command.arg("-i").arg("--").arg(path.as_os_str());
     command
 }
 
@@ -567,13 +627,15 @@ fn install_command_in_parent(program: &Path, path: &Path) -> Result<Command> {
 
 fn rpm_install_command(path: &Path) -> Command {
     let mut command = Command::new(program_path(RPM_CANDIDATES, "rpm"));
-    command.args(["-Uvh"]).arg(path.as_os_str());
+    command.args(["-Uvh", "--"]).arg(path.as_os_str());
     command
 }
 
 fn pacman_install_command(path: &Path) -> Command {
     let mut command = Command::new(program_path(PACMAN_CANDIDATES, "pacman"));
-    command.args(["-U", "--noconfirm"]).arg(path.as_os_str());
+    command
+        .args(["-U", "--noconfirm", "--"])
+        .arg(path.as_os_str());
     command
 }
 
@@ -600,6 +662,14 @@ fn validate_installed_updater_binary(installed: &Path) -> Result<PathBuf> {
         installed.display()
     );
     Ok(installed.to_path_buf())
+}
+
+fn deb_package_name(path: &Path) -> Result<String> {
+    let output = dpkg_deb_field_command(path, "Package")
+        .output()
+        .context("Failed to inspect Debian package metadata")?;
+
+    package_metadata_field(output, "dpkg-deb", "package name", path)
 }
 
 fn deb_package_version(path: &Path) -> Result<String> {
@@ -632,12 +702,16 @@ fn deb_package_field(path: &Path, field: &str) -> Result<String> {
     Ok(value)
 }
 
+fn rpm_package_name(path: &Path) -> Result<String> {
+    let output = rpm_query_command(path, "%{NAME}")
+        .output()
+        .context("Failed to inspect RPM package metadata")?;
+
+    package_metadata_field(output, "rpm", "package name", path)
+}
+
 fn rpm_package_version(path: &Path) -> Result<String> {
-    let output = Command::new(program_path(RPM_CANDIDATES, "rpm"))
-        .arg("-qp")
-        .arg("--queryformat")
-        .arg("%{VERSION}-%{RELEASE}")
-        .arg(path)
+    let output = rpm_query_command(path, "%{VERSION}-%{RELEASE}")
         .output()
         .context("Failed to inspect RPM package metadata")?;
 
@@ -657,6 +731,61 @@ fn rpm_package_version(path: &Path) -> Result<String> {
         path.display()
     );
     Ok(version)
+}
+
+fn pacman_package_name(path: &Path) -> Result<String> {
+    let output = pacman_query_name_command(path)
+        .output()
+        .context("Failed to inspect pacman package metadata")?;
+
+    package_metadata_field(output, "pacman", "package name", path)
+}
+
+fn dpkg_deb_field_command(path: &Path, field: &str) -> Command {
+    let mut command = Command::new(program_path(DPKG_DEB_CANDIDATES, "dpkg-deb"));
+    command.arg("-f").arg("--").arg(path).arg(field);
+    command
+}
+
+fn rpm_query_command(path: &Path, queryformat: &str) -> Command {
+    let mut command = Command::new(program_path(RPM_CANDIDATES, "rpm"));
+    command
+        .arg("-qp")
+        .arg("--queryformat")
+        .arg(queryformat)
+        .arg("--")
+        .arg(path);
+    command
+}
+
+fn pacman_query_name_command(path: &Path) -> Command {
+    let mut command = Command::new(program_path(PACMAN_CANDIDATES, "pacman"));
+    command.args(["-Qqp", "--"]).arg(path);
+    command
+}
+
+fn package_metadata_field(
+    output: std::process::Output,
+    program: &str,
+    field: &str,
+    path: &Path,
+) -> Result<String> {
+    anyhow::ensure!(
+        output.status.success(),
+        "{program} could not read the {field} from {}",
+        path.display()
+    );
+
+    let value = String::from_utf8(output.stdout)
+        .with_context(|| format!("{program} returned a non-UTF8 {field}"))?
+        .trim()
+        .to_string();
+    anyhow::ensure!(
+        !value.is_empty(),
+        "{program} returned an empty {field} for {}",
+        path.display()
+    );
+    Ok(value)
 }
 
 fn is_version_newer(candidate: &str, installed: &str) -> Result<bool> {
@@ -892,20 +1021,37 @@ mod tests {
     }
 
     #[test]
-    fn stages_privileged_install_package_in_private_copy() -> Result<()> {
+    fn rejects_unreadable_privileged_install_package_metadata() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let source = temp.path().join("codex-app_26.429.20946_amd64.deb");
         fs::write(&source, b"validated bytes")?;
 
-        let staged = stage_package_for_privileged_install(&source)?;
-        fs::write(&source, b"mutated bytes")?;
+        let error = match stage_package_for_privileged_install(&source) {
+            Ok(_) => anyhow::bail!("fake package metadata was accepted"),
+            Err(error) => error,
+        };
 
-        assert_ne!(staged.path(), source.as_path());
+        assert!(error.to_string().contains("Debian package metadata"));
+        Ok(())
+    }
+
+    #[test]
+    fn stable_file_name_uses_safe_names_for_deb_and_rpm() -> Result<()> {
         assert_eq!(
-            staged.path().file_name(),
-            Some(std::ffi::OsStr::new("codex-app_26.429.20946_amd64.deb"))
+            stable_file_name(PackageKind::Deb, Path::new("-evil.deb"))?,
+            "codex-app.deb"
         );
-        assert_eq!(fs::read(staged.path())?, b"validated bytes");
+        assert_eq!(
+            stable_file_name(PackageKind::Rpm, Path::new("-evil.rpm"))?,
+            "codex-app.rpm"
+        );
+        assert_eq!(
+            stable_file_name(
+                PackageKind::Pacman,
+                Path::new("/tmp/codex-app-2026.03.30-1-x86_64.pkg.tar.zst")
+            )?,
+            "codex-app-2026.03.30-1-x86_64.pkg.tar.zst"
+        );
         Ok(())
     }
 
@@ -1136,5 +1282,55 @@ mod tests {
             "2026.04.02.120000-1"
         );
         Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolves_pacman_latest_symlink_to_versioned_package_identity() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let package_name = "codex-app-2026.04.02.120000-1-x86_64.pkg.tar.zst";
+        let package_path = temp.path().join(package_name);
+        let latest_path = temp.path().join("codex-app-latest.pkg.tar.zst");
+        std::fs::write(&package_path, b"pkg")?;
+        std::os::unix::fs::symlink(package_name, &latest_path)?;
+
+        let identity_path = package_identity_path(&latest_path)?;
+
+        assert_eq!(
+            identity_path.file_name().and_then(|name| name.to_str()),
+            Some(package_name)
+        );
+        assert_eq!(
+            stable_file_name(PackageKind::Pacman, &identity_path)?,
+            package_name
+        );
+        assert_eq!(
+            pacman_package_version(&identity_path)?,
+            "2026.04.02.120000-1"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_mismatched_package_name() {
+        let error = ensure_package_name("not-codex", Path::new("/tmp/not-codex.deb"))
+            .expect_err("foreign package names must be rejected");
+
+        assert!(error.to_string().contains("expected codex-app"));
+    }
+
+    #[test]
+    fn accepts_codex_package_name() -> Result<()> {
+        ensure_package_name("codex-app", Path::new("/tmp/codex-app.deb"))
+    }
+
+    #[test]
+    fn rejects_non_codex_pacman_package_filename() {
+        let error = ensure_codex_package(Path::new(
+            "/tmp/not-codex-2026.04.02.120000-1-x86_64.pkg.tar.zst",
+        ))
+        .expect_err("foreign pacman packages must be rejected");
+
+        assert!(error.to_string().contains("codex-app-"));
     }
 }

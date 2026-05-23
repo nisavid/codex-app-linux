@@ -132,8 +132,8 @@ render_desktop_entry() {
         -e "s/codex-app-updater/__CODEX_APP_UPDATER__/g" \
         -e "s/codex-app/$package_name/g" \
         -e "s/__CODEX_APP_UPDATER__/codex-app-updater/g" \
-        -e "s/^Name=.*/Name=$display_name/g" \
-        -e "s/^Comment=.*/Comment=$comment/g" \
+        -e "0,/^Name=.*/s/^Name=.*/Name=$display_name/" \
+        -e "0,/^Comment=.*/s/^Comment=.*/Comment=$comment/" \
         "$DESKTOP_TEMPLATE" > "$temp_target"
     if package_with_updater_enabled; then
         mv "$temp_target" "$target"
@@ -274,6 +274,13 @@ SCRIPT
     chmod 0644 "$target"
 }
 
+render_desktop_entry_doctor_helper() {
+    local target="$1"
+
+    cp "$REPO_DIR/packaging/linux/codex-app-desktop-entry-doctor.sh" "$target"
+    chmod 0644 "$target"
+}
+
 write_no_updater_deb_postinst() {
     local target="$1"
     local package_name
@@ -288,10 +295,16 @@ if command -v update-desktop-database >/dev/null 2>&1; then
 fi
 
 CLEANUP_HELPER="/usr/lib/$package_name/no-updater-transition-cleanup.sh"
+DESKTOP_ENTRY_DOCTOR="/opt/$package_name/.codex-linux/codex-app-desktop-entry-doctor.sh"
 if [ -f "\$CLEANUP_HELPER" ]; then
     # shellcheck source=/usr/lib/$package_name/no-updater-transition-cleanup.sh
     . "\$CLEANUP_HELPER"
     codex_no_updater_cleanup_update_manager_service || true
+fi
+if [ -f "\$DESKTOP_ENTRY_DOCTOR" ]; then
+    # shellcheck source=/opt/$package_name/.codex-linux/codex-app-desktop-entry-doctor.sh
+    . "\$DESKTOP_ENTRY_DOCTOR"
+    codex_app_repair_system_package_shadow_entries $package_name || true
 fi
 
 exit 0
@@ -352,6 +365,7 @@ write_no_updater_pacman_install_hooks() {
     package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
     cat > "$target" <<SCRIPT
 CLEANUP_HELPER="/usr/lib/$package_name/no-updater-transition-cleanup.sh"
+DESKTOP_ENTRY_DOCTOR="/opt/$package_name/.codex-linux/codex-app-desktop-entry-doctor.sh"
 
 codex_no_updater_cleanup_if_present() {
     if [ -f "\$CLEANUP_HELPER" ]; then
@@ -361,10 +375,19 @@ codex_no_updater_cleanup_if_present() {
     fi
 }
 
+codex_app_repair_if_present() {
+    if [ -f "\$DESKTOP_ENTRY_DOCTOR" ]; then
+        # shellcheck source=/opt/$package_name/.codex-linux/codex-app-desktop-entry-doctor.sh
+        . "\$DESKTOP_ENTRY_DOCTOR"
+        codex_app_repair_system_package_shadow_entries $package_name || true
+    fi
+}
+
 post_install() {
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
     fi
+    codex_app_repair_if_present
     codex_no_updater_cleanup_if_present
 }
 
@@ -495,6 +518,7 @@ stage_common_package_files() {
     normalize_app_payload_modes "$app_root"
     mkdir -p "$app_root/.codex-linux"
     cp "$ICON_SOURCE" "$app_root/.codex-linux/$PACKAGE_NAME.png"
+    render_desktop_entry_doctor_helper "$app_root/.codex-linux/codex-app-desktop-entry-doctor.sh"
     render_desktop_entry "$root/usr/share/applications/$PACKAGE_NAME.desktop"
     cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"
     if package_with_updater_enabled; then
@@ -536,10 +560,13 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/Cargo.toml" "$update_builder_root/Cargo.toml"
     cp "$REPO_DIR/Cargo.lock" "$update_builder_root/Cargo.lock"
     cp -r "$REPO_DIR/computer-use-linux" "$update_builder_root/computer-use-linux"
+    cp -r "$REPO_DIR/read-aloud-linux" "$update_builder_root/read-aloud-linux"
     cp -r "$REPO_DIR/updater" "$update_builder_root/updater"
     mkdir -p "$update_builder_root/plugins/openai-bundled/plugins"
     cp -r "$REPO_DIR/plugins/openai-bundled/plugins/computer-use" \
         "$update_builder_root/plugins/openai-bundled/plugins/computer-use"
+    cp -r "$REPO_DIR/plugins/openai-bundled/plugins/read-aloud" \
+        "$update_builder_root/plugins/openai-bundled/plugins/read-aloud"
     cp "$REPO_DIR/scripts/build-deb.sh" "$update_builder_root/scripts/build-deb.sh"
     cp "$REPO_DIR/scripts/build-rpm.sh" "$update_builder_root/scripts/build-rpm.sh"
     cp "$REPO_DIR/scripts/build-pacman.sh" "$update_builder_root/scripts/build-pacman.sh"
@@ -565,6 +592,8 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/packaging/linux/control" "$update_builder_root/packaging/linux/control"
     cp "$REPO_DIR/packaging/linux/codex-app.spec" "$update_builder_root/packaging/linux/codex-app.spec"
     cp "$REPO_DIR/packaging/linux/codex-app.desktop" "$update_builder_root/packaging/linux/codex-app.desktop"
+    cp "$REPO_DIR/packaging/linux/codex-app-desktop-entry-doctor.sh" \
+        "$update_builder_root/packaging/linux/codex-app-desktop-entry-doctor.sh"
     cp "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "$update_builder_root/packaging/linux/codex-packaged-runtime.sh"
     cp "$REPO_DIR/packaging/linux/com.github.nisavid.codex-app.update.policy" \
         "$update_builder_root/packaging/linux/com.github.nisavid.codex-app.update.policy"

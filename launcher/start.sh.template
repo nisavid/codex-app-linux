@@ -271,7 +271,7 @@ Environment:
   CODEX_LINUX_RENDERING_MODE=auto|default|wslg
                               Auto-detect WSLg, keep generic Linux defaults, or force the WSLg profile
   CODEX_ELECTRON_DISABLE_GPU_COMPOSITING=0|1
-                              Override the launcher's default --disable-gpu-compositing decision
+                              Set to 1 to add --disable-gpu-compositing for flicker workarounds
   CODEX_FORCE_RENDERER_ACCESSIBILITY=auto|0|1
                               Override --force-renderer-accessibility; auto skips it under WSLg
   CODEX_MULTI_LAUNCH=1        Treat normal launches like --new-instance
@@ -575,11 +575,13 @@ sync_bundled_marketplace_cache() {
 }
 
 sync_browser_use_bundled_plugin_cache() {
-    local source_plugin="$SCRIPT_DIR/resources/plugins/openai-bundled/plugins/browser-use"
+    local source_plugin="$SCRIPT_DIR/resources/plugins/openai-bundled/plugins/browser"
     local source_marketplace="$SCRIPT_DIR/resources/plugins/openai-bundled/.agents/plugins/marketplace.json"
-    local plugin_json="$source_plugin/.codex-plugin/plugin.json"
-    local source_client="$source_plugin/scripts/browser-client.mjs"
+    local plugin_json=""
+    local source_client=""
     local codex_home="${CODEX_HOME:-$HOME/.codex}"
+    local plugin_name
+    local plugin_dir_name
     local version
     local cache_root
     local cache_plugin
@@ -587,40 +589,65 @@ sync_browser_use_bundled_plugin_cache() {
     local tmp_plugin
     local marketplace_root
     local marketplace_plugins_dir
+    local marketplace_plugin_link
+    local needs_copy=1
+
+    plugin_json="$source_plugin/.codex-plugin/plugin.json"
+    source_client="$source_plugin/scripts/browser-client.mjs"
 
     [ -f "$plugin_json" ] || return 0
     [ -f "$source_client" ] || return 0
 
+    plugin_name="$(bundled_plugin_name "$plugin_json" 2>/dev/null || basename "$source_plugin")"
+    plugin_dir_name="$(basename "$source_plugin")"
+    [ -n "$plugin_name" ] || return 0
+    [ -n "$plugin_dir_name" ] || return 0
+
     marketplace_root="$codex_home/.tmp/bundled-marketplaces/openai-bundled"
     marketplace_plugins_dir="$marketplace_root/.agents/plugins"
+    marketplace_plugin_link="$marketplace_root/plugins/$plugin_dir_name"
     sync_bundled_marketplace_cache "Browser Use" "$source_marketplace" "$marketplace_plugins_dir"
 
     version="$(bundled_plugin_version "$plugin_json" 2>/dev/null || true)"
     [ -n "$version" ] || return 0
 
-    cache_root="$codex_home/plugins/cache/openai-bundled/browser-use"
+    cache_root="$codex_home/plugins/cache/openai-bundled/$plugin_name"
     cache_plugin="$cache_root/$version"
 
     if [ -d "$cache_plugin" ] && \
         diff -qr --exclude='*:com.apple.*' "$source_plugin" "$cache_plugin" >/dev/null 2>&1; then
-        return 0
+        needs_copy=0
     fi
 
-    cache_parent="$(dirname "$cache_plugin")"
-    tmp_plugin="$cache_parent/.browser-use-$version.tmp.$$"
-    remove_tree_if_exists "$tmp_plugin"
-    mkdir -p "$cache_parent"
-
-    if cp -R "$source_plugin" "$tmp_plugin"; then
-        make_tree_owner_writable "$tmp_plugin"
-        find "$tmp_plugin" -type f -name '*:com.apple.*' -delete
-        remove_tree_if_exists "$cache_plugin"
-        mv "$tmp_plugin" "$cache_plugin"
-        echo "Browser Use plugin cache synced from bundled resources: $cache_plugin"
-    else
+    if [ "$needs_copy" -eq 1 ]; then
+        cache_parent="$(dirname "$cache_plugin")"
+        tmp_plugin="$cache_parent/.browser-$version.tmp.$$"
         remove_tree_if_exists "$tmp_plugin"
-        echo "Browser Use plugin cache sync failed; continuing with existing cache."
+        mkdir -p "$cache_parent"
+
+        if cp -R "$source_plugin" "$tmp_plugin"; then
+            make_tree_owner_writable "$tmp_plugin"
+            find "$tmp_plugin" -type f -name '*:com.apple.*' -delete
+            remove_tree_if_exists "$cache_plugin"
+            mv "$tmp_plugin" "$cache_plugin"
+            echo "Browser Use plugin cache synced from bundled resources: $cache_plugin"
+        else
+            remove_tree_if_exists "$tmp_plugin"
+            echo "Browser Use plugin cache sync failed; continuing with existing cache."
+            return 0
+        fi
     fi
+
+    if [ -e "$cache_root/latest" ] && [ ! -L "$cache_root/latest" ]; then
+        remove_tree_if_exists "$cache_root/latest"
+    fi
+    ln -sfn "$version" "$cache_root/latest"
+
+    mkdir -p "$marketplace_root/plugins"
+    if [ -e "$marketplace_plugin_link" ] && [ ! -L "$marketplace_plugin_link" ]; then
+        remove_tree_if_exists "$marketplace_plugin_link"
+    fi
+    ln -sfn "$cache_root/latest" "$marketplace_plugin_link"
 }
 
 chrome_extension_host_arch() {
@@ -803,6 +830,8 @@ sync_computer_use_bundled_plugin_cache() {
     local tmp_plugin
     local marketplace_root
     local marketplace_plugins_dir
+    local marketplace_plugin_link
+    local needs_copy=1
 
     [ -f "$plugin_json" ] || return 0
     [ -f "$source_backend" ] || return 0
@@ -810,6 +839,7 @@ sync_computer_use_bundled_plugin_cache() {
 
     marketplace_root="$codex_home/.tmp/bundled-marketplaces/openai-bundled"
     marketplace_plugins_dir="$marketplace_root/.agents/plugins"
+    marketplace_plugin_link="$marketplace_root/plugins/computer-use"
     sync_bundled_marketplace_cache "Computer Use" "$source_marketplace" "$marketplace_plugins_dir"
 
     version="$(bundled_plugin_version "$plugin_json" 2>/dev/null || true)"
@@ -822,24 +852,122 @@ sync_computer_use_bundled_plugin_cache() {
 
     if [ -d "$cache_plugin" ] && \
         diff -qr --exclude='*:com.apple.*' "$source_plugin" "$cache_plugin" >/dev/null 2>&1; then
-        return 0
+        needs_copy=0
     fi
 
-    cache_parent="$(dirname "$cache_plugin")"
-    tmp_plugin="$cache_parent/.computer-use-$version.tmp.$$"
-    remove_tree_if_exists "$tmp_plugin"
-    mkdir -p "$cache_parent"
-
-    if cp -R "$source_plugin" "$tmp_plugin"; then
-        make_tree_owner_writable "$tmp_plugin"
-        find "$tmp_plugin" -type f -name '*:com.apple.*' -delete
-        remove_tree_if_exists "$cache_plugin"
-        mv "$tmp_plugin" "$cache_plugin"
-        echo "Computer Use plugin cache synced from bundled resources: $cache_plugin"
-    else
+    if [ "$needs_copy" -eq 1 ]; then
+        cache_parent="$(dirname "$cache_plugin")"
+        tmp_plugin="$cache_parent/.computer-use-$version.tmp.$$"
         remove_tree_if_exists "$tmp_plugin"
-        echo "Computer Use plugin cache sync failed; continuing with existing cache."
+        mkdir -p "$cache_parent"
+
+        if cp -R "$source_plugin" "$tmp_plugin"; then
+            make_tree_owner_writable "$tmp_plugin"
+            find "$tmp_plugin" -type f -name '*:com.apple.*' -delete
+            remove_tree_if_exists "$cache_plugin"
+            mv "$tmp_plugin" "$cache_plugin"
+            echo "Computer Use plugin cache synced from bundled resources: $cache_plugin"
+        else
+            remove_tree_if_exists "$tmp_plugin"
+            echo "Computer Use plugin cache sync failed; continuing with existing cache."
+            return 0
+        fi
     fi
+
+    if [ -e "$cache_root/latest" ] && [ ! -L "$cache_root/latest" ]; then
+        remove_tree_if_exists "$cache_root/latest"
+    fi
+    ln -sfn "$version" "$cache_root/latest"
+
+    mkdir -p "$marketplace_root/plugins"
+    if [ -e "$marketplace_plugin_link" ] && [ ! -L "$marketplace_plugin_link" ]; then
+        remove_tree_if_exists "$marketplace_plugin_link"
+    fi
+    ln -sfn "$cache_root/latest" "$marketplace_plugin_link"
+}
+
+sync_read_aloud_bundled_plugin_cache() {
+    local source_plugin="$SCRIPT_DIR/resources/plugins/openai-bundled/plugins/read-aloud"
+    local source_marketplace="$SCRIPT_DIR/resources/plugins/openai-bundled/.agents/plugins/marketplace.json"
+    local plugin_json="$source_plugin/.codex-plugin/plugin.json"
+    local source_backend="$source_plugin/bin/codex-read-aloud-linux"
+    local source_runner="$source_plugin/bin/kokoro-stdin"
+    local source_python_runner="$source_plugin/bin/kokoro_stdin.py"
+    local codex_home="${CODEX_HOME:-$HOME/.codex}"
+    local version
+    local cache_root
+    local cache_plugin
+    local cache_backend
+    local cache_runner
+    local cache_python_runner
+    local cache_parent
+    local tmp_plugin
+    local marketplace_root
+    local marketplace_plugins_dir
+    local marketplace_plugin_link
+    local needs_copy=1
+
+    [ -f "$plugin_json" ] || return 0
+    [ -x "$source_backend" ] || return 0
+    [ -x "$source_runner" ] || return 0
+    [ -f "$source_python_runner" ] || return 0
+
+    marketplace_root="$codex_home/.tmp/bundled-marketplaces/openai-bundled"
+    marketplace_plugins_dir="$marketplace_root/.agents/plugins"
+    marketplace_plugin_link="$marketplace_root/plugins/read-aloud"
+    if [ -f "$source_marketplace" ]; then
+        mkdir -p "$marketplace_plugins_dir" "$marketplace_root/plugins"
+        rm -f "$marketplace_plugins_dir/marketplace.json"
+        cp "$source_marketplace" "$marketplace_plugins_dir/marketplace.json" && \
+            chmod u+w "$marketplace_plugins_dir/marketplace.json" || \
+            echo "Read Aloud bundled marketplace sync failed; continuing with existing marketplace cache."
+    fi
+
+    version="$(bundled_plugin_version "$plugin_json" 2>/dev/null || true)"
+    [ -n "$version" ] || return 0
+
+    cache_root="$codex_home/plugins/cache/openai-bundled/read-aloud"
+    cache_plugin="$cache_root/$version"
+    cache_backend="$cache_plugin/bin/codex-read-aloud-linux"
+    cache_runner="$cache_plugin/bin/kokoro-stdin"
+    cache_python_runner="$cache_plugin/bin/kokoro_stdin.py"
+
+    if [ -f "$cache_backend" ] && [ -f "$cache_runner" ] && [ -f "$cache_python_runner" ] && \
+        cmp -s "$source_backend" "$cache_backend" && \
+        cmp -s "$source_runner" "$cache_runner" && \
+        cmp -s "$source_python_runner" "$cache_python_runner"; then
+        needs_copy=0
+    fi
+
+    if [ "$needs_copy" -eq 1 ]; then
+        cache_parent="$(dirname "$cache_plugin")"
+        tmp_plugin="$cache_parent/.read-aloud-$version.tmp.$$"
+        remove_tree_if_exists "$tmp_plugin"
+        mkdir -p "$cache_parent"
+
+        if cp -R "$source_plugin" "$tmp_plugin"; then
+            make_tree_owner_writable "$tmp_plugin"
+            find "$tmp_plugin" -type f -name '*:com.apple.*' -delete
+            remove_tree_if_exists "$cache_plugin"
+            mv "$tmp_plugin" "$cache_plugin"
+            echo "Read Aloud plugin cache synced from bundled resources: $cache_plugin"
+        else
+            remove_tree_if_exists "$tmp_plugin"
+            echo "Read Aloud plugin cache sync failed; continuing with existing cache."
+            return 0
+        fi
+    fi
+
+    if [ -e "$cache_root/latest" ] && [ ! -L "$cache_root/latest" ]; then
+        remove_tree_if_exists "$cache_root/latest"
+    fi
+    ln -sfn "$version" "$cache_root/latest"
+
+    mkdir -p "$marketplace_root/plugins"
+    if [ -e "$marketplace_plugin_link" ] && [ ! -L "$marketplace_plugin_link" ]; then
+        remove_tree_if_exists "$marketplace_plugin_link"
+    fi
+    ln -sfn "$cache_root/latest" "$marketplace_plugin_link"
 }
 
 resolve_browser_use_runtime_env() {
@@ -877,6 +1005,22 @@ resolve_browser_use_runtime_env() {
     if [ -z "${CODEX_NODE_REPL_PATH:-}" ]; then
         echo "Browser Use node_repl runtime not found; in-app browser automation may be unavailable."
     fi
+}
+
+run_cold_start_hooks() {
+    [ -d "$COLD_START_HOOK_DIR" ] || return 0
+    local hook
+    for hook in "$COLD_START_HOOK_DIR"/*; do
+        [ -f "$hook" ] || continue
+        [ -x "$hook" ] || continue
+        echo "Starting cold-start hook: $hook"
+        (
+            CODEX_LINUX_APP_DIR="$SCRIPT_DIR" \
+            CODEX_LINUX_APP_STATE_DIR="$APP_STATE_DIR" \
+            CODEX_LINUX_LAUNCHER_LOG="$LOG_FILE" \
+            "$hook" "$SCRIPT_DIR" "$APP_STATE_DIR" "$LOG_DIR"
+        ) >>"$LOG_FILE" 2>&1 &
+    done
 }
 
 run_cli_preflight() {
@@ -1024,6 +1168,7 @@ find_codex_cli() {
     local candidate
     for candidate in \
         "$HOME/.bun/bin/codex" \
+        "$HOME/.npm-global/bin/codex" \
         "$HOME/.nvm/versions/node/current/bin/codex" \
         "$HOME/.nvm/versions/node"/*/bin/codex \
         "$HOME/.local/share/pnpm/codex" \
@@ -1221,14 +1366,16 @@ webview_port_is_open() {
     # distros (Ubuntu 26+) its cold start is ~105 ms, which would dominate
     # the 200 ms cap it would enforce.
     local probe_pid kill_pid rc=1 self_pid=$$
-    ( exec 3<>/dev/tcp/127.0.0.1/"$CODEX_LINUX_WEBVIEW_PORT" ) 2>/dev/null &
+    ( trap - EXIT
+      exec 3<>/dev/tcp/127.0.0.1/"$CODEX_LINUX_WEBVIEW_PORT" ) 2>/dev/null &
     probe_pid=$!
     # Watchdog: before SIGKILL, verify /proc/<probe>/stat still reports us as
     # the parent. Guards against PID reuse: if the probe has already exited
     # and the kernel has recycled that PID to an unrelated process between
     # the wait below and the watchdog firing, its ppid will not match
     # $self_pid and the SIGKILL is suppressed.
-    ( sleep 0.2
+    ( trap - EXIT
+      sleep 0.2
       [ -r "/proc/$probe_pid/stat" ] || exit 0
       # /proc/<pid>/stat: "<pid> (comm) <state> <ppid> ..." — comm can contain
       # spaces/parens, so strip up to the last ") " before splitting fields.
@@ -1773,7 +1920,7 @@ should_disable_gpu_compositing() {
         echo "Invalid CODEX_ELECTRON_DISABLE_GPU_COMPOSITING='${CODEX_ELECTRON_DISABLE_GPU_COMPOSITING:-}'; using rendering profile default" >&2
     fi
 
-    [ "$ELECTRON_RENDERING_MODE" != "wslg" ]
+    return 1
 }
 
 should_force_renderer_accessibility() {
@@ -1971,11 +2118,13 @@ launch_electron() {
 
     if [ "$WARM_START" -eq 1 ]; then
         echo "Electron warm-start handoff: pid=$RUNNING_APP_PID rendering_mode=$ELECTRON_RENDERING_MODE wslg_detected=$ELECTRON_WSLG_DETECTED ozone_platform=${ELECTRON_OZONE_PLATFORM:-default} ozone_hint=${ELECTRON_OZONE_HINT:-none} gpu_enabled=$ELECTRON_GPU_ENABLED gpu_disable_arg=$ELECTRON_GPU_DISABLE_SWITCH_IN_ARGS gpu_compositing_disabled=$ELECTRON_GPU_COMPOSITING_DISABLED gl_switch_added=$ELECTRON_GL_SWITCH_ADDED renderer_accessibility_forced=$ELECTRON_RENDERER_ACCESSIBILITY_FORCED"
+        unset ELECTRON_RUN_AS_NODE
         "$SCRIPT_DIR/electron" "${ELECTRON_LAUNCH_ARGS[@]}" "${ELECTRON_ARGS[@]}"
         return $?
     fi
 
     echo "Electron launch mode: rendering_mode=$ELECTRON_RENDERING_MODE wslg_detected=$ELECTRON_WSLG_DETECTED ozone_platform=${ELECTRON_OZONE_PLATFORM:-default} ozone_hint=${ELECTRON_OZONE_HINT:-none} gpu_enabled=$ELECTRON_GPU_ENABLED gpu_disable_arg=$ELECTRON_GPU_DISABLE_SWITCH_IN_ARGS gpu_compositing_disabled=$ELECTRON_GPU_COMPOSITING_DISABLED gl_switch_added=$ELECTRON_GL_SWITCH_ADDED renderer_accessibility_forced=$ELECTRON_RENDERER_ACCESSIBILITY_FORCED"
+    unset ELECTRON_RUN_AS_NODE
     "$SCRIPT_DIR/electron" "${ELECTRON_LAUNCH_ARGS[@]}" "${ELECTRON_ARGS[@]}" &
     ELECTRON_PID=$!
     if [ -n "${RUNNING_APP_PID:-}" ] && pid_matches_executable "$RUNNING_APP_PID" "$SCRIPT_DIR/electron"; then

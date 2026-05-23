@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FILES_DIR="${SCRIPT_DIR}/files"
 SCRIPT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 SOURCE_REPO_ROOT="${CODEX_USER_LOCAL_SOURCE_REPO_DIR:-$SCRIPT_REPO_ROOT}"
+DESKTOP_ENTRY_DOCTOR="${SOURCE_REPO_ROOT}/packaging/linux/codex-app-desktop-entry-doctor.sh"
 XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
@@ -19,6 +20,9 @@ STATE_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/codex-app"
 FROM_UPDATE=0
 ENABLE_TIMER=0
 USER_LOCAL_OZONE_PLATFORM_SETTING=""
+
+# shellcheck disable=SC1090
+. "$DESKTOP_ENTRY_DOCTOR"
 
 while [ $# -gt 0 ]; do
     case "$1" in

@@ -290,6 +290,31 @@ To remove the existing generated tree and redownload the DMG:
 ./install.sh --fresh
 ```
 
+## Guided Native Setup
+
+Run `make setup-native` when you want a host preflight summary before choosing
+the build and install commands. The helper reports package-manager, desktop
+session, package-format, updater, Computer Use, Read Aloud, and optional Linux
+feature readiness. It can write `linux-features/features.json` for the next
+build, but it does not implicitly build, package, or install.
+
+For non-interactive feature config:
+
+```bash
+CODEX_LINUX_FEATURES=remote-mobile-control,read-aloud \
+CODEX_LINUX_DISABLE_FEATURES=conversation-mode \
+CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
+make setup-native
+```
+
+To let the helper run the existing install flow, opt in explicitly:
+
+```bash
+CODEX_BOOTSTRAP_INSTALL_DEPS=1 \
+CODEX_BOOTSTRAP_INSTALL_NATIVE=1 \
+make setup-native
+```
+
 ## Build Native Packages
 
 Packaging scripts require `codex-app/` to exist. Run `make build-app` first.

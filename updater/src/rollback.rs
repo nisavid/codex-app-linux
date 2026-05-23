@@ -1,6 +1,7 @@
 //! Manual rollback support for the local update manager.
 
 use crate::{
+    cache_cleanup,
     config::{RuntimeConfig, RuntimePaths},
     install, install_rollback, liveness, notify,
     state::{PersistedState, UpdateStatus},
@@ -59,10 +60,11 @@ pub async fn run(
         return Ok(());
     }
 
-    trigger_rollback(state, paths, &package_path).await
+    trigger_rollback(config, state, paths, &package_path).await
 }
 
 async fn trigger_rollback(
+    config: &RuntimeConfig,
     state: &mut PersistedState,
     paths: &RuntimePaths,
     package_path: &Path,
@@ -90,6 +92,7 @@ async fn trigger_rollback(
 
     if status.success() {
         apply_successful_rollback_state(
+            &config.workspace_root,
             state,
             install::installed_package_version(),
             package_path,
@@ -153,6 +156,7 @@ fn summarize_command_output(output: &[u8]) -> Option<String> {
 }
 
 fn apply_successful_rollback_state(
+    workspace_root: &Path,
     state: &mut PersistedState,
     installed_version: String,
     package_path: &Path,
@@ -169,6 +173,7 @@ fn apply_successful_rollback_state(
     state.rollback_blocked_dmg_sha256 = blocked_dmg_sha256;
     state.error_message = None;
     state.notified_events.clear();
+    cache_cleanup::normalize_artifact_workspace_dir(workspace_root, state);
 }
 
 #[cfg(test)]
@@ -292,12 +297,13 @@ mod tests {
         state.status = UpdateStatus::Installing;
         state.artifact_paths = ArtifactPaths {
             dmg_path: None,
-            workspace_dir: None,
+            workspace_dir: Some(temp.path().join("workspaces/2026.05.04.131500+badcafe0")),
             package_path: Some(update_path),
             rollback_package_path: Some(rollback_path.clone()),
         };
 
         apply_successful_rollback_state(
+            temp.path(),
             &mut state,
             "2026.05.02.120000".to_string(),
             &rollback_path,
@@ -315,6 +321,7 @@ mod tests {
             state.artifact_paths.rollback_package_path.as_deref(),
             Some(rollback_path.as_path())
         );
+        assert_eq!(state.artifact_paths.workspace_dir, None);
         assert_eq!(
             state.last_known_good_version.as_deref(),
             Some("2026.05.02.120000")
@@ -347,6 +354,7 @@ mod tests {
         });
         let blocked_dmg_sha256 = state.dmg_sha256.clone();
         apply_successful_rollback_state(
+            temp.path(),
             &mut state,
             "2026.05.02.120000".to_string(),
             &rollback_path,
