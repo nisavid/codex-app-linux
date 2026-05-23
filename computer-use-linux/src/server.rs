@@ -434,7 +434,7 @@ impl ComputerUseLinux {
         if !self.ensure_abs_pointer().await {
             return None;
         }
-        let btn = crate::abs_pointer::PointerButton::from_name(button);
+        let btn = crate::abs_pointer::PointerButton::from_name(button)?;
         let mut guard = self.abs_pointer.lock().ok()?;
         let pointer = guard.as_mut()?;
         Some(pointer.click(x, y, btn, count).is_ok())
@@ -2256,13 +2256,22 @@ fn crop_png(
     let img = image::load_from_memory_with_format(raw, image::ImageFormat::Png)
         .map_err(|e| format!("decode png: {e}"))?;
     let (iw, ih) = (img.width(), img.height());
-    let x = x.max(0) as u32;
-    let y = y.max(0) as u32;
-    if x >= iw || y >= ih {
+    let clipped_x = x.max(0);
+    let clipped_y = y.max(0);
+    let mut w = w as i32 - (clipped_x - x);
+    let mut h = h as i32 - (clipped_y - y);
+    if clipped_x >= iw as i32 || clipped_y >= ih as i32 || w <= 0 || h <= 0 {
         return Err("crop origin outside image".into());
     }
-    let w = w.min(iw - x);
-    let h = h.min(ih - y);
+    w = w.min(iw as i32 - clipped_x);
+    h = h.min(ih as i32 - clipped_y);
+    if w <= 0 || h <= 0 {
+        return Err("crop origin outside image".into());
+    }
+    let x = clipped_x as u32;
+    let y = clipped_y as u32;
+    let w = w as u32;
+    let h = h as u32;
     let sub = img.crop_imm(x, y, w, h);
     let mut out = Vec::new();
     sub.write_to(&mut Cursor::new(&mut out), image::ImageFormat::Png)

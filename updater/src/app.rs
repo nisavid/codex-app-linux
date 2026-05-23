@@ -111,11 +111,12 @@ fn sync_and_persist(
 }
 
 fn normalize_workspace_dir_and_persist(
+    workspace_root: &Path,
     state: &mut PersistedState,
     paths: &RuntimePaths,
 ) -> Result<()> {
     let original_state = state.clone();
-    cache_cleanup::normalize_artifact_workspace_dir(&paths.cache_dir, state);
+    cache_cleanup::normalize_artifact_workspace_dir(workspace_root, state);
     persist_if_changed(paths, state, &original_state)
 }
 
@@ -347,7 +348,7 @@ async fn run_daemon(
     paths: &RuntimePaths,
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
-    recover_interrupted_install(state, paths)?;
+    recover_interrupted_install(&config.workspace_root, state, paths)?;
     reconcile_cli_if_present_best_effort(config, state, paths, "daemon startup");
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
@@ -405,7 +406,7 @@ async fn run_check_now(
     if_stale: bool,
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
-    recover_interrupted_install(state, paths)?;
+    recover_interrupted_install(&config.workspace_root, state, paths)?;
     reconcile_cli_if_present_best_effort(config, state, paths, "check-now");
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
@@ -438,8 +439,8 @@ fn run_status(
     json: bool,
 ) -> Result<()> {
     codex_cli::refresh_status(config, state, paths)?;
-    complete_pending_install_if_already_installed(state, paths)?;
-    normalize_workspace_dir_and_persist(state, paths)?;
+    complete_pending_install_if_already_installed(&config.workspace_root, state, paths)?;
+    normalize_workspace_dir_and_persist(&config.workspace_root, state, paths)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(state)?);
@@ -853,8 +854,8 @@ async fn reconcile_pending_install(
     paths: &RuntimePaths,
 ) -> Result<()> {
     sync_runtime_state(config, state);
-    recover_interrupted_install(state, paths)?;
-    if complete_pending_install_if_already_installed(state, paths)? {
+    recover_interrupted_install(&config.workspace_root, state, paths)?;
+    if complete_pending_install_if_already_installed(&config.workspace_root, state, paths)? {
         let _ = maybe_notify_installed(state, paths, config.notifications);
         return Ok(());
     }
@@ -954,7 +955,7 @@ async fn run_install_ready(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     let recovering_interrupted_install = state.status == UpdateStatus::Installing;
-    recover_interrupted_install(state, paths)?;
+    recover_interrupted_install(&config.workspace_root, state, paths)?;
     if recovering_interrupted_install && state.status == UpdateStatus::Failed {
         let message = state
             .error_message
@@ -968,7 +969,7 @@ async fn run_install_ready(
         return Err(anyhow::anyhow!(message));
     }
 
-    if complete_pending_install_if_already_installed(state, paths)? {
+    if complete_pending_install_if_already_installed(&config.workspace_root, state, paths)? {
         let _ = maybe_notify_installed(state, paths, config.notifications);
         println!("Codex App update is already installed or superseded.");
         return Ok(());
@@ -1045,6 +1046,7 @@ async fn run_install_ready(
 }
 
 fn complete_pending_install_if_already_installed(
+    workspace_root: &Path,
     state: &mut PersistedState,
     paths: &RuntimePaths,
 ) -> Result<bool> {
@@ -1081,13 +1083,17 @@ fn complete_pending_install_if_already_installed(
     }
     state.error_message = None;
     state.notified_events.clear();
-    cache_cleanup::normalize_artifact_workspace_dir(&paths.cache_dir, state);
+    cache_cleanup::normalize_artifact_workspace_dir(workspace_root, state);
     persist_state(paths, state)?;
     info!("recovered pending install state because the candidate version is already installed or superseded");
     Ok(true)
 }
 
-fn recover_interrupted_install(state: &mut PersistedState, paths: &RuntimePaths) -> Result<()> {
+fn recover_interrupted_install(
+    workspace_root: &Path,
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+) -> Result<()> {
     if state.status != UpdateStatus::Installing {
         return Ok(());
     }
@@ -1105,7 +1111,7 @@ fn recover_interrupted_install(state: &mut PersistedState, paths: &RuntimePaths)
         }
         state.error_message = None;
         state.notified_events.clear();
-        cache_cleanup::normalize_artifact_workspace_dir(&paths.cache_dir, state);
+        cache_cleanup::normalize_artifact_workspace_dir(workspace_root, state);
         persist_state(paths, state)?;
         info!("recovered interrupted install state because the candidate version is already installed");
         return Ok(());
@@ -1135,7 +1141,7 @@ fn recover_interrupted_install(state: &mut PersistedState, paths: &RuntimePaths)
     state.status = UpdateStatus::ReadyToInstall;
     state.error_message =
         Some("Previous install attempt was interrupted before completion".to_string());
-    cache_cleanup::normalize_artifact_workspace_dir(&paths.cache_dir, state);
+    cache_cleanup::normalize_artifact_workspace_dir(workspace_root, state);
     persist_state(paths, state)?;
     info!(package = %package_path.display(), "recovered interrupted install state back to ready_to_install");
     Ok(())
@@ -2445,7 +2451,9 @@ mod tests {
             .insert("install_auth_required:2026.04.28.082247+abcdef12".to_string());
 
         assert!(complete_pending_install_if_already_installed(
-            &mut state, &paths
+            &paths.cache_dir,
+            &mut state,
+            &paths
         )?);
 
         assert_eq!(state.status, UpdateStatus::Installed);
@@ -2491,7 +2499,9 @@ mod tests {
         });
 
         assert!(!complete_pending_install_if_already_installed(
-            &mut state, &paths
+            &paths.cache_dir,
+            &mut state,
+            &paths
         )?);
 
         assert_eq!(state.status, UpdateStatus::ReadyToInstall);
@@ -2537,13 +2547,14 @@ mod tests {
         let superseded_package_path = temp.path().join("superseded.deb");
         std::fs::write(&superseded_package_path, b"deb")?;
         state.artifact_paths.package_path = Some(superseded_package_path);
-        state.artifact_paths.workspace_dir = Some(
-            temp.path()
-                .join("cache/workspaces/2026.04.28.082247+abcdef12"),
-        );
+        let workspace_root = temp.path().join("custom-workspace-root");
+        state.artifact_paths.workspace_dir =
+            Some(workspace_root.join("workspaces/2026.04.28.082247+abcdef12"));
 
         assert!(complete_pending_install_if_already_installed(
-            &mut state, &paths
+            &workspace_root,
+            &mut state,
+            &paths
         )?);
 
         assert_eq!(state.status, UpdateStatus::Installed);
@@ -2717,7 +2728,7 @@ mod tests {
                 .join("cache/workspaces/2026.03.27.025604+1086e799"),
         );
 
-        recover_interrupted_install(&mut state, &paths)?;
+        recover_interrupted_install(&paths.cache_dir, &mut state, &paths)?;
 
         assert_eq!(state.status, UpdateStatus::Installed);
         assert_eq!(state.candidate_version, None);
@@ -2754,7 +2765,7 @@ mod tests {
         state.candidate_version = Some("2026.03.27.025604+1086e799".to_string());
         state.artifact_paths.package_path = Some(package_path);
 
-        recover_interrupted_install(&mut state, &paths)?;
+        recover_interrupted_install(&paths.cache_dir, &mut state, &paths)?;
 
         assert_eq!(state.status, UpdateStatus::ReadyToInstall);
         assert!(state

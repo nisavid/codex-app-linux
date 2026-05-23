@@ -35,10 +35,12 @@ impl AbsPointer {
         let width = width.max(1);
         let height = height.max(1);
         // value, min, max, fuzz, flat, resolution. resolution=1 unit/px.
+        let max_x = width.saturating_sub(1);
+        let max_y = height.saturating_sub(1);
         let abs_x =
-            UinputAbsSetup::new(AbsoluteAxisCode::ABS_X, AbsInfo::new(0, 0, width, 0, 0, 1));
+            UinputAbsSetup::new(AbsoluteAxisCode::ABS_X, AbsInfo::new(0, 0, max_x, 0, 0, 1));
         let abs_y =
-            UinputAbsSetup::new(AbsoluteAxisCode::ABS_Y, AbsInfo::new(0, 0, height, 0, 0, 1));
+            UinputAbsSetup::new(AbsoluteAxisCode::ABS_Y, AbsInfo::new(0, 0, max_y, 0, 0, 1));
         let keys =
             AttributeSet::from_iter([KeyCode::BTN_LEFT, KeyCode::BTN_RIGHT, KeyCode::BTN_MIDDLE]);
         // INPUT_PROP_DIRECT marks the device as a direct (absolute) pointer so
@@ -68,8 +70,8 @@ impl AbsPointer {
 
     /// Move the pointer to absolute logical coordinates `(x, y)`.
     pub fn move_to(&mut self, x: i32, y: i32) -> Result<()> {
-        let x = x.clamp(0, self.width);
-        let y = y.clamp(0, self.height);
+        let x = x.clamp(0, self.width.saturating_sub(1));
+        let y = y.clamp(0, self.height.saturating_sub(1));
         self.device
             .emit(&[
                 InputEvent::new_now(EventType::ABSOLUTE.0, AbsoluteAxisCode::ABS_X.0, x),
@@ -125,11 +127,12 @@ pub enum PointerButton {
 }
 
 impl PointerButton {
-    pub fn from_name(name: Option<&str>) -> Self {
+    pub fn from_name(name: Option<&str>) -> Option<Self> {
         match name.unwrap_or("left").to_ascii_lowercase().as_str() {
-            "right" => Self::Right,
-            "middle" => Self::Middle,
-            _ => Self::Left,
+            "left" => Some(Self::Left),
+            "right" => Some(Self::Right),
+            "middle" => Some(Self::Middle),
+            _ => None,
         }
     }
 

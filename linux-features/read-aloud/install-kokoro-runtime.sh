@@ -28,9 +28,12 @@ download_file() {
     local tmp="$target.tmp"
     local actual_bytes
 
-    [ -f "$target" ] && return 0
+    if [ -s "$target" ]; then
+        actual_bytes="$(wc -c < "$target" | tr -d ' ')"
+        [ "${actual_bytes:-0}" -ge "$min_bytes" ] && return 0
+    fi
     mkdir -p "$(dirname "$target")"
-    rm -f "$tmp"
+    rm -f "$target" "$tmp"
 
     if command -v curl >/dev/null 2>&1; then
         curl --fail --location --show-error --user-agent "codex-app-read-aloud" --output "$tmp" "$url"

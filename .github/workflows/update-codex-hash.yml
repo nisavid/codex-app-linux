@@ -6,7 +6,6 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  actions: write
   contents: write
   pull-requests: write
 
@@ -66,7 +65,7 @@ jobs:
           BRANCH="bot/update-codex-dmg-hash"
           git fetch origin "$BRANCH:refs/remotes/origin/$BRANCH" || true
           git checkout -B "$BRANCH"
-          git add flake.nix
+          git add flake.nix nix/native-modules/package.json nix/native-modules/package-lock.json
           git commit \
             -m "fix(nix): update upstream Nix hashes" \
             -m "Refreshed Codex.dmg SRI hash to $CODEX_DMG_HASH." \

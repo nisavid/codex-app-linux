@@ -274,7 +274,7 @@ function applyLinuxAppUpdaterBridgePatch(currentSource) {
     "async function codexLinuxShowUpdateMessage(codexLinuxMessage,codexLinuxDetail){try{let e=codexLinuxGetElectronModule();if(!e)return;await e.dialog?.showMessageBox({type:`info`,buttons:[`OK`],defaultId:0,noLink:!0,message:codexLinuxMessage,detail:codexLinuxDetail})}catch{}}",
   );
   if (!patchedSource.includes("function codexLinuxQuitForUpdate(")) {
-    const quitSource = `${buildInstallAfterQuitSource(childProcessVar)}${buildQuitForUpdateSource(electronVar, true)}`;
+    const quitSource = `${buildInstallAfterQuitSource(childProcessVar)}${buildQuitForUpdateSource(true)}`;
     const runManagerNeedle = "function codexLinuxRunAppUpdater(";
     if (patchedSource.includes(runManagerNeedle)) {
       patchedSource = patchedSource.replace(runManagerNeedle, `${quitSource}${runManagerNeedle}`);

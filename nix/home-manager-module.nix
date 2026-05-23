@@ -109,7 +109,7 @@ in
       };
 
       environmentFile = lib.mkOption {
-        type = lib.types.nullOr lib.types.path;
+        type = lib.types.nullOr lib.types.str;
         default = null;
         example = "/run/secrets/codex-remote-control.env";
         description = ''

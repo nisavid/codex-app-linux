@@ -708,6 +708,15 @@ const bundledRoot = process.argv[2];
 const marketplacePath = process.argv[3];
 const candidates = [];
 
+function pushBundledCandidate(root, localPath) {
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(resolvedRoot, localPath);
+  const relative = path.relative(resolvedRoot, resolved);
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+    candidates.push(resolved);
+  }
+}
+
 try {
   const marketplace = JSON.parse(fs.readFileSync(marketplacePath, "utf8"));
   const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
@@ -719,7 +728,7 @@ try {
     typeof source.path === "string" &&
     source.path.length > 0
   ) {
-    candidates.push(path.resolve(bundledRoot, source.path));
+    pushBundledCandidate(bundledRoot, source.path);
   }
 } catch (_err) {
   // Fall back to the known upstream directory name below.
@@ -804,6 +813,14 @@ const plugins = [];
 
 if (includeBrowser) {
   const marketplaceRoot = path.resolve(path.dirname(destinationPath), "..", "..");
+  function stagedLocalManifest(localPath) {
+    const resolved = path.resolve(marketplaceRoot, localPath);
+    const relative = path.relative(marketplaceRoot, resolved);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      return null;
+    }
+    return path.join(resolved, ".codex-plugin", "plugin.json");
+  }
   const browser = sourcePlugins.find((plugin) => {
     if (plugin == null || typeof plugin !== "object") {
       return false;
@@ -815,12 +832,8 @@ if (includeBrowser) {
     if (source.source !== "local" || typeof source.path !== "string") {
       return true;
     }
-    const stagedManifest = path.join(
-      path.resolve(marketplaceRoot, source.path),
-      ".codex-plugin",
-      "plugin.json",
-    );
-    return fs.existsSync(stagedManifest);
+    const stagedManifest = stagedLocalManifest(source.path);
+    return stagedManifest != null && fs.existsSync(stagedManifest);
   });
   if (browser == null) {
     let fallback = null;

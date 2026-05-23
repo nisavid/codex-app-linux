@@ -163,6 +163,8 @@ function applyLinuxAppSunsetPatch(currentSource) {
 }
 
 function applyLinuxAppServerFeatureEnablementPatch(currentSource) {
+  // Keep this whitelist to features verified on Linux; add entries when a
+  // feature is validated and record that in the PR that enables it.
   const supportedFeatures = new Set([
     "apps",
     "memories",

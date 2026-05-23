@@ -222,7 +222,7 @@ if [ "$WRITE_PINS" = "1" ]; then
     write_nix_string codexVersion "$dmg_codex_version"
     write_nix_string electronVersion "$dmg_electron_version"
     write_json_dep "$NATIVE_MODULES_PKG" electron "$dmg_electron_version"
-    write_json_dep "$NATIVE_MODULES_PKG" better-sqlite3 "$dmg_better_sqlite3_version"
+    write_json_dep "$NATIVE_MODULES_PKG" better-sqlite3 "$expected_native_better_sqlite3_version"
     write_json_dep "$NATIVE_MODULES_PKG" node-pty "$dmg_node_pty_version"
 
     # Re-read so the assertions below confirm the writes landed.

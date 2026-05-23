@@ -56,7 +56,7 @@ Validate it from the app shell:
 ~/.local/bin/gh-normal auth status
 ```
 
-Then use the wrapper anywhere Codex App needs authenticated GitHub CLI
+Then use the wrapper anywhere Codex App requires authenticated GitHub CLI
 access:
 
 ```bash

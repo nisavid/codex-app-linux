@@ -12,6 +12,10 @@ on:
     paths:
       - 'computer-use-linux/**'
 
+concurrency:
+  group: computer-use-sync-reminder-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   issues: write

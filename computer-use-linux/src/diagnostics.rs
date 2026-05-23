@@ -232,7 +232,7 @@ fn capability_map(
     }
 
     let mut accessibility_backends = Vec::new();
-    if accessibility.at_spi_enabled.ok || accessibility.toolkit_accessibility.ok {
+    if can_build_accessibility_tree(accessibility) {
         accessibility_backends.push("at_spi".to_string());
     }
 

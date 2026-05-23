@@ -13,9 +13,10 @@ codex_app_write_user_local_entry() {
     codex_app_template_path="${1:?missing desktop template path}"
     codex_app_target_path="${2:?missing desktop target path}"
     codex_app_home_dir="${3:?missing home directory}"
+    codex_app_home_dir_escaped="$(printf '%s' "$codex_app_home_dir" | sed 's/[&|\\]/\\&/g')"
 
     mkdir -p "$(dirname "$codex_app_target_path")"
-    sed "s|@HOME@|${codex_app_home_dir}|g" \
+    sed "s|@HOME@|${codex_app_home_dir_escaped}|g" \
         "$codex_app_template_path" > "$codex_app_target_path"
     chmod 0644 "$codex_app_target_path"
     codex_app_refresh_desktop_database "$(dirname "$codex_app_target_path")"

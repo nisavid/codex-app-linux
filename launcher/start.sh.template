@@ -917,10 +917,14 @@ sync_read_aloud_bundled_plugin_cache() {
     marketplace_plugin_link="$marketplace_root/plugins/read-aloud"
     if [ -f "$source_marketplace" ]; then
         mkdir -p "$marketplace_plugins_dir" "$marketplace_root/plugins"
-        rm -f "$marketplace_plugins_dir/marketplace.json"
-        cp "$source_marketplace" "$marketplace_plugins_dir/marketplace.json" && \
-            chmod u+w "$marketplace_plugins_dir/marketplace.json" || \
+        if cp "$source_marketplace" "$marketplace_plugins_dir/marketplace.json.tmp.$$" && \
+            chmod u+w "$marketplace_plugins_dir/marketplace.json.tmp.$$" && \
+            mv "$marketplace_plugins_dir/marketplace.json.tmp.$$" "$marketplace_plugins_dir/marketplace.json"; then
+            :
+        else
+            rm -f "$marketplace_plugins_dir/marketplace.json.tmp.$$"
             echo "Read Aloud bundled marketplace sync failed; continuing with existing marketplace cache."
+        fi
     fi
 
     version="$(bundled_plugin_version "$plugin_json" 2>/dev/null || true)"
@@ -2220,10 +2224,12 @@ fi
 
 export_packaged_runtime_env
 if needs_cold_start; then
+    run_cold_start_hooks
     clear_bundled_marketplace_tmp_cache
     sync_browser_use_bundled_plugin_cache
     sync_chrome_bundled_plugin_cache
     sync_computer_use_bundled_plugin_cache
+    sync_read_aloud_bundled_plugin_cache
     fix_bundled_marketplace_tmp_permissions
 fi
 resolve_browser_use_runtime_env
