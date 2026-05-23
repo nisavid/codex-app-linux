@@ -194,11 +194,13 @@ CODEX_WEBVIEW_PORT=5180 make build-dev-app
 
 ### Linux Features
 
-Linux-side feature modules live in `linux-features/`. This fork enables
-`open-target-discovery` by default so the generated app can discover Linux
-terminals, editors, and file managers for the Open menus.
+Linux-side feature modules live in `linux-features/`. This fork enables the
+current Linux integration set by default: Open target discovery, remote-control
+UI, mobile-control host patches, Read Aloud, Read Aloud MCP, and conversation
+mode. Open target discovery lets the generated app discover Linux terminals,
+editors, and file managers for the Open menus.
 
-To disable default features or enable other optional integrations, copy
+To disable default features or enable still-optional integrations, copy
 `linux-features/features.example.json` to the git-ignored
 `linux-features/features.json`, edit the `enabled` and `disabled` lists, then
 rebuild. Packaged installs can use

@@ -1,6 +1,6 @@
 # Conversation Mode
 
-Opt-in Linux voice-in/voice-out conversation mode for normal Codex turns.
+Default-on Linux voice-in/voice-out conversation mode for normal Codex turns.
 
 This feature does not add a new model provider or a new agent tool. It reuses the
 existing composer dictation path for speech-to-text and the Linux Read Aloud
@@ -9,19 +9,19 @@ the webview listens for speech, waits for trailing quiet, submits the transcript
 as a normal Codex message, and speaks each completed assistant turn through Read
 Aloud as Codex produces it.
 
-## Enable
+## Disable
 
 Add the feature id to `linux-features/features.json` before installing or
 rebuilding:
 
 ```json
 {
-  "enabled": ["read-aloud", "conversation-mode"]
+  "disabled": ["conversation-mode"]
 }
 ```
 
-The feature is disabled by default. A session starts only after the user clicks
-the composer voice control. `read-aloud` should be enabled too because
+Conversation mode is available by default, but a session starts only after the
+user clicks the composer voice control. `read-aloud` is default-on too because
 conversation mode speaks through the local Kokoro Read Aloud handler.
 
 ## Scope
@@ -33,7 +33,7 @@ conversation mode speaks through the local Kokoro Read Aloud handler.
   By default it submits after roughly 1.8 seconds of quiet, capped at 2 seconds,
   and a softer continuation threshold keeps low-energy words from being mistaken
   for silence.
-- Speaks assistant output through the opt-in Linux Read Aloud Kokoro backend as
+- Speaks assistant output through the Linux Read Aloud Kokoro backend as
   each assistant turn completes. Multi-turn Codex responses queue later spoken
   turns instead of dropping them after the first spoken item.
 - Keeps a lightweight interrupt monitor active while Codex is speaking or still

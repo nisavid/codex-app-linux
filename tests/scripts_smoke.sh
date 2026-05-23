@@ -1465,12 +1465,26 @@ test_installer_copies_webview_into_generated_app() {
     local workspace="$TMP_DIR/webview-extraction-target"
     local fake_app_dir="$workspace/Codex.app"
     local install_dir="$workspace/codex-app"
+    local feature_config="$workspace/features.json"
     local output_log="$workspace/output.log"
 
     mkdir -p "$fake_app_dir" "$install_dir"
+    cat > "$feature_config" <<'JSON'
+{
+  "disabled": [
+    "conversation-mode",
+    "open-target-discovery",
+    "read-aloud",
+    "read-aloud-mcp",
+    "remote-control-ui",
+    "remote-mobile-control"
+  ]
+}
+JSON
 
     CODEX_INSTALLER_SOURCE_ONLY=1 \
     CODEX_INSTALL_DIR="$install_dir" \
+    CODEX_LINUX_FEATURES_CONFIG="$feature_config" \
     FAKE_APP_DIR="$fake_app_dir" \
     bash -c '
         source "$1"
@@ -4217,6 +4231,7 @@ test_linux_computer_use_ui_opt_in_smoke() {
     local workspace="$TMP_DIR/computer-use-ui-opt-in"
     local extracted="$workspace/extracted"
     local fake_home="$workspace/home"
+    local feature_config="$workspace/features.json"
     local output_log="$workspace/output.log"
     local main_bundle="$extracted/.vite/build/main-test.js"
     local renderer_asset="$extracted/webview/assets/use-model-settings-test.js"
@@ -4226,6 +4241,18 @@ test_linux_computer_use_ui_opt_in_smoke() {
     local install_flow_body
 
     mkdir -p "$workspace" "$fake_home/.config/codex-app"
+    cat > "$feature_config" <<'JSON'
+{
+  "disabled": [
+    "conversation-mode",
+    "open-target-discovery",
+    "read-aloud",
+    "read-aloud-mcp",
+    "remote-control-ui",
+    "remote-mobile-control"
+  ]
+}
+JSON
 
     bundle_body="$(cat <<'JS'
 let n={app:{whenReady(){},quit(){},requestSingleInstanceLock(){},on(){},off(){}}};
@@ -4246,7 +4273,8 @@ JS
     printf '%s\n' "$install_flow_body" > "$install_flow_asset"
 
     # Branch 1: no env var, no settings.json — only the plugin manifest gate runs.
-    env -u CODEX_LINUX_ENABLE_COMPUTER_USE_UI HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
+    env -u CODEX_LINUX_ENABLE_COMPUTER_USE_UI CODEX_LINUX_FEATURES_CONFIG="$feature_config" \
+        HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
         node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
     assert_contains "$main_bundle" '(t===`darwin`||t===`linux`)&&e.computerUse'
     assert_not_contains "$main_bundle" 'return n===`linux`?{...e,computerUse:!0,computerUseNodeRepl:!0}'
@@ -4259,7 +4287,8 @@ JS
     printf '%s\n' "$renderer_body" > "$renderer_asset"
     printf '%s\n' "$install_flow_body" > "$install_flow_asset"
 
-    env CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
+    env CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 CODEX_LINUX_FEATURES_CONFIG="$feature_config" \
+        HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
         node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
     assert_contains "$main_bundle" '(t===`darwin`||t===`linux`)&&e.computerUse'
     assert_contains "$main_bundle" 'return n===`linux`?{...e,computerUse:!0,computerUseNodeRepl:!0}'
@@ -4273,7 +4302,8 @@ JS
     printf '%s\n' "$install_flow_body" > "$install_flow_asset"
     printf '%s\n' '{"codex-linux-computer-use-ui-enabled": true}' > "$fake_home/.config/codex-app/settings.json"
 
-    env -u CODEX_LINUX_ENABLE_COMPUTER_USE_UI HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
+    env -u CODEX_LINUX_ENABLE_COMPUTER_USE_UI CODEX_LINUX_FEATURES_CONFIG="$feature_config" \
+        HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
         node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
     assert_contains "$main_bundle" 'return n===`linux`?{...e,computerUse:!0,computerUseNodeRepl:!0}'
     assert_contains "$renderer_asset" 'function hae(e){return e===`macOS`||e===`windows`||e===`linux`}'

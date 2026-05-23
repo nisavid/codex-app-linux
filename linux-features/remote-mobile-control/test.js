@@ -328,8 +328,15 @@ function writeDesktopAppServerRemoteControlMarker(appDir) {
   fs.writeFileSync(marker, "desktop-app-server-remote-control\n");
 }
 
-test("remote mobile control feature stays disabled until listed in features.json", () => {
+test("remote mobile control feature is enabled by default", () => {
   withTempFeatureRoot([], (root) => {
+    assert.notDeepEqual(loadLinuxFeaturePatchDescriptors({ featuresRoot: root }), []);
+  });
+});
+
+test("remote mobile control feature can be disabled in features.json", () => {
+  withTempFeatureRoot([], (root) => {
+    fs.writeFileSync(path.join(root, "features.json"), JSON.stringify({ disabled: ["remote-mobile-control"] }, null, 2));
     assert.deepEqual(loadLinuxFeaturePatchDescriptors({ featuresRoot: root }), []);
   });
 });
@@ -545,8 +552,8 @@ test("remote mobile cold-start hook preserves live standalone daemon pid files w
   }
 });
 
-test("remote mobile control feature exposes opt-in main-bundle and webview patches", () => {
-  withTempFeatureRoot(["remote-mobile-control"], (root) => {
+test("remote mobile control feature exposes default main-bundle and webview patches", () => {
+  withTempFeatureRoot([], (root) => {
     const descriptors = loadLinuxFeaturePatchDescriptors({ featuresRoot: root });
     assert.deepEqual(descriptors.map((descriptor) => descriptor.id), [
       "feature:remote-mobile-control:linux-remote-control-device-key",

@@ -1,7 +1,8 @@
 {
   "id": "conversation-mode",
   "name": "Conversation mode",
-  "description": "Disabled-by-default Linux voice conversation loop for normal Codex turns using dictation and Read Aloud.",
+  "description": "Linux voice conversation loop for normal Codex turns using dictation and Read Aloud.",
+  "defaultEnabled": true,
   "entrypoints": {
     "patches": "./patch.js"
   }

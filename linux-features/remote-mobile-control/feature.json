@@ -1,8 +1,8 @@
 {
   "id": "remote-mobile-control",
   "title": "Experimental Remote Mobile Control",
-  "description": "Opt-in Linux patches for Codex mobile remote-control host enrollment.",
-  "defaultEnabled": false,
+  "description": "Linux patches for Codex mobile remote-control host enrollment.",
+  "defaultEnabled": true,
   "entrypoints": {
     "patchDescriptors": "./patch.js",
     "stageHook": "./stage.sh"

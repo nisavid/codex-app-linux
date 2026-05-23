@@ -1,6 +1,6 @@
 # Read Aloud MCP
 
-Opt-in Linux MCP plugin for reading text aloud.
+Default-on Linux MCP plugin for reading text aloud.
 
 This feature stages a separate `read-aloud` Codex plugin with a native Rust MCP
 server. It does not enable microphone input or conversation mode. The first MCP
@@ -11,28 +11,27 @@ surface is intentionally small:
 - `read_aloud` speaks text only when the user or agent explicitly asks for it.
 - `stop` interrupts playback started by the MCP server.
 
-## Enable
+## Disable
 
 Add the feature to `linux-features/features.json` before rebuilding:
 
 ```json
 {
-  "enabled": ["read-aloud-mcp"]
+  "disabled": ["read-aloud-mcp"]
 }
 ```
 
 After rebuilding and launching the app, the feature patches the app's bundled
 plugin registry so `read-aloud` is auto-installed like Computer Use. The
 launcher also syncs the bundled `Read Aloud` plugin into Codex's local plugin
-cache. The Linux Feature flag is the opt-in that makes the agent-facing tool
-available.
+cache so the agent-facing tool is available.
 
-If you also want the response-level speaker button and settings UI, enable both
-features:
+The response-level speaker button and settings UI come from the default-on
+`read-aloud` feature. To turn both off, disable both features:
 
 ```json
 {
-  "enabled": ["read-aloud", "read-aloud-mcp"]
+  "disabled": ["read-aloud", "read-aloud-mcp"]
 }
 ```
 
@@ -65,8 +64,8 @@ The MCP server reads the same overrides as the UI feature:
 - `CODEX_LINUX_READ_ALOUD_KOKORO_LANG`
 - `CODEX_LINUX_READ_ALOUD_NATIVE_FALLBACK=0`
 
-Native `spd-say` / `espeak-ng` fallback is available by default after this
-opt-in MCP plugin is enabled, but Kokoro remains preferred. Set
+Native `spd-say` / `espeak-ng` fallback is available by default after this MCP
+plugin is enabled, but Kokoro remains preferred. Set
 `CODEX_LINUX_READ_ALOUD_NATIVE_FALLBACK=0` to disable the machine voice
 fallback.
 

@@ -8,7 +8,6 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   enabledLinuxFeatureIds,
-  loadLinuxFeatureMainBundlePatches,
   loadLinuxFeaturePatchDescriptors,
 } = require("../../scripts/lib/linux-features.js");
 const {
@@ -18,6 +17,14 @@ const {
 const {
   patches: featurePatches,
 } = require("./patch.js");
+
+const DEFAULT_FEATURE_IDS_WITHOUT_OPEN_TARGET = [
+  "conversation-mode",
+  "read-aloud",
+  "read-aloud-mcp",
+  "remote-control-ui",
+  "remote-mobile-control",
+];
 
 function withTempFeatureConfig(enabled, fn) {
   const originalConfig = process.env.CODEX_LINUX_FEATURES_CONFIG;
@@ -67,19 +74,23 @@ function captureWarns(fn) {
   }
 }
 
-test("remote-control UI feature stays disabled until listed in features.json", () => {
+test("remote-control UI feature is enabled by default", () => {
   withTempFeatureConfig([], (root) => {
-    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), []);
-    assert.deepEqual(loadLinuxFeatureMainBundlePatches({ featuresRoot: root }), []);
-    assert.deepEqual(loadLinuxFeaturePatchDescriptors({ featuresRoot: root }), []);
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), DEFAULT_FEATURE_IDS_WITHOUT_OPEN_TARGET);
+    assert.equal(
+      loadLinuxFeaturePatchDescriptors({ featuresRoot: root })
+        .some((patch) => patch.name.startsWith("feature:remote-control-ui:")),
+      true,
+    );
   });
 });
 
-test("remote-control UI feature exposes optional webview asset descriptors when enabled", () => {
+test("remote-control UI feature exposes default webview asset descriptors", () => {
   withTempFeatureConfig(["remote-control-ui"], (root) => {
-    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["remote-control-ui"]);
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), DEFAULT_FEATURE_IDS_WITHOUT_OPEN_TARGET);
 
-    const patches = loadLinuxFeaturePatchDescriptors({ featuresRoot: root });
+    const patches = loadLinuxFeaturePatchDescriptors({ featuresRoot: root })
+      .filter((patch) => patch.name.startsWith("feature:remote-control-ui:"));
     assert.equal(patches.length, 5);
     assert.deepEqual(
       patches.map((patch) => [patch.name, patch.phase, patch.ciPolicy]),

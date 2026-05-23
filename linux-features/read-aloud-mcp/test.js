@@ -22,35 +22,37 @@ function applyPatchTwice(patchFn, source) {
   return patched;
 }
 
-test("read-aloud-mcp stays disabled until listed in features.json", () => {
+test("read-aloud-mcp stages by default", () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "read-aloud-mcp-feature-"));
   const featuresRoot = path.join(tempDir, "features");
-  fs.mkdirSync(path.join(featuresRoot, "read-aloud-mcp"), { recursive: true });
-  fs.copyFileSync(
-    path.join(__dirname, "feature.json"),
-    path.join(featuresRoot, "read-aloud-mcp", "feature.json"),
-  );
-  fs.copyFileSync(
-    path.join(__dirname, "stage.sh"),
-    path.join(featuresRoot, "read-aloud-mcp", "stage.sh"),
-  );
-  fs.copyFileSync(
-    path.join(__dirname, "patches.js"),
-    path.join(featuresRoot, "read-aloud-mcp", "patches.js"),
-  );
-  fs.writeFileSync(path.join(featuresRoot, "features.example.json"), '{"enabled":[]}\n');
+  try {
+    fs.mkdirSync(path.join(featuresRoot, "read-aloud-mcp"), { recursive: true });
+    fs.copyFileSync(
+      path.join(__dirname, "feature.json"),
+      path.join(featuresRoot, "read-aloud-mcp", "feature.json"),
+    );
+    fs.copyFileSync(
+      path.join(__dirname, "stage.sh"),
+      path.join(featuresRoot, "read-aloud-mcp", "stage.sh"),
+    );
+    fs.copyFileSync(
+      path.join(__dirname, "patches.js"),
+      path.join(featuresRoot, "read-aloud-mcp", "patches.js"),
+    );
+    fs.writeFileSync(path.join(featuresRoot, "features.example.json"), '{"enabled":[]}\n');
 
-  assert.deepEqual(enabledLinuxFeatureStageHooks({ featuresRoot }), []);
+    assert.equal(enabledLinuxFeatureStageHooks({ featuresRoot }).length, 1);
+    assert.equal(loadLinuxFeaturePatchDescriptors({ featuresRoot }).length, 1);
 
-  fs.writeFileSync(
-    path.join(featuresRoot, "features.json"),
-    '{"enabled":["read-aloud-mcp"]}\n',
-  );
-  assert.equal(enabledLinuxFeatureStageHooks({ featuresRoot }).length, 1);
-  assert.equal(loadLinuxFeaturePatchDescriptors({ featuresRoot }).length, 1);
+    fs.writeFileSync(path.join(featuresRoot, "features.json"), '{"disabled":["read-aloud-mcp"]}\n');
+    assert.deepEqual(enabledLinuxFeatureStageHooks({ featuresRoot }), []);
+    assert.deepEqual(loadLinuxFeaturePatchDescriptors({ featuresRoot }), []);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
-test("read-aloud-mcp plugin gate adds an opt-in Linux bundled plugin", () => {
+test("read-aloud-mcp plugin gate adds a default Linux bundled plugin", () => {
   const source = [
     "var lt=`browser-use`,ut=`chrome`,dt=`chrome-internal`,ft=`computer-use`,pt=`latex-tectonic`;",
     "var Kr=[{forceReload:!0,installWhenMissing:!0,name:lt,isAvailable:({features:e})=>e.inAppBrowserUseAllowed,migrate:rr},{forceReload:!0,name:dt,isAvailable:({buildFlavor:e,features:t})=>Qn(e)&&t.externalBrowserUseAllowed},{forceReload:!0,name:ut,isAvailable:({buildFlavor:e,features:t})=>t.externalBrowserUseAllowed&&$n(e)},{name:ft,isAvailable:({features:e,platform:t})=>t===`darwin`&&e.computerUse,migrate:vr},{installWhenMissing:!0,name:ft,isAvailable:({buildFlavor:e,features:n,platform:r})=>t.T.isInternal(e)&&r===`win32`&&n.computerUse},{name:pt,isAvailable:()=>!0}];",

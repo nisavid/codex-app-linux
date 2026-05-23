@@ -25,6 +25,15 @@ const {
   patches: featurePatches,
 } = require("./patch.js");
 
+const DEFAULT_FEATURE_IDS = [
+  "conversation-mode",
+  "open-target-discovery",
+  "read-aloud",
+  "read-aloud-mcp",
+  "remote-control-ui",
+  "remote-mobile-control",
+];
+
 function twice(fn, source) {
   const patched = fn(source);
   assert.equal(fn(patched), patched);
@@ -347,35 +356,37 @@ function createFakeDocument() {
   };
 }
 
-test("conversation mode stays disabled until listed in features.json", () => {
+test("conversation mode is enabled by default", () => {
   withTempFeatureConfig([], (root) => {
-    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["open-target-discovery"]);
-    assert.deepEqual(
-      loadLinuxFeatureMainBundlePatches({ featuresRoot: root }).map((patch) => patch.name),
-      ["feature:open-target-discovery"],
-    );
-    assert.deepEqual(
-      loadLinuxFeaturePatchDescriptors({ featuresRoot: root }).map((patch) => [patch.name, patch.phase, patch.ciPolicy]),
-      [["feature:open-target-discovery", "main-bundle", "optional"]],
-    );
-  });
-});
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), DEFAULT_FEATURE_IDS);
 
-test("conversation mode exposes optional patch descriptors when enabled", () => {
-  withTempFeatureConfig(["conversation-mode"], (root) => {
-    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["open-target-discovery", "conversation-mode"]);
+    const mainBundlePatchNames = loadLinuxFeatureMainBundlePatches({ featuresRoot: root }).map((patch) => patch.name);
+    assert.ok(mainBundlePatchNames.includes("feature:conversation-mode:read-aloud-conversation-source"));
 
-    const patches = loadLinuxFeaturePatchDescriptors({ featuresRoot: root });
+    const conversationPatches = loadLinuxFeaturePatchDescriptors({ featuresRoot: root })
+      .filter((patch) => patch.name.startsWith("feature:conversation-mode:"));
     assert.deepEqual(
-      patches.map((patch) => [patch.name, patch.phase, patch.ciPolicy]),
+      conversationPatches.map((patch) => [patch.name, patch.phase, patch.ciPolicy]),
       [
-        ["feature:open-target-discovery", "main-bundle", "optional"],
         ["feature:conversation-mode:read-aloud-conversation-source", "main-bundle", "optional"],
         ["feature:conversation-mode:dictation-endpoint", "webview-asset", "optional"],
         ["feature:conversation-mode:composer-control", "webview-asset", "optional"],
         ["feature:conversation-mode:assistant-observer", "webview-asset", "optional"],
       ],
     );
+  });
+});
+
+test("conversation mode can be disabled in features.json", () => {
+  withTempFeatureConfig([], (root) => {
+    fs.writeFileSync(process.env.CODEX_LINUX_FEATURES_CONFIG, JSON.stringify({ disabled: ["conversation-mode"] }, null, 2));
+
+    const patches = loadLinuxFeaturePatchDescriptors({ featuresRoot: root });
+    assert.deepEqual(
+      enabledLinuxFeatureIds({ featuresRoot: root }),
+      DEFAULT_FEATURE_IDS.filter((id) => id !== "conversation-mode"),
+    );
+    assert.equal(patches.some((patch) => patch.name.startsWith("feature:conversation-mode:")), false);
   });
 });
 

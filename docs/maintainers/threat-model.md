@@ -1,6 +1,6 @@
 # Codex App Linux Threat Model
 
-Date: 2026-05-17
+Date: 2026-05-23
 
 This repository adapts the official OpenAI `Codex.dmg` into a Linux Electron
 app, builds native Linux packages, and ships `codex-app-updater` to check,
@@ -25,7 +25,7 @@ The highest-risk areas are:
    invokes `pkexec` install subcommands. Anything crossing that boundary must be
    tightly bound to a verified package identity and digest.
 3. **Desktop and renderer containment.** The generated Electron app, local
-   webview server, Codex CLI, Linux Computer Use backend, and opt-in
+   webview server, Codex CLI, Linux Computer Use backend, and default-enabled
    remote-control/mobile feature patches all run with the user's desktop
    privileges. A renderer, plugin, localhost, CLI, or same-user XDG config
    compromise can affect local files, screenshots, input, remote-control device
@@ -39,7 +39,7 @@ updater rebuilds and installs, default-enabled Electron sandboxing, release gate
 checks, Apple DMG verification tooling, descriptor-based required patch
 validation, sanitized Linux desktop-target launches, loopback-only no-cache
 webview serving, no-updater transition cleanup under package-owned support
-paths, opt-in remote-control UI/mobile patching, and `0600` Linux
+paths, default-enabled remote-control UI/mobile patching, and `0600` Linux
 remote-control device-key storage under XDG config. The remaining critical gaps
 are package digest binding for privileged installs, generated app security
 review evidence, public artifact provenance, and a general-readiness review for
@@ -64,7 +64,7 @@ In scope:
 - Linux Computer Use backend and bundled plugin resources:
   `computer-use-linux/` and `plugins/openai-bundled/plugins/computer-use/`.
 - Linux feature patches: `linux-features/`, including default-enabled desktop
-  target discovery, opt-in remote-control/mobile patches, and feature-specific
+  target discovery, remote-control/mobile patches, and feature-specific
   generated-app patches.
 - Release, CI, and Nix trust roots: `.github/workflows/`, `Makefile`,
   `flake.nix`, `flake.lock`, `Cargo.toml`, and `Cargo.lock`.
@@ -98,9 +98,9 @@ Out of scope:
 - A malicious renderer, plugin, CLI, or same-user process can matter even when
   it cannot directly become root.
 - LAN attackers matter if any future local service binds beyond loopback.
-- Remote-control/mobile Linux patches remain experimental and opt-in. Account
-  policy, enrollment, MFA, connected-client state, and remote-access decisions
-  remain owned by upstream services and generated app flows.
+- Remote-control/mobile Linux patches remain experimental. Account policy,
+  enrollment, MFA, connected-client state, and remote-access decisions remain
+  owned by upstream services and generated app flows.
 - Linux remote-control device keys are software keys stored under XDG config.
   They are not hardware-backed or protected from same-user compromise.
 
@@ -272,10 +272,9 @@ flowchart LR
   as same-user trust inputs.
 - Computer Use must remain locally scoped, account/host-gated, and bound to
   user-consented desktop-control semantics.
-- Remote-control/mobile patches must remain opt-in until reviewed as a general
-  feature, must not fabricate connected clients, MFA, enrollment, or remote
-  environment state, and must store Linux device keys under private XDG config
-  paths with owner-only file modes.
+- Remote-control/mobile patches must not fabricate connected clients, MFA,
+  enrollment, or remote environment state, and must store Linux device keys
+  under private XDG config paths with owner-only file modes.
 - Logs and state must not store credential-bearing URLs or credential-looking
   subprocess output.
 
@@ -430,7 +429,7 @@ added.
 
 ### T5b: Remote-Control Or Mobile Host Enrollment Misstates Trust
 
-**Entry points:** opt-in `remote-control-ui` and `remote-mobile-control`
+**Entry points:** default-enabled `remote-control-ui` and `remote-mobile-control`
 features, generated remote-control and Codex mobile webview bundles,
 app-server config preservation, Linux software device-key store, upstream
 account/mobile enrollment flows.
@@ -552,8 +551,8 @@ still contain arbitrary sensitive values.
 5. Add package signing, checksums, and hosted provenance for public artifacts.
 6. Review Computer Use command routing, screenshots, and input backends whenever
    that surface changes.
-7. Review opt-in remote-control/mobile host enrollment, UI gates, and Linux
-   device-key storage before promoting the feature beyond experimental use.
+7. Review remote-control/mobile host enrollment, UI gates, and Linux device-key
+   storage as the default-enabled surface evolves beyond experimental use.
 8. Review Linux open-target discovery heuristics and launch environment
    sanitization when adding target families or `.desktop` handling.
 9. Review npm CLI auto-upgrade trust and add an approved-version or consent
@@ -576,9 +575,9 @@ still contain arbitrary sensitive values.
 - `linux-features/open-target-discovery/`: Linux desktop target discovery,
   `.desktop` parsing, argument-vector launches, and environment sanitization.
 - `linux-features/remote-control-ui/` and
-  `linux-features/remote-mobile-control/`: opt-in remote-control/mobile UI
-  gates, app-server config preservation, Linux device-key storage, and
-  generated-copy patches.
+  `linux-features/remote-mobile-control/`: remote-control/mobile UI gates,
+  app-server config preservation, Linux device-key storage, and generated-copy
+  patches.
 - `scripts/lib/dmg.sh`: installer DMG download and version extraction.
 - `scripts/lib/native-modules.sh`: native dependency version floors and
   Electron-specific temporary source compatibility patches.

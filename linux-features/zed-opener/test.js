@@ -17,6 +17,15 @@ const {
   patchMainBundleSource,
 } = require("../../scripts/patch-linux-window-ui.js");
 
+const DEFAULT_FEATURE_IDS = [
+  "conversation-mode",
+  "open-target-discovery",
+  "read-aloud",
+  "read-aloud-mcp",
+  "remote-control-ui",
+  "remote-mobile-control",
+];
+
 const zedOpenerBundle =
   "function Tw(e,t){return t?[`${e}:${t.line}:${t.column}`]:[e]}function Rp(e){return e}var eT={id:`zed`,platforms:{darwin:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:tT,args:Tw,open:async({command:e,path:t,location:n})=>{await aT(e,t,n)}},win32:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:nT,args:Tw}}};function tT(){return Rp(`zed`)??nC(`Zed`,`zed`)}function nT(){let e=Rp(`zed.exe`)??Rp(`zed`);return e}";
 
@@ -97,7 +106,7 @@ test("Zed opener feature fails soft when the opener block is missing", () => {
 
 test("Zed opener feature stays disabled until listed in features.json", () => {
   withTempFeatureConfig([], (root) => {
-    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["open-target-discovery"]);
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), DEFAULT_FEATURE_IDS);
     assert.ok(
       !loadLinuxFeatureMainBundlePatches({ featuresRoot: root })
         .some((patch) => patch.name === "feature:zed-opener"),
@@ -112,7 +121,7 @@ test("Zed opener feature stays disabled until listed in features.json", () => {
 
 test("Zed opener feature exposes its patch when enabled", () => {
   withTempFeatureConfig(["zed-opener"], (root) => {
-    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), ["open-target-discovery", "zed-opener"]);
+    assert.deepEqual(enabledLinuxFeatureIds({ featuresRoot: root }), [...DEFAULT_FEATURE_IDS, "zed-opener"]);
 
     const patches = loadLinuxFeatureMainBundlePatches({ featuresRoot: root });
     const zedPatch = patches.find((patch) => patch.name === "feature:zed-opener");

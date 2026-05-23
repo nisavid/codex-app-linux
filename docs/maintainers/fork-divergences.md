@@ -256,7 +256,7 @@ Linux Computer Use plugin manifest gate default-on while keeping Computer Use UI
 patches opt-in through
 `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` or the persisted
 `codex-linux-computer-use-ui-enabled` setting. Remote-control UI and mobile
-remote-control host patches stay opt-in Linux features and keep private
+remote-control host patches are default-enabled Linux features and keep private
 device-key material under `${XDG_CONFIG_HOME:-~/.config}/codex-app`.
 
 **Upstream baseline:** Upstream already carries Linux ASAR patching. This fork

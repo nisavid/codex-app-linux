@@ -99,6 +99,11 @@ function readAsset(extractedDir, name) {
   return fs.readFileSync(path.join(extractedDir, "webview", "assets", name), "utf8");
 }
 
+function loadCopilotFeaturePatchDescriptors(featuresRoot) {
+  return loadLinuxFeaturePatchDescriptors({ featuresRoot })
+    .filter((descriptor) => descriptor.id.startsWith("feature:copilot-reasoning-effort:"));
+}
+
 test("persists Copilot reasoning effort with the default Copilot model", () => {
   const patched = applyPatchTwice(
     applyCopilotReasoningEffortSettingsPatch,
@@ -164,11 +169,11 @@ test("feature descriptor loader exposes the Copilot webview asset patches only w
   const featuresRoot = path.resolve(__dirname, "..");
 
   withTempFeatureConfig([], () => {
-    assert.deepEqual(loadLinuxFeaturePatchDescriptors({ featuresRoot }), []);
+    assert.deepEqual(loadCopilotFeaturePatchDescriptors(featuresRoot), []);
   });
 
   withTempFeatureConfig(["copilot-reasoning-effort"], () => {
-    const descriptors = loadLinuxFeaturePatchDescriptors({ featuresRoot });
+    const descriptors = loadCopilotFeaturePatchDescriptors(featuresRoot);
 
     assert.deepEqual(
       descriptors.map((descriptor) => descriptor.id),
@@ -196,7 +201,7 @@ test("enabled feature descriptors patch matching webview assets", () => {
       writeAsset(extractedDir, "index-fixture.js", copilotReasoningEffortUiFixture());
 
       const descriptors = normalizePatchDescriptors(
-        loadLinuxFeaturePatchDescriptors({ featuresRoot }),
+        loadCopilotFeaturePatchDescriptors(featuresRoot),
       );
       applyWebviewAssetPatchDescriptors(extractedDir, descriptors, {}, null);
 

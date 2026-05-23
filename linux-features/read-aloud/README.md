@@ -1,22 +1,22 @@
 # Read aloud
 
-Opt-in Linux read-aloud support for assistant responses.
+Default-on Linux read-aloud support for assistant responses.
 
 This feature stays thin. It does not bundle a voice model and it does not speak
 automatically. It adds an explicit icon button under assistant messages. A click
 is the only app-rendering path that starts speech.
 
-## Enable the feature
+## Disable the feature
 
 Add the feature to `linux-features/features.json`:
 
 ```json
 {
-  "enabled": ["read-aloud"]
+  "disabled": ["read-aloud"]
 }
 ```
 
-Then rebuild/package the app. The installed app remains silent until the user
+Then rebuild/package the app. When enabled, the installed app remains silent until the user
 explicitly clicks a message's speech icon, uses conversation mode, or calls the
 Read Aloud MCP tool. For older builds, or to force-enable direct runtime calls,
 set the runtime opt-in:
@@ -51,7 +51,7 @@ higher-level conversation mode should be layered on top of this instead of
 hidden inside message rendering:
 
 - enter an explicit voice/conversation mode from the UI or by user instruction;
-- stream microphone audio through a separate opt-in STT component;
+- stream microphone audio through a separate STT component;
 - after a short quiet period, submit the transcribed user turn to Codex;
 - stream the assistant response into the voice backend as chunks become stable;
 - when the user starts talking again, call `stop` and steer the active response.
@@ -66,8 +66,8 @@ below.
 
 ## Voice model
 
-Default speech uses an opt-in Kokoro ONNX runtime, similar in shape to `readd`
-but not dependent on a local `readd` checkout. The app stages only a tiny runner.
+Default speech uses a Kokoro ONNX runtime, similar in shape to `readd` but not
+dependent on a local `readd` checkout. The app stages only a tiny runner.
 Users provide or download the model files and Python runtime outside the Electron
 bundle.
 
