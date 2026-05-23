@@ -822,6 +822,7 @@ fn command_path_env() -> OsString {
     entries.extend(std::env::split_paths(
         &std::env::var_os("PATH").unwrap_or_default(),
     ));
+    let entries = dedupe_paths(entries);
     std::env::join_paths(entries).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
 }
 
