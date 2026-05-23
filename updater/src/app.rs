@@ -440,6 +440,7 @@ fn run_status(
 ) -> Result<()> {
     codex_cli::refresh_status(config, state, paths)?;
     complete_pending_install_if_already_installed(&config.workspace_root, state, paths)?;
+    recover_interrupted_install(&config.workspace_root, state, paths)?;
     normalize_workspace_dir_and_persist(&config.workspace_root, state, paths)?;
 
     if json {
@@ -1085,6 +1086,7 @@ fn complete_pending_install_if_already_installed(
     state.notified_events.clear();
     cache_cleanup::normalize_artifact_workspace_dir(workspace_root, state);
     persist_state(paths, state)?;
+    maybe_prune_workspace_cache(workspace_root, state);
     info!("recovered pending install state because the candidate version is already installed or superseded");
     Ok(true)
 }
@@ -1113,6 +1115,7 @@ fn recover_interrupted_install(
         state.notified_events.clear();
         cache_cleanup::normalize_artifact_workspace_dir(workspace_root, state);
         persist_state(paths, state)?;
+        maybe_prune_workspace_cache(workspace_root, state);
         info!("recovered interrupted install state because the candidate version is already installed");
         return Ok(());
     }
@@ -2723,10 +2726,11 @@ mod tests {
         state.installed_version = "2026.04.01.035152".to_string();
         state.candidate_version = Some("2026.03.27.025604+1086e799".to_string());
         state.artifact_paths.package_path = Some(package_path);
-        state.artifact_paths.workspace_dir = Some(
-            temp.path()
-                .join("cache/workspaces/2026.03.27.025604+1086e799"),
-        );
+        let recovered_workspace = temp
+            .path()
+            .join("cache/workspaces/2026.03.27.025604+1086e799");
+        std::fs::create_dir_all(&recovered_workspace)?;
+        state.artifact_paths.workspace_dir = Some(recovered_workspace.clone());
 
         recover_interrupted_install(&paths.cache_dir, &mut state, &paths)?;
 
@@ -2735,6 +2739,58 @@ mod tests {
         assert_eq!(state.artifact_paths.package_path, None);
         assert_eq!(state.artifact_paths.workspace_dir, None);
         assert_eq!(state.error_message, None);
+        assert!(!recovered_workspace.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn status_recovers_interrupted_install_before_reporting() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let codex_cli_path = temp.path().join("codex-cli");
+        std::fs::write(
+            &codex_cli_path,
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo 'codex-cli v0.42.0'\n  exit 0\nfi\nexit 1\n",
+        )?;
+        let mut cli_permissions = std::fs::metadata(&codex_cli_path)?.permissions();
+        cli_permissions.set_mode(0o755);
+        std::fs::set_permissions(&codex_cli_path, cli_permissions)?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: paths.cache_dir.clone(),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("codex-app"),
+            cli_path: Some(codex_cli_path),
+        };
+
+        let mut state = PersistedState::new(false);
+        state.status = UpdateStatus::Installing;
+        state.installed_version = "2026.03.24.120000".to_string();
+        state.candidate_version = Some("2026.03.27.025604+1086e799".to_string());
+        state.artifact_paths.package_path = Some(temp.path().join("dist/missing-codex.deb"));
+
+        run_status(&config, &mut state, &paths, true)?;
+
+        assert_eq!(state.status, UpdateStatus::Failed);
+        assert!(state
+            .error_message
+            .as_deref()
+            .is_some_and(|message| message.contains("package artifact is missing")));
         Ok(())
     }
 
