@@ -110,6 +110,8 @@ user's persistent shell `PATH`.
 
 Set `CODEX_REMOTE_CONTROL_RUNTIME_AUTO_INSTALL_DISABLED=1` to disable that
 runtime provisioning and only use an already-installed standalone runtime.
+Set `CODEX_REMOTE_CONTROL_INSTALLER_SHA256` to require the downloaded official
+standalone installer script to match a pinned SHA-256 digest before it runs.
 
 To force a specific daemon binary without affecting the interactive CLI, set:
 

@@ -410,15 +410,19 @@ impl ComputerUseLinux {
         let Ok(cap) = crate::screenshot::capture_screenshot().await else {
             return false;
         };
-        match crate::abs_pointer::AbsPointer::create(cap.width as i32, cap.height as i32) {
-            Ok(pointer) => {
+        match tokio::task::spawn_blocking(move || {
+            crate::abs_pointer::AbsPointer::create(cap.width as i32, cap.height as i32)
+        })
+        .await
+        {
+            Ok(Ok(pointer)) => {
                 if let Ok(mut guard) = self.abs_pointer.lock() {
                     *guard = Some(pointer);
                     return true;
                 }
                 false
             }
-            Err(_) => false,
+            _ => false,
         }
     }
 
@@ -435,9 +439,15 @@ impl ComputerUseLinux {
             return None;
         }
         let btn = crate::abs_pointer::PointerButton::from_name(button)?;
-        let mut guard = self.abs_pointer.lock().ok()?;
-        let pointer = guard.as_mut()?;
-        Some(pointer.click(x, y, btn, count).is_ok())
+        let abs_pointer = Arc::clone(&self.abs_pointer);
+        tokio::task::spawn_blocking(move || {
+            let mut guard = abs_pointer.lock().ok()?;
+            let pointer = guard.as_mut()?;
+            Some(pointer.click(x, y, btn, count).is_ok())
+        })
+        .await
+        .ok()
+        .flatten()
     }
 
     #[tool(
@@ -786,20 +796,21 @@ impl ComputerUseLinux {
         let received = Some(serde_json::json!(params));
         // Preferred backend: the uinput absolute pointer (accurate landing).
         if self.ensure_abs_pointer().await {
-            let dragged = {
-                if let Ok(mut guard) = self.abs_pointer.lock() {
-                    guard.as_mut().map(|p| {
-                        p.drag(
-                            (params.start_x, params.start_y),
-                            (params.end_x, params.end_y),
-                            crate::abs_pointer::PointerButton::Left,
-                        )
-                        .is_ok()
-                    })
-                } else {
-                    None
-                }
-            };
+            let abs_pointer = Arc::clone(&self.abs_pointer);
+            let start = (params.start_x, params.start_y);
+            let end = (params.end_x, params.end_y);
+            let dragged = tokio::task::spawn_blocking(move || {
+                let mut guard = abs_pointer.lock().ok()?;
+                let pointer = guard.as_mut()?;
+                Some(
+                    pointer
+                        .drag(start, end, crate::abs_pointer::PointerButton::Left)
+                        .is_ok(),
+                )
+            })
+            .await
+            .ok()
+            .flatten();
             if dragged == Some(true) {
                 return Json(ActionOutput {
                     ok: true,

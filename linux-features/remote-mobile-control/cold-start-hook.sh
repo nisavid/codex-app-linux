@@ -39,6 +39,8 @@ install_remote_mobile_control_runtime() {
     local installer_path="$private_bin:$system_path"
     local setsid_path=""
     local fetch_cmd=""
+    local installer_url="https://chatgpt.com/codex/install.sh"
+    local installer_file=""
     local installer_args=()
 
     mkdir -p "$private_bin"
@@ -62,22 +64,49 @@ install_remote_mobile_control_runtime() {
         echo "Remote mobile control runtime install requires tar on the system PATH"
         return 1
     fi
+    if ! installer_file="$(PATH="$system_path" mktemp "${TMPDIR:-/tmp}/codex-remote-control-install.XXXXXX")"; then
+        echo "Remote mobile control runtime install could not create a temporary installer file"
+        return 1
+    fi
 
     echo "Installing remote mobile control standalone runtime into $codex_home/packages/standalone"
+    if [ "${fetch_cmd##*/}" = "curl" ]; then
+        if ! "$fetch_cmd" -fsSL -o "$installer_file" "$installer_url"; then
+            rm -f "$installer_file"
+            return 1
+        fi
+    elif ! "$fetch_cmd" -q -O "$installer_file" "$installer_url"; then
+        rm -f "$installer_file"
+        return 1
+    fi
+    if [ -n "${CODEX_REMOTE_CONTROL_INSTALLER_SHA256:-}" ]; then
+        local sha256sum_path=""
+        local actual_sha256=""
+        if ! sha256sum_path="$(PATH="$system_path" command -v sha256sum 2>/dev/null)"; then
+            echo "Remote mobile control runtime install requires sha256sum when CODEX_REMOTE_CONTROL_INSTALLER_SHA256 is set"
+            rm -f "$installer_file"
+            return 1
+        fi
+        read -r actual_sha256 _ < <("$sha256sum_path" "$installer_file")
+        if [ "$actual_sha256" != "$CODEX_REMOTE_CONTROL_INSTALLER_SHA256" ]; then
+            echo "Remote mobile control runtime installer SHA-256 mismatch: expected $CODEX_REMOTE_CONTROL_INSTALLER_SHA256, got $actual_sha256"
+            rm -f "$installer_file"
+            return 1
+        fi
+    else
+        echo "Remote mobile control runtime installer fetched over HTTPS without a pinned checksum; set CODEX_REMOTE_CONTROL_INSTALLER_SHA256 to require one."
+    fi
     # CODEX_INSTALL_DIR points the official installer at a private bin dir under
     # CODEX_HOME. Running it through setsid and a system-only PATH prevents TTY
     # prompts, user-managed CLI conflict prompts, ~/.local/bin/codex writes, and
     # shell profile PATH blocks.
-    if [ "${fetch_cmd##*/}" = "curl" ]; then
-        ( set -o pipefail
-          "$fetch_cmd" -fsSL https://chatgpt.com/codex/install.sh | \
-              CODEX_HOME="$codex_home" CODEX_INSTALL_DIR="$private_bin" PATH="$installer_path" "$setsid_path" sh -s -- "${installer_args[@]}"
-        )
+    if CODEX_HOME="$codex_home" CODEX_INSTALL_DIR="$private_bin" PATH="$installer_path" "$setsid_path" sh "$installer_file" -- "${installer_args[@]}"; then
+        rm -f "$installer_file"
+        return 0
     else
-        ( set -o pipefail
-          "$fetch_cmd" -q -O - https://chatgpt.com/codex/install.sh | \
-              CODEX_HOME="$codex_home" CODEX_INSTALL_DIR="$private_bin" PATH="$installer_path" "$setsid_path" sh -s -- "${installer_args[@]}"
-        )
+        local installer_status=$?
+        rm -f "$installer_file"
+        return "$installer_status"
     fi
 }
 
