@@ -1,15 +1,14 @@
 # Experimental Remote Mobile Control
 
-This feature is disabled by default. It patches the upstream Codex app main
-bundle so Linux can try the mobile remote-control host flow that upstream
-currently limits to macOS.
+This default-on feature patches the upstream Codex app main bundle so Linux can
+try the mobile remote-control host flow that upstream currently limits to macOS.
 
-Enable it by adding the feature id to `linux-features/features.json` before
+Disable it by adding the feature id to `linux-features/features.json` before
 building:
 
 ```json
 {
-  "enabled": [
+  "disabled": [
     "remote-mobile-control"
   ]
 }

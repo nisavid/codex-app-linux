@@ -121,12 +121,13 @@ build, package, or install flow unless you explicitly opt in through
 - **Host-gated:** Linux Computer Use is packaged, but real readiness depends on
   local AT-SPI, screenshot portal or compositor support, `ydotool`, and input
   permissions.
-- **Opt-in experiments:** remote-control UI and mobile-control host patches can
-  expose upstream Linux surfaces; Read Aloud and conversation-mode patches add
-  local Linux experiments. Account, rollout, MFA, connected-client, audio, and
-  host-network requirements still apply.
-- **NixOS:** the flake exposes default, Computer Use UI, remote-mobile-control,
-  combined, and installer outputs with pinned DMG metadata.
+- **Default Linux integrations:** remote-control UI, mobile-control host
+  patches, Read Aloud, Read Aloud MCP, and conversation mode are enabled in the
+  Linux feature registry by default. Account, rollout, MFA, connected-client,
+  audio, and host-network requirements still apply.
+- **NixOS:** the flake exposes the default app, Computer Use UI compatibility
+  outputs, remote-mobile compatibility aliases, and installer outputs with
+  pinned DMG metadata.
 - **OpenAI-gated:** installing this fork cannot bypass server-side feature flags
   or account policy.
 
@@ -199,11 +200,13 @@ CODEX_MULTI_LAUNCH=1 CODEX_MULTI_LAUNCH_PORT_RANGE=5175-5199 ./codex-app/start.s
 
 ## Linux Features
 
-Linux-side feature modules live in `linux-features/`. This fork enables
-`open-target-discovery` by default so the Open menus can discover Linux
-terminals, editors, and file managers from the current desktop session.
+Linux-side feature modules live in `linux-features/`. This fork enables the
+current Linux integration set by default: Open target discovery, remote-control
+UI, mobile-control host patches, Read Aloud, Read Aloud MCP, and conversation
+mode. Open target discovery lets the Open menus discover Linux terminals,
+editors, and file managers from the current desktop session.
 
-To disable default features or enable other optional integrations, copy
+To disable default features or enable still-optional integrations, copy
 `linux-features/features.example.json` to the git-ignored
 `linux-features/features.json`, edit the `enabled` and `disabled` lists, then
 rebuild. Packaged installs can use
@@ -213,12 +216,10 @@ override shape; checkout builds ignore that persistent user file and use
 See [`linux-features/README.md`](linux-features/README.md) for the feature
 contract.
 
-The `remote-control-ui`, `remote-mobile-control`, `read-aloud`,
-`read-aloud-mcp`, and `conversation-mode` feature modules are experimental
-opt-ins for upstream Linux surfaces and local Linux runtime helpers. Treat them
-as UI/runtime integration patches, not as account-policy bypasses: OpenAI
-rollouts, MFA state, connected-client state, audio availability, and host
-network exposure still come from upstream services and your local environment.
+Treat the remote control and voice modules as UI/runtime integration patches,
+not as account-policy bypasses: OpenAI rollouts, MFA state, connected-client
+state, audio availability, and host network exposure still come from upstream
+services and your local environment.
 
 ## Native Package Details
 
@@ -341,8 +342,8 @@ nix develop github:nisavid/codex-app-linux
 ```
 
 Feature-specific outputs are available when you want the generated app to carry
-Linux feature opt-ins that are normally read from the git-ignored
-`linux-features/features.json`:
+non-default compatibility options or legacy feature-specific aliases that would
+otherwise be read from the git-ignored `linux-features/features.json`:
 
 ```bash
 nix run github:nisavid/codex-app-linux#codex-app-computer-use-ui

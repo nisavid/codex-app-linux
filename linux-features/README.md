@@ -6,12 +6,16 @@ ASAR patches, staged resources, or build/install hooks.
 
 ## Defaults And Local Overrides
 
-This fork enables `open-target-discovery` by default because it improves the
-Linux Open menus with terminal, editor, and file-manager targets. It reads the
-current user's desktop app entries and launches selected targets as that same
-user; see
+This fork enables the current Linux integration features by default:
+`open-target-discovery`, `remote-control-ui`, `remote-mobile-control`,
+`read-aloud`, `read-aloud-mcp`, and `conversation-mode`. Open target discovery
+improves the Linux Open menus with terminal, editor, and file-manager targets. It
+reads the current user's desktop app entries and launches selected targets as
+that same user; see
 [`open-target-discovery/README.md`](open-target-discovery/README.md) for the
-scope and trust notes.
+scope and trust notes. The remote control and voice features still depend on
+upstream account rollout, local audio, connected-client state, and host network
+availability.
 
 To disable a default feature for a checkout build, copy `features.example.json`
 to the git-ignored `features.json`, add the feature id under `disabled`, then
@@ -21,12 +25,16 @@ rerun `./install.sh` or the package build:
 {
   "enabled": [],
   "disabled": [
-    "open-target-discovery"
+      "conversation-mode",
+      "remote-control-ui",
+      "remote-mobile-control",
+      "read-aloud",
+      "read-aloud-mcp"
   ]
 }
 ```
 
-To enable an optional feature, list it under `enabled`:
+To enable a still-optional feature, list it under `enabled`:
 
 ```json
 {
@@ -63,8 +71,8 @@ do not silently change local development builds or tests. For one-off builds,
 set `CODEX_LINUX_FEATURES_CONFIG=/path/to/file.json` to point at an explicit
 config file.
 Native packages preserve the enabled feature id list in the packaged
-update-builder bundle, so `codex-app-updater` rebuilds keep the same opt-in
-features across auto-updates.
+update-builder bundle, so `codex-app-updater` rebuilds keep the same feature
+choices across auto-updates.
 
 You can also let the guided native setup helper discover feature manifests and
 write `features.json`:
