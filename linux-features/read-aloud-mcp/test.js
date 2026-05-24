@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { execFileSync } = require("node:child_process");
+const { execFileSync, spawnSync } = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..", "..");
 const {
@@ -166,4 +166,35 @@ test("read-aloud-mcp stage hook records marketplace entry", () => {
     ),
     true,
   );
+});
+
+test("read-aloud-mcp stage hook skips cleanly when backend is unavailable", () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "read-aloud-mcp-stage-skip-"));
+  const installDir = path.join(workspace, "install");
+  try {
+    fs.mkdirSync(installDir, { recursive: true });
+
+    const result = spawnSync("/usr/bin/bash", [path.join(__dirname, "stage.sh")], {
+      cwd: repoRoot,
+      env: {
+        SCRIPT_DIR: repoRoot,
+        INSTALL_DIR: installDir,
+        WORK_DIR: path.join(workspace, "work"),
+        ARCH: process.arch === "arm64" ? "aarch64" : "x86_64",
+        CODEX_UPSTREAM_APP_DIR: path.join(workspace, "Codex.app"),
+        PATH: path.join(workspace, "bin"),
+      },
+      encoding: "utf8",
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stderr, /cargo not found; Read Aloud MCP plugin will be unavailable/);
+    assert.match(result.stderr, /Read Aloud MCP plugin skipped; backend is unavailable/);
+    assert.equal(
+      fs.existsSync(path.join(installDir, "resources/plugins/openai-bundled/plugins/read-aloud")),
+      false,
+    );
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
 });

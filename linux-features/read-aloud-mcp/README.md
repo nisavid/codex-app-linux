@@ -26,6 +26,12 @@ plugin registry so `read-aloud` is auto-installed like Computer Use. The
 launcher also syncs the bundled `Read Aloud` plugin into Codex's local plugin
 cache so the agent-facing tool is available.
 
+The stage hook is fail-soft when no prebuilt backend is configured and the Rust
+backend cannot be built in the current environment. In that case the app build
+continues without staging the MCP plugin. Native packages and reproducible
+builds should provide `CODEX_LINUX_READ_ALOUD_MCP_SOURCE` when network access
+or Cargo registry access is unavailable during staging.
+
 The response-level speaker button and settings UI come from the default-on
 `read-aloud` feature. To turn both off, disable both features:
 
