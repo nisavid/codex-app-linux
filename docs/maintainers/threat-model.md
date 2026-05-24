@@ -444,11 +444,11 @@ can control the local desktop or whether this host can sign remote-control
 enrollment payloads, although upstream account-side controls remain part of the
 end-to-end authorization path.
 
-**Existing mitigations:** features are disabled unless explicitly enabled,
-patches are descriptor-scoped and fail soft, UI patches do not fabricate
-connected-client or MFA state, Linux device keys are stored in a per-user XDG
-config file with `0600` mode, and tests cover key creation, signing, deletion,
-visibility gating, and Linux-specific copy.
+**Existing mitigations:** default-enabled entry points expose Linux host
+plumbing without fabricating upstream enrollment, connected-client, or MFA
+state; patches are descriptor-scoped and fail soft; Linux device keys are stored
+in a per-user XDG config file with `0600` mode; and tests cover key creation,
+signing, deletion, visibility gating, and Linux-specific copy.
 
 **Gaps:** Linux keys are software-only and same-user readable; fork-side tests
 cannot prove upstream account/mobile authorization semantics; remote-control
