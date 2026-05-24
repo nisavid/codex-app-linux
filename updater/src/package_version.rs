@@ -20,7 +20,7 @@ pub fn compare_package_versions(left: &str, right: &str) -> Option<Ordering> {
     Some(left.cmp(&right))
 }
 
-/// Parses upstream app package versions for updater state comparisons.
+/// Parses official app package versions for updater state comparisons.
 ///
 /// Accepts three or four numeric segments such as `26.422.30944` or
 /// `26.422.30944.2080`, strips package/build suffixes (`+...` and `-...`),
@@ -86,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_timestamp_installed_version_does_not_satisfy_upstream_candidate() {
+    fn legacy_timestamp_installed_version_does_not_satisfy_official_candidate() {
         assert!(!installed_version_satisfies_candidate(
             "2026.04.01.035152+abcd1234",
             "26.422.30944.2080"

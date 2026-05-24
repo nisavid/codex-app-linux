@@ -17,10 +17,10 @@ launcher, updater, and validation procedures.
 
 The highest-risk areas are:
 
-1. **Mutable upstream artifact trust.** The installer and updater convert an
-   upstream DMG into a local Linux app and package. A bad upstream artifact,
-   wrong trust root, compromised download, or stale verification result can
-   become a root-owned package.
+1. **Mutable official DMG trust.** The installer and updater convert the
+   official OpenAI Codex DMG into a local Linux app and package. A bad official
+   artifact, wrong trust root, compromised download, or stale verification
+   result can become a root-owned package.
 2. **Privilege transition.** The updater is intentionally unprivileged until it
    invokes `pkexec` install subcommands. Anything crossing that boundary must be
    tightly bound to a verified package identity and digest.
@@ -79,8 +79,8 @@ templates, updater code, or workflows.
 Out of scope:
 
 - Security guarantees made by OpenAI backend services, account rollout policy,
-  remote-control enrollment policy, mobile clients, or the upstream macOS app
-  outside the local conversion and packaging path.
+  remote-control enrollment policy, mobile clients, or the official OpenAI
+  macOS app outside the local conversion and packaging path.
 - Claims about a specific generated `app.asar` bundle until it has been built
   from a specific DMG and inspected.
 - Host package-manager, polkit, npm registry, Electron release, GitHub Actions,
@@ -91,8 +91,9 @@ Out of scope:
 - Native package artifacts are intended for local use and may be distributed
   publicly.
 - Updater auto-install after app exit is intentional.
-- The upstream DMG URL is mutable. TLS and a recorded SHA-256 are not enough by
-  themselves to authenticate a release for unattended rebuild and install.
+- The official OpenAI Codex DMG URL is mutable. TLS and a recorded SHA-256 are
+  not enough by themselves to authenticate a release for unattended rebuild and
+  install.
 - Same-user local processes are realistic attackers for localhost ports,
   user-writable config/state/cache, environment, and PATH influence.
 - A malicious renderer, plugin, CLI, or same-user process can matter even when
@@ -100,7 +101,7 @@ Out of scope:
 - LAN attackers matter if any future local service binds beyond loopback.
 - Remote-control/mobile Linux patches remain experimental. Account policy,
   enrollment, MFA, connected-client state, and remote-access decisions remain
-  owned by upstream services and generated app flows.
+  owned by OpenAI-hosted services and generated app flows.
 - Linux remote-control device keys are software keys stored under XDG config.
   They are not hardware-backed or protected from same-user compromise.
 
@@ -119,7 +120,7 @@ Open questions that materially affect risk:
 
 ### Primary Surfaces
 
-- **Upstream artifact source:** default
+- **Official DMG source:** default
   `https://persistent.oaistatic.com/codex-app-prod/Codex.dmg`, plus explicit
   local or configured DMG overrides.
 - **Installer:** downloads or reuses the DMG, extracts `Codex.app`, patches
@@ -133,29 +134,29 @@ Open questions that materially affect risk:
   headers, and validates startup markers before Electron launch.
 - **Linux feature and patch registry:** applies descriptor-backed core patches
   and optional feature patches to generated main-process, webview, and
-  extracted-app bundles; required upstream patches must fail closed in patch
-  reports.
+  extracted-app bundles; required official-app patches must fail closed in
+  patch reports.
 - **Linux open-target discovery:** default-enabled patching of generated app
   open-target behavior to discover terminals, IDEs, file managers, and
   `.desktop` entries, sanitize the launch environment, and invoke targets with
   argument vectors.
 - **Opt-in remote-control and Codex mobile patches:** Linux feature patches can
-  expose upstream remote-control UI surfaces, preserve `remote_control` config
-  for the local app-server, and replace the macOS native device-key module with
-  a Linux software key store at
+  expose official app remote-control UI surfaces, preserve `remote_control`
+  config for the local app-server, and replace the macOS native device-key
+  module with a Linux software key store at
   `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/remote-control-device-keys-v1.json`.
 - **Linux Computer Use backend:** Rust MCP backend and plugin resources that can
   inspect accessibility state, capture screenshots, and synthesize desktop
   input through AT-SPI, GNOME/KDE portal, and ydotool-style backends when
-  upstream UI/account gating enables the feature.
+  official app UI and OpenAI account gating enable the feature.
 - **Native package builders:** convert a generated app tree into `.deb`, `.rpm`,
   or pacman packages under the `codex-app` identity.
 - **AppImage builder:** creates a local manual AppImage under the `codex-app`
   identity without the updater service, polkit policy, privileged install
   helpers, or update-builder bundle.
 - **Updater daemon:** `codex-app-updater daemon` runs as a `systemd --user`
-  service, checks upstream metadata, downloads DMGs, rebuilds packages, tracks
-  state, prompts/notifies, and coordinates install after app exit.
+  service, checks official DMG metadata, downloads DMGs, rebuilds packages,
+  tracks state, prompts/notifies, and coordinates install after app exit.
 - **Privileged install commands:** `codex-app-updater install-deb`,
   `install-rpm`, and `install-pacman` are invoked through `pkexec` for the final
   system package-manager operation.
@@ -169,12 +170,12 @@ Open questions that materially affect risk:
 
 | Boundary | Crosses From | Crosses To | Security Concern |
 | --- | --- | --- | --- |
-| Upstream DMG | Internet/CDN/OpenAI artifact hosting | local installer, updater, Nix hash workflow | Authenticity, freshness, downgrade, malicious payload |
+| Official OpenAI Codex DMG | Internet/CDN/OpenAI artifact hosting | local installer, updater, Nix hash workflow | Authenticity, freshness, downgrade, malicious payload |
 | Build toolchain | npm, Electron releases, Rust crates, distro tools, 7z/7zz | generated app and packages | Dependency compromise, unpinned downloads, malicious native modules |
-| Generated app bundle | extracted upstream app and patched ASAR | Linux Electron runtime | Renderer isolation, IPC, navigation, local file access |
+| Generated app bundle | extracted official app and patched ASAR | Linux Electron runtime | Renderer isolation, IPC, navigation, local file access |
 | Local webview origin | loopback HTTP server | Electron renderer | Same-user port spoofing, stale assets, marker spoofing |
 | Linux feature patches | generated app bundle | desktop launch helpers and platform integrations | Descriptor drift, command launch semantics, unsafe environment inheritance |
-| Remote-control/mobile patches | upstream app and account/mobile service state | local UI gates, app-server config, XDG device-key store | Software key theft, misleading availability, confused authorization state |
+| Remote-control/mobile patches | official app and account/mobile service state | local UI gates, app-server config, XDG device-key store | Software key theft, misleading availability, confused authorization state |
 | User config/state/cache | XDG user-writable files | updater decisions and rebuild inputs | Path substitution, stale state, developer-mode misuse, secret leakage |
 | Updater rebuild | unprivileged user service | package builder scripts and artifacts | Builder-root trust, PATH/tool influence, package identity |
 | Privileged install | unprivileged updater/package path | `pkexec` and system package manager | TOCTOU, package substitution, root-owned payload install |
@@ -185,7 +186,7 @@ Open questions that materially affect risk:
 
 ```mermaid
 flowchart LR
-  D["Upstream Codex.dmg"] --> I["install.sh"]
+  D["Official OpenAI Codex.dmg"] --> I["install.sh"]
   D --> U["codex-app-updater"]
   N["npm / Electron / Rust / distro tools"] --> I
   I --> G["Generated codex-app/"]
@@ -217,7 +218,7 @@ flowchart LR
   digest, artifact path, and install status across restarts and package
   upgrades.
 - **Generated app integrity:** ensure the Linux app is built from the intended
-  upstream DMG and reviewed patch set.
+  official OpenAI Codex DMG and reviewed patch set.
 - **Renderer and desktop-control boundary:** keep Electron, webview, CLI, and
   Computer Use behavior constrained to intended user-consented actions.
 - **Remote-control device keys and enrollment state:** protect software private
@@ -234,8 +235,8 @@ flowchart LR
   environment variables, and command-line options.
 - User-writable updater state/cache, generated app trees, package outputs, and
   local build directories.
-- Upstream DMG bytes, HTTP metadata, npm metadata/tarballs, Electron archives,
-  Rust crates, distro package state, and CI workflow inputs.
+- Official OpenAI Codex DMG bytes, HTTP metadata, npm metadata/tarballs,
+  Electron archives, Rust crates, distro package state, and CI workflow inputs.
 - Local loopback ports and any marker-compatible content served by same-user
   processes.
 - Generated ASAR/webview content, renderer messages, plugin manifests, and
@@ -266,7 +267,7 @@ flowchart LR
 - Electron sandboxing must remain enabled by default; disabling it is an
   explicit lower-security compatibility mode.
 - Required generated-app patches must be marked as required failures when
-  upstream bundle drift prevents application.
+  official app bundle drift prevents application.
 - Desktop target discovery must use argument-vector process launches, sanitize
   app-internal environment variables, and treat user-local `.desktop` entries
   as same-user trust inputs.
@@ -285,10 +286,10 @@ flowchart LR
 **Entry points:** default and configured DMG URLs, `Codex.dmg`, Nix hash
 workflow, updater download path, release gate.
 
-**Abuse path:** attacker compromises or redirects the mutable upstream artifact
-or its metadata; the repo downloads and hashes the bytes; the updater or
-maintainer build converts them into a native package; the package is installed
-or published as trusted.
+**Abuse path:** attacker compromises or redirects the mutable official OpenAI
+artifact or its metadata; the repo downloads and hashes the bytes; the updater
+or maintainer build converts them into a native package; the package is
+installed or published as trusted.
 
 **Impact:** High. A malicious app package can persist in root-owned paths and
 run user-context Electron/updater code.
@@ -301,7 +302,7 @@ release-gate hash check, Apple DMG verification script and workflow.
 
 **Gaps:** No online signed metadata channel for default DMG publications beyond
 the packaged repo-trusted allowlist; hash-refresh PRs still need
-machine-attached upstream version/signature evidence.
+machine-attached official version/signature evidence.
 
 **Priority:** High.
 
@@ -380,21 +381,21 @@ review for each public release candidate.
 tree requests, screenshot paths, XDG portal/GNOME Shell DBus, ydotool/input
 backends.
 
-**Abuse path:** malicious renderer, plugin request, compromised upstream bundle,
-or confused account-side flow invokes desktop inspection, screenshots, or input
-automation beyond user intent.
+**Abuse path:** malicious renderer, plugin request, compromised official app
+bundle, or confused account-side flow invokes desktop inspection, screenshots,
+or input automation beyond user intent.
 
 **Impact:** High for confidentiality and integrity of the user's desktop
 session.
 
-**Existing mitigations:** feature remains subject to upstream account-side
+**Existing mitigations:** feature remains subject to OpenAI account-side
 rollout and host accessibility/input prerequisites; backend is packaged as a
 local app component rather than a network service; requested app selection now
 errors when no accessible app matches; the backend carries explicit identity
 metadata for desktop portal/GNOME integration.
 
 **Gaps:** local authorization/consent semantics for Computer Use are mostly
-inherited from the upstream app flow; the backend needs manual review when
+inherited from the official app flow; the backend needs manual review when
 plugin manifests, command routing, screenshot handling, or input backends
 change.
 
@@ -431,27 +432,28 @@ added.
 
 **Entry points:** default-enabled `remote-control-ui` and `remote-mobile-control`
 features, generated remote-control and Codex mobile webview bundles,
-app-server config preservation, Linux software device-key store, upstream
+app-server config preservation, Linux software device-key store, and OpenAI
 account/mobile enrollment flows.
 
 **Abuse path:** a same-user process steals the Linux software private key, a
-patched UI implies a remote-control state that upstream has not authorized, or
+patched UI implies a remote-control state that OpenAI-hosted services have not
+authorized, or
 bundle drift causes the fork to bypass an account-side availability, access, or
 enrollment guard instead of only exposing Linux host plumbing.
 
 **Impact:** Medium to High. Successful abuse can affect whether another device
 can control the local desktop or whether this host can sign remote-control
-enrollment payloads, although upstream account-side controls remain part of the
+enrollment payloads, although OpenAI account-side controls remain part of the
 end-to-end authorization path.
 
 **Existing mitigations:** default-enabled entry points expose Linux host
-plumbing without fabricating upstream enrollment, connected-client, or MFA
+plumbing without fabricating OpenAI enrollment, connected-client, or MFA
 state; patches are descriptor-scoped and fail soft; Linux device keys are stored
 in a per-user XDG config file with `0600` mode; and tests cover key creation,
 signing, deletion, visibility gating, and Linux-specific copy.
 
 **Gaps:** Linux keys are software-only and same-user readable; fork-side tests
-cannot prove upstream account/mobile authorization semantics; remote-control
+cannot prove OpenAI account/mobile authorization semantics; remote-control
 patches need fresh security review before being treated as general-ready
 functionality.
 
@@ -519,8 +521,8 @@ checksums, exports the release signing key, validates package identity, and can
 require signatures; hash refresh goes through PR review.
 
 **Gaps:** no format-native package signing, no hosted artifact attestations,
-and no automatic inclusion of upstream signature/notarization evidence in hash
-refresh PRs.
+and no automatic inclusion of official app signature/notarization evidence in
+hash refresh PRs.
 
 **Priority:** High before public releases.
 
@@ -587,7 +589,7 @@ still contain arbitrary sensitive values.
   package metadata and package-manager-specific staging behavior.
 - `scripts/release-gate.sh` and `scripts/verify-apple-dmg.sh`: release trust
   evidence, checksums, optional signatures, Apple verification.
-- `updater/src/upstream.rs`: DMG URL validation, metadata fetch, download
+- `updater/src/dmg_source.rs`: DMG URL validation, metadata fetch, download
   limits, redaction, hashing.
 - `updater/src/app.rs`: daemon/check/install orchestration, state transitions,
   notifications, `pkexec` launch.

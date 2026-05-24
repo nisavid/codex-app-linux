@@ -21,19 +21,19 @@ const {
   applyWebviewAssetPatchDescriptors,
   discoverCorePatchDescriptors,
   normalizePatchDescriptors,
+  REQUIRED_OFFICIAL_DMG,
 } = require("./engine.js");
 const {
   isComputerUseUiEnabled,
 } = require("./computer-use.js");
 
-const REQUIRED_UPSTREAM = "required-upstream";
 const OPTIONAL = "optional";
 const OPT_IN = "opt-in";
 const CORE_PATCH_ROOT = path.join(__dirname, "core");
 const EXTRACTED_APP_WEBVIEW_SPLIT_ORDER = 2020;
 
 const CUSTOM_PATCH_POLICIES = [
-  { name: "main-process-ui", ciPolicy: REQUIRED_UPSTREAM, phase: "main-bundle" },
+  { name: "main-process-ui", ciPolicy: REQUIRED_OFFICIAL_DMG, phase: "main-bundle" },
 ];
 
 function normalizeDiscoveredCorePatchDescriptors(options = {}) {
@@ -200,13 +200,14 @@ function allPatchPolicies(options = {}) {
 }
 
 function requiredPatchNamesForProfile(profile, options = {}) {
-  if (profile !== "upstream-build") {
+  const normalizedProfile = profile === "upstream-build" ? "official-dmg-build" : profile;
+  if (normalizedProfile !== "official-dmg-build") {
     return [];
   }
   const linux = options.linuxTarget ?? detectLinuxTargetContext(options.linuxTargetOptions);
   const context = { linux, linuxTarget: linux, enableComputerUseUi: isComputerUseUiEnabled() };
   return allPatchPolicies({ corePatchRoot: options.corePatchRoot })
-    .filter((patch) => patch.ciPolicy === REQUIRED_UPSTREAM)
+    .filter((patch) => patch.ciPolicy === REQUIRED_OFFICIAL_DMG)
     .filter((patch) => patch.appliesTo == null || patch.appliesTo(context) !== false)
     .map((patch) => patch.name);
 }
@@ -227,7 +228,7 @@ module.exports = {
   CUSTOM_PATCH_POLICIES,
   OPTIONAL,
   OPT_IN,
-  REQUIRED_UPSTREAM,
+  REQUIRED_OFFICIAL_DMG,
   allPatchPolicies,
   corePatchDescriptors,
   createMainBundleContext,

@@ -7,7 +7,7 @@ launcher, native packages, updater, bundled runtime helpers, local desktop
 integration, and repository release workflows.
 
 Security guarantees made by OpenAI services, OpenAI accounts, and the official
-upstream Codex app outside this local conversion path are outside this
+OpenAI app bundle outside this local conversion path are outside this
 repository's scope.
 
 ## Supported Versions

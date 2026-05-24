@@ -22,7 +22,7 @@ remote_head=""
 dmg_headers=""
 
 if ! remote_head="$(remote_repo_head 2>/dev/null)"; then
-    echo "Could not query wrapper repo upstream."
+    echo "Could not query wrapper repo's configured git upstream."
     exit 1
 fi
 
@@ -73,7 +73,7 @@ fi
 
 echo "Status: update available"
 if [ "$repo_upstream_changed" -eq 1 ]; then
-    echo "Reason: wrapper repo upstream changed"
+    echo "Reason: wrapper repo's configured git upstream changed"
 fi
 if [ "$repo_overlay_changed" -eq 1 ]; then
     echo "Reason: source overlay changed"

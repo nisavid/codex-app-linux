@@ -287,7 +287,7 @@ function patchKeybindsSettingsAssets(extractedDir) {
     return {
       matched: true,
       changed: 0,
-      reason: "upstream keyboard shortcuts settings are present",
+      reason: "official OpenAI app bundle keyboard shortcuts settings are present",
     };
   }
 

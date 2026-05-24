@@ -30,7 +30,7 @@ run_linux_feature_stage_hooks() {
         [ -n "$feature_id" ] || continue
         [ -n "$hook_path" ] || continue
         info "Running Linux feature stage hook: $feature_id"
-        if ! SCRIPT_DIR="$SCRIPT_DIR" INSTALL_DIR="$INSTALL_DIR" WORK_DIR="$WORK_DIR" ARCH="$ARCH" CODEX_UPSTREAM_APP_DIR="$app_dir" bash "$hook_path"; then
+        if ! SCRIPT_DIR="$SCRIPT_DIR" INSTALL_DIR="$INSTALL_DIR" WORK_DIR="$WORK_DIR" ARCH="$ARCH" CODEX_OFFICIAL_APP_DIR="$app_dir" CODEX_UPSTREAM_APP_DIR="$app_dir" bash "$hook_path"; then
             warn "Linux feature stage hook failed: $feature_id"
             rm -f "$hooks_file"
             return 1

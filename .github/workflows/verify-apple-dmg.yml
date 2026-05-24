@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       dmg_url:
-        description: Upstream Codex DMG URL
+        description: Official OpenAI Codex DMG URL
         required: true
         default: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg
       dmg_sha256:
@@ -33,7 +33,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Download upstream DMG
+      - name: Download official DMG
         run: curl -fL --retry 3 --output Codex.dmg "$DMG_URL"
         env:
           DMG_URL: ${{ inputs.dmg_url }}

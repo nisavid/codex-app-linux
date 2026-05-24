@@ -1,4 +1,4 @@
-//! Upstream DMG metadata and download helpers.
+//! Official OpenAI Codex DMG metadata and download helpers.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -11,7 +11,7 @@ use tokio::{fs::File, io::AsyncWriteExt};
 const MAX_DMG_BYTES: u64 = 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Selected HTTP metadata used to detect upstream DMG changes.
+/// Selected HTTP metadata used to detect official DMG changes.
 pub struct RemoteMetadata {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
@@ -20,7 +20,7 @@ pub struct RemoteMetadata {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Result of downloading the current upstream DMG snapshot.
+/// Result of downloading the current official DMG snapshot.
 pub struct DownloadedDmg {
     pub path: PathBuf,
     pub sha256: String,
@@ -59,7 +59,7 @@ fn sanitized_url_for_log(dmg_url: &str) -> String {
     }
 }
 
-/// Fetches the upstream DMG headers used to detect candidate updates.
+/// Fetches the official DMG headers used to detect candidate updates.
 pub async fn fetch_remote_metadata(client: &Client, dmg_url: &str) -> Result<RemoteMetadata> {
     let url = validate_dmg_url(dmg_url)?;
     let safe_url = sanitized_url_for_log(dmg_url);
@@ -105,7 +105,7 @@ pub async fn fetch_remote_metadata(client: &Client, dmg_url: &str) -> Result<Rem
     })
 }
 
-/// Downloads the upstream DMG and derives a package version from its hash.
+/// Downloads the official DMG and derives a package version from its hash.
 pub async fn download_dmg(
     client: &Client,
     dmg_url: &str,

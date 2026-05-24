@@ -54,7 +54,7 @@ remote_head=""
 dmg_headers=""
 
 if ! remote_head="$(remote_repo_head 2>/dev/null)"; then
-    echo "Could not query wrapper repo upstream." >&2
+    echo "Could not query wrapper repo's configured git upstream." >&2
     exit 1
 fi
 

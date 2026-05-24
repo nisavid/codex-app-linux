@@ -354,7 +354,7 @@ install_gui_prompt_helper() {
 
 # ---------------------------------------------------------------------------
 # 7zz bootstrap (modern 7-Zip for APFS DMG support)
-# Pinned versions — prepend new entries as upstream releases them.
+# Pinned versions — prepend new entries as 7-Zip releases them.
 # ---------------------------------------------------------------------------
 bootstrap_7zz() {
     # Already present and functional

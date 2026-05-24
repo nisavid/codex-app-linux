@@ -68,6 +68,9 @@ const {
   applyExtractedAppPatchDescriptors,
 } = require("./patches/engine.js");
 const {
+  requiredPatchNamesForProfile,
+} = require("./patches/registry.js");
+const {
   validateReport,
 } = require("./ci/validate-patch-report.js");
 const {
@@ -265,7 +268,7 @@ test("auto-discovered core patches can target a specific Linux distro", () => {
         "module.exports = {",
         "  id: \"gentoo-only-sample\",",
         "  phase: \"main-bundle\",",
-        "  ciPolicy: \"required-upstream\",",
+        "  ciPolicy: \"required-official-dmg\",",
         "  order: 30000,",
         "  appliesTo: (context) => context.linux.matchesId(\"gentoo\"),",
         "  apply: (source) => source.replace(\"codexLinuxGentooDisabled()\", \"codexLinuxGentooEnabled()\"),",
@@ -345,6 +348,14 @@ test("patch descriptor normalization rejects duplicate ids", () => {
     ]),
     /Duplicate patch descriptor id 'duplicate'/,
   );
+});
+
+test("patch descriptor normalization accepts legacy required-upstream policy alias", () => {
+  const [descriptor] = normalizePatchDescriptors([
+    { id: "legacy-required-policy", ciPolicy: "required-upstream", apply: (source) => source },
+  ]);
+
+  assert.equal(descriptor.ciPolicy, "required-official-dmg");
 });
 
 test("default core patch descriptors are grouped and unique", () => {
@@ -704,7 +715,7 @@ test("preserves user-enabled remote_control config on Linux", () => {
   assert.equal((patched.match(/process\.platform!==`linux`/g) ?? []).length, 2);
 });
 
-test("warns when upstream still strips remote_control but the guard shape drifts", () => {
+test("warns when the official app still strips remote_control but the guard shape drifts", () => {
   const source =
     "async()=>{await yV(path)&&logger.info(`Removed remote_control from config before app-server start`)}";
 
@@ -756,7 +767,7 @@ test("upgrades the legacy Linux quit guard helper when re-patching older bundles
   assert.match(patched, /codexLinuxShouldBypassQuitPrompt=\(\)=>codexLinuxExplicitQuitApproved===!0/);
 });
 
-test("bypasses the upstream before-quit confirmation after a Linux explicit quit", () => {
+test("bypasses the official app before-quit confirmation after a Linux explicit quit", () => {
   const source = `${mainBundlePrefix}${beforeQuitConfirmationBundleFixture()}`;
   const patched = applyPatchTwice(
     applyLinuxExplicitQuitPromptBypassPatch,
@@ -852,7 +863,7 @@ test("supports explicit tray quit patching when minified aliases drift", () => {
   );
 });
 
-test("supports explicit tray quit patching when upstream renames the quit label helper", () => {
+test("supports explicit tray quit patching when the official app renames the quit label helper", () => {
   const source =
     "let n=require(`electron`);var q=class{getNativeTrayMenuItems(){return[{label:mH(this.appName),click:()=>{n.app.quit()}}]}};function mH(e){let t=n.Menu.buildFromTemplate([{role:`quit`}]);return(Array.isArray(t)?t:t.items)[0]?.label??`Quit ${e}`}";
   const patched = applyPatchTwice(applyLinuxExplicitTrayQuitPatch, source);
@@ -1517,7 +1528,7 @@ test("gates ready-to-show maximize behind restored maximized state", () => {
   );
 });
 
-test("skips the launch-action patch without throwing when upstream startup architecture changes", () => {
+test("skips the launch-action patch without throwing when official app startup architecture changes", () => {
   const source = [
     "async function Sg(){",
     "let{startedAtMs:r,setSparkleBridgeHandlers:s,setSecondInstanceArgsHandler:c}=e.o(),",
@@ -1615,7 +1626,7 @@ test("allows bundled Computer Use on Linux as well as macOS", () => {
   assert.doesNotMatch(patched, /t===`darwin`&&e\.computerUse/);
 });
 
-test("adds Keybinds settings route after upstream minified variable drift", () => {
+test("adds Keybinds settings route after official app minified variable drift", () => {
   const patched = applyPatchTwice(applyKeybindsSettingsIndexPatch, keybindsIndexBundleFixture());
 
   assert.match(
@@ -1672,7 +1683,7 @@ test("adds Keybinds settings route to spread route maps", () => {
   assert.match(patched, /codexLinuxKeybindOverridesRuntime/);
 });
 
-test("uses upstream Keyboard Shortcuts settings surface when available", () => {
+test("uses official app Keyboard Shortcuts settings surface when available", () => {
   const patched = applyPatchTwice(
     applyKeybindsSettingsIndexPatch,
     keyboardShortcutsIndexBundleFixture(),
@@ -1741,7 +1752,7 @@ test("builds Keybinds settings source from safe asset names", () => {
   }
 });
 
-test("does not duplicate upstream Keyboard Shortcuts settings metadata", () => {
+test("does not duplicate official app Keyboard Shortcuts settings metadata", () => {
   const sections = "n=[{slug:`general-settings`},{slug:`appearance`},{slug:`keyboard-shortcuts`}]";
   const shared = [
     '"keyboard-shortcuts":{id:`settings.nav.keyboard-shortcuts`,defaultMessage:`Keyboard shortcuts`,description:`Title for keyboard shortcuts settings section`},',
@@ -1752,14 +1763,14 @@ test("does not duplicate upstream Keyboard Shortcuts settings metadata", () => {
   assert.equal(applyKeybindsSettingsSharedPatch(shared), shared);
 });
 
-test("disables the upstream app sunset gate in the Linux wrapper webview", () => {
+test("disables the official app sunset gate in the Linux wrapper webview", () => {
   const patched = applyPatchTwice(applyLinuxAppSunsetPatch, appSunsetBundleFixture());
 
   assert.match(patched, /if\(!1&&ms\(`2929582856`\)\)\{/);
   assert.doesNotMatch(patched, /if\(ms\(`2929582856`\)\)\{/);
 });
 
-test("disables the upstream app sunset gate after minified alias drift", () => {
+test("disables the official app sunset gate after minified alias drift", () => {
   const patched = applyPatchTwice(applyLinuxAppSunsetPatch, appSunsetBundleWithDriftingAliasFixture());
 
   assert.match(patched, /if\(!1&&xs\(`2929582856`\)\)\{/);
@@ -2270,7 +2281,7 @@ test("handles literal Chrome plugin gate names", () => {
   assert.doesNotMatch(patched, /installWhenMissing:!0,name:'chrome-internal'/);
 });
 
-test("reports missing required Chrome plugin auto-install gate as required upstream validation failure", () => {
+test("reports missing required Chrome plugin auto-install gate as required official DMG validation failure", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-missing-chrome-"));
   try {
     const buildDir = path.join(tempRoot, ".vite", "build");
@@ -2284,7 +2295,7 @@ test("reports missing required Chrome plugin auto-install gate as required upstr
     assert.equal(pluginGatePatch.status, "failed-required");
     assert.match(pluginGatePatch.reason, /Could not find Chrome plugin gate literal/);
     assert.ok(
-      validateReport(report, "upstream-build").some((failure) =>
+      validateReport(report, "official-dmg-build").some((failure) =>
         failure.startsWith("linux-chrome-plugin-auto-install: failed-required"),
       ),
     );
@@ -2318,7 +2329,7 @@ test("warns when the Computer Use gate is recognizable but unpatchable", () => {
   );
 });
 
-test("reports missing required Computer Use plugin gate as required upstream validation failure", () => {
+test("reports missing required Computer Use plugin gate as required official DMG validation failure", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-patch-report-missing-computer-use-"));
   try {
     const buildDir = path.join(tempRoot, ".vite", "build");
@@ -2332,7 +2343,7 @@ test("reports missing required Computer Use plugin gate as required upstream val
     assert.equal(pluginGatePatch.status, "failed-required");
     assert.match(pluginGatePatch.reason, /Could not find Computer Use plugin gate literal/);
     assert.ok(
-      validateReport(report, "upstream-build").some((failure) =>
+      validateReport(report, "official-dmg-build").some((failure) =>
         failure.startsWith("linux-computer-use-plugin-gate: failed-required"),
       ),
     );
@@ -2382,7 +2393,7 @@ test("patches all Computer Use desktop feature gates in one pass", () => {
   );
 });
 
-test("shows Computer Use plugin UI on Linux without the upstream rollout flag", () => {
+test("shows Computer Use plugin UI on Linux without the account rollout flag", () => {
   const patched = applyPatchTwice(
     applyLinuxComputerUseRendererAvailabilityPatch,
     computerUseRendererAvailabilityBundleFixture(),
@@ -2395,7 +2406,7 @@ test("shows Computer Use plugin UI on Linux without the upstream rollout flag", 
   );
 });
 
-test("shows current Computer Use plugin UI on Linux without the upstream rollout flag", () => {
+test("shows current Computer Use plugin UI on Linux without the account rollout flag", () => {
   const source =
     "function g(e){return e===`macOS`||e===`windows`}" +
     "function _(e){let t=(0,d.c)(8),{enabled:n,hostId:r,isHostLocal:i}=e,a=n===void 0?!0:n,{isLoading:o,platform:c}=u(),l=s(`1506311413`),f;t[0]===r?f=t[1]:(f={featureName:`computer_use`,hostId:r},t[0]=r,t[1]=f);let p=h(f),m;t[2]===c?m=t[3]:(m=g(c),t[2]=c,t[3]=m);let _=a&&i&&l&&(o||m),v=_&&!o&&p.enabled&&!p.isLoading,y=_&&p.isLoading,b=_&&(o||p.isLoading),x;return x}";
@@ -2560,7 +2571,7 @@ test("detects Chrome extension installation from Linux browser profiles", () => 
   assert.doesNotMatch(patched, /function codexLinuxChromeCommand\(\)\{for\(let e of\[[^\]]+\]\)\{let t=Rp/);
 });
 
-test("detects Chrome extension installation after upstream minifier renames", () => {
+test("detects Chrome extension installation after official app minifier renames", () => {
   const patched = applyPatchTwice(
     applyLinuxChromeExtensionStatusPatch,
     currentChromeExtensionStatusBundleFixture(),
@@ -2963,7 +2974,7 @@ test("patch report marks missing required webview assets as required failures", 
     assert.equal(sunsetPatch.status, "failed-required");
     assert.match(sunsetPatch.reason, /Could not find webview assets directory/);
     assert.ok(
-      validateReport(report, "upstream-build").some((failure) =>
+      validateReport(report, "official-dmg-build").some((failure) =>
         failure.startsWith("linux-app-sunset-gate: failed-required"),
       ),
     );
@@ -2986,7 +2997,7 @@ test("patch report marks missing required package metadata as required failure",
     assert.equal(packagePatch.status, "failed-required");
     assert.match(packagePatch.reason, /package\.json missing or unreadable/);
     assert.ok(
-      validateReport(report, "upstream-build").some((failure) =>
+      validateReport(report, "official-dmg-build").some((failure) =>
         failure.startsWith("package-desktop-name: failed-required"),
       ),
     );
@@ -3009,7 +3020,7 @@ test("patch report marks warned asset patches as required failures", () => {
     assert.equal(sunsetPatch.status, "failed-required");
     assert.match(sunsetPatch.reason, /Could not find app sunset gate needle/);
     assert.ok(
-      validateReport(report, "upstream-build").some((failure) =>
+      validateReport(report, "official-dmg-build").some((failure) =>
         failure.startsWith("linux-app-sunset-gate: failed-required"),
       ),
     );
@@ -3047,7 +3058,7 @@ test("patch report marks missing required package metadata as failed", () => {
     assert.equal(packagePatch.status, "failed-required");
     assert.match(packagePatch.reason, /package\.json missing or unreadable/);
     assert.ok(
-      validateReport(report, "upstream-build").some((failure) =>
+      validateReport(report, "official-dmg-build").some((failure) =>
         failure.startsWith("package-desktop-name: failed-required"),
       ),
     );
@@ -3056,7 +3067,15 @@ test("patch report marks missing required package metadata as failed", () => {
   }
 });
 
-test("extracted-app descriptors honor required-upstream policy without custom status", () => {
+test("required patch profile keeps upstream-build as a legacy alias", () => {
+  assert.deepEqual(
+    requiredPatchNamesForProfile("upstream-build"),
+    requiredPatchNamesForProfile("official-dmg-build"),
+  );
+  assert.deepEqual(requiredPatchNamesForProfile("unknown-profile"), []);
+});
+
+test("extracted-app descriptors honor required-official-dmg policy without custom status", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-required-extracted-app-"));
   try {
     const report = createPatchReport();
@@ -3066,7 +3085,7 @@ test("extracted-app descriptors honor required-upstream policy without custom st
         {
           id: "required-extracted-app-test",
           phase: "extracted-app",
-          ciPolicy: "required-upstream",
+          ciPolicy: "required-official-dmg",
           apply: () => {
             console.warn("missing required extracted app marker");
             return { changed: false };

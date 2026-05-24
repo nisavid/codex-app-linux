@@ -18,7 +18,7 @@ native packages.
 
 > [!NOTE]
 > This is an unofficial community project. It does not redistribute OpenAI
-> software; it automates a local conversion from the upstream Codex DMG.
+> software; it automates a local conversion from the official OpenAI Codex DMG.
 
 ## Start Here
 
@@ -34,9 +34,9 @@ native packages.
 ## Quick Start
 
 This is the normal fast path for a package-managed install. It removes old
-generated output, rebuilds the Linux app from the upstream DMG, builds the
-native package for your host, then installs that package with your distro's
-package manager.
+generated output, rebuilds the Linux app from the official OpenAI Codex DMG,
+builds the native package for your host, then installs that package with your
+distro's package manager.
 
 ```bash
 git clone https://github.com/nisavid/codex-app-linux.git
@@ -107,9 +107,9 @@ build, package, or install flow unless you explicitly opt in through
 - **Release and supply-chain evidence.** The release gate verifies reviewed DMG
   hashes, scans generated Electron output, validates package metadata, writes
   checksums, and supports detached signatures.
-- **Computer Use packaging compatibility.** Upstream's Linux Computer Use
-  backend is staged under this fork's package identity while UI opt-in, account
-  rollout, and host accessibility gates stay separate.
+- **Computer Use packaging compatibility.** The Linux-port upstream's Linux
+  Computer Use backend is staged under this fork's package identity while UI
+  opt-in, account rollout, and host accessibility gates stay separate.
 
 ## Current State
 
@@ -135,9 +135,10 @@ build, package, or install flow unless you explicitly opt in through
 
 This fork is a downstream maintenance fork of
 [`ilysenko/codex-desktop-linux`](https://github.com/ilysenko/codex-desktop-linux).
-Upstream does the core Linux app conversion and runtime enablement. This fork
-keeps the local `codex-app` package identity, install layout, updater policy,
-hardening posture, and maintenance workflow coherent on top of that base.
+The Linux-port upstream does the core Linux app conversion and runtime
+enablement. This fork keeps the local `codex-app` package identity, install
+layout, updater policy, hardening posture, and maintenance workflow coherent on
+top of that base.
 
 For the full inventory of fork-specific contracts, see
 [`docs/maintainers/fork-divergences.md`](docs/maintainers/fork-divergences.md).
@@ -216,10 +217,14 @@ override shape; checkout builds ignore that persistent user file and use
 See [`linux-features/README.md`](linux-features/README.md) for the feature
 contract.
 
-Treat the remote control and voice modules as UI/runtime integration patches,
-not as account-policy bypasses: OpenAI rollouts, MFA state, connected-client
-state, audio availability, and host network exposure still come from upstream
-services and your local environment.
+The `remote-control-ui`, `remote-mobile-control`, `read-aloud`,
+`read-aloud-mcp`, and `conversation-mode` feature modules are default-enabled
+Linux integration patches for the official OpenAI app bundle and local runtime
+helpers.
+Treat them as UI/runtime integrations, not as account-policy bypasses: OpenAI
+rollouts, MFA state, connected-client state, audio availability, and host
+network exposure still come from OpenAI-hosted services and your local
+environment.
 
 ## Native Package Details
 
@@ -268,16 +273,16 @@ Package outputs land in `dist/`:
 
 | Target | Output |
 | --- | --- |
-| Debian | `dist/codex-app_<upstream-version>_<arch>.deb` |
-| RPM / Fedora / openSUSE | `dist/codex-app-<upstream-version>-1.<arch>.rpm` |
-| Arch Linux | `dist/codex-app-<upstream-version>-1-<arch>.pkg.tar.zst` |
-| AppImage | `dist/codex-app-<upstream-version>-<arch>.AppImage` |
+| Debian | `dist/codex-app_<app-version>_<arch>.deb` |
+| RPM / Fedora / openSUSE | `dist/codex-app-<app-version>-1.<arch>.rpm` |
+| Arch Linux | `dist/codex-app-<app-version>-1-<arch>.pkg.tar.zst` |
+| AppImage | `dist/codex-app-<app-version>-<arch>.AppImage` |
 
 Architecture names follow the package format: Debian uses `amd64`, `arm64`, or
 `armhf`; RPM uses `x86_64`, `aarch64`, or `armv7hl`; pacman uses `x86_64` or
 `aarch64`.
 
-The package version comes from the upstream Codex app bundle's
+The package version comes from the official OpenAI app bundle's
 `CFBundleShortVersionString`. For example, `26.422.30944 (2080)` becomes
 `26.422.30944`.
 
@@ -304,10 +309,10 @@ make appimage
 
 The AppImage flow omits `codex-app-updater`, the systemd user service, polkit
 policy, and the native-package update-builder bundle. Rebuild it manually when
-you want a newer upstream Codex app.
+you want a newer official OpenAI app bundle.
 
-Before publishing packages, run the release gate with a trusted upstream DMG
-hash:
+Before publishing packages, run the release gate with a trusted official OpenAI
+Codex DMG hash:
 
 ```bash
 CODEX_DMG_SHA256=<reviewed-dmg-sha256> \
@@ -373,18 +378,18 @@ app-server managed by systemd, import the flake module:
 `nixosModules.default` is also available for system-level configurations that
 prefer a global user unit.
 
-If `nix run` reports a DMG metadata mismatch, the upstream DMG was likely
-republished after the pinned metadata changed. A scheduled GitHub Actions job
+If `nix run` reports a DMG metadata mismatch, OpenAI likely republished the
+Codex DMG after the pinned metadata changed. A scheduled GitHub Actions job
 refreshes that metadata and verifies the Nix package outputs on `main`. Retry
 after the bot has had time to run; if it still fails, open an issue.
 
 ## Linux Computer Use
 
-Linux Computer Use support is packaged from upstream's Rust MCP backend. The
-backend can inspect apps through AT-SPI, capture screenshots through XDG Desktop
-Portal or compositor paths, and synthesize input through a uinput absolute
-pointer, XDG Desktop Portal RemoteDesktop sessions, or `ydotool` when the host
-is configured for them.
+Linux Computer Use support is packaged from the Linux-port upstream's Rust MCP
+backend. The backend can inspect apps through AT-SPI, capture screenshots
+through XDG Desktop Portal or compositor paths, and synthesize input through a
+uinput absolute pointer, XDG Desktop Portal RemoteDesktop sessions, or
+`ydotool` when the host is configured for them.
 
 Runtime readiness depends on the host. Input synthesis usually requires
 `ydotool`/`ydotoold`, `/dev/uinput` access, and a socket usable by your desktop
@@ -399,7 +404,8 @@ screenshot and pointer paths can still work for those apps.
 
 The plugin manifest gate is applied by default so the backend can register on
 Linux. The in-app Computer Use UI controls are opt-in because they touch
-upstream rollout-gated UI paths. Enable them for a build with:
+rollout-gated UI paths in the official OpenAI app bundle. Enable them for a
+build with:
 
 ```bash
 CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 make build-app
@@ -420,8 +426,8 @@ After building the app, check backend readiness with:
 ## Local Updater
 
 Native packages install `codex-app-updater`, a `systemd --user` service that
-checks for newer upstream DMGs, rebuilds the matching Linux package locally, and
-uses `pkexec` only for the final package install step.
+checks for newer official OpenAI Codex DMGs, rebuilds the matching Linux package
+locally, and uses `pkexec` only for the final package install step.
 
 Current updater crate version: `0.9.0`.
 

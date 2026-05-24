@@ -3,16 +3,17 @@ set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 FLAKE_FILE="${FLAKE_FILE:-$REPO_DIR/flake.nix}"
-UPSTREAM_DMG_URL="${UPSTREAM_DMG_URL:-https://persistent.oaistatic.com/codex-app-prod/Codex.dmg}"
-UPSTREAM_DMG_PATH="${1:-${UPSTREAM_DMG_PATH:-/tmp/Codex.dmg}}"
+OFFICIAL_DMG_URL="${OFFICIAL_DMG_URL:-${UPSTREAM_DMG_URL:-https://persistent.oaistatic.com/codex-app-prod/Codex.dmg}}"
+OFFICIAL_DMG_PATH="${1:-${OFFICIAL_DMG_PATH:-${UPSTREAM_DMG_PATH:-/tmp/Codex.dmg}}}"
 NATIVE_MODULES_PKG="${NATIVE_MODULES_PKG:-$REPO_DIR/nix/native-modules/package.json}"
 
 # Opt-in pin-writing mode (used by the hash-refresh bot, not by PR CI). When set,
 # the version pins are rewritten from the DMG before the assertions run, so they
 # confirm the write instead of failing on drift. APPCAST_URL, when also set,
-# gates the write on the upstream Sparkle appcast: the moving Codex.dmg must
-# already match the appcast's advertised latest version, otherwise we are mid
-# rollout and exit 75 (skip) rather than pinning a transient build.
+# gates the write on the official Sparkle appcast: the moving Codex.dmg must
+# already match the appcast's advertised latest version, otherwise the official
+# rollout is in progress and we exit 75 (skip) rather than pinning a transient
+# build.
 WRITE_PINS="${WRITE_PINS:-0}"
 APPCAST_URL="${APPCAST_URL:-}"
 
@@ -160,9 +161,9 @@ assert_equal() {
     echo "OK: $label = $actual"
 }
 
-if [ ! -s "$UPSTREAM_DMG_PATH" ]; then
-    mkdir -p "$(dirname "$UPSTREAM_DMG_PATH")"
-    curl -fL --retry 3 -o "$UPSTREAM_DMG_PATH" "$UPSTREAM_DMG_URL"
+if [ ! -s "$OFFICIAL_DMG_PATH" ]; then
+    mkdir -p "$(dirname "$OFFICIAL_DMG_PATH")"
+    curl -fL --retry 3 -o "$OFFICIAL_DMG_PATH" "$OFFICIAL_DMG_URL"
 fi
 
 SEVEN_ZIP_CMD="$(find_seven_zip)" || fail "7z/7zz/7za not found"
@@ -172,9 +173,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$SEVEN_ZIP_CMD" x -y -snl "$UPSTREAM_DMG_PATH" -o"$WORK_DIR/dmg" >/dev/null 2>&1 || true
+"$SEVEN_ZIP_CMD" x -y -snl "$OFFICIAL_DMG_PATH" -o"$WORK_DIR/dmg" >/dev/null 2>&1 || true
 APP_DIR="$(find "$WORK_DIR/dmg" -maxdepth 3 -name "*.app" -type d | head -1)"
-[ -n "$APP_DIR" ] || fail "Could not find .app bundle in $UPSTREAM_DMG_PATH"
+[ -n "$APP_DIR" ] || fail "Could not find .app bundle in $OFFICIAL_DMG_PATH"
 
 ASAR_PATH="$APP_DIR/Contents/Resources/app.asar"
 PLIST_PATH="$APP_DIR/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/Info.plist"
@@ -214,7 +215,7 @@ if [ "$WRITE_PINS" = "1" ]; then
         echo "DMG codex version:      $dmg_codex_version"
         if [ "$dmg_codex_version" != "$appcast_latest_version" ]; then
             echo "DMG ($dmg_codex_version) is not yet aligned with the appcast latest ($appcast_latest_version);" >&2
-            echo "upstream rollout in progress, skipping pin update (exit 75)." >&2
+            echo "official Codex rollout in progress, skipping pin update (exit 75)." >&2
             exit 75
         fi
     fi
@@ -279,4 +280,4 @@ PY
 assert_equal "Browser Use node_repl URL pin" "$installer_node_repl_url" "$flake_node_repl_url"
 assert_equal "Browser Use node_repl SHA-256 pin" "$installer_node_repl_sha" "$flake_node_repl_sha"
 
-echo "Nix pins match the upstream DMG, installer defaults, and native module build floors."
+echo "Nix pins match the official DMG, installer defaults, and native module build floors."

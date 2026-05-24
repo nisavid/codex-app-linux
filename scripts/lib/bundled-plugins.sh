@@ -148,9 +148,9 @@ install_linux_executable_resource() {
 
     if [ ! -f "$source" ]; then
         if [ "$log_level" = "info" ]; then
-            info "Browser Use $label not found in upstream resources; skipping"
+            info "Browser Use $label not found in official app resources; skipping"
         else
-            warn "Browser Use $label not found in upstream resources; skipping"
+            warn "Browser Use $label not found in official app resources; skipping"
         fi
         return 1
     fi
@@ -475,7 +475,7 @@ install_node_repl_from_primary_runtime_archive() {
 }
 
 install_browser_use_node_repl_resource() {
-    local upstream_source="$1"
+    local official_app_source="$1"
     local destination="$2"
     local source
 
@@ -494,7 +494,7 @@ install_browser_use_node_repl_resource() {
         return 0
     fi
 
-    if [ -n "$upstream_source" ] && install_browser_use_node_repl_executable_resource "$upstream_source" "$destination" "node_repl runtime" "info"; then
+    if [ -n "$official_app_source" ] && install_browser_use_node_repl_executable_resource "$official_app_source" "$destination" "node_repl runtime" "info"; then
         return 0
     fi
 
@@ -572,16 +572,16 @@ patch_chrome_plugin_for_linux() {
     local patcher="$SCRIPT_DIR/scripts/lib/patch-chrome-plugin.js"
 
     if [ ! -f "$patcher" ]; then
-        warn "Chrome plugin patch helper not found at $patcher; leaving upstream scripts unchanged"
+        warn "Chrome plugin patch helper not found at $patcher; leaving official app scripts unchanged"
         return 0
     fi
 
     if ! node "$patcher" "$target_plugin" >&2; then
-        warn "Chrome plugin Linux patch helper failed; leaving upstream scripts as-is"
+        warn "Chrome plugin Linux patch helper failed; leaving official app scripts as-is"
     fi
 }
 
-stage_chrome_plugin_from_upstream() {
+stage_chrome_plugin_from_official_app() {
     local source_plugin="$1"
     local target_plugins="$2"
     local target_plugin="$target_plugins/chrome"
@@ -590,17 +590,17 @@ stage_chrome_plugin_from_upstream() {
     local source_install_manifest="$source_plugin/scripts/installManifest.mjs"
 
     if [ ! -d "$source_plugin" ]; then
-        warn "Chrome bundled plugin resources not found in upstream app; skipping Chrome"
+        warn "Chrome bundled plugin resources not found in official app; skipping Chrome"
         return 1
     fi
 
     if [ ! -f "$source_manifest" ]; then
-        warn "Chrome plugin manifest not found in upstream app; skipping Chrome"
+        warn "Chrome plugin manifest not found in official app; skipping Chrome"
         return 1
     fi
 
     if [ ! -f "$source_client" ] || [ ! -f "$source_install_manifest" ]; then
-        warn "Chrome plugin scripts not found in upstream app; skipping Chrome"
+        warn "Chrome plugin scripts not found in official app; skipping Chrome"
         return 1
     fi
 
@@ -615,7 +615,7 @@ stage_chrome_plugin_from_upstream() {
         return 1
     fi
 
-    info "Chrome plugin staged from upstream DMG"
+    info "Chrome plugin staged from official OpenAI DMG"
     return 0
 }
 
@@ -731,7 +731,7 @@ try {
     pushBundledCandidate(bundledRoot, source.path);
   }
 } catch (_err) {
-  // Fall back to the known upstream directory name below.
+  // Fall back to the known official app directory name below.
 }
 
 candidates.push(path.join(bundledRoot, "plugins", "browser"));
@@ -757,7 +757,7 @@ process.exit(1);
 NODE
 }
 
-stage_browser_plugin_from_upstream() {
+stage_browser_plugin_from_official_app() {
     local source_plugin="$1"
     local target_plugins="$2"
     local target_name
@@ -767,17 +767,17 @@ stage_browser_plugin_from_upstream() {
     local target_client="$target_plugin/scripts/browser-client.mjs"
 
     if [ ! -d "$source_plugin" ]; then
-        info "Browser bundled plugin resources not present in upstream app; skipping Browser"
+        info "Browser bundled plugin resources not present in official app; skipping Browser"
         return 1
     fi
 
     if [ ! -f "$source_plugin/.codex-plugin/plugin.json" ]; then
-        warn "Browser plugin manifest not found in upstream app; skipping Browser"
+        warn "Browser plugin manifest not found in official app; skipping Browser"
         return 1
     fi
 
     if [ ! -f "$source_client" ]; then
-        warn "Browser browser-client.mjs not found in upstream app; skipping Browser"
+        warn "Browser browser-client.mjs not found in official app; skipping Browser"
         return 1
     fi
 
@@ -787,7 +787,7 @@ stage_browser_plugin_from_upstream() {
     patch_browser_use_node_repl_env_guard "$target_client"
     patch_browser_use_site_status_allowlist_fallback "$target_client"
 
-    info "Browser plugin staged from upstream DMG"
+    info "Browser plugin staged from official OpenAI DMG"
     return 0
 }
 
@@ -907,7 +907,7 @@ if (includeChrome) {
       }
     } catch (_err) {
       // Fall through to defaults when the staged plugin manifest is
-      // missing or malformed — stage_chrome_plugin_from_upstream only
+      // missing or malformed — stage_chrome_plugin_from_official_app only
       // existence-checks plugin.json, so it can still be unparseable here.
     }
     plugins.push({
@@ -948,11 +948,11 @@ NODE
 
 install_bundled_plugin_resources() {
     local app_dir="$1"
-    local upstream_resources="$app_dir/Contents/Resources"
-    local bundled_source_root="$upstream_resources/plugins/openai-bundled"
+    local official_app_resources="$app_dir/Contents/Resources"
+    local bundled_source_root="$official_app_resources/plugins/openai-bundled"
     local source_marketplace="$bundled_source_root/.agents/plugins/marketplace.json"
     local source_browser_plugin=""
-    local source_chrome_plugin="$upstream_resources/plugins/openai-bundled/plugins/chrome"
+    local source_chrome_plugin="$official_app_resources/plugins/openai-bundled/plugins/chrome"
     local resources_dir="$INSTALL_DIR/resources"
     local bundled_plugins_dir="$resources_dir/plugins/openai-bundled"
     local include_browser=0
@@ -960,20 +960,20 @@ install_bundled_plugin_resources() {
     local include_computer_use=0
 
     if [ ! -f "$source_marketplace" ]; then
-        warn "Bundled plugin marketplace not found in upstream app; skipping bundled plugins"
+        warn "Bundled plugin marketplace not found in official app; skipping bundled plugins"
         return 0
     fi
 
     mkdir -p "$bundled_plugins_dir/plugins" "$bundled_plugins_dir/.agents/plugins"
 
     if source_browser_plugin="$(find_browser_plugin_source "$bundled_source_root" "$source_marketplace")" &&
-        stage_browser_plugin_from_upstream "$source_browser_plugin" "$bundled_plugins_dir/plugins"; then
+        stage_browser_plugin_from_official_app "$source_browser_plugin" "$bundled_plugins_dir/plugins"; then
         include_browser=1
     else
-        info "Browser bundled plugin resources not present in upstream app; skipping Browser"
+        info "Browser bundled plugin resources not present in official app; skipping Browser"
     fi
 
-    if stage_chrome_plugin_from_upstream "$source_chrome_plugin" "$bundled_plugins_dir/plugins"; then
+    if stage_chrome_plugin_from_official_app "$source_chrome_plugin" "$bundled_plugins_dir/plugins"; then
         include_chrome=1
     fi
 
@@ -990,8 +990,8 @@ install_bundled_plugin_resources() {
 
     write_bundled_plugins_marketplace "$source_marketplace" "$bundled_plugins_dir/.agents/plugins/marketplace.json" "$include_browser" "$include_chrome" "$include_computer_use"
 
-    install_linux_executable_resource "$upstream_resources/node" "$resources_dir/node" "node runtime" "info" || true
-    install_browser_use_node_repl_resource "$upstream_resources/node_repl" "$resources_dir/node_repl" || true
+    install_linux_executable_resource "$official_app_resources/node" "$resources_dir/node" "node runtime" "info" || true
+    install_browser_use_node_repl_resource "$official_app_resources/node_repl" "$resources_dir/node_repl" || true
 
     info "Linux-safe bundled plugins installed"
 }

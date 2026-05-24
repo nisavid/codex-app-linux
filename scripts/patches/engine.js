@@ -14,12 +14,17 @@ const {
 } = require("./shared.js");
 
 const FAILED_REQUIRED = "failed-required";
-const REQUIRED_UPSTREAM = "required-upstream";
+const REQUIRED_OFFICIAL_DMG = "required-official-dmg";
+const LEGACY_REQUIRED_UPSTREAM = "required-upstream";
 const SKIPPED_OPTIONAL = "skipped-optional";
 const SKIPPED_TARGET = "skipped-target";
 
 function descriptorId(descriptor) {
   return descriptor.id ?? descriptor.name;
+}
+
+function normalizeCiPolicy(policy) {
+  return policy === LEGACY_REQUIRED_UPSTREAM ? REQUIRED_OFFICIAL_DMG : policy;
 }
 
 function normalizeDescriptor(descriptor, sourcePath = null, index = 0) {
@@ -38,6 +43,7 @@ function normalizeDescriptor(descriptor, sourcePath = null, index = 0) {
     id,
     name: descriptor.name ?? id,
     phase: descriptor.phase ?? "main-bundle",
+    ciPolicy: normalizeCiPolicy(descriptor.ciPolicy),
     order: descriptor.order ?? 10_000 + index,
     sourcePath,
   };
@@ -126,7 +132,7 @@ function patchTargetSummary(descriptor, context) {
 }
 
 function descriptorFailureStatus(descriptor) {
-  return descriptor.ciPolicy === REQUIRED_UPSTREAM ? FAILED_REQUIRED : SKIPPED_OPTIONAL;
+  return descriptor.ciPolicy === REQUIRED_OFFICIAL_DMG ? FAILED_REQUIRED : SKIPPED_OPTIONAL;
 }
 
 function patchStatusFromDescriptorChange(descriptor, changed, warnings) {
@@ -140,7 +146,7 @@ function patchStatusFromDescriptorChange(descriptor, changed, warnings) {
 }
 
 function normalizeDescriptorStatus(descriptor, status) {
-  if (descriptor.ciPolicy === REQUIRED_UPSTREAM && status === SKIPPED_OPTIONAL) {
+  if (descriptor.ciPolicy === REQUIRED_OFFICIAL_DMG && status === SKIPPED_OPTIONAL) {
     return FAILED_REQUIRED;
   }
   return status;
@@ -259,7 +265,7 @@ function applyExtractedAppPatchDescriptors(extractedDir, descriptors, context, r
     const reason = typeof statusResult === "object" && statusResult != null
       ? statusResult.reason
       : result?.reason ?? warnings[0] ?? null;
-    if (status === "skipped-optional" && descriptor.ciPolicy === REQUIRED_UPSTREAM) {
+    if (status === "skipped-optional" && descriptor.ciPolicy === REQUIRED_OFFICIAL_DMG) {
       status = "failed-required";
     }
     recordDescriptorPatch(report, descriptor, status, reason, context);
@@ -267,6 +273,8 @@ function applyExtractedAppPatchDescriptors(extractedDir, descriptors, context, r
 }
 
 module.exports = {
+  LEGACY_REQUIRED_UPSTREAM,
+  REQUIRED_OFFICIAL_DMG,
   SKIPPED_TARGET,
   applyExtractedAppPatchDescriptors,
   applyMainBundlePatchDescriptors,

@@ -20,7 +20,7 @@ Usage: ./scripts/ci-local.sh [target...]
 
 Targets:
   pr                         Run the standard pull-request suite: core, deb, rpm, pacman
-  all                        Run pr plus install-deps, nix, and upstream
+  all                        Run pr plus install-deps, nix, and official DMG build
   core                       Run shell, Rust, Node patcher, and smoke tests
   deb                        Build and inspect the Debian package
   rpm                        Build and inspect the RPM package
@@ -31,7 +31,8 @@ Targets:
   install-deps:debian-12     Test install-deps on one apt image
   install-deps:fedora-42     Test install-deps on one dnf5 image
   nix                        Run the heavy Nix flake build checks
-  upstream                   Build the app against the upstream DMG
+  official-dmg               Build the app against the official OpenAI DMG
+  upstream                   Legacy alias for official-dmg
 
 Environment:
   CI_CONTAINER_ENGINE=docker|podman
@@ -86,7 +87,7 @@ image_for_key() {
 
 image_key_for_job() {
     case "$1" in
-        core|deb|upstream) echo "ubuntu-24.04" ;;
+        core|deb|official-dmg|upstream) echo "ubuntu-24.04" ;;
         rpm) echo "fedora-42" ;;
         pacman) echo "archlinux-base-devel" ;;
         nix) echo "nix" ;;
@@ -104,11 +105,11 @@ mount_github_summary_args() {
     fi
 }
 
-mount_upstream_args() {
+mount_official_dmg_args() {
     local -n _args="$1"
-    local upstream_dir="/tmp/codex-upstream-ci"
-    mkdir -p "$upstream_dir"
-    _args+=(-v "$upstream_dir:$upstream_dir")
+    local official_dmg_dir="/tmp/codex-official-dmg-ci"
+    mkdir -p "$official_dmg_dir"
+    _args+=(-v "$official_dmg_dir:$official_dmg_dir")
 
     if [ -n "${CI_DMG_PATH:-}" ] && [ "${CI_DMG_PATH#/}" != "$CI_DMG_PATH" ]; then
         local dmg_dir
@@ -141,8 +142,8 @@ run_container_job() {
         -e "CI_HOST_UID=$(id -u)"
         -e "CI_HOST_GID=$(id -g)"
         -e "CARGO_TERM_COLOR=${CARGO_TERM_COLOR:-always}"
-        -e "UPSTREAM_DMG_URL=${UPSTREAM_DMG_URL:-https://persistent.oaistatic.com/codex-app-prod/Codex.dmg}"
-        -e "UPSTREAM_DMG_PATH=${UPSTREAM_DMG_PATH:-/tmp/codex-upstream-ci/Codex.dmg}"
+        -e "OFFICIAL_DMG_URL=${OFFICIAL_DMG_URL:-${UPSTREAM_DMG_URL:-https://persistent.oaistatic.com/codex-app-prod/Codex.dmg}}"
+        -e "OFFICIAL_DMG_PATH=${OFFICIAL_DMG_PATH:-${UPSTREAM_DMG_PATH:-/tmp/codex-official-dmg-ci/Codex.dmg}}"
         -v "$REPO_DIR:/work"
         -v "$CI_CACHE_DIR:/ci-cache"
         -w /work
@@ -157,13 +158,13 @@ run_container_job() {
     if [ -n "${CI_DMG_PATH:-}" ]; then
         args+=(-e "CI_DMG_PATH=$CI_DMG_PATH")
     fi
-    if [ -n "${UPSTREAM_DMG_CACHE_HIT:-}" ]; then
-        args+=(-e "UPSTREAM_DMG_CACHE_HIT=$UPSTREAM_DMG_CACHE_HIT")
+    if [ -n "${OFFICIAL_DMG_CACHE_HIT:-${UPSTREAM_DMG_CACHE_HIT:-}}" ]; then
+        args+=(-e "OFFICIAL_DMG_CACHE_HIT=${OFFICIAL_DMG_CACHE_HIT:-${UPSTREAM_DMG_CACHE_HIT:-}}")
     fi
 
     mount_github_summary_args args
-    if [ "$job" = "upstream" ]; then
-        mount_upstream_args args
+    if [ "$job" = "official-dmg" ] || [ "$job" = "upstream" ]; then
+        mount_official_dmg_args args
     fi
 
     info "Running $job in $image_key"
@@ -187,9 +188,9 @@ run_target() {
             run_target pr
             run_target install-deps
             run_target nix
-            run_target upstream
+            run_target official-dmg
             ;;
-        core|deb|rpm|pacman|nix|upstream)
+        core|deb|rpm|pacman|nix|official-dmg|upstream)
             run_container_job "$target" "$(image_key_for_job "$target")"
             ;;
         install-deps)

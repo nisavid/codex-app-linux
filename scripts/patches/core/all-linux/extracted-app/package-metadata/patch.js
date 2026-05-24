@@ -24,7 +24,7 @@ module.exports = [
     id: "package-desktop-name",
     phase: "extracted-app",
     order: 2040,
-    ciPolicy: "required-upstream",
+    ciPolicy: "required-official-dmg",
     apply: (extractedDir, context) => {
       const before = readDesktopName(extractedDir);
       patchPackageJson(extractedDir);

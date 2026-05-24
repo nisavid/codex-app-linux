@@ -46,3 +46,7 @@ appliesTo: (context) => context.linuxTarget.packageFormatIs("deb")
 appliesTo: (context) => context.linuxTarget.desktopMatches(["i3", "sway"])
 appliesTo: (context) => context.linuxTarget.versionAtLeast("24.04")
 ```
+
+Use `ciPolicy: "required-official-dmg"` for patches that must apply when
+validating the official OpenAI app bundle. Use `optional` for patches that may
+skip on unsupported bundles and `opt-in` for feature-gated patches.

@@ -67,10 +67,10 @@ conversation mode speaks through the local Kokoro Read Aloud handler.
 - Leaves typing available; typed turns still work normally while the feature is
   enabled.
 
-This is intentionally separate from upstream realtime voice. It keeps the Linux
-feature thin and local while still giving the user one conversational channel:
-user speech becomes a normal Codex turn and assistant final text becomes spoken
-output.
+This is intentionally separate from OpenAI-hosted realtime voice services. It
+keeps the Linux feature thin and local while still giving the user one
+conversational channel: user speech becomes a normal Codex turn and assistant
+final text becomes spoken output.
 
 ## Test
 

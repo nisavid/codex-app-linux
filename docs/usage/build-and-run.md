@@ -117,9 +117,10 @@ Or enter a development shell:
 nix develop github:nisavid/codex-app-linux
 ```
 
-The flake pins the SRI hash of the upstream `Codex.dmg`. OpenAI republishes the
-DMG at the same URL for each release, so the hash can temporarily lag. A GitHub
-Actions job refreshes the hash on `main` once every 24 hours. If you see:
+The flake pins the SRI hash of the official OpenAI `Codex.dmg`. OpenAI
+republishes the DMG at the same URL for each release, so the hash can
+temporarily lag. A GitHub Actions job refreshes the hash on `main` once every
+24 hours. If you see:
 
 ```text
 error: hash mismatch in fixed-output derivation
@@ -213,8 +214,8 @@ contract.
 ### Linux Computer Use UI Opt-In
 
 The Linux Computer Use backend and plugin manifest are packaged by default. The
-in-app UI controls are opt-in because they patch upstream UI paths during app
-generation.
+in-app UI controls are opt-in because they patch official OpenAI app bundle UI
+paths during app generation.
 
 Runtime readiness is separate from UI patching. Input synthesis usually
 requires `ydotool`/`ydotoold`, `/dev/uinput` access, and a socket usable by your
@@ -359,10 +360,10 @@ local scripts, but new package commands should use `PACKAGE_WITH_UPDATER=0`.
 
 By default, `install.sh` reads `Codex.app/Contents/Info.plist` from the
 extracted DMG and writes `codex-app/codex-app-version.env`. Package builders use
-that metadata, so an upstream app version such as `26.422.30944 (2080)` becomes
-package version `26.422.30944`. Generated app package versions use three or
-four numeric dot-separated segments so the updater can compare installed and
-candidate versions consistently.
+that metadata, so an official OpenAI app bundle version such as
+`26.422.30944 (2080)` becomes package version `26.422.30944`. Generated app
+package versions use three or four numeric dot-separated segments so the updater
+can compare installed and candidate versions consistently.
 
 Override the package version only when you need to rebuild a known app tree with
 an explicit local version:
@@ -376,10 +377,10 @@ PACKAGE_VERSION=26.422.30944 ./scripts/build-pacman.sh
 Expected outputs:
 
 ```text
-dist/codex-app_<upstream-version>_<arch>.deb
-dist/codex-app-<upstream-version>-1.<arch>.rpm
-dist/codex-app-<upstream-version>-1-<arch>.pkg.tar.zst
-dist/codex-app-<upstream-version>-<arch>.AppImage
+dist/codex-app_<app-version>_<arch>.deb
+dist/codex-app-<app-version>-1.<arch>.rpm
+dist/codex-app-<app-version>-1-<arch>.pkg.tar.zst
+dist/codex-app-<app-version>-<arch>.AppImage
 ```
 
 Architecture names follow the package format: Debian uses `amd64`, `arm64`, or
@@ -410,8 +411,9 @@ sudo pacman -U dist/codex-app-*.pkg.tar.zst
 ## Updater Service
 
 Native packages install `codex-app-updater` and its `systemd --user` service.
-The service checks for newer upstream DMGs, rebuilds a local native package, and
-uses privileged installation only for the final package install.
+The service checks for newer official OpenAI Codex DMGs, rebuilds a local
+native package, and uses privileged installation only for the final package
+install.
 
 Enable and start the service:
 
@@ -460,7 +462,7 @@ stages the AppDir templates under `packaging/appimage/`, and writes the
 resulting `.AppImage` to `dist/`. `APPIMAGETOOL=/path/to/appimagetool` can
 override the AppImage tool command. `make package` detects the native package
 manager on the host and builds the matching package type. `make release-gate`
-verifies the reviewed upstream DMG
+verifies the reviewed official OpenAI Codex DMG
 hash, scans the generated app, validates package metadata, writes
 `dist/SHA256SUMS`, and signs that checksum file whenever
 `CODEX_RELEASE_GPG_KEY` is set. `REQUIRE_RELEASE_SIGNATURE=1` makes the gate
@@ -493,8 +495,8 @@ module.
 
 During ASAR patching, the installer also tries to adapt Linux window behavior:
 
-- `Open in File Manager` integration is patched when the upstream bundle still
-  matches the expected shape.
+- `Open in File Manager` integration is patched when the official OpenAI app
+  bundle still matches the expected shape.
 - If that targeted patch no longer matches, the installer continues and prints
   `Failed to apply Linux File Manager Patch`.
 - Linux `opaqueWindows` defaults to `true` only when the user has not already

@@ -174,9 +174,9 @@ run_as_ci_user() {
         "CI_PACKAGE_VERSION=$CI_PACKAGE_VERSION"
         "PACKAGE_VERSION=$CI_PACKAGE_VERSION"
         "CI_DMG_PATH=${CI_DMG_PATH:-}"
-        "UPSTREAM_DMG_URL=${UPSTREAM_DMG_URL:-https://persistent.oaistatic.com/codex-app-prod/Codex.dmg}"
-        "UPSTREAM_DMG_PATH=${UPSTREAM_DMG_PATH:-/tmp/codex-upstream-ci/Codex.dmg}"
-        "UPSTREAM_DMG_CACHE_HIT=${UPSTREAM_DMG_CACHE_HIT:-}"
+        "OFFICIAL_DMG_URL=${OFFICIAL_DMG_URL:-${UPSTREAM_DMG_URL:-https://persistent.oaistatic.com/codex-app-prod/Codex.dmg}}"
+        "OFFICIAL_DMG_PATH=${OFFICIAL_DMG_PATH:-${UPSTREAM_DMG_PATH:-/tmp/codex-official-dmg-ci/Codex.dmg}}"
+        "OFFICIAL_DMG_CACHE_HIT=${OFFICIAL_DMG_CACHE_HIT:-${UPSTREAM_DMG_CACHE_HIT:-}}"
         "GITHUB_STEP_SUMMARY=${GITHUB_STEP_SUMMARY:-}"
         "CARGO_HOME=$CI_CARGO_HOME"
         "RUSTUP_HOME=$CI_RUSTUP_HOME"
@@ -480,7 +480,7 @@ run_install_deps_job_as_root() {
         "Node.js, npm, npx, and installer preflight passed."
 }
 
-capture_upstream_metadata() {
+capture_official_dmg_metadata() {
     local dmg_path="$1"
     local headers_file
     headers_file="$(mktemp)"
@@ -488,7 +488,7 @@ capture_upstream_metadata() {
     local last_modified="unknown"
     local etag="no-etag"
     local content_length="unknown"
-    if curl -fsSLI "$UPSTREAM_DMG_URL" > "$headers_file"; then
+    if curl -fsSLI "$OFFICIAL_DMG_URL" > "$headers_file"; then
         last_modified="$(awk 'BEGIN{IGNORECASE=1} /^last-modified:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); print; exit}' "$headers_file")"
         etag="$(awk 'BEGIN{IGNORECASE=1} /^etag:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); gsub(/"/,""); print; exit}' "$headers_file")"
         content_length="$(awk 'BEGIN{IGNORECASE=1} /^content-length:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); print; exit}' "$headers_file")"
@@ -506,7 +506,7 @@ capture_upstream_metadata() {
     dmg_size_bytes="$(stat -c '%s' "$dmg_path")"
     tested_at_utc="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
-    node - "$UPSTREAM_DMG_URL" "$dmg_path" "$last_modified" "$etag" "$content_length" "$dmg_sha256" "$dmg_size_bytes" "$tested_at_utc" "${UPSTREAM_DMG_CACHE_HIT:-unknown}" <<'NODE'
+    node - "$OFFICIAL_DMG_URL" "$dmg_path" "$last_modified" "$etag" "$content_length" "$dmg_sha256" "$dmg_size_bytes" "$tested_at_utc" "${OFFICIAL_DMG_CACHE_HIT:-unknown}" <<'NODE'
 const fs = require("node:fs");
 const [url, path, lastModified, etag, contentLength, sha256, sizeBytes, testedAtUtc, cacheHit] = process.argv.slice(2);
 const metadata = {
@@ -520,36 +520,36 @@ const metadata = {
   tested_at_utc: testedAtUtc,
   cache_hit: cacheHit,
 };
-fs.writeFileSync("upstream-dmg-metadata.json", JSON.stringify(metadata, null, 2) + "\n");
+fs.writeFileSync("official-dmg-metadata.json", JSON.stringify(metadata, null, 2) + "\n");
 NODE
 
-    append_summary "Upstream Build App" \
-        "DMG URL: \`$UPSTREAM_DMG_URL\`" \
+    append_summary "Official DMG Build App" \
+        "DMG URL: \`$OFFICIAL_DMG_URL\`" \
         "DMG Last-Modified: \`$last_modified\`" \
         "DMG ETag: \`$etag\`" \
         "DMG Content-Length: \`$content_length\`" \
         "DMG SHA-256: \`$dmg_sha256\`" \
         "DMG Size (bytes): \`$dmg_size_bytes\`" \
         "Tested At (UTC): \`$tested_at_utc\`" \
-        "Cache Hit: \`${UPSTREAM_DMG_CACHE_HIT:-unknown}\`" \
+        "Cache Hit: \`${OFFICIAL_DMG_CACHE_HIT:-unknown}\`" \
         "Build command: \`make build-app DMG=$dmg_path\`"
 }
 
-run_upstream_job() {
+run_official_dmg_job() {
     enter_workspace
     ensure_rust_toolchain
 
-    local dmg_path="${CI_DMG_PATH:-${UPSTREAM_DMG_PATH:-/tmp/codex-upstream-ci/Codex.dmg}}"
+    local dmg_path="${CI_DMG_PATH:-${OFFICIAL_DMG_PATH:-${UPSTREAM_DMG_PATH:-/tmp/codex-official-dmg-ci/Codex.dmg}}}"
     mkdir -p "$(dirname "$dmg_path")"
 
     if [ ! -s "$dmg_path" ]; then
-        info "Downloading upstream DMG"
-        curl -fL --retry 3 -o "$dmg_path" "$UPSTREAM_DMG_URL"
+        info "Downloading official OpenAI DMG"
+        curl -fL --retry 3 -o "$dmg_path" "$OFFICIAL_DMG_URL"
     else
-        info "Using cached upstream DMG: $dmg_path"
+        info "Using cached official OpenAI DMG: $dmg_path"
     fi
 
-    capture_upstream_metadata "$dmg_path"
+    capture_official_dmg_metadata "$dmg_path"
     make build-app DMG="$dmg_path"
 }
 
@@ -572,7 +572,7 @@ run_job_as_current_user() {
         deb) run_deb_job ;;
         rpm) run_rpm_job ;;
         pacman) run_pacman_job ;;
-        upstream) run_upstream_job ;;
+        official-dmg|upstream) run_official_dmg_job ;;
         *) error "Unsupported user-phase job: $CI_JOB" ;;
     esac
 }
@@ -587,7 +587,7 @@ if [ "${CI_CONTAINER_PHASE:-root}" = "job" ]; then
 fi
 
 case "$CI_JOB" in
-    core|deb|upstream)
+    core|deb|official-dmg|upstream)
         prepare_apt_ci
         ensure_ci_user
         run_as_ci_user

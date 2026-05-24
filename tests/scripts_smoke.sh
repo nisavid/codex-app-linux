@@ -115,7 +115,7 @@ JSON
 JSON
 }
 
-make_fake_browser_upstream_app() {
+make_fake_browser_official_app() {
     local app_dir="$1"
     local resources_dir="$app_dir/Contents/Resources"
     mkdir -p \
@@ -1383,21 +1383,23 @@ test_setup_native_wizard_cleanup_deletes_only_confirmed_paths() {
     assert_contains "$output_log" "Skipped $plugin_cache"
 }
 
-test_upstream_build_app_workflow_tracks_dmg_metadata() {
-    info "Checking upstream build-app workflow metadata and cache behavior"
-    local workflow="$REPO_DIR/.github/workflows/upstream-build-app.yml"
+test_official_dmg_build_app_workflow_tracks_dmg_metadata() {
+    info "Checking official DMG build-app workflow metadata and cache behavior"
+    local workflow="$REPO_DIR/.github/workflows/official-dmg-build-app.yml"
 
     assert_file_exists "$workflow"
-    assert_contains "$workflow" 'name: Upstream Build App'
-    assert_contains "$workflow" 'UPSTREAM_DMG_URL: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg'
+    assert_contains "$workflow" 'name: Official DMG Build App'
+    assert_contains "$workflow" 'OFFICIAL_DMG_URL: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg'
     assert_contains "$workflow" 'actions/cache@v5'
-    assert_contains "$workflow" 'path: /tmp/codex-upstream-ci/Codex.dmg'
+    assert_contains "$workflow" 'OFFICIAL_DMG_PATH: /tmp/codex-official-dmg-ci/Codex.dmg'
+    assert_contains "$workflow" 'path: ${{ env.OFFICIAL_DMG_PATH }}'
     assert_contains "$workflow" 'Last-Modified'
     assert_contains "$workflow" 'tolower($0) ~ /^last-modified:/'
     assert_contains "$workflow" 'sha256sum'
     assert_contains "$workflow" 'CODEX_PATCH_REPORT_JSON="$GITHUB_WORKSPACE/patch-report.json"'
-    assert_contains "$workflow" 'node scripts/ci/validate-patch-report.js patch-report.json --profile upstream-build'
-    assert_contains "$workflow" 'make build-app DMG=/tmp/codex-upstream-ci/Codex.dmg'
+    assert_contains "$workflow" 'node scripts/ci/validate-patch-report.js patch-report.json --profile official-dmg-build'
+    assert_contains "$workflow" 'make build-app DMG="$OFFICIAL_DMG_PATH"'
+    assert_contains "$workflow" 'make build-app DMG=$OFFICIAL_DMG_PATH'
     assert_contains "$workflow" 'DMG Last-Modified'
     assert_contains "$workflow" 'DMG SHA-256'
 }
@@ -2528,7 +2530,7 @@ PY
     assert_not_contains "$REPO_DIR/launcher/start.sh.template" 'cmp -s "$source_client" "$cache_client"'
     assert_contains "$REPO_DIR/launcher/start.sh.template" ".tmp/bundled-marketplaces/openai-bundled"
     assert_contains "$REPO_DIR/launcher/start.sh.template" ".agents/plugins/marketplace.json"
-    assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" "stage_chrome_plugin_from_upstream"
+    assert_contains "$REPO_DIR/scripts/lib/bundled-plugins.sh" "stage_chrome_plugin_from_official_app"
     assert_contains "$REPO_DIR/scripts/lib/patch-chrome-plugin.js" "Linux native host manifest location"
     assert_contains "$REPO_DIR/computer-use-linux/src/bin/codex-chrome-extension-host.rs" "CODEX_BROWSER_USE_SOCKET_DIR"
     assert_contains "$REPO_DIR/flake.nix" "Browser Use bundled marketplace metadata"
@@ -2707,9 +2709,9 @@ test_browser_use_node_repl_fallback_runtime() {
     local archive_sha
 
     mkdir -p "$workspace" "$install_dir/resources" "$archive_root/codex-primary-runtime/dependencies/bin"
-    make_fake_browser_upstream_app "$app_dir"
+    make_fake_browser_official_app "$app_dir"
 
-    # Simulate the current upstream DMG shape: node_repl exists, but it is not a Linux ELF.
+    # Simulate the current official DMG shape: node_repl exists, but it is not a Linux ELF.
     printf '\xfe\xed\xfa\xcf' > "$app_dir/Contents/Resources/node_repl"
     chmod +x "$app_dir/Contents/Resources/node_repl"
 
@@ -2755,7 +2757,7 @@ test_browser_use_node_repl_fallback_runtime() {
     assert_contains "$output_log" "Downloading Browser Use node_repl fallback runtime"
 }
 
-make_fake_chrome_upstream_app() {
+make_fake_chrome_official_app() {
     local app_dir="$1"
     local resources_dir="$app_dir/Contents/Resources"
     local chrome_dir="$resources_dir/plugins/openai-bundled/plugins/chrome"
@@ -2853,7 +2855,7 @@ test_chrome_plugin_staging() {
     local host="$chrome_dir/extension-host/linux/x64/extension-host"
 
     mkdir -p "$workspace" "$install_dir/resources"
-    make_fake_chrome_upstream_app "$app_dir"
+    make_fake_chrome_official_app "$app_dir"
 
     (
         SCRIPT_DIR="$REPO_DIR"
@@ -2902,7 +2904,7 @@ test_chrome_plugin_staging() {
     assert_not_contains "$chrome_dir/scripts/browser-client.mjs" 'globalThis.nodeRepl?.env[e]'
     assert_contains "$chrome_dir/scripts/browser-client.mjs" "codexLinuxSiteStatusAllowlistFallback"
     assert_contains "$install_dir/resources/plugins/openai-bundled/.agents/plugins/marketplace.json" '"name": "chrome"'
-    assert_contains "$output_log" "Chrome plugin staged from upstream DMG"
+    assert_contains "$output_log" "Chrome plugin staged from official OpenAI DMG"
 }
 
 test_chrome_browser_client_profile_root_variants() {
@@ -2931,7 +2933,7 @@ JS
 }
 
 test_chrome_marketplace_fallback_synthesis() {
-    info "Checking Chrome marketplace fallback synthesis when upstream omits chrome"
+    info "Checking Chrome marketplace fallback synthesis when the official app omits chrome"
     local workspace="$TMP_DIR/chrome-marketplace-fallback"
     local app_dir="$workspace/Codex.app"
     local install_dir="$workspace/install"
@@ -2939,9 +2941,9 @@ test_chrome_marketplace_fallback_synthesis() {
     local marketplace="$install_dir/resources/plugins/openai-bundled/.agents/plugins/marketplace.json"
 
     mkdir -p "$workspace" "$install_dir/resources"
-    make_fake_chrome_upstream_app "$app_dir"
+    make_fake_chrome_official_app "$app_dir"
 
-    # Upstream marketplace.json lists no chrome entry — exercises the
+    # Official app marketplace.json lists no chrome entry — exercises the
     # synthesized-fallback path in write_bundled_plugins_marketplace.
     cat > "$app_dir/Contents/Resources/plugins/openai-bundled/.agents/plugins/marketplace.json" <<'JSON'
 {"plugins":[{"name":"browser","source":{"source":"local","path":"./plugins/browser"},"policy":{"installation":"AVAILABLE"}}]}
@@ -3295,7 +3297,7 @@ if (result.event.prevented || result.state.hideCalls !== 0) {
 
 result = runClose({ trayEnabled: true, quitInProgress: false, isAppQuitting: true });
 if (result.event.prevented || result.state.hideCalls !== 0) {
-  throw new Error("app.quit close should not hide to tray when upstream quit flag is already set");
+  throw new Error("app.quit close should not hide to tray when official app quit flag is already set");
 }
 
 result = runCloseWithoutHelper({ trayEnabled: true, isAppQuitting: false });
@@ -5155,7 +5157,7 @@ main() {
     test_setup_native_wizard_dry_run_cleanup_allows_noninteractive_preview
     test_setup_native_wizard_dry_run_cleanup_does_not_delete_confirmed_paths
     test_setup_native_wizard_cleanup_deletes_only_confirmed_paths
-    test_upstream_build_app_workflow_tracks_dmg_metadata
+    test_official_dmg_build_app_workflow_tracks_dmg_metadata
     test_installer_detects_electron_version_from_plist
     test_installer_writes_package_version_from_app_plist
     test_installer_copies_webview_into_generated_app

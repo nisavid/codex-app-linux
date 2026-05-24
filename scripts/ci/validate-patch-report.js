@@ -7,14 +7,16 @@ const {
 } = require("../patches/registry.js");
 
 const SUCCESS_STATUSES = new Set(["applied", "already-applied"]);
-const KNOWN_PROFILES = new Set(["upstream-build"]);
+const DEFAULT_PROFILE = "official-dmg-build";
+const LEGACY_PROFILE_ALIASES = new Map([["upstream-build", DEFAULT_PROFILE]]);
+const KNOWN_PROFILES = new Set([DEFAULT_PROFILE, ...LEGACY_PROFILE_ALIASES.keys()]);
 
 function usage() {
-  return "Usage: validate-patch-report.js <patch-report.json> [--profile upstream-build]";
+  return "Usage: validate-patch-report.js <patch-report.json> [--profile official-dmg-build]";
 }
 
 function parseArgs(argv) {
-  let profile = "upstream-build";
+  let profile = DEFAULT_PROFILE;
   const positional = [];
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -39,6 +41,7 @@ function parseArgs(argv) {
   if (!KNOWN_PROFILES.has(profile)) {
     throw new Error(`Unknown patch validation profile: ${profile}`);
   }
+  profile = LEGACY_PROFILE_ALIASES.get(profile) ?? profile;
 
   return { profile, reportPath: positional[0] };
 }

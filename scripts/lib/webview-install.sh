@@ -15,7 +15,7 @@ extract_webview() {
     if [ -d "$asar_extracted/webview" ]; then
         cp -aT "$asar_extracted/webview" "$target_webview"
         # Replace transparent startup background with an opaque color for Linux.
-        # The upstream app relies on macOS vibrancy for the transparent effect;
+        # The official OpenAI app bundle relies on macOS vibrancy for the transparent effect;
         # on Linux the transparent background causes flickering.
         local webview_index="$target_webview/index.html"
         if [ -f "$webview_index" ]; then

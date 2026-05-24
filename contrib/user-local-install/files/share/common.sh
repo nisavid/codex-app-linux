@@ -258,13 +258,13 @@ repo_default_branch() {
 }
 
 source_repo_overlay_base_ref() {
-    local upstream_ref current_branch default_branch
+    local git_upstream_ref current_branch default_branch
 
     [ -d "$SOURCE_REPO_DIR/.git" ] || return 1
 
-    upstream_ref="$(git -C "$SOURCE_REPO_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
-    if [ -n "$upstream_ref" ] && git -C "$SOURCE_REPO_DIR" rev-parse --verify --quiet "$upstream_ref" >/dev/null; then
-        printf '%s\n' "$upstream_ref"
+    git_upstream_ref="$(git -C "$SOURCE_REPO_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+    if [ -n "$git_upstream_ref" ] && git -C "$SOURCE_REPO_DIR" rev-parse --verify --quiet "$git_upstream_ref" >/dev/null; then
+        printf '%s\n' "$git_upstream_ref"
         return 0
     fi
 

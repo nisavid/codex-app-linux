@@ -1,7 +1,7 @@
-# Security Scan: 2026-05-17 Upstream Sync
+# Security Scan: 2026-05-17 Linux-Port Upstream Sync
 
-Scan target: local upstream-sync merge from
-`43c8bd1b5d4ab2eb4be8eb474528d6050c51db9a` to upstream
+Scan target: local Linux-port upstream sync merge from
+`43c8bd1b5d4ab2eb4be8eb474528d6050c51db9a` to Linux-port upstream commit
 `ccaa31fb16217f5706ee1f5113445ca475ea4e34`.
 
 Scope:

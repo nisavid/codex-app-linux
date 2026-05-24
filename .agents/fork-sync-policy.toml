@@ -1,5 +1,8 @@
 version = 1
 
+# In this config, "upstream" means the Linux-port upstream remote for
+# ilysenko/codex-desktop-linux. The official OpenAI Codex DMG is not this
+# upstream surface.
 [upstream]
 direct_remote = "upstream"
 direct_branch = "main"
@@ -11,9 +14,15 @@ preserve_upstream_commit_identity = true
 
 [policy]
 canonical_inventory = "docs/maintainers/fork-divergences.md"
+rename_map = "docs/maintainers/fork-divergences.md#current-local-rename-and-compatibility-map"
 sync_procedure = "docs/maintainers/fork-sync-policy.md"
-uncertainty_destination = "pull request body"
+uncertainty_destination = "operator escalation or durable discoverable follow-up"
 sync_ledger_required = true
+renamed_path_reconciliation_required = true
+policy_gap_closeout_required = true
+operator_escalation_required_for_uncertainty = true
+durable_followup_required_when_escalation_unavailable = true
+pr_body_only_uncertainty_record_disallowed = true
 github_pr_repo = "nisavid/codex-app-linux"
 github_pr_commands_require_explicit_repo = true
 read_before_conflict_resolution = [

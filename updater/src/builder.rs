@@ -1,4 +1,4 @@
-//! Rebuilds native Linux packages from a downloaded upstream DMG.
+//! Rebuilds native Linux packages from a downloaded official OpenAI Codex DMG.
 
 use crate::{
     config::{RuntimeConfig, RuntimePaths},
@@ -69,7 +69,7 @@ pub struct BuildArtifacts {
     pub package_path: PathBuf,
 }
 
-/// Rebuilds a Linux package from the downloaded upstream DMG.
+/// Rebuilds a Linux package from the downloaded official OpenAI Codex DMG.
 pub async fn build_update(
     config: &RuntimeConfig,
     state: &mut PersistedState,
