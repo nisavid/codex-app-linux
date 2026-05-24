@@ -16,6 +16,22 @@ const {
   applyLinuxReadAloudPluginGatePatch,
 } = require("./patches.js");
 
+function resolveExecutable(name) {
+  for (const directory of (process.env.PATH || "").split(path.delimiter)) {
+    if (!directory) {
+      continue;
+    }
+    const candidate = path.join(directory, name);
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      // Keep searching PATH entries.
+    }
+  }
+  throw new Error(`${name} not found in PATH`);
+}
+
 function applyPatchTwice(patchFn, source) {
   const patched = patchFn(source);
   assert.equal(patchFn(patched), patched);
@@ -174,7 +190,7 @@ test("read-aloud-mcp stage hook skips cleanly when backend is unavailable", () =
   try {
     fs.mkdirSync(installDir, { recursive: true });
 
-    const result = spawnSync("/usr/bin/bash", [path.join(__dirname, "stage.sh")], {
+    const result = spawnSync(resolveExecutable("bash"), [path.join(__dirname, "stage.sh")], {
       cwd: repoRoot,
       env: {
         SCRIPT_DIR: repoRoot,
