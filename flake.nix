@@ -118,6 +118,36 @@
           '';
         };
 
+        codexReadAloudMcpBinary = pkgs.rustPlatform.buildRustPackage {
+          pname = "codex-read-aloud-linux-binary";
+          version = "0.1.0-linux-alpha1";
+          src = sourceRoot;
+
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            outputHashes = {
+              "cosmic-protocols-0.2.0" = "sha256-ymn+BUTTzyHquPn4hvuoA3y1owFj8LVrmsPu2cdkFQ8=";
+            };
+          };
+
+          buildAndTestSubdir = "read-aloud-linux";
+          cargoBuildFlags = [
+            "-p"
+            "codex-read-aloud-linux"
+          ];
+          doCheck = false;
+
+          installPhase = ''
+            runHook preInstall
+            release_dir="target/''${CARGO_BUILD_TARGET:-${pkgs.stdenv.hostPlatform.rust.rustcTarget}}/release"
+            if [ ! -d "$release_dir" ]; then
+              release_dir="target/release"
+            fi
+            install -Dm0755 "$release_dir/codex-read-aloud-linux" "$out/bin/codex-read-aloud-linux"
+            runHook postInstall
+          '';
+        };
+
         nativeModulesNodeModules = pkgs.importNpmLock.buildNodeModules {
           npmRoot = ./nix/native-modules;
           inherit (pkgs) nodejs;
@@ -416,6 +446,7 @@ PY
             export CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE="${codexComputerUseBinaries}/bin/codex-computer-use-linux"
             export CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE="${codexComputerUseBinaries}/bin/codex-computer-use-cosmic"
             export CODEX_CHROME_EXTENSION_HOST_SOURCE="${codexComputerUseBinaries}/bin/codex-chrome-extension-host"
+            export CODEX_LINUX_READ_ALOUD_MCP_SOURCE="${codexReadAloudMcpBinary}/bin/codex-read-aloud-linux"
             mkdir -p "$HOME" "$npm_config_cache" "$CARGO_HOME"
 
             source_dir="$TMPDIR/codex-source"

@@ -25,11 +25,11 @@ rerun `./install.sh` or the package build:
 {
   "enabled": [],
   "disabled": [
-      "conversation-mode",
-      "remote-control-ui",
-      "remote-mobile-control",
-      "read-aloud",
-      "read-aloud-mcp"
+    "conversation-mode",
+    "remote-control-ui",
+    "remote-mobile-control",
+    "read-aloud",
+    "read-aloud-mcp"
   ]
 }
 ```

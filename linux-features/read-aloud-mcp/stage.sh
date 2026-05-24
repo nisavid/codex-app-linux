@@ -100,7 +100,14 @@ NODE
     exit 1
 }
 
-backend_binary="$(build_read_aloud_mcp_backend)"
+if ! backend_binary="$(build_read_aloud_mcp_backend)"; then
+    if [ -n "${CODEX_LINUX_READ_ALOUD_MCP_SOURCE:-}" ]; then
+        echo "Read Aloud MCP plugin staging failed for configured backend source" >&2
+        exit 1
+    fi
+    echo "Read Aloud MCP plugin skipped; backend is unavailable" >&2
+    exit 0
+fi
 
 rm -rf "$target_plugin"
 mkdir -p "$target_plugin"
