@@ -1,4 +1,4 @@
-name: Upstream Build App
+name: Official DMG Build App
 
 on:
   schedule:
@@ -12,7 +12,7 @@ on:
       - plugins/**
       - packaging/linux/**
       - scripts/**
-      - .github/workflows/upstream-build-app.yml
+      - .github/workflows/official-dmg-build-app.yml
   push:
     branches:
       - main
@@ -24,20 +24,20 @@ on:
       - plugins/**
       - packaging/linux/**
       - scripts/**
-      - .github/workflows/upstream-build-app.yml
+      - .github/workflows/official-dmg-build-app.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  UPSTREAM_DMG_URL: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg
-  UPSTREAM_DMG_PATH: /tmp/codex-upstream-ci/Codex.dmg
+  OFFICIAL_DMG_URL: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg
+  OFFICIAL_DMG_PATH: /tmp/codex-official-dmg-ci/Codex.dmg
   DMG_CACHE_SCHEMA_VERSION: v1
 
 jobs:
-  build-app-upstream-dmg:
-    name: Build App Against Upstream DMG
+  build-app-official-dmg:
+    name: Build App Against Official DMG
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -55,15 +55,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y p7zip-full make g++ python3 curl unzip
 
-      - name: Capture upstream DMG metadata
-        id: upstream-metadata
+      - name: Capture official DMG metadata
+        id: official-metadata
         run: |
           set -euo pipefail
 
           headers_file="$(mktemp)"
           trap 'rm -f "$headers_file"' EXIT
 
-          curl -fsSLI "$UPSTREAM_DMG_URL" > "$headers_file"
+          curl -fsSLI "$OFFICIAL_DMG_URL" > "$headers_file"
 
           last_modified="$(awk 'tolower($0) ~ /^last-modified:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); value=$0} END{print value}' "$headers_file")"
           etag="$(awk 'tolower($0) ~ /^etag:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); gsub(/"/,""); value=$0} END{print value}' "$headers_file")"
@@ -88,29 +88,29 @@ jobs:
             echo "cache_segment=$cache_segment"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Restore cached upstream DMG
+      - name: Restore cached official DMG
         id: dmg-cache
         uses: actions/cache@v5
         with:
-          path: /tmp/codex-upstream-ci/Codex.dmg
-          key: upstream-dmg-${{ env.DMG_CACHE_SCHEMA_VERSION }}-${{ steps.upstream-metadata.outputs.cache_segment }}
+          path: ${{ env.OFFICIAL_DMG_PATH }}
+          key: official-dmg-${{ env.DMG_CACHE_SCHEMA_VERSION }}-${{ steps.official-metadata.outputs.cache_segment }}
 
-      - name: Download upstream DMG
+      - name: Download official DMG
         if: steps.dmg-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          mkdir -p "$(dirname "$UPSTREAM_DMG_PATH")"
-          curl -fL --retry 3 -o "$UPSTREAM_DMG_PATH" "$UPSTREAM_DMG_URL"
+          mkdir -p "$(dirname "$OFFICIAL_DMG_PATH")"
+          curl -fL --retry 3 -o "$OFFICIAL_DMG_PATH" "$OFFICIAL_DMG_URL"
 
       - name: Record local DMG fingerprint
         id: local-dmg
         run: |
           set -euo pipefail
 
-          test -s "$UPSTREAM_DMG_PATH"
+          test -s "$OFFICIAL_DMG_PATH"
 
-          dmg_sha256="$(sha256sum "$UPSTREAM_DMG_PATH" | cut -d' ' -f1)"
-          dmg_size_bytes="$(stat -c '%s' "$UPSTREAM_DMG_PATH")"
+          dmg_sha256="$(sha256sum "$OFFICIAL_DMG_PATH" | cut -d' ' -f1)"
+          dmg_size_bytes="$(stat -c '%s' "$OFFICIAL_DMG_PATH")"
           tested_at_utc="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
           {
@@ -119,13 +119,13 @@ jobs:
             echo "tested_at_utc=$tested_at_utc"
           } >> "$GITHUB_OUTPUT"
 
-          cat > upstream-dmg-metadata.json <<JSON
+          cat > official-dmg-metadata.json <<JSON
           {
-            "url": "$UPSTREAM_DMG_URL",
-            "path": "$UPSTREAM_DMG_PATH",
-            "last_modified": "${{ steps.upstream-metadata.outputs.last_modified }}",
-            "etag": "${{ steps.upstream-metadata.outputs.etag }}",
-            "content_length": "${{ steps.upstream-metadata.outputs.content_length }}",
+            "url": "$OFFICIAL_DMG_URL",
+            "path": "$OFFICIAL_DMG_PATH",
+            "last_modified": "${{ steps.official-metadata.outputs.last_modified }}",
+            "etag": "${{ steps.official-metadata.outputs.etag }}",
+            "content_length": "${{ steps.official-metadata.outputs.content_length }}",
             "sha256": "$dmg_sha256",
             "size_bytes": "$dmg_size_bytes",
             "tested_at_utc": "$tested_at_utc",
@@ -133,31 +133,31 @@ jobs:
           }
           JSON
 
-      - name: Build app from upstream DMG
+      - name: Build app from official DMG
         run: |
           set -euo pipefail
           CODEX_PATCH_REPORT_JSON="$GITHUB_WORKSPACE/patch-report.json" \
-            make build-app DMG=/tmp/codex-upstream-ci/Codex.dmg
-          node scripts/ci/validate-patch-report.js patch-report.json --profile upstream-build
+            make build-app DMG="$OFFICIAL_DMG_PATH"
+          node scripts/ci/validate-patch-report.js patch-report.json --profile official-dmg-build
 
-      - name: Upload upstream DMG metadata artifact
+      - name: Upload official DMG metadata artifact
         uses: actions/upload-artifact@v7
         with:
-          name: upstream-dmg-metadata
-          path: upstream-dmg-metadata.json
+          name: official-dmg-metadata
+          path: official-dmg-metadata.json
 
       - name: Write build summary
         run: |
           {
-            echo "## Upstream Build App"
+            echo "## Official DMG Build App"
             echo ""
-            echo "- DMG URL: \`$UPSTREAM_DMG_URL\`"
-            echo "- DMG Last-Modified: \`${{ steps.upstream-metadata.outputs.last_modified }}\`"
-            echo "- DMG ETag: \`${{ steps.upstream-metadata.outputs.etag }}\`"
-            echo "- DMG Content-Length: \`${{ steps.upstream-metadata.outputs.content_length }}\`"
+            echo "- DMG URL: \`$OFFICIAL_DMG_URL\`"
+            echo "- DMG Last-Modified: \`${{ steps.official-metadata.outputs.last_modified }}\`"
+            echo "- DMG ETag: \`${{ steps.official-metadata.outputs.etag }}\`"
+            echo "- DMG Content-Length: \`${{ steps.official-metadata.outputs.content_length }}\`"
             echo "- DMG SHA-256: \`${{ steps.local-dmg.outputs.sha256 }}\`"
             echo "- DMG Size (bytes): \`${{ steps.local-dmg.outputs.size_bytes }}\`"
             echo "- Tested At (UTC): \`${{ steps.local-dmg.outputs.tested_at_utc }}\`"
             echo "- Cache Hit: \`${{ steps.dmg-cache.outputs.cache-hit || 'false' }}\`"
-            echo "- Build command: \`make build-app DMG=/tmp/codex-upstream-ci/Codex.dmg\`"
+            echo "- Build command: \`make build-app DMG=$OFFICIAL_DMG_PATH\`"
           } >> "$GITHUB_STEP_SUMMARY"

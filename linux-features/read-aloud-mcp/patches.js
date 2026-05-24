@@ -136,7 +136,7 @@ const descriptors = [
     id: "linux-read-aloud-plugin-gate",
     phase: "main-bundle",
     order: 155,
-    ciPolicy: "required-upstream",
+    ciPolicy: "required-official-dmg",
     apply: applyLinuxReadAloudPluginGatePatch,
   },
 ];

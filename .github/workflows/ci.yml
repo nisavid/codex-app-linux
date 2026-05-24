@@ -147,7 +147,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y p7zip-full
 
-      - name: Validate Nix pins against upstream DMG
+      - name: Validate Nix pins against official DMG
         run: scripts/ci/validate-nix-pins.sh
 
       - name: Check flake evaluation

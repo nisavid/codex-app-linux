@@ -3,7 +3,7 @@
 This optional Linux feature patches Codex webview bundles so Copilot-auth
 sessions can persist and select reasoning effort defaults for new chats.
 
-By default, upstream Copilot-auth paths only read and write
+By default, official OpenAI app bundle Copilot-auth paths only read and write
 `copilot-default-model`, hardcode the loaded reasoning effort to `medium`, and
 collapse Copilot model reasoning effort choices to one `medium` entry. This
 feature keeps those changes local and opt-in instead of shipping them as a core
@@ -46,5 +46,6 @@ Or run all feature tests with:
 node --test linux-features/*/test.js
 ```
 
-The patch is fail-soft. If the upstream minified bundle shape changes, the
-build logs a warning and leaves the affected bundle unchanged.
+The patch is fail-soft. If the official OpenAI app bundle's minified bundle
+shape changes, the build logs a warning and leaves the affected bundle
+unchanged.

@@ -1,17 +1,36 @@
 # Fork Divergences
 
 This reference records the intentional differences between this fork and the
-last synced upstream ref. Use it during upstream syncs to preserve local
-contracts and keep divergence claims grounded in the actual upstream baseline.
-Treat these differences as a finishing layer over upstream's Linux work:
-upstream owns the primary Linux app conversion and much of the runtime support,
-while this fork preserves local names, paths, updater policy, hardening,
-security review, packaging polish, and maintainer taste.
+last synced ref from the Linux-port upstream. In this document, `upstream` means
+that remote unless a sentence names another surface. Use this inventory during
+upstream syncs to preserve local contracts and keep divergence claims grounded
+in the synced baseline. Treat these differences as a finishing layer: upstream
+owns the primary Linux app conversion and much of the runtime support, while
+this fork preserves local names, paths, updater policy, hardening, security
+review, packaging polish, and maintainer policy.
+
+## Upstream Terminology
+
+Use the same terms as `AGENTS.md`:
+
+- `Linux-port upstream`: `ilysenko/codex-desktop-linux`, the git remote named
+  `upstream`, and sync work that imports that repository's Linux conversion
+  changes.
+- `Official OpenAI Codex DMG`: the OpenAI-distributed macOS app artifact used
+  as app-generation input.
+- `Official OpenAI app bundle`: the `Codex.app` bundle extracted from the DMG
+  and patched for Linux.
+- `OpenAI-hosted services`: account, rollout, entitlement, remote-control, and
+  other service-side behavior outside this fork's local packaging path.
+
+Use the specific term when a reader could confuse the Linux-port upstream with
+the official OpenAI app, DMG, app bundle, or hosted services. Once the surface
+is clear, concise terms such as `upstream`, `DMG`, or `app bundle` are fine.
 
 The current comparison baseline is upstream commit
 `bd7a871e8cb06935f09834ecd619074e5ede62a4` (2026-05-23). Claims below describe
-the current tree's diff against that
-baseline, with current source files taking precedence over generated output.
+the current tree's diff against that baseline, with current source files taking
+precedence over generated output.
 
 ## Sync Review Rule
 
@@ -24,7 +43,10 @@ For each upstream sync:
 4. Describe each divergence as the current local finishing-layer delta against
    the synced upstream baseline: naming, layout, hardening, packaging,
    compatibility, security review, or documentation.
-5. Put uncertain conflicts in the PR body for maintainer triage.
+5. Escalate uncertain conflicts to the operator when the session allows. If
+   escalation is unavailable or the operator requested an uninterrupted run,
+   record a durable, discoverable follow-up where the escalation would have
+   happened, and link it from the sync ledger.
 6. Run the local build gate before pushing when generated-app, package, updater
    rebuild, or bundled runtime behavior is touched. The minimum gate is
    `make build-app` or `./install.sh` after the DMG freshness check; package
@@ -35,15 +57,32 @@ The layout rules for this fork follow, in order, the XDG Base Directory
 Specification, the Filesystem Hierarchy Standard, and common distro conventions
 for modern Electron-style app bundles.
 
+## Current Local Rename And Compatibility Map
+
+Use this map during upstream syncs. If upstream edits an old path or token,
+reconcile the change into the current local path or token before deleting the
+old target from the merge result.
+
+| Old target or token | Current local target or token | Source and sync relevance |
+| --- | --- | --- |
+| `.github/workflows/upstream-build-app.yml` | `.github/workflows/official-dmg-build-app.yml` | Exists in `upstream/main`; port incoming workflow edits here. |
+| `updater/src/upstream.rs` | `updater/src/dmg_source.rs` | Exists in `upstream/main`; port incoming updater source edits here. |
+| patch `ciPolicy: "required-upstream"` | `ciPolicy: "required-official-dmg"`; the old value is accepted only as a legacy alias | Exists in `upstream/main`; port incoming required-patch policy edits to the current token unless intentionally preserving compatibility aliases. |
+| patch-report profile `upstream-build` | `official-dmg-build`; the old profile is accepted only as a legacy alias | Exists in `upstream/main`; port incoming validation-profile edits to the current profile name. |
+| CI job or local CI target `upstream` for official DMG validation | `official-dmg`; the old target is accepted only as a legacy alias | Exists in `upstream/main`; port incoming official DMG validation job/target changes to the current name. |
+| `UPSTREAM_DMG_URL`, `UPSTREAM_DMG_PATH`, `UPSTREAM_DMG_CACHE_HIT` | `OFFICIAL_DMG_URL`, `OFFICIAL_DMG_PATH`, `OFFICIAL_DMG_CACHE_HIT`; old variables are legacy aliases | Exists in `upstream/main`; port incoming official DMG environment changes to the current variables and preserve legacy fallbacks only for compatibility. |
+| Linux feature hook `CODEX_UPSTREAM_APP_DIR` | `CODEX_OFFICIAL_APP_DIR`; the old variable is a legacy alias | Exists in `upstream/main`; port incoming stage-hook environment changes to the current variable and keep the legacy alias only for existing hooks. |
+| Make target `inspect-upstream` | `inspect-dmg`; the old target is a legacy alias | Exists in `upstream/main`; port incoming inspect-target behavior to `inspect-dmg` and keep the old target as an alias only while useful. |
+
 ## Divergence Inventory
 
 ### 1. Local Product And Package Identity
 
-**Fork delta:** Upstream uses the `codex-desktop` app/package identity and the
-`codex-update-manager` updater identity. This fork intentionally exposes the
-app, packages, launcher, desktop entry, icon, app state, and package metadata as
-`codex-app`. It exposes the updater crate, binary, service, config, state,
-cache, and logs as `codex-app-updater`.
+**Fork delta:** Upstream uses the `codex-desktop` app/package
+identity and the `codex-update-manager` updater identity. This fork
+intentionally exposes the app, packages, launcher, desktop entry, icon, app
+state, and package metadata as `codex-app`. It exposes the updater crate,
+binary, service, config, state, cache, and logs as `codex-app-updater`.
 
 **Upstream baseline:** The underlying Linux app conversion and update manager
 model come from upstream. The fork-specific contract is the local identity and
@@ -99,17 +138,18 @@ Electron app bundles and keeps mutable user state out of system package roots.
 during app generation. Timestamp or commit-hash package versions are explicit
 test overrides only.
 
-**Upstream baseline:** Upstream already derives update candidates from upstream
-DMG metadata. This fork changes native package versioning and updater
-comparison helpers so package upgrades track the DMG-contained app version.
+**Upstream baseline:** Upstream already derives update
+candidates from official OpenAI Codex DMG metadata. This fork changes native
+package versioning and updater comparison helpers so package upgrades track the
+DMG-contained app version.
 
 **Why it matters:** Package upgrades, updater comparisons, release notes, and
-user expectations should track the upstream app version, not local build time.
+user expectations should track the official app version, not local build time.
 
 **Current paths:** `install.sh`, `scripts/lib/dmg.sh`,
 `scripts/lib/package-common.sh`, package builders, `updater/src/app.rs`,
 `updater/src/builder.rs`, `updater/src/package_version.rs`,
-`updater/src/upstream.rs`, `README.md`, `docs/usage/build-and-run.md`,
+`updater/src/dmg_source.rs`, `README.md`, `docs/usage/build-and-run.md`,
 `tests/scripts_smoke.sh`.
 
 **Preservation checks:** Run `make help` and package docs checks to ensure
@@ -127,9 +167,9 @@ package metadata/content inspection where tools support it. AppImage stays a
 manual-update artifact without updater service, polkit, or update-builder
 payload.
 
-**Upstream baseline:** Upstream already builds native packages and now carries a
-local AppImage target. This fork adds hardening, local identity, and payload
-consistency constraints.
+**Upstream baseline:** Upstream already builds native packages
+and now carries a local AppImage target. This fork adds hardening, local
+identity, and payload consistency constraints.
 
 **Why it matters:** Native packages must install with package-manager-owned
 system paths, predictable modes, and aligned payloads across formats.
@@ -153,9 +193,9 @@ package install. Privileged work runs only through `install-deb`, `install-rpm`,
 and `install-pacman`, which validate package paths and identity metadata,
 stage private copies, and then invoke the package manager through `pkexec`.
 
-**Upstream baseline:** Upstream already has a user-level update manager and
-privileged package install path. This fork tightens the boundary and renames
-the service, policy, and package identities.
+**Upstream baseline:** Upstream already has a user-level update
+manager and privileged package install path. This fork tightens the boundary and
+renames the service, policy, and package identities.
 
 **Why it matters:** The updater handles mutable network inputs and local build
 work. Privilege must stay isolated to the smallest install surface.
@@ -185,7 +225,7 @@ rules, and developer-mode guardrails.
 state across package upgrades, crashes, and user configuration changes.
 
 **Current paths:** `updater/src/app.rs`, `updater/src/config.rs`,
-`updater/src/upstream.rs`, `updater/src/builder.rs`, `updater/src/install.rs`,
+`updater/src/dmg_source.rs`, `updater/src/builder.rs`, `updater/src/install.rs`,
 `updater/src/package_version.rs`, `updater/src/codex_cli.rs`,
 `.github/workflows/updater.yml`, `docs/usage/troubleshooting.md`.
 
@@ -201,9 +241,9 @@ known, gives updater preflight a fast path before direct fallback, prompts for
 missing CLI installation where interactive, and exports `CODEX_CLI_PATH`
 before Electron starts.
 
-**Upstream baseline:** Upstream already has launcher/updater CLI preflight.
-This fork refines discovery precedence, config integration, and best-effort
-behavior under the `codex-app-updater` identity.
+**Upstream baseline:** Upstream already has launcher/updater CLI
+preflight. This fork refines discovery precedence, config integration, and
+best-effort behavior under the `codex-app-updater` identity.
 
 **Why it matters:** The app needs a reliable Codex CLI path without blocking
 Electron startup on registry or install work that can run later.
@@ -223,9 +263,8 @@ paths should fail loudly; stale persisted paths should not block fallback.
 package-only behavior only when the packaged runtime helper exists. The helper
 lives under `/usr/lib/codex-app`, imports desktop/session display variables
 without importing `PATH`, disables the legacy upstream service name when
-present, starts/enables `codex-app-updater.service` without restarting an
-active service, and triggers launch-time update checks after Electron PID
-recording.
+present, starts/enables `codex-app-updater.service` without restarting an active
+service, and triggers launch-time update checks after Electron PID recording.
 
 **Upstream baseline:** Upstream provides the launcher template and packaged
 runtime pattern. This fork changes the package-only helper location, service
@@ -246,7 +285,7 @@ checkout builds or race pending updater install state.
 
 ### 9. ASAR And Linux UI Patch Behavior
 
-**Fork delta:** ASAR patches remain fail-soft for volatile upstream bundle
+**Fork delta:** ASAR patches remain fail-soft for volatile official app bundle
 shapes. The current fork delta includes local identity updates, sanitized
 generated keybind literals, `CODEX_APP_LAUNCH_ACTION_SOCKET`, Linux window
 default refinements, opt-in multi-instance launch support, default-enabled
@@ -261,9 +300,9 @@ device-key material under `${XDG_CONFIG_HOME:-~/.config}/codex-app`.
 
 **Upstream baseline:** Upstream already carries Linux ASAR patching. This fork
 maintains local patch safety and selected Linux behavior changes on top of that
-upstream patching system.
+patching system.
 
-**Why it matters:** Upstream minified bundle shapes change often. Linux
+**Why it matters:** Official app minified bundle shapes change often. Linux
 behavior should degrade with actionable warnings instead of breaking app
 generation unless a required invariant fails.
 
@@ -303,16 +342,16 @@ changing the local server model, port behavior, or warm-start adoption.
 ### 11. Linux Computer Use Integration Compatibility
 
 **Fork delta:** Upstream's Linux Computer Use backend and bundled plugin remain
-part of the packaged app. This fork preserves the `codex-app` package identity,
-keeps the plugin manifest pointed at packaged assets, carries local Linux
-input/window-targeting hardening where needed, adapts configurable backend
-identity under the packaged resource layout, and documents the local opt-in for
-Computer Use UI patching without claiming that local installation changes
-OpenAI account policy or server-side availability.
+part of the packaged app. This fork preserves the
+`codex-app` package identity, keeps the plugin manifest pointed at packaged
+assets, carries local Linux input/window-targeting hardening where needed,
+adapts configurable backend identity under the packaged resource layout, and
+documents the local opt-in for Computer Use UI patching without claiming that
+local installation changes OpenAI account policy or server-side availability.
 
 **Upstream baseline:** The Rust MCP backend, bundled plugin resources,
-accessibility tree capture, screenshot paths, and input automation are upstream
-features in the synced baseline.
+accessibility tree capture, screenshot paths, and input automation come from
+upstream in the synced baseline.
 
 **Why it matters:** The package can stage local Computer Use support and register
 the backend on Linux, but useful operation still depends on host accessibility,
@@ -332,19 +371,20 @@ and clear that local installation does not bypass OpenAI feature flags.
 ### 12. Release, Security, And Supply-Chain Verification
 
 **Fork delta:** The fork adds and wires release/security workflow around the
-mutable upstream DMG: trusted DMG hash input, packaged trusted DMG metadata for
-unattended updater rebuilds, generated app and ASAR inspection, package metadata
-checks, checksums, optional detached checksum signing, public key export, macOS
-Apple DMG verification, reviewed hash-refresh PRs, safer DMG URL validation,
-download limits, partial-file downloads, and sanitized URL logging.
+mutable official OpenAI Codex DMG: trusted DMG hash input, packaged trusted DMG
+metadata for unattended updater rebuilds, generated app and ASAR inspection,
+package metadata checks, checksums, optional detached checksum signing, public
+key export, macOS Apple DMG verification, reviewed hash-refresh PRs, safer DMG
+URL validation, download limits, partial-file downloads, and sanitized URL
+logging.
 
-**Upstream baseline:** Upstream already downloads and converts the DMG. This
-fork adds extra verification and review gates around that inherited supply
-chain.
+**Upstream baseline:** Upstream already downloads and converts the official
+OpenAI Codex DMG. This fork adds extra verification and review gates around
+that inherited supply chain.
 
-**Why it matters:** This fork rebuilds a package from a mutable upstream DMG
-URL. Release and updater work must leave reviewable evidence and avoid
-presenting unverified artifacts as trusted.
+**Why it matters:** This fork rebuilds a package from a mutable official OpenAI
+Codex DMG URL. Release and updater work must leave reviewable evidence and
+avoid presenting unverified artifacts as trusted.
 
 **Current paths:** `.github/workflows/update-codex-hash.yml`,
 `.github/workflows/verify-apple-dmg.yml`, `.github/workflows/ci.yml`,
@@ -352,7 +392,7 @@ presenting unverified artifacts as trusted.
 `scripts/release-gate.sh`, `scripts/verify-apple-dmg.sh`,
 `scripts/inspect-electron-security.js`, `scripts/lib/dmg.sh`,
 `updater/trusted-dmg-manifest.json`, `updater/src/trust.rs`,
-`updater/src/upstream.rs`, `updater/src/app.rs`,
+`updater/src/dmg_source.rs`, `updater/src/app.rs`,
 `docs/maintainers/security-backlog.md`, `docs/maintainers/threat-model.md`.
 
 **Preservation checks:** `make help` must show `apple-dmg-verify` and
@@ -390,13 +430,13 @@ part of upstream: always-loaded agent rules, a repo-local maintenance skill,
 maintainer references, security backlog, threat model, usage docs, README
 feature status, and the divergence inventory itself.
 
-**Upstream baseline:** These docs should preserve clear upstream credit for the
+**Upstream baseline:** These docs should preserve clear credit for upstream's
 primary Linux work while describing the local policy and documentation layer as
 fork finishing work.
 
-**Why it matters:** This fork is intentionally divergent from its direct
-upstream. Future maintainers and agents need durable, discoverable policy
-without turning the README or `AGENTS.md` into large maintenance manuals.
+**Why it matters:** This fork is intentionally divergent from its upstream.
+Future maintainers and agents need durable, discoverable policy without turning
+the README or `AGENTS.md` into large maintenance manuals.
 
 **Current paths:** `AGENTS.md`,
 `.agents/skills/maintaining-codex-app-package/SKILL.md`, `docs/README.md`,
@@ -407,7 +447,8 @@ without turning the README or `AGENTS.md` into large maintenance manuals.
 
 **Preservation checks:** Keep `AGENTS.md` short and route details to maintainer
 docs or repo-local skills. Check README audience, clone URLs, maintainer-only
-material, upstream credit, and divergence accuracy before merging sync PRs.
+material, upstream credit, and divergence accuracy before merging
+sync PRs.
 
 ## Layout Triage
 

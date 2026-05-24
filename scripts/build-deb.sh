@@ -75,7 +75,7 @@ main() {
     deb_depends="python3, libasound2 | libasound2t64, libatk-bridge2.0-0, libatk1.0-0, libc6, libcairo2, libcups2t64 | libcups2, libdbus-1-3, libdrm2, libgbm1, libglib2.0-0t64 | libglib2.0-0, libgtk-3-0t64 | libgtk-3-0, libnspr4, libnss3, libpango-1.0-0, libstdc++6, libx11-6, libx11-xcb1, libxcb-dri3-0, libxcb1, libxcomposite1, libxdamage1, libxext6, libxfixes3, libxkbcommon0, libxrandr2"
     if package_with_updater_enabled; then
         deb_depends="build-essential, curl, dpkg, p7zip-full, pkexec | policykit-1, polkitd | policykit-1, $deb_depends, unzip"
-        updater_description=" Local auto-updates rebuild a Linux package from the upstream Codex.dmg and therefore
+        updater_description=" Local auto-updates rebuild a Linux package from the official OpenAI Codex.dmg and therefore
  use the bundled managed Node.js runtime plus the local packaging toolchain listed in Depends."
     else
         updater_description=" This package was built without codex-app-updater. Update manually from a trusted checkout."

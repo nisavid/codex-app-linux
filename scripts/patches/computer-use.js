@@ -14,7 +14,7 @@ const {
 
 // Computer Use has two postures: the bundled plugin gate is default-on Linux
 // platform glue; the visible UI gates remain opt-in because they bypass rollout
-// checks in upstream webview code.
+// checks in the official OpenAI app bundle's webview code.
 function isComputerUseUiEnabled(env = process.env) {
   if (env[COMPUTER_USE_UI_ENV_VAR] === "1") {
     return true;

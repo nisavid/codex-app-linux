@@ -49,8 +49,11 @@ During upstream syncs, preserve the fork contracts recorded in
 `docs/maintainers/fork-sync-policy.md`. Use the user-global
 `syncing-forks-with-upstream` skill before resolving conflicts, pushing, or
 merging a broad upstream sync. If that external skill is unavailable, follow
-`docs/maintainers/fork-sync-policy.md` directly and record the missing-skill
-fallback in the sync ledger.
+`docs/maintainers/fork-sync-policy.md` directly and record
+the missing-skill fallback in the sync ledger. Check the rename and
+compatibility map in `docs/maintainers/fork-divergences.md` before resolving
+missing-file conflicts; port upstream edits from old paths to current local
+paths before removing any resurrected old target.
 
 ## Native Package Shape
 

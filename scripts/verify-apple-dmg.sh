@@ -18,7 +18,8 @@ usage() {
     cat <<'EOF'
 Usage: verify-apple-dmg.sh [--dmg PATH]
 
-Runs macOS trust checks for the upstream Codex DMG and contained Codex.app.
+Runs macOS trust checks for the official OpenAI Codex DMG and contained
+Codex.app.
 The app bundle checks are required. DMG Gatekeeper/staple checks are recorded
 by default and can be made fatal with CODEX_REQUIRE_DMG_GATEKEEPER=1 and
 CODEX_REQUIRE_DMG_STAPLE=1.

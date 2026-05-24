@@ -2,7 +2,7 @@
 
 Default Linux open-target integration for Codex App.
 
-This feature augments the upstream Open menus with:
+This feature augments the official OpenAI app bundle's Open menus with:
 
 - a Terminal target discovered from `xdg-terminal-exec`, common terminal
   commands, or `.desktop` entries marked as terminal emulators

@@ -355,7 +355,7 @@ test("remote mobile stage hook writes installed Desktop app-server ownership mar
 
     const result = runStageHook({
       ARCH: "x64",
-      CODEX_UPSTREAM_APP_DIR: path.join(tempRoot, "upstream-app"),
+      CODEX_OFFICIAL_APP_DIR: path.join(tempRoot, "official-app"),
       INSTALL_DIR: installDir,
       SCRIPT_DIR: REPO_ROOT,
       WORK_DIR: workDir,
@@ -382,7 +382,7 @@ test("remote mobile stage hook leaves Desktop ownership marker absent when patch
 
     const result = runStageHook({
       ARCH: "x64",
-      CODEX_UPSTREAM_APP_DIR: path.join(tempRoot, "upstream-app"),
+      CODEX_OFFICIAL_APP_DIR: path.join(tempRoot, "official-app"),
       INSTALL_DIR: installDir,
       SCRIPT_DIR: REPO_ROOT,
       WORK_DIR: workDir,
@@ -639,7 +639,7 @@ test("Linux remote-control client enrollment accepts account-scoped and base use
   assert.equal(applyLinuxRemoteControlClientAccountCompatibilityPatch(patched), patched);
 });
 
-test("Linux remote-control client enrollment handles current upstream account compatibility shape", () => {
+test("Linux remote-control client enrollment handles current account compatibility shape", () => {
   const source = syntheticCurrentClientEnrollmentBundle();
   const patched = applyLinuxRemoteControlClientAccountCompatibilityPatch(source);
 
@@ -743,7 +743,7 @@ test("Linux remote-control feature sync includes remote_control", () => {
   assert.equal(applyLinuxRemoteControlFeatureSyncPatch(patched), patched);
 });
 
-test("Linux remote-control visibility patch allows Linux when upstream marks availability false", () => {
+test("Linux remote-control visibility patch allows Linux when official app marks availability false", () => {
   const source = syntheticVisibilityBundle();
   const patched = applyLinuxRemoteControlVisibilityPatch(source);
 
@@ -907,7 +907,7 @@ test("Linux remote-connections refresh patch handles current interval alias", ()
   assert.equal(applyLinuxRemoteConnectionsRefreshPatch(patched), patched);
 });
 
-test("Linux remote-connections refresh patch warns when upstream refresh needles drift", () => {
+test("Linux remote-connections refresh patch warns when official app refresh needles drift", () => {
   const source = "const marker=`refresh-remote-connections`;window.setInterval(()=>marker,15e3);";
   const { result, warnings } = captureWarnings(() => applyLinuxRemoteConnectionsRefreshPatch(source));
 

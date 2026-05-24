@@ -3,15 +3,25 @@
 ## Repository Role
 
 This repository is a downstream maintenance fork of
-`ilysenko/codex-desktop-linux`. Upstream does the primary Linux conversion work
-from the official macOS Codex DMG and carries much of the Linux runtime
-enablement. This fork is the finishing layer over that work: it preserves the
-local `codex-app` identity, distro-shaped install layout, updater policy,
-hardening, security review, and packaging/runtime polish.
+`ilysenko/codex-desktop-linux`. The git remote named `upstream` is the
+Linux-port upstream: it does the primary Linux conversion work from the
+official OpenAI Codex DMG and carries much of the Linux runtime enablement.
+This fork is the finishing layer over that work: it preserves the local
+`codex-app` identity, distro-shaped install layout, updater policy, hardening,
+security review, and packaging/runtime polish.
 
 Do not describe this repository as "the Linux fork" in durable docs or PR text.
-Describe it as a local hardening and finishing fork layered over upstream's
-Linux work.
+Describe it as a local hardening and finishing fork layered over the Linux-port
+upstream's work.
+
+Use explicit upstream terminology where it prevents ambiguity. `Linux-port
+upstream` means `ilysenko/codex-desktop-linux` or the git remote named
+`upstream`. `Official OpenAI Codex DMG`, `official OpenAI app bundle`, and
+`OpenAI-hosted services` mean the OpenAI-distributed macOS app artifact,
+generated bundle behavior, and service/account surfaces. Once a section,
+document, or sentence clearly scopes the relevant surface, concise terms such
+as `upstream`, `DMG`, or `app bundle` are fine. Do not use plain
+`upstream` when both meanings are plausible.
 
 Treat this file as always-loaded agent policy. Keep detailed package recipes, runtime notes, and validation matrices in maintainer docs when those docs exist.
 
@@ -84,34 +94,47 @@ This is a single-context repo. See `docs/agents/domain.md`.
 - Treat `codex-app/`, `codex-*-app/`, `dist/`, `Codex.dmg`, and XDG updater config/state/cache paths as generated or runtime artifacts unless the task explicitly targets them.
 - Do not assume `codex-app/` is pristine. If it disagrees with source scripts, source scripts win.
 - Keep Linux package behavior in `packaging/linux/`, `scripts/build-deb.sh`, `scripts/build-rpm.sh`, `scripts/build-pacman.sh`, and `scripts/lib/package-common.sh`.
-- Preserve this fork's intentional names when syncing upstream: the app,
-  install roots, launchers, package names, desktop files, and XDG app state use
-  `codex-app`; the updater crate, binary, service, config, state, cache, and
-  logs use `codex-app-updater`. Integrate upstream behavior under the local
-  names instead of adopting upstream names.
-- Preserve this fork's intentional layout when syncing upstream. Path decisions
-  follow these criteria in order: the XDG Base Directory Specification, the
-  Filesystem Hierarchy Standard, then common conventions used by mainstream
-  Linux distros for modern Electron-style apps. Native packages keep the
-  generated app bundle under `/opt/codex-app`, private package support under
-  `/usr/lib/codex-app`, system launch and desktop integration under `/usr/bin`
-  and `/usr/share`, and user runtime/config/cache/state under the appropriate
-  XDG base directories. Do not adopt upstream `codex-app-linux` or
-  `~/.local/opt` install roots as part of a sync.
+- Preserve this fork's intentional names when syncing from `upstream`:
+  the app, install roots, launchers, package names, desktop files, and XDG app
+  state use `codex-app`; the updater crate, binary, service, config, state,
+  cache, and logs use `codex-app-updater`. Integrate incoming behavior under
+  the local names instead of adopting upstream names.
+- Preserve this fork's intentional layout when syncing from `upstream`.
+  Path decisions follow these criteria in order: the XDG Base Directory
+  Specification, the Filesystem Hierarchy Standard, then common conventions
+  used by mainstream Linux distros for modern Electron-style apps. Native
+  packages keep the generated app bundle under `/opt/codex-app`, private
+  package support under `/usr/lib/codex-app`, system launch and desktop
+  integration under `/usr/bin` and `/usr/share`, and user runtime/config/cache
+  and state under the appropriate XDG base directories. Do not adopt upstream
+  `codex-app-linux` or `~/.local/opt` install roots as part of a sync.
 - Preserve this fork's package version contract. Native package versions come
-  from the OpenAI DMG app's `CFBundleShortVersionString`, written to
-  `codex-app/codex-app-version.env` during app generation. Do not replace that
-  with timestamp-based package versions during upstream syncs.
-- When syncing upstream, use the user-global `syncing-forks-with-upstream`
-  skill and the repo-local policy in `.agents/fork-sync-policy.toml`. Read
+  from the official OpenAI app bundle's `CFBundleShortVersionString`, written
+  to `codex-app/codex-app-version.env` during app generation. Do not replace
+  that with timestamp-based package versions during upstream syncs.
+- When syncing from `upstream`, use the user-global
+  `syncing-forks-with-upstream` skill and the repo-local policy in
+  `.agents/fork-sync-policy.toml`. Read
   `docs/maintainers/fork-divergences.md`,
   `.agents/fork-sync-policy.toml`, and
   `docs/maintainers/fork-sync-policy.md` before resolving conflicts. If the
   external skill is unavailable, follow the maintainer policy directly and
-  record the missing-skill fallback in the sync ledger. Compare upstream README
-  and user-facing docs against this fork's README and usage docs, adapting
-  relevant facts under local names, paths, and policy. Put uncertainty in the
-  PR body for maintainer triage.
+  record the missing-skill fallback in the sync ledger. Compare upstream
+  user-facing docs against this fork's docs, adapting relevant facts under
+  local names, paths, and policy. Escalate uncertain sync decisions to the
+  operator when the session allows. If escalation is unavailable or the operator
+  requested an uninterrupted run, record a durable, discoverable follow-up and
+  link it from the sync ledger; do not rely on the PR body alone.
+- During upstream syncs, reconcile renamed local files explicitly.
+  Git's merge machinery may follow renames automatically when similarity is
+  high enough, but agents must still check the rename map in
+  `docs/maintainers/fork-divergences.md`. If upstream changes an old path that
+  this fork renamed, port those hunks to the current local path and record the
+  reconciliation in the sync ledger. Do not drop changes only because the
+  original path is absent here.
+- During upstream syncs, close reusable policy gaps before handoff.
+  If the sync reveals a hazard that future agents could miss, update the
+  narrowest durable policy surface and record the change in the sync ledger.
 - Keep native-package-only launcher behavior in `packaging/linux/codex-packaged-runtime.sh`; `install.sh` should stay generic and load that helper only when packaging requires it.
 - Keep package builders and `scripts/lib/package-common.sh` aligned when adding, removing, or moving packaged files.
 - Preserve the unprivileged updater boundary. Escalation belongs only at install time through the updater's privileged install subcommands.
@@ -136,8 +159,8 @@ This is a single-context repo. See `docs/agents/domain.md`.
   `docs/maintainers/package-runtime-maintenance.md` (current version: `0.9.0`)
 - User-facing overview and install guidance: `README.md`
 - Webview server design decision and acceptance criteria: `docs/webview-server-evaluation.md`
-- Fork-specific contracts and upstream-sync review inventory: `docs/maintainers/fork-divergences.md`
-- Upstream-sync policy, local gates, and sync ledger requirements:
+- Fork-specific contracts and upstream sync review inventory: `docs/maintainers/fork-divergences.md`
+- Upstream sync policy, local gates, and sync ledger requirements:
   `docs/maintainers/fork-sync-policy.md` and `.agents/fork-sync-policy.toml`
 - Security follow-up and `@codex-security` review routing: `docs/maintainers/security-backlog.md`
 - Additional maintainer notes: prefer `docs/maintainers/` over expanding this file.
@@ -145,16 +168,16 @@ This is a single-context repo. See `docs/agents/domain.md`.
 ## Triggered Guidance
 
 - Changing launcher behavior: edit `launcher/start.sh.template`; if install-time launcher identity or orchestration is involved, edit `install.sh`; if package-only behavior is involved, edit `packaging/linux/codex-packaged-runtime.sh`; then regenerate or inspect `codex-app/start.sh`.
-- Changing ASAR patches or Linux window behavior: edit the patching path from `install.sh` and `scripts/patch-linux-window-ui.js`; keep patches fail-soft when they target volatile upstream bundles.
+- Changing ASAR patches or Linux window behavior: edit the patching path from `install.sh` and `scripts/patch-linux-window-ui.js`; keep patches fail-soft when they target volatile official app bundles.
 - Changing webview serving: read `docs/webview-server-evaluation.md` before changing the local server model or port behavior.
 - Changing package contents: update the relevant file under `packaging/linux/`, the affected package builder, and `scripts/lib/package-common.sh` together.
 - Changing updater behavior: work in `updater/`, preserve persisted-state compatibility unless intentionally versioned, and check service/install behavior around failed, cancelled, or interrupted privileged installs.
 - Changing updater service lifecycle: inspect `packaging/linux/codex-app-updater.service` and the package maintainer scripts for Debian, RPM, and pacman effects.
 - Changing runtime CLI discovery or install behavior: keep the launcher best-effort; warnings may not block Electron startup unless the task explicitly changes that policy.
 - Changing dependencies or supported runtime requirements: update `scripts/install-deps.sh`, `README.md`, and package metadata or maintainer docs as needed.
-- Syncing upstream: use the user-global `syncing-forks-with-upstream` skill,
-  read `docs/maintainers/fork-divergences.md`,
-  `.agents/fork-sync-policy.toml`, and
+- Syncing from `upstream`: use the user-global
+  `syncing-forks-with-upstream` skill, read
+  `docs/maintainers/fork-divergences.md`, `.agents/fork-sync-policy.toml`, and
   `docs/maintainers/fork-sync-policy.md`, then triage incoming changes against
   the intentional fork contracts before pushing. If the external skill is
   unavailable, follow the maintainer policy directly and record that fallback in
@@ -164,9 +187,9 @@ This is a single-context repo. See `docs/agents/domain.md`.
 
 - `codex-app/` and `codex-*-app/`: generated Linux app trees and launcher output.
 - `codex-app/codex-app-version.env`: generated package-version metadata read
-  from the upstream app bundle.
+  from the official OpenAI app bundle.
 - `dist/`: native package output.
-- `Codex.dmg`: cached upstream DMG.
+- `Codex.dmg`: cached official OpenAI Codex DMG.
 - `~/.config/codex-app-updater/config.toml`: updater runtime config.
 - `~/.local/state/codex-app-updater/`: updater state and service logs.
 - `~/.cache/codex-app-updater/`: downloaded DMGs, rebuild workspaces, staged packages, and build logs.

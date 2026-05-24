@@ -25,7 +25,7 @@ default_package_version() {
     local version=""
 
     if [ ! -f "$version_file" ]; then
-        error "Missing $version_file. Run ./install.sh first so package versions align with the DMG app version."
+        error "Missing $version_file. Run ./install.sh first so package versions align with the official app bundle version."
     fi
 
     version="$(sed -n 's/^CODEX_APP_PACKAGE_VERSION=//p' "$version_file" | head -n 1)"

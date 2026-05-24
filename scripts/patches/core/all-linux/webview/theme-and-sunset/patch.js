@@ -10,7 +10,7 @@ module.exports = [
     id: "linux-app-sunset-gate",
     phase: "webview-asset",
     order: 1000,
-    ciPolicy: "required-upstream",
+    ciPolicy: "required-official-dmg",
     pattern: /^index-.*\.js$/,
     missingDescription: "webview index bundle",
     skipDescription: "app sunset gate patch",

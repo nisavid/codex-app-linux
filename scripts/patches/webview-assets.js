@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 // Webview asset patches target hashed browser chunks copied out of app.asar.
-// They stay fail-soft because upstream chunk names and minified symbols drift.
+// They stay fail-soft because official app chunk names and minified symbols drift.
 function applyLinuxOpaqueWindowsDefaultPatch(currentSource) {
   let patchedSource = currentSource;
   let warnedMissingNeedle = false;
@@ -296,7 +296,7 @@ function applyBrowserAnnotationScreenshotPatch(currentSource) {
   } else if (
     /if\([A-Za-z_$][\w$]*&&[A-Za-z_$][\w$]*\?\.anchor\.kind===`element`\)\{[A-Za-z_$][\w$]*=[A-Za-z_$][\w$]*\([A-Za-z_$][\w$]*\.anchor\),[A-Za-z_$][\w$]*=void 0\}/.test(patchedSource)
   ) {
-    // Already patched with the current upstream symbol names.
+    // Already patched with the current official app symbol names.
   } else if (patchedSource.includes(liveElementScreenshotNeedle)) {
     patchedSource = patchedSource.replace(liveElementScreenshotNeedle, storedAnchorScreenshotPatch);
   } else {
@@ -356,7 +356,7 @@ function applyBrowserAnnotationScreenshotPatch(currentSource) {
   if (patchedSource.includes(selectedMarkerInScreenshotPatch)) {
     // Already patched.
   } else if (/=\([A-Za-z_$][\w$]*\?[A-Za-z_$][\w$]*:![A-Za-z_$][\w$]*&&[A-Za-z_$][\w$]*!=null\?[A-Za-z_$][\w$]*\.filter\(e=>e\.id!==[A-Za-z_$][\w$]*\.id\):[A-Za-z_$][\w$]*\)\.flatMap/.test(patchedSource)) {
-    // Already patched with the current upstream symbol names.
+    // Already patched with the current official app symbol names.
   } else if (patchedSource.includes(allMarkersInScreenshotNeedle)) {
     patchedSource = patchedSource.replace(allMarkersInScreenshotNeedle, selectedMarkerInScreenshotPatch);
   } else {
@@ -563,9 +563,9 @@ function applyPersistentRateLimitFooterPatch(currentSource) {
     patchedSource = patchedSource.replace(cacheNeedle, cachePatch);
   }
 
-  // The upstream Kt cache only tracks Ut/Wt/Gt. Recompute this group once the
-  // injected child depends on conversationId, otherwise the footer can retain
-  // a stale conversationId while the other footer children stay stable.
+  // The official app Kt cache only tracks Ut/Wt/Gt. Recompute this group once
+  // the injected child depends on conversationId, otherwise the footer can
+  // retain a stale conversationId while the other footer children stay stable.
   const homeFooterGroupPatch = homeFooterCall == null
     ? null
     : `Kt=(0,Q.jsxs)(\`div\`,{className:\`flex min-w-0 flex-1 flex-nowrap items-center gap-1\`,children:[Ut,${homeFooterCall},Wt,Gt]})`;

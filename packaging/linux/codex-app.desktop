@@ -3,7 +3,7 @@ Name=Codex App
 Comment=Run Codex App on Linux
 # Workaround: desktop launches can inherit malformed Lmod BASH_FUNC_* exports
 # left by Codex CLI shell snapshot replay. Bash imports those variables before
-# the launcher starts and prints warnings. The real fix belongs in upstream CLI
+# the launcher starts and prints warnings. The real fix belongs in Codex CLI
 # capture/replay: scrub stale BASH_FUNC_* values or recreate exported Bash
 # functions consistently, then remove these targeted unsets.
 Exec=env -u BASH_FUNC_ml%%%% -u BASH_FUNC_module%%%% BAMF_DESKTOP_FILE_HINT=/usr/share/applications/codex-app.desktop CHROME_DESKTOP=codex-app.desktop /usr/bin/codex-app %u

@@ -23,10 +23,12 @@ Use this index to choose the smallest document that matches your goal.
   attacker assumptions, and priority threat paths for the Linux conversion,
   packaging, updater, and release flow.
 - [Fork Divergences](maintainers/fork-divergences.md) is the canonical
-  inventory of intentional differences from upstream, including names, paths,
-  versioning, updater boundaries, Computer Use compatibility, and sync checks.
+  inventory of intentional differences from the Linux-port upstream, including
+  names, paths, versioning, updater boundaries, Computer Use compatibility, and
+  rename-aware sync checks.
 - [Fork Sync Policy](maintainers/fork-sync-policy.md) defines the current
-  upstream-sync workflow, sync ledger, local gates, and uncertainty triage.
+  upstream sync workflow, renamed-path reconciliation, sync ledger, local
+  gates, and uncertainty triage.
 - [Changelog](../CHANGELOG.md) tracks user-visible releases and packaging
   behavior changes.
 

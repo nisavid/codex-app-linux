@@ -203,7 +203,7 @@ else
     info "No local DMG found; installer will reuse or download Codex.dmg"
 fi
 
-info "1/2 Inspecting upstream DMG"
+info "1/2 Inspecting official OpenAI DMG"
 "$REPO_DIR/install.sh" --inspect --report-dir "$REPORT_DIR" "${dmg_args[@]}"
 
 info "2/2 Building side-by-side candidate"

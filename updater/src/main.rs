@@ -13,6 +13,8 @@ mod codex_cli;
 #[cfg(unix)]
 mod config;
 #[cfg(unix)]
+mod dmg_source;
+#[cfg(unix)]
 mod install;
 #[cfg(unix)]
 mod install_rollback;
@@ -30,8 +32,6 @@ mod state;
 mod test_util;
 #[cfg(unix)]
 mod trust;
-#[cfg(unix)]
-mod upstream;
 
 #[cfg(unix)]
 use anyhow::Result;

@@ -80,7 +80,7 @@ function withLinuxFeatureRootEnv(root, fn) {
   }
 }
 
-test("Zed opener feature adds Linux editor support to the upstream opener block", () => {
+test("Zed opener feature adds Linux editor support to the official app opener block", () => {
   const patched = applyPatchTwice(applyMainBundlePatch, zedOpenerBundle);
 
   assert.match(patched, /linux:\{label:`Zed`,icon:`apps\/zed\.png`,kind:`editor`/);

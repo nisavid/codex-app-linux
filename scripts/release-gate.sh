@@ -70,7 +70,7 @@ expected_dmg_sha256() {
 }
 
 verify_dmg_hash() {
-    require_file "$DMG_PATH" "upstream DMG"
+    require_file "$DMG_PATH" "official OpenAI Codex DMG"
 
     local expected actual
     expected="$(expected_dmg_sha256)"

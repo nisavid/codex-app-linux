@@ -100,7 +100,7 @@ if [ -f \"\$DESKTOP_ENTRY_DOCTOR\" ]; then
 fi"
     if package_with_updater_enabled; then
         updater_requires="Requires:       /usr/bin/7z, polkit, curl, unzip, gcc-c++, make"
-        updater_description="Local auto-updates rebuild a Linux package from the upstream Codex.dmg and therefore
+        updater_description="Local auto-updates rebuild a Linux package from the official OpenAI Codex.dmg and therefore
 use the bundled managed Node.js runtime plus the local packaging toolchain listed in Requires."
         updater_files="/usr/bin/codex-app-updater
 /usr/lib/systemd/user/codex-app-updater.service

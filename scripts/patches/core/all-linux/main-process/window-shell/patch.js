@@ -60,7 +60,7 @@ module.exports = [
     id: "linux-file-manager",
     phase: "main-bundle",
     order: 100,
-    ciPolicy: "required-upstream",
+    ciPolicy: "required-official-dmg",
     apply: applyLinuxFileManagerPatch,
   },
   {

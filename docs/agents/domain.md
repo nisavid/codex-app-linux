@@ -14,10 +14,27 @@ If `CONTEXT.md` or `docs/adr/` does not exist, proceed silently. Do not request 
 ## Current domain anchors
 
 - `docs/maintainers/fork-divergences.md` is the canonical inventory of intentional fork differences.
-- `docs/maintainers/fork-sync-policy.md` defines upstream-sync policy.
+- `docs/maintainers/fork-sync-policy.md` defines upstream sync policy for this
+  fork.
 - `docs/maintainers/package-runtime-maintenance.md` covers package, launcher, updater, and generated-artifact maintenance.
 - `docs/maintainers/threat-model.md` describes repository trust boundaries and threat paths.
 - `docs/policies/agentic-maintenance.md` describes what belongs in tracked docs, agent policy, and local session evidence.
+
+## Upstream Terminology
+
+Use the specific term when introducing or disambiguating a surface. After the
+context is clear, concise terms such as `upstream`, `DMG`, or `app bundle` are
+fine.
+
+- `Linux-port upstream`: `ilysenko/codex-desktop-linux`, the git remote named
+  `upstream`, and sync work that imports that repository's Linux conversion
+  changes.
+- `Official OpenAI Codex DMG`: the OpenAI-distributed macOS app artifact used
+  as app-generation input.
+- `Official OpenAI app bundle`: the `Codex.app` bundle extracted from the DMG
+  and patched for Linux.
+- `OpenAI-hosted services`: account, rollout, entitlement, remote-control, and
+  other service-side behavior outside this fork's local packaging path.
 
 ## File structure
 

@@ -1,11 +1,22 @@
 # Fork Sync Policy
 
-This is the current procedure for syncing upstream changes into this fork. Use
-it with [Fork Divergences](fork-divergences.md), which is the canonical
-inventory of local contracts.
+This is the current procedure for syncing changes from the Linux-port upstream
+into this fork. In this document, `upstream` means the `upstream` remote for
+`ilysenko/codex-desktop-linux` unless a sentence names another surface. Use this
+procedure with [Fork Divergences](fork-divergences.md), the canonical inventory
+of local contracts and terminology.
 
 The local policy config is `.agents/fork-sync-policy.toml`. It exists for
 agents and maintainers; runtime code does not consume it.
+
+<!--
+Future refactor note: this file still contains generic fork-sync procedure
+because repo-local parameters are interleaved with the workflow. When revisiting
+it, identify the general rules and the localization parameters they need, such
+as remotes, target repository, required merge method, local gates, ledger
+fields, rename maps, and issue or backlog destinations, then migrate the common
+behavior into the user-global `syncing-forks-with-upstream` skill.
+-->
 
 ## Required Workflow
 
@@ -22,27 +33,30 @@ agents and maintainers; runtime code does not consume it.
    normal merge commit, not a rebase or squash merge.
 6. Preserve this fork's intentional contracts unless the PR intentionally
    changes policy.
-7. Update the upstream baseline in
-   [Fork Divergences](fork-divergences.md) after the sync. The policy config
-   points to that canonical inventory instead of duplicating the mutable commit
-   hash.
-8. Compare upstream README and other user-facing docs against this fork's
-   README and usage docs. Classify readme-relevant upstream additions as
-   adapted under local contracts, already covered, intentionally omitted, or
-   follow-up.
-9. Keep a sync ledger in the PR body or a temporary working note until it is
+7. Update the upstream baseline in [Fork Divergences](fork-divergences.md) after
+   the sync. The policy config points to that canonical inventory instead of
+   duplicating the mutable commit hash.
+8. Compare upstream user-facing docs against this fork's README and usage docs.
+   Classify relevant additions as adapted under local contracts, already
+   covered, intentionally omitted, or follow-up.
+9. Check [Renamed Path Reconciliation](#renamed-path-reconciliation) before
+   resolving missing-file, modify/delete, rename/delete, or add/add conflicts.
+10. Close any reusable policy gap found during the sync. If the sync reveals a
+   hazard that future agents could miss, update the narrowest durable policy
+   surface before handoff.
+11. Keep a sync ledger in the PR body or a temporary working note until it is
    copied into the PR.
-10. Run the required local gates before the first push that contains code
+12. Run the required local gates before the first push that contains code
    changes covered by [Local Gates](#local-gates).
-11. On the first push of any task branch, create a draft PR in the same
+13. On the first push of any task branch, create a draft PR in the same
    workflow turn.
-12. Use `--repo nisavid/codex-app-linux` on every `gh pr` command in this
+14. Use `--repo nisavid/codex-app-linux` on every `gh pr` command in this
    checkout. Do not rely on GitHub CLI's inferred repository; it can target the
    wrong repository in this fork checkout.
-13. Keep the PR in draft until local gates pass and the PR body records
+15. Keep the PR in draft until local gates pass and the PR body records
    verification evidence. For code-changing branches, the required lifecycle is:
    local gates, first push, draft PR, PR verification notes, ready for review.
-14. Inspect GitHub blockers directly. Do not infer merge readiness from summary
+16. Inspect GitHub blockers directly. Do not infer merge readiness from summary
    status alone.
 
 ## Sync Ledger
@@ -52,15 +66,19 @@ Every broad upstream sync needs a ledger with:
 - upstream refs fetched and the baseline commit;
 - policy files read;
 - every divergence area checked;
-- upstream README and other user-facing doc changes reviewed;
+- upstream user-facing doc changes reviewed;
 - readme-relevant additions classified as adapted under local contracts,
   already covered, intentionally omitted, or follow-up;
+- renamed-path checks completed, including any manual old-path to current-path
+  reconciliations;
+- policy gaps found and codified, or a note that no reusable gap was found;
 - baseline update made in [Fork Divergences](fork-divergences.md);
 - incoming changes that affect local contracts;
 - classification for each affected area: preserved, upstream now implements it,
   obsolete by policy, intentionally changed, or uncertain;
 - exact local verification commands and results;
-- unresolved uncertainties for maintainer triage.
+- unresolved uncertainties escalated to the operator, or linked to a durable,
+  discoverable follow-up when escalation is unavailable.
 
 Do not push while the ledger has unchecked divergence areas, untriaged
 uncertainty, or missing required local gates.
@@ -93,11 +111,85 @@ package payload shape, and security gates.
 
 If an upstream change appears to implement the same behavior, update the
 divergence inventory to describe the current diff against the synced upstream
-baseline. If the impact is uncertain, list it for maintainer triage instead of
-choosing by assumption.
+baseline. If the impact is uncertain, escalate to the operator when the session
+allows. Only defer the decision when escalation is unavailable or the operator
+requested an uninterrupted run; in that case, record a durable, discoverable
+follow-up where the escalation would have happened. The PR body can link to that
+follow-up, but it is not sufficient by itself.
 
 Treat upstream README and usage-doc changes as product facts to review, not as
 text to copy wholesale. Pull over facts that affect supported platforms, host
 requirements, feature gates, install/update commands, troubleshooting, or
 validation, but translate names, paths, service identifiers, package filenames,
 and commands to this fork's local contracts.
+
+## Policy Gap Closeout
+
+Treat discovered repeatable sync hazards as part of the sync, not as optional
+retrospective notes. If a conflict, missed change, review comment, local gate,
+or manual reconciliation exposes a rule future agents need, update the
+narrowest durable surface before handoff:
+
+- `docs/maintainers/fork-divergences.md` for repo-specific contracts, rename
+  maps, baselines, and divergence checks;
+- `.agents/fork-sync-policy.toml` for machine-readable repo-local policy flags
+  and pointers;
+- this document for repo-local sync workflow;
+- `AGENTS.md` for rules that must be preloaded before an agent can choose a
+  triggered workflow;
+- the user-global `syncing-forks-with-upstream` skill for behavior that applies
+  across maintained forks;
+- tests or scripts for repeatable mechanical checks.
+
+If the right owner is uncertain, escalate to the operator when the session
+allows. Only defer the decision when escalation is unavailable or the operator
+requested an uninterrupted run; in that case, record a durable, discoverable
+follow-up where the escalation would have happened, and keep the safest local
+guard that prevents dropped upstream changes, history replay, contract drift,
+or missing verification.
+
+## Renamed Path Reconciliation
+
+Git's merge strategy normally performs rename detection, but it is similarity
+based and can still surface an upstream edit as a missing old path,
+modify/delete conflict, rename/delete conflict, or resurrected file. Treat those
+states as reconciliation work, not permission to drop the upstream change.
+
+Before resolving sync conflicts:
+
+1. Review the current rename map in
+   [Fork Divergences](fork-divergences.md#current-local-rename-and-compatibility-map).
+2. Inspect the merge with rename-aware commands:
+
+   ```bash
+   git status --renames
+   git diff --name-status --find-renames HEAD...MERGE_HEAD
+   ```
+
+3. For each upstream change to an old path, apply the equivalent change to the
+   current local path. In an active merge, this pattern keeps the old-path diff
+   visible while you reconcile:
+
+   ```bash
+   base="$(git merge-base HEAD MERGE_HEAD)"
+   git diff "$base" MERGE_HEAD -- old/path
+   git show MERGE_HEAD:old/path
+   ```
+
+   Replace `MERGE_HEAD` with the upstream ref when inspecting before starting a
+   merge.
+
+4. Remove resurrected old paths only after their incoming changes are ported or
+   intentionally rejected:
+
+   ```bash
+   git rm old/path
+   git add current/path
+   ```
+
+5. Record each manual reconciliation or intentional omission in the sync
+   ledger, including the old path, current path, and verification run.
+
+If Git automatically maps the rename, still confirm the resulting current file
+contains the incoming upstream change and that the old path remains absent
+unless compatibility requires it.

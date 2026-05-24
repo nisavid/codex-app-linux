@@ -3,10 +3,10 @@ set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 FLAKE_FILE="${FLAKE_FILE:-$REPO_DIR/flake.nix}"
-UPSTREAM_DMG_URL="${UPSTREAM_DMG_URL:-https://persistent.oaistatic.com/codex-app-prod/Codex.dmg}"
-UPSTREAM_DMG_PATH="${UPSTREAM_DMG_PATH:-/tmp/Codex.dmg}"
+OFFICIAL_DMG_URL="${OFFICIAL_DMG_URL:-${UPSTREAM_DMG_URL:-https://persistent.oaistatic.com/codex-app-prod/Codex.dmg}}"
+OFFICIAL_DMG_PATH="${OFFICIAL_DMG_PATH:-${UPSTREAM_DMG_PATH:-/tmp/Codex.dmg}}"
 VERIFY_LOG="${VERIFY_LOG:-/tmp/codex-nix-build-verify.log}"
-# Upstream Codex Sparkle appcast (x64 runners). Used to gate the pin refresh on
+# Official Codex Sparkle appcast (x64 runners). Used to gate the pin refresh on
 # the advertised latest release so we never pin a transient mid-rollout DMG.
 APPCAST_URL="${APPCAST_URL:-https://persistent.oaistatic.com/codex-app-prod/appcast-x64.xml}"
 
@@ -130,17 +130,17 @@ run_nix_build() {
 }
 
 main() {
-    mkdir -p "$(dirname "$UPSTREAM_DMG_PATH")"
-    curl -fL --retry 3 -o "$UPSTREAM_DMG_PATH" "$UPSTREAM_DMG_URL"
+    mkdir -p "$(dirname "$OFFICIAL_DMG_PATH")"
+    curl -fL --retry 3 -o "$OFFICIAL_DMG_PATH" "$OFFICIAL_DMG_URL"
 
-    new_dmg_hash="$(nix hash file --sri --type sha256 "$UPSTREAM_DMG_PATH")"
+    new_dmg_hash="$(nix hash file --sri --type sha256 "$OFFICIAL_DMG_PATH")"
     if ! validate_sri_hash "$new_dmg_hash"; then
         echo "Refusing to proceed: computed DMG hash '$new_dmg_hash' is not a valid SRI sha256." >&2
         exit 1
     fi
 
     # Refresh the version pins (codexVersion/electronVersion + native-modules)
-    # from the DMG, gated on the upstream Sparkle appcast: only proceed when the
+    # from the DMG, gated on the official Sparkle appcast: only proceed when the
     # moving Codex.dmg has caught up to the appcast's advertised latest version,
     # so we never pin a transient mid-rollout build. Exit 75 means "rollout in
     # progress" and is treated as a no-op skip.
@@ -149,9 +149,9 @@ main() {
 
     local validate_status=0
     WRITE_PINS=1 APPCAST_URL="$APPCAST_URL" \
-        "$REPO_DIR/scripts/ci/validate-nix-pins.sh" "$UPSTREAM_DMG_PATH" || validate_status="$?"
+        "$REPO_DIR/scripts/ci/validate-nix-pins.sh" "$OFFICIAL_DMG_PATH" || validate_status="$?"
     if [ "$validate_status" -eq 75 ]; then
-        echo "Upstream rollout in progress; leaving pins unchanged until Codex.dmg matches the appcast."
+        echo "Official Codex rollout in progress; leaving pins unchanged until Codex.dmg matches the appcast."
         exit 0
     fi
     if [ "$validate_status" -ne 0 ]; then
@@ -176,15 +176,15 @@ main() {
 
     current_dmg_hash="$(read_flake_hash "codexDmg = pkgs.fetchurl {" "hash = ")"
     echo "Current Codex.dmg hash:  $current_dmg_hash"
-    echo "Upstream Codex.dmg hash: $new_dmg_hash"
+    echo "Official Codex.dmg hash: $new_dmg_hash"
     replace_flake_hash "codexDmg = pkgs.fetchurl {" "hash = " "$new_dmg_hash"
 
     # Seed the Nix store so the verification build can reuse the DMG that was
     # already downloaded for hashing instead of fetching the same artifact again.
-    nix-store --add-fixed sha256 "$UPSTREAM_DMG_PATH" >/dev/null
+    nix-store --add-fixed sha256 "$OFFICIAL_DMG_PATH" >/dev/null
 
     run_nix_build "$VERIFY_LOG" "${PACKAGE_OUTPUTS[@]}"
-    echo "Nix builds succeeded after refreshing the upstream pins and Codex.dmg hash."
+    echo "Nix builds succeeded after refreshing the official DMG pins and Codex.dmg hash."
 }
 
 case "${1:-}" in

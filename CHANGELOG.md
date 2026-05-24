@@ -33,7 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - New local AppImage build target for manual-update installs on systems where native packages are awkward.
 - Opt-in multi-instance launcher support via `--new-instance` or `CODEX_MULTI_LAUNCH=1`, with isolated Electron profiles, pid files, sockets, logs, and bounded webview ports.
-- New opt-in Linux features `remote-control-ui` and `remote-mobile-control` that patch upstream remote-control surfaces on Linux without faking backend state, MFA, or connected-client data.
+- New opt-in Linux features `remote-control-ui` and `remote-mobile-control` that patch official app remote-control surfaces on Linux without faking backend state, MFA, or connected-client data.
 - `linux-features` can now contribute opt-in `webview-asset` patch descriptors in addition to main-bundle patches, so feature-scoped Linux UI experiments can hook hashed webview assets without being promoted into the core patch registry.
 - Nix outputs for the default app, Computer Use UI, remote mobile control, the combined feature set, and the installer.
 
@@ -41,7 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Updater and launcher edge cases around interrupted installs, persisted Linux features, user-local managed checkout metadata, webview origin probes behind proxy settings, and package metadata.
 - Pacman builds now expose a `codex-app-latest.pkg.tar.zst` symlink for the most recent local package artifact.
-- The webview patcher can keep the composer rate-limit footer visible across upstream bundle drift.
+- The webview patcher can keep the composer rate-limit footer visible across official app bundle drift.
 
 ## [0.7.1] - 2026-05-06
 
@@ -75,7 +75,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - AT-SPI sentinel bounds no longer trigger bogus portal clicks on hidden or off-screen nodes.
 - Linux quit now bypasses the close-to-tray gate so the app actually exits instead of getting trapped in the tray.
-- Keybinds settings index patch tolerates upstream minified variable-name drift; the route map is detected via a `(0,X.lazy)` lookahead instead of hard-coded `c_e` / `Xge` / `Zge` names.
+- Keybinds settings index patch tolerates official app minified variable-name drift; the route map is detected via a `(0,X.lazy)` lookahead instead of hard-coded `c_e` / `Xge` / `Zge` names.
 - NixOS-installed `start.sh` shebang is patched to a nix-store `bash` so the launcher actually runs on systems without `/bin/bash`.
 - Native packages now always stage `scripts/lib/node-runtime.sh` into `/usr/lib/codex-app/update-builder`, so local auto-update rebuilds can source the managed Node runtime helper instead of failing before package generation.
 
@@ -83,12 +83,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
-- Merged upstream launcher and updater changes: Electron now targets `41.3.0`,
+- Merged Linux-port upstream launcher and updater changes: Electron now targets `41.3.0`,
   launcher startup can reuse an existing verified webview server for warm
   starts, launcher CLI checks use `codex-app-updater cli-preflight`, packaged
   launch-time update checks use `codex-app-updater check-now --if-stale`, and
   RPM installs can use `zypper` on openSUSE.
-- Native package versions now default to the upstream Codex app bundle marketing
+- Native package versions now default to the official OpenAI app bundle marketing
   version from `Contents/Info.plist` (`CFBundleShortVersionString`). Generated
   package metadata is restricted to three or four numeric dot-separated segments
   so updater comparisons stay consistent across package formats.
@@ -109,7 +109,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   default-off, env-var, and persisted-setting paths.
 
 - The bundled Computer Use plugin manifest gate remains default-on for Linux
-  platform registration, while the UI patches that touch upstream rollout-gated
+  platform registration, while the UI patches that touch official app rollout-gated
   code now require explicit opt-in.
 
 ### Fixed
@@ -124,13 +124,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- GitHub Actions workflow `upstream-build-app.yml` builds `make build-app`
-  against the real upstream `Codex.dmg`, records DMG provenance, and exercises
-  the installer/cache behavior against current upstream metadata.
+- GitHub Actions workflow `official-dmg-build-app.yml` builds `make build-app`
+  against the official OpenAI `Codex.dmg`, records DMG provenance, and
+  exercises the installer/cache behavior against current official DMG metadata.
 
 ### Changed
 
-- Script smoke tests now cover the upstream-DMG build workflow and newer ASAR
+- Script smoke tests now cover the official-DMG build workflow and newer ASAR
   patcher shapes, including launch-action, tray, Computer Use, and stale
   background-helper cases.
 
@@ -150,7 +150,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- `make build-app` now rebuilds `better-sqlite3` with an Electron 41-compatible release when the upstream DMG bundles an older native module source.
+- `make build-app` now rebuilds `better-sqlite3` with an Electron 41-compatible release when the official OpenAI DMG bundles an older native module source.
 - `codex-app-updater` now refreshes CLI status when the daemon starts and shows a desktop notification if the Codex CLI is missing, so package installs do not rely on the user manually checking updater state to understand why Codex App cannot launch cleanly.
 - When the Codex CLI is missing, terminal launches still prompt before installation and GUI launches now have a matching fallback path instead of failing with only a passive notification.
 
@@ -166,8 +166,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - openSUSE / zypper support across `scripts/install-deps.sh`, the `make install` target, and the updater's RPM install path.
 - Browser Use bundled plugin resources are now installed alongside the Linux app, with launcher-side environment hydration for `CODEX_ELECTRON_RESOURCES_PATH`, `CODEX_BROWSER_USE_NODE_PATH`, and `CODEX_NODE_REPL_PATH`.
 - Apt Node bootstrap: `install-deps.sh` prefers a compatible distro `nodejs`/`npm` candidate and otherwise installs Node.js 22 from NodeSource. CI matrix validates the bootstrap on Ubuntu 22.04, Ubuntu 24.04, and Debian 12.
-- Electron version is now auto-detected from upstream DMG metadata (`Electron Framework.framework/Versions/A/Resources/Info.plist` then `app.asar` `package.json`); the pinned `41.3.0` remains as the fallback when detection fails.
-- `codex-app-updater check-now --if-stale` subcommand and a launch-time best-effort check that skips when the last successful upstream check is still fresh.
+- Electron version is now auto-detected from official DMG metadata (`Electron Framework.framework/Versions/A/Resources/Info.plist` then `app.asar` `package.json`); the pinned `41.3.0` remains as the fallback when detection fails.
+- `codex-app-updater check-now --if-stale` subcommand and a launch-time best-effort check that skips when the last successful remote DMG check is still fresh.
 - New updater subcommand `prompt-install-cli` plus persisted-state field `cli_last_verified_at` to support GUI-launched CLI install prompts and a cached-status fast path.
 
 ### Changed
@@ -177,7 +177,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Wayland sessions with `DISPLAY` available now default to `--ozone-platform=x11` for Electron popup positioning compatibility; pure Wayland sessions keep `--ozone-platform-hint=auto`.
 - RPM `%preun` only stops and disables the user updater service on package erase (`$1 -eq 0`), not on upgrade.
 - RPM staging now uses the shared `stage_common_package_files` / `stage_update_builder_bundle` helpers, fixing missing packaged runtime helper and update-builder payload files in shipped RPMs.
-- Updater check serialization moved to a kernel-backed file lock (`flock(2)` via the `fs4` crate). A non-graceful exit no longer leaves a stale sentinel file that silences future upstream checks.
+- Updater check serialization moved to a kernel-backed file lock (`flock(2)` via the `fs4` crate). A non-graceful exit no longer leaves a stale sentinel file that silences future remote DMG checks.
 - Webview server is now adopted and reused across launches instead of being killed and restarted, and explicitly binds to `127.0.0.1` only.
 
 ### Fixed
@@ -185,7 +185,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Failed `pkexec` authentication now keeps the candidate ready for retry on the next app exit instead of surfacing repeat prompts every reconcile cycle.
 - RPM installs now reject non-newer package versions, matching the existing DEB and pacman downgrade guards.
 - Linux browser annotation screenshots now use the stored anchor geometry and render only the selected marker, fixing misaligned and over-cluttered annotation captures.
-- The Linux settings persistence patch now warns and skips instead of throwing when its needle is missing on a fresh upstream bundle, so the install pipeline no longer aborts on a bundle-shape change.
+- The Linux settings persistence patch now warns and skips instead of throwing when its needle is missing on a fresh official app bundle, so the install pipeline no longer aborts on a bundle-shape change.
 - DEB packages now alternate-depend on legacy policykit package names where needed, so installs succeed on older Debian/Ubuntu-derived systems.
 
 ## [0.4.2] - 2026-04-23
@@ -233,7 +233,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Linux ASAR patching now also adjusts shell behavior, window icon handling, and default opaque window settings on Linux when the user has not explicitly chosen a translucent sidebar preference yet.
 - Desktop notifications now resolve icons from packaged, system, and repository locations and send them as file URIs for better desktop-environment compatibility.
-- `scripts/install-deps.sh` now owns the `7zz` bootstrap flow, probes pinned upstream tarballs newest-first with `HEAD` checks, and installs to `~/.local/bin` by default unless `SEVENZIP_SYSTEM_INSTALL=1`.
+- `scripts/install-deps.sh` now owns the `7zz` bootstrap flow, probes pinned 7-Zip tarballs newest-first with `HEAD` checks, and installs to `~/.local/bin` by default unless `SEVENZIP_SYSTEM_INSTALL=1`.
 - Updated bundled dependencies and metadata: Electron `40.8.5`, `tokio` `1.51.1`, `windows-sys` `0.61.2`, and `codex-app-updater` `0.4.0`.
 
 ### Fixed
@@ -241,13 +241,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Avoid Linux startup failures caused by stale minified symbol assumptions in the window icon patch (`t.join is not a function`).
 - Make updater SHA-256 formatting deterministic so downloaded DMGs produce stable candidate versions and comparisons.
 - Prevent `bootstrap_7zz` from warning on unsupported architectures when a working `7zz` or a new enough system `7z` is already available.
-- Keep the Linux file manager patch fail-soft when upstream minified bundles drift while still validating that the expected Linux hooks were actually applied.
+- Keep the Linux file manager patch fail-soft when official app minified bundles drift while still validating that the expected Linux hooks were actually applied.
 
 ## [0.3.2] - 2026-04-07
 
 ### Fixed
 
-- Fix transparent background flickering on Linux when moving the window or hovering over the sidebar. The upstream Electron app sets `backgroundColor: '#00000000'` (fully transparent) for non-Windows platforms, relying on macOS vibrancy. Linux has no compositor equivalent, causing the desktop to bleed through. The main bundle is now patched to use opaque theme-aware colors (`#000000` dark / `#f9f9f9` light) on Linux.
+- Fix transparent background flickering on Linux when moving the window or hovering over the sidebar. The official Electron app sets `backgroundColor: '#00000000'` (fully transparent) for non-Windows platforms, relying on macOS vibrancy. Linux has no compositor equivalent, causing the desktop to bleed through. The main bundle is now patched to use opaque theme-aware colors (`#000000` dark / `#f9f9f9` light) on Linux.
 - Replace transparent startup background in `index.html` with `#1e1e1e` to prevent flash of transparency during app load.
 
 ## [0.3.1] - 2026-04-07
@@ -300,6 +300,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Initial release: automated macOS DMG to Linux Electron app conversion.
 - Debian (`.deb`) packaging.
 - `codex-app-updater` daemon with systemd user service.
-- Upstream DMG detection, local rebuild, and pending install flow.
+- Official DMG detection, local rebuild, and pending install flow.
 - Nix flake for NixOS support.
 - Wayland and X11 support with GPU error workarounds.

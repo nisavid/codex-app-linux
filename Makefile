@@ -51,7 +51,7 @@ if [ -z "$$format" ]; then \
 fi; \
 printf '%s\n' "$$format"
 
-.PHONY: help check test build-updater maybe-build-updater update rebuild rebuild-install inspect-upstream build-app build-app-fresh bootstrap-native install-native update-native rebuild-next run-app build-dev-app run-dev-app deb rpm pacman appimage package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
+.PHONY: help check test build-updater maybe-build-updater update rebuild rebuild-install inspect-dmg inspect-upstream build-app build-app-fresh bootstrap-native install-native update-native rebuild-next run-app build-dev-app run-dev-app deb rpm pacman appimage package apple-dmg-verify release-gate install service-enable service-status clean clean-dist clean-state
 
 help:
 	@printf '\nCodex App Linux Make Targets\n\n'
@@ -61,7 +61,7 @@ help:
 	@printf '  %-18s %s\n' "make update" "Find a DMG, rebuild, and replace codex-app/ with backup"
 	@printf '  %-18s %s\n' "make rebuild" "Inspect a DMG and build a side-by-side candidate"
 	@printf '  %-18s %s\n' "make rebuild-install" "Find a DMG, rebuild, and install into codex-app/"
-	@printf '  %-18s %s\n' "make inspect-upstream" "Inspect a DMG and write rebuild reports without changing codex-app/"
+	@printf '  %-18s %s\n' "make inspect-dmg" "Inspect a DMG and write rebuild reports without changing codex-app/"
 	@printf '  %-18s %s\n' "make build-app" "Run install.sh and regenerate codex-app/ (reuses cached Codex.dmg)"
 	@printf '  %-18s %s\n' "make build-app-fresh" "Remove cached Codex.dmg and regenerate codex-app/"
 	@printf '  %-18s %s\n' "make setup-native" "Guided setup summary and Linux feature config helper"
@@ -77,7 +77,7 @@ help:
 	@printf '  %-18s %s\n' "make pacman" "Build the pacman package into dist/ (Arch)"
 	@printf '  %-18s %s\n' "make appimage" "Build the AppImage into dist/ (local self-build)"
 	@printf '  %-18s %s\n' "make package" "Build native package (auto-detects deb, rpm, or pacman)"
-	@printf '  %-18s %s\n' "make apple-dmg-verify" "Run macOS Apple trust checks for the upstream DMG"
+	@printf '  %-18s %s\n' "make apple-dmg-verify" "Run macOS Apple trust checks for the official OpenAI DMG"
 	@printf '  %-18s %s\n' "make release-gate" "Verify DMG hash, generated app security, package metadata, checksums, and optional signature"
 	@printf '  %-18s %s\n' "make install" "Install the latest generated native package"
 	@printf '  %-18s %s\n' "make service-enable" "Enable and start codex-app-updater.service for the current user"
@@ -108,7 +108,7 @@ help:
 	@printf '  %s\n' "make bootstrap-native"
 	@printf '  %s\n' "make install-native"
 	@printf '  %s\n' "PACKAGE_WITH_UPDATER=0 make update-native"
-	@printf '  %s\n' "make inspect-upstream DMG=/tmp/Codex.dmg"
+	@printf '  %s\n' "make inspect-dmg DMG=/tmp/Codex.dmg"
 	@printf '  %s\n' "make rebuild-next DMG=/tmp/Codex.dmg"
 	@printf '  %s\n' "make run-app"
 	@printf '  %s\n' "make build-dev-app"
@@ -155,9 +155,11 @@ rebuild-install:
 	CODEX_FINAL_APP_DIR="$(APP_DIR)" \
 		./scripts/rebuild-candidate.sh --install "$(DMG)"
 
-inspect-upstream:
-	@echo "[make] Inspecting upstream DMG"
+inspect-dmg:
+	@echo "[make] Inspecting official OpenAI DMG"
 	./install.sh --inspect --report-dir "$(REBUILD_REPORT_DIR)" "$(DMG)"
+
+inspect-upstream: inspect-dmg
 
 build-app:
 	@echo "[make] Regenerating codex-app from DMG"

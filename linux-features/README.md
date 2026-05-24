@@ -1,8 +1,8 @@
 # Linux Features
 
 `linux-features/` contains Linux integration modules for this wrapper. These
-are not upstream Codex plugins; they are Linux-side extensions that can add
-ASAR patches, staged resources, or build/install hooks.
+are not official Codex plugins; they are Linux-side extensions that can add ASAR
+patches, staged resources, or build/install hooks.
 
 ## Defaults And Local Overrides
 
@@ -14,7 +14,7 @@ reads the current user's desktop app entries and launches selected targets as
 that same user; see
 [`open-target-discovery/README.md`](open-target-discovery/README.md) for the
 scope and trust notes. The remote control and voice features still depend on
-upstream account rollout, local audio, connected-client state, and host network
+OpenAI account rollout, local audio, connected-client state, and host network
 availability.
 
 To disable a default feature for a checkout build, copy `features.example.json`
@@ -110,7 +110,8 @@ Each feature directory should include:
 - optional `test.js` — self-contained tests for the feature
 
 `stage.sh` hooks run with `SCRIPT_DIR`, `INSTALL_DIR`, `WORK_DIR`, `ARCH`, and
-`CODEX_UPSTREAM_APP_DIR` in the environment.
+`CODEX_OFFICIAL_APP_DIR` in the environment. `CODEX_UPSTREAM_APP_DIR` remains a
+legacy alias for existing hooks.
 
 Descriptor patches use the same shape as `scripts/patches/core/**/patch.js`.
 They can target `main-bundle`, `webview-asset`, or `extracted-app` phases.

@@ -1,4 +1,4 @@
-name: Update Nix upstream hashes
+name: Update Nix official DMG hashes
 
 on:
   schedule:
@@ -10,7 +10,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: update-nix-upstream-hashes
+  group: update-nix-official-dmg-hashes
   cancel-in-progress: false
 
 jobs:
@@ -43,7 +43,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y p7zip-full
 
-      - name: Refresh Nix upstream hash
+      - name: Refresh Nix official DMG hash
         run: scripts/ci/update-nix-hashes.sh
 
       - name: Commit refreshed hashes
@@ -67,7 +67,7 @@ jobs:
           git checkout -B "$BRANCH"
           git add flake.nix nix/native-modules/package.json nix/native-modules/package-lock.json
           git commit \
-            -m "fix(nix): update upstream Nix hashes" \
+            -m "fix(nix): update official DMG hashes" \
             -m "Refreshed Codex.dmg SRI hash to $CODEX_DMG_HASH." \
             -m "Verified all Codex App Linux Nix package outputs against the refreshed DMG." \
             -m "[skip ci]" \
@@ -83,14 +83,14 @@ jobs:
           if [ -n "$PR_NUMBER" ]; then
             gh pr edit "$PR_NUMBER" \
               --repo nisavid/codex-app-linux \
-              --title "fix(nix): update upstream Nix hashes" \
+              --title "fix(nix): update official DMG hashes" \
               --body "$PR_BODY" || PR_ACTION_FAILED=1
           else
             gh pr create \
               --repo nisavid/codex-app-linux \
               --base main \
               --head "$BRANCH" \
-              --title "fix(nix): update upstream Nix hashes" \
+              --title "fix(nix): update official DMG hashes" \
               --body "$PR_BODY" || PR_ACTION_FAILED=1
           fi
 

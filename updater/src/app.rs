@@ -5,9 +5,9 @@ use crate::{
     cli::{Cli, Commands},
     codex_cli,
     config::{RuntimeConfig, RuntimePaths},
-    install, install_rollback, liveness, logging, notify, rollback,
+    dmg_source, install, install_rollback, liveness, logging, notify, rollback,
     state::{CliStatus, DmgVerification, DmgVerificationResult, PersistedState, UpdateStatus},
-    trust, upstream,
+    trust,
 };
 use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, Utc};
@@ -306,7 +306,7 @@ fn try_acquire_check_lock(paths: &RuntimePaths) -> Result<Option<CheckLock>> {
     match FileExt::try_lock(&file) {
         Ok(()) => {}
         Err(TryLockError::WouldBlock) => {
-            info!("skipping upstream check because another check is already active");
+            info!("skipping remote DMG check because another check is already active");
             return Ok(None);
         }
         Err(TryLockError::Error(error)) => {
@@ -410,15 +410,16 @@ async fn run_check_now(
     reconcile_cli_if_present_best_effort(config, state, paths, "check-now");
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
-    if if_stale && state.status != UpdateStatus::Failed && upstream_check_is_fresh(config, state) {
-        info!("skipping check-now because the last successful upstream check is still fresh");
+    if if_stale && state.status != UpdateStatus::Failed && remote_dmg_check_is_fresh(config, state)
+    {
+        info!("skipping check-now because the last successful remote DMG check is still fresh");
         return reconcile_pending_install(config, state, paths).await;
     }
     run_check_cycle(config, state, paths).await?;
     reconcile_pending_install(config, state, paths).await
 }
 
-fn upstream_check_is_fresh(config: &RuntimeConfig, state: &PersistedState) -> bool {
+fn remote_dmg_check_is_fresh(config: &RuntimeConfig, state: &PersistedState) -> bool {
     let Some(last_successful_check_at) = state.last_successful_check_at else {
         return false;
     };
@@ -700,7 +701,7 @@ async fn run_check_cycle(
     paths: &RuntimePaths,
 ) -> Result<()> {
     if update_install_is_pending(&state.status) {
-        info!("skipping upstream check because an update is already pending");
+        info!("skipping remote DMG check because an update is already pending");
         return Ok(());
     }
 
@@ -723,7 +724,7 @@ async fn run_check_cycle(
     persist_state(paths, state)?;
 
     let result: Result<()> = async {
-        let metadata = upstream::fetch_remote_metadata(&client, &config.dmg_url).await?;
+        let metadata = dmg_source::fetch_remote_metadata(&client, &config.dmg_url).await?;
         let previous_headers_fingerprint = state.remote_headers_fingerprint.clone();
         state.remote_headers_fingerprint = Some(metadata.headers_fingerprint.clone());
         state.last_successful_check_at = Some(Utc::now());
@@ -734,7 +735,7 @@ async fn run_check_cycle(
             && !retrying_failed_update
         {
             set_status(state, paths, UpdateStatus::Idle)?;
-            info!("upstream fingerprint unchanged; skipping download");
+            info!("official DMG fingerprint unchanged; skipping download");
             return Ok(());
         }
 
@@ -742,7 +743,7 @@ async fn run_check_cycle(
 
         let downloads_dir = config.workspace_root.join("downloads");
         let downloaded =
-            upstream::download_dmg(&client, &config.dmg_url, &downloads_dir, Utc::now()).await?;
+            dmg_source::download_dmg(&client, &config.dmg_url, &downloads_dir, Utc::now()).await?;
         let manifest_path = trust::trusted_dmg_manifest_path(&config.builder_bundle_root);
         let verified = match trust::verify_downloaded_dmg_with_manifest(
             &manifest_path,
@@ -816,7 +817,7 @@ async fn run_check_cycle(
             config.notifications,
             "update_detected",
             "New Codex App update detected",
-            "Preparing a local Linux package from the new upstream DMG.",
+            "Preparing a local Linux package from the new official OpenAI Codex DMG.",
         )?;
 
         let candidate_version = state
@@ -1517,7 +1518,7 @@ mod tests {
     }
 
     #[test]
-    fn upstream_check_freshness_respects_configured_interval() {
+    fn remote_dmg_check_freshness_respects_configured_interval() {
         let config = RuntimeConfig {
             dmg_url: "https://example.com/Codex.dmg".to_string(),
             initial_check_delay_seconds: 1,
@@ -1532,13 +1533,13 @@ mod tests {
         };
 
         let mut state = PersistedState::new(true);
-        assert!(!upstream_check_is_fresh(&config, &state));
+        assert!(!remote_dmg_check_is_fresh(&config, &state));
 
         state.last_successful_check_at = Some(Utc::now() - ChronoDuration::hours(1));
-        assert!(upstream_check_is_fresh(&config, &state));
+        assert!(remote_dmg_check_is_fresh(&config, &state));
 
         state.last_successful_check_at = Some(Utc::now() - ChronoDuration::hours(7));
-        assert!(!upstream_check_is_fresh(&config, &state));
+        assert!(!remote_dmg_check_is_fresh(&config, &state));
     }
 
     #[test]

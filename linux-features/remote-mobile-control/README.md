@@ -1,7 +1,8 @@
 # Experimental Remote Mobile Control
 
-This default-on feature patches the upstream Codex app main bundle so Linux can
-try the mobile remote-control host flow that upstream currently limits to macOS.
+This default-on feature patches the official Codex app main bundle so Linux can
+try the mobile remote-control host flow that the official app currently limits
+to macOS.
 
 Disable it by adding the feature id to `linux-features/features.json` before
 building:
@@ -32,8 +33,9 @@ What it changes:
 
 - Replaces the macOS-only `remote-control-device-key.node` requirement with a
   Linux JavaScript ECDSA P-256 key provider.
-- Lets the remote-control Connections UI render on Linux when upstream marks
-  the feature unavailable or withholds the remote-control visibility rollout.
+- Lets the remote-control Connections UI render on Linux when the official app
+  marks the feature unavailable or withholds the remote-control visibility
+  rollout.
 - Refreshes the remote Connections settings state every 5 seconds and
   immediately after focus, visibility, online, or resume signals.
 - Keeps Chrome Browser Use available to remote/mobile controlled sessions when
@@ -43,12 +45,12 @@ What it changes:
   `~/.config/codex-app/remote-control-device-keys-v1.json` with `0600`
   file permissions.
 - Preserves `remote_control = true` / `features.remote_control = true` in the
-  local Codex config instead of letting upstream strip it before app-server
-  startup.
+  local Codex config instead of letting the official app strip it before
+  app-server startup.
 - Updates remote-control settings and Codex mobile setup copy so the Linux flow
   is not described as Mac-only.
 - Stages `.codex-linux/cold-start.d/remote-mobile-control`, a feature-owned
-  cold-start hook that provisions the upstream managed standalone daemon runtime
+  cold-start hook that provisions the official managed standalone daemon runtime
   when it is missing, then starts the managed app-server daemon with
   `remote-control start`.
 
@@ -56,14 +58,14 @@ Remote mobile daemon requirement:
 
 The interactive Codex CLI and the remote-control daemon are separate concerns.
 You can keep using a Homebrew-installed `codex` for normal terminal and Desktop
-app-server usage, but Android remote control currently expects the upstream
+app-server usage, but Android remote control currently expects the official
 managed standalone daemon runtime at:
 
 ```bash
 ~/.codex/packages/standalone/current/codex
 ```
 
-If that binary is missing, the feature's cold-start hook runs the upstream
+If that binary is missing, the feature's cold-start hook runs the official
 standalone installer with `CODEX_INSTALL_DIR` pointed at a private bin directory
 under `~/.codex/packages/standalone/.bin`. That satisfies the managed daemon
 layout without changing `CODEX_CLI_PATH`, creating `~/.local/bin/codex`, or
