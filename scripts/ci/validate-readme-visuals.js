@@ -92,12 +92,56 @@ function stripFencedCodeBlocks(content) {
     .join("\n");
 }
 
+function isEscapedCharacter(content, index) {
+  let backslashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && content[cursor] === "\\"; cursor -= 1) {
+    backslashCount += 1;
+  }
+  return backslashCount % 2 === 1;
+}
+
+function countBacktickRun(content, index) {
+  let cursor = index;
+  while (content[cursor] === "`") {
+    cursor += 1;
+  }
+  return cursor - index;
+}
+
+function findClosingBacktickRun(content, index, length) {
+  for (let cursor = index; cursor < content.length && content[cursor] !== "\n"; ) {
+    if (content[cursor] !== "`" || isEscapedCharacter(content, cursor)) {
+      cursor += 1;
+      continue;
+    }
+
+    const runLength = countBacktickRun(content, cursor);
+    if (runLength === length) {
+      return cursor;
+    }
+    cursor += runLength;
+  }
+  return -1;
+}
+
 function findInlineCodeSpans(content) {
   const spans = [];
-  const inlineCodePattern = /(`+)[^\n]*?\1/g;
-  for (const match of content.matchAll(inlineCodePattern)) {
-    spans.push({ start: match.index, end: match.index + match[0].length });
+  for (let cursor = 0; cursor < content.length; cursor += 1) {
+    if (content[cursor] !== "`" || isEscapedCharacter(content, cursor)) {
+      continue;
+    }
+
+    const length = countBacktickRun(content, cursor);
+    const closing = findClosingBacktickRun(content, cursor + length, length);
+    if (closing === -1) {
+      cursor += length - 1;
+      continue;
+    }
+
+    spans.push({ start: cursor, end: closing + length });
+    cursor = closing + length - 1;
   }
+
   return spans;
 }
 
@@ -118,11 +162,7 @@ function normalizeReferenceSrc(src) {
 }
 
 function isEscapedMarkdownImage(content, index) {
-  let backslashCount = 0;
-  for (let cursor = index - 1; cursor >= 0 && content[cursor] === "\\"; cursor -= 1) {
-    backslashCount += 1;
-  }
-  return backslashCount % 2 === 1;
+  return isEscapedCharacter(content, index);
 }
 
 function stripReferenceContainerMarkers(line) {
@@ -167,7 +207,8 @@ function findReferenceDefinitions(content) {
 
 function findMarkdownImages(content, inlineCodeSpans = []) {
   const images = [];
-  const markdownImagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
+  const markdownImagePattern =
+    /!\[([^\]]*)\]\((<[^>\n]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
   for (const match of content.matchAll(markdownImagePattern)) {
     if (isInsideInlineCodeSpan(inlineCodeSpans, match.index)) {
       continue;
