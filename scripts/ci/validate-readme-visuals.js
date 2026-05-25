@@ -364,12 +364,23 @@ function findInlineImageEndAfterDestination(content, index) {
 }
 
 function findPlainReferenceLabelEnd(content, openIndex) {
+  let depth = 1;
   for (let cursor = openIndex + 1; cursor < content.length; cursor += 1) {
     if (content[cursor] === "\n") {
       return -1;
     }
-    if (content[cursor] === "]" && !isEscapedCharacter(content, cursor)) {
-      return cursor;
+    if (isEscapedCharacter(content, cursor)) {
+      continue;
+    }
+    if (content[cursor] === "[") {
+      depth += 1;
+      continue;
+    }
+    if (content[cursor] === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return cursor;
+      }
     }
   }
   return -1;

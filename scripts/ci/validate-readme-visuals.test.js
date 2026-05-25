@@ -72,6 +72,7 @@ test("rejects reference-style showcase image sources outside policy", () => {
 > ![Blockquote remote showcase][blockquote-remote]
 ![Duplicate remote showcase][duplicate]
 ![Escaped bracket remote showcase][escaped\\]]
+![Balanced bracket remote showcase][balanced[bracket]]
 
 [remote]: https://example.com/workbench.png
 [outside]: assets/workbench.png
@@ -82,6 +83,7 @@ test("rejects reference-style showcase image sources outside policy", () => {
 [duplicate]: https://example.com/duplicate-workbench.png
 [duplicate]: docs/assets/readme/duplicate-workbench.png
 [escaped\\]]: https://example.com/escaped-bracket-workbench.png
+[balanced[bracket]]: https://example.com/balanced-bracket-workbench.png
 `;
 
   assert.deepEqual(errorsFor(markdown), [
@@ -92,6 +94,7 @@ test("rejects reference-style showcase image sources outside policy", () => {
     "README showcase image must be a local repo asset, not an external URL: https://example.com/blockquote-workbench.png",
     "README showcase image must be a local repo asset, not an external URL: https://example.com/duplicate-workbench.png",
     "README showcase image must be a local repo asset, not an external URL: https://example.com/escaped-bracket-workbench.png",
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/balanced-bracket-workbench.png",
   ]);
 });
 
