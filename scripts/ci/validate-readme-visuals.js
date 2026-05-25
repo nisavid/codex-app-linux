@@ -48,7 +48,7 @@ function hasParentPathSegment(src) {
 }
 
 function isExternalUrl(src) {
-  return /^https?:\/\//i.test(src);
+  return /^(?:https?:)?\/\//i.test(src);
 }
 
 function isAllowedBadge(src) {
