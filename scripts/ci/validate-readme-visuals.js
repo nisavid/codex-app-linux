@@ -76,7 +76,7 @@ function stripFencedCodeBlocks(content) {
 
   return lines
     .map((line) => {
-      const match = line.match(/^ {0,3}(```+|~~~+)/);
+      const match = stripReferenceContainerMarkers(line).match(/^ {0,3}(```+|~~~+)/);
       if (match == null) {
         return fence == null ? line : "";
       }
@@ -205,45 +205,124 @@ function findReferenceDefinitions(content) {
   return references;
 }
 
+function findClosingMarkdownLabelBracket(content, openIndex) {
+  let depth = 1;
+  for (let cursor = openIndex + 1; cursor < content.length; cursor += 1) {
+    if (content[cursor] === "\n") {
+      return -1;
+    }
+    if (isEscapedCharacter(content, cursor)) {
+      continue;
+    }
+    if (content[cursor] === "[") {
+      depth += 1;
+      continue;
+    }
+    if (content[cursor] === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return cursor;
+      }
+    }
+  }
+  return -1;
+}
+
+function parseInlineImageDestination(content, labelEnd) {
+  const match = content
+    .slice(labelEnd + 1)
+    .match(/^\((<[^>\n]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/);
+  if (match == null) {
+    return null;
+  }
+  return {
+    end: labelEnd + 1 + match[0].length,
+    src: normalizeReferenceSrc(match[1]),
+  };
+}
+
+function findPlainReferenceLabelEnd(content, openIndex) {
+  for (let cursor = openIndex + 1; cursor < content.length; cursor += 1) {
+    if (content[cursor] === "\n") {
+      return -1;
+    }
+    if (content[cursor] === "]" && !isEscapedCharacter(content, cursor)) {
+      return cursor;
+    }
+  }
+  return -1;
+}
+
+function parseReferenceImageDestination(content, labelEnd, alt, references) {
+  let cursor = labelEnd + 1;
+  while (content[cursor] === " " || content[cursor] === "\t") {
+    cursor += 1;
+  }
+  if (content[cursor] === "(") {
+    return null;
+  }
+
+  let referenceLabel = alt;
+  let end = labelEnd + 1;
+  if (content[cursor] === "[") {
+    const referenceEnd = findPlainReferenceLabelEnd(content, cursor);
+    if (referenceEnd === -1) {
+      return null;
+    }
+    const explicitReferenceLabel = content.slice(cursor + 1, referenceEnd);
+    referenceLabel = explicitReferenceLabel.length === 0 ? alt : explicitReferenceLabel;
+    end = referenceEnd + 1;
+  }
+
+  const src = references.get(normalizeReferenceLabel(referenceLabel));
+  if (src == null) {
+    return null;
+  }
+  return { end, src: src.trim() };
+}
+
 function findMarkdownImages(content, inlineCodeSpans = []) {
   const images = [];
-  const markdownImagePattern =
-    /!\[([^\]]*)\]\((<[^>\n]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
-  for (const match of content.matchAll(markdownImagePattern)) {
-    if (isInsideInlineCodeSpan(inlineCodeSpans, match.index)) {
-      continue;
-    }
-    if (isEscapedMarkdownImage(content, match.index)) {
-      continue;
-    }
-    images.push({
-      alt: match[1].trim(),
-      src: normalizeReferenceSrc(match[2]),
-    });
-  }
   const references = findReferenceDefinitions(content);
-  const referenceImagePattern = /!\[([^\]\n]*)\](?:[ \t]*\[([^\]\n]*)\])?/g;
-  for (const match of content.matchAll(referenceImagePattern)) {
-    if (isInsideInlineCodeSpan(inlineCodeSpans, match.index)) {
+
+  for (let cursor = 0; cursor < content.length - 1; cursor += 1) {
+    if (content[cursor] !== "!" || content[cursor + 1] !== "[") {
       continue;
     }
-    if (content[match.index + match[0].length] === "(") {
+    if (isInsideInlineCodeSpan(inlineCodeSpans, cursor)) {
       continue;
     }
-    if (isEscapedMarkdownImage(content, match.index)) {
+    if (isEscapedMarkdownImage(content, cursor)) {
       continue;
     }
 
-    const referenceLabel = match[2] == null || match[2].length === 0 ? match[1] : match[2];
-    const src = references.get(normalizeReferenceLabel(referenceLabel));
-    if (src == null) {
+    const labelEnd = findClosingMarkdownLabelBracket(content, cursor + 1);
+    if (labelEnd === -1) {
+      continue;
+    }
+    const alt = content.slice(cursor + 2, labelEnd).trim();
+
+    const inlineDestination = parseInlineImageDestination(content, labelEnd);
+    if (inlineDestination != null) {
+      images.push({
+        alt,
+        src: inlineDestination.src,
+      });
+      cursor = inlineDestination.end - 1;
       continue;
     }
 
-    images.push({
-      alt: match[1].trim(),
-      src: src.trim(),
-    });
+    const referenceDestination = parseReferenceImageDestination(content, labelEnd, alt, references);
+    if (referenceDestination != null) {
+      images.push({
+        alt,
+        src: referenceDestination.src,
+      });
+      cursor = referenceDestination.end - 1;
+      continue;
+    }
+
+    cursor = labelEnd;
   }
   return images;
 }
