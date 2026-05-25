@@ -493,6 +493,7 @@ and log locations.
 | Goal | Go here |
 | --- | --- |
 | Build, run, package, install, or customize the app | [Build and Run Guide](docs/usage/build-and-run.md) |
+| Understand how the DMG conversion works | [Port Architecture](docs/port-architecture.md) |
 | Diagnose launch, CLI, webview, or updater issues | [Troubleshooting](docs/usage/troubleshooting.md) |
 | Decide where to report an issue or feature request | [Support and Issue Routing](docs/usage/support-routing.md) |
 | Set up or debug Linux Computer Use | [Build and Run Guide](docs/usage/build-and-run.md#linux-computer-use-ui-opt-in) and [Troubleshooting](docs/usage/troubleshooting.md) |

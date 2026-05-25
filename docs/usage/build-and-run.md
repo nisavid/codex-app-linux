@@ -494,7 +494,8 @@ The macOS Codex app is an Electron application. Most of the app bundle is
 platform-independent JavaScript, but the original package includes macOS-native
 modules and a macOS Electron binary. The installer replaces Electron, rebuilds
 native modules with `@electron/rebuild`, and removes the macOS-only `sparkle`
-module.
+module. For the design rationale behind this flow, see
+[Port Architecture](../port-architecture.md).
 
 During ASAR patching, the installer also tries to adapt Linux window behavior:
 
