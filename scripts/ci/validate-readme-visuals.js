@@ -108,6 +108,14 @@ function normalizeReferenceSrc(src) {
   return trimmed;
 }
 
+function isEscapedMarkdownImage(content, index) {
+  let backslashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && content[cursor] === "\\"; cursor -= 1) {
+    backslashCount += 1;
+  }
+  return backslashCount % 2 === 1;
+}
+
 function findReferenceDefinitions(content) {
   const references = new Map();
   const referenceDefinitionPattern =
@@ -123,15 +131,21 @@ function findMarkdownImages(content) {
   const images = [];
   const markdownImagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
   for (const match of content.matchAll(markdownImagePattern)) {
+    if (isEscapedMarkdownImage(content, match.index)) {
+      continue;
+    }
     images.push({
       alt: match[1].trim(),
-      src: match[2].trim(),
+      src: normalizeReferenceSrc(match[2]),
     });
   }
   const references = findReferenceDefinitions(content);
   const referenceImagePattern = /!\[([^\]\n]*)\](?:\[([^\]\n]*)\])?/g;
   for (const match of content.matchAll(referenceImagePattern)) {
     if (content[match.index + match[0].length] === "(") {
+      continue;
+    }
+    if (isEscapedMarkdownImage(content, match.index)) {
       continue;
     }
 
@@ -149,20 +163,48 @@ function findMarkdownImages(content) {
   return images;
 }
 
+function getHtmlAttribute(tag, attributeName) {
+  const pattern = new RegExp(`\\b${attributeName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
+  const match = tag.match(pattern);
+  if (match == null) {
+    return null;
+  }
+  return (match[1] ?? match[2] ?? match[3] ?? "").trim();
+}
+
+function parseSrcset(srcset) {
+  return srcset
+    .split(",")
+    .map((candidate) => candidate.trim().split(/\s+/)[0])
+    .filter((candidate) => candidate.length > 0);
+}
+
 function findHtmlImages(content) {
   const images = [];
-  const htmlImagePattern = /<img\b[^>]*>/gi;
+  const htmlImagePattern = /<(img|source)\b[^>]*>/gi;
   for (const match of content.matchAll(htmlImagePattern)) {
     const tag = match[0];
-    const srcMatch = tag.match(/\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
-    if (srcMatch == null) {
-      continue;
+    const tagName = match[1].toLowerCase();
+    const alt = tagName === "img" ? getHtmlAttribute(tag, "alt") ?? "" : "";
+    const src = getHtmlAttribute(tag, "src");
+    if (src != null) {
+      images.push({
+        alt,
+        src,
+        requiresAlt: tagName === "img",
+      });
     }
-    const altMatch = tag.match(/\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
-    images.push({
-      alt: (altMatch?.[1] ?? altMatch?.[2] ?? altMatch?.[3] ?? "").trim(),
-      src: (srcMatch[1] ?? srcMatch[2] ?? srcMatch[3] ?? "").trim(),
-    });
+
+    const srcset = getHtmlAttribute(tag, "srcset");
+    if (srcset != null) {
+      for (const candidate of parseSrcset(srcset)) {
+        images.push({
+          alt,
+          src: candidate,
+          requiresAlt: tagName === "img" && src == null,
+        });
+      }
+    }
   }
   return images;
 }
@@ -190,7 +232,7 @@ function validateReadmeVisualsContent(content) {
       continue;
     }
 
-    if (image.alt.length === 0) {
+    if (image.requiresAlt !== false && image.alt.length === 0) {
       errors.push(`README showcase image is missing alt text: ${src}`);
     }
 

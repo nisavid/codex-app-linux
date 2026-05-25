@@ -31,6 +31,7 @@ test("accepts the existing app icon and shields.io badges", () => {
 test("accepts local showcase images under docs/assets/readme with alt text", () => {
   const markdown = `
 ![Codex workbench on a Linux desktop](docs/assets/readme/workbench.png)
+![Codex workbench with angle destination](<docs/assets/readme/workbench-angle.png>)
 
 <img src="docs/assets/readme/browser-use-annotations.webp" alt="Browser Use annotations in Codex">
 `;
@@ -109,11 +110,13 @@ test("rejects external showcase image URLs", () => {
   const markdown = `
 ![Remote showcase](https://example.com/workbench.png)
 ![Remote showcase with title](https://example.com/workbench-title.png 'title')
+![Remote showcase with angle destination](<https://example.com/workbench-angle.png>)
 `;
 
   assert.deepEqual(errorsFor(markdown), [
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench.png",
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench-title.png",
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench-angle.png",
   ]);
 });
 
@@ -159,6 +162,27 @@ Use \`<img src="assets/out-of-scope.png">\` when documenting HTML syntax.
 `;
 
   assert.deepEqual(errorsFor(markdown), []);
+});
+
+test("ignores escaped Markdown image syntax", () => {
+  const markdown = `
+\\![External example](https://example.com/workbench.png)
+`;
+
+  assert.deepEqual(errorsFor(markdown), []);
+});
+
+test("validates HTML source srcset image references", () => {
+  const markdown = `
+<picture>
+  <source srcset="https://example.com/workbench.avif 1x, docs/assets/readme/workbench.webp 2x" type="image/avif">
+  <img src="docs/assets/readme/workbench.png" alt="Codex workbench">
+</picture>
+`;
+
+  assert.deepEqual(errorsFor(markdown), [
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench.avif",
+  ]);
 });
 
 test("does not strip images between backticks on different lines", () => {
