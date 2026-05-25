@@ -45,6 +45,8 @@ Use this index to choose the smallest document that matches your goal.
   is the reference for source files, generated artifacts, package payloads,
   launcher behavior, updater state, privileged install boundaries, versioning,
   and validation.
+- [README Visual Capture](maintainers/readme-visual-capture.md) defines the
+  maintainer process for reproducible, non-sensitive README showcase assets.
 - [Threat Model](maintainers/threat-model.md) is the repository-scoped security
   model for scans and reviews.
 - [Security Backlog](maintainers/security-backlog.md) points to security
