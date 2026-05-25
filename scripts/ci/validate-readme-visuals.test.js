@@ -120,6 +120,9 @@ test("rejects external showcase image URLs", () => {
 ![Remote showcase with spaced angle destination](<https://example.com/workbench screenshot.png>)
 ![Remote showcase [with state]](https://example.com/workbench-state.png)
 ![Remote showcase with balanced parentheses](https://example.com/workbench(annotated).png)
+![Remote showcase with padded destination]( https://example.com/workbench-padded.png )
+![Remote showcase with newline-padded destination](
+https://example.com/workbench-newline-padded.png)
 `;
 
   assert.deepEqual(errorsFor(markdown), [
@@ -129,6 +132,8 @@ test("rejects external showcase image URLs", () => {
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench screenshot.png",
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench-state.png",
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench(annotated).png",
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench-padded.png",
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench-newline-padded.png",
   ]);
 });
 
