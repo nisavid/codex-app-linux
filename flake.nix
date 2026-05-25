@@ -394,6 +394,9 @@ PY
           if integrationIds == [ ] then "" else "-${pkgs.lib.concatStringsSep "-" integrationIds}";
 
         mkCodexAppPayload = { enableComputerUseUi ? false, portIntegrationIds ? [ ] }:
+        let
+          integrationIds = enabledIntegrationIds { inherit enableComputerUseUi portIntegrationIds; };
+        in
         pkgs.stdenv.mkDerivation {
           pname = "codex-app${packageSuffix { inherit enableComputerUseUi portIntegrationIds; }}-payload";
           version = codexVersion;
@@ -437,7 +440,7 @@ PY
             export CXXFLAGS="''${CXXFLAGS:-} -ffile-prefix-map=$TMPDIR=/build -fdebug-prefix-map=$TMPDIR=/build -fmacro-prefix-map=$TMPDIR=/build"
             export RUSTFLAGS="''${RUSTFLAGS:-} --remap-path-prefix=$TMPDIR=/build -C link-arg=-Wl,--build-id=none"
             export CODEX_MANAGED_NODE_SOURCE="${pkgs.nodejs}"
-            export CODEX_PORT_INTEGRATIONS_CONFIG="${portIntegrationsConfig portIntegrationIds}"
+            export CODEX_PORT_INTEGRATIONS_CONFIG="${portIntegrationsConfig integrationIds}"
             export CODEX_ELECTRON_ZIP_SOURCE="${electronZip}"
             export CODEX_NATIVE_MODULES_SOURCE="${codexNativeModules}"
             ${pkgs.lib.optionalString (browserUseNodeRepl != null) ''
