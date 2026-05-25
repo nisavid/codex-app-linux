@@ -117,12 +117,14 @@ test("rejects external showcase image URLs", () => {
 ![Remote showcase](https://example.com/workbench.png)
 ![Remote showcase with title](https://example.com/workbench-title.png 'title')
 ![Remote showcase with angle destination](<https://example.com/workbench-angle.png>)
+![Remote showcase with spaced angle destination](<https://example.com/workbench screenshot.png>)
 `;
 
   assert.deepEqual(errorsFor(markdown), [
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench.png",
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench-title.png",
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench-angle.png",
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench screenshot.png",
   ]);
 });
 
@@ -177,6 +179,16 @@ test("preserves inline code spans inside image alt text", () => {
 `;
 
   assert.deepEqual(errorsFor(markdown), []);
+});
+
+test("validates images between escaped backticks", () => {
+  const markdown = `
+\\\` literal ![Escaped backtick remote](https://example.com/escaped-backtick.png) \\\`
+`;
+
+  assert.deepEqual(errorsFor(markdown), [
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/escaped-backtick.png",
+  ]);
 });
 
 test("ignores escaped Markdown image syntax", () => {
