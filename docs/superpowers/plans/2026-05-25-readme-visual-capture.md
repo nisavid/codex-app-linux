@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: README Visual Validator Tests
+## Task 1: README Visual Validator Tests
 
 **Files:**
 - Create: `scripts/ci/validate-readme-visuals.test.js`
@@ -18,7 +18,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Create `scripts/ci/validate-readme-visuals.test.js` with behavior-level cases for the current README exceptions, approved showcase path, missing alt text, external showcase URLs, and generated/runtime artifact paths.
+Create `scripts/ci/validate-readme-visuals.test.js` with behavior-level cases for the current README exceptions, approved showcase path, missing alt text, external showcase URLs, generated/runtime artifact paths, fenced code blocks, Markdown image titles, and unreadable CLI input paths.
 
 ```js
 #!/usr/bin/env node
@@ -41,6 +41,7 @@ test("accepts the existing app icon and shields.io badges", () => {
   <img src="assets/codex.png" alt="Codex app icon" width="128" height="128">
   <p>
     <a href="#quick-start"><img alt="Packages" src="https://img.shields.io/badge/packages-deb-2f81f7?style=flat-square"></a>
+    <a href="#releases"><img alt="Release" src="https://img.shields.io/github/v/release/nisavid/codex-app-linux"></a>
   </p>
 </div>
 `;
@@ -115,7 +116,7 @@ node --test scripts/ci/validate-readme-visuals.test.js
 
 Expected: FAIL with `Cannot find module './validate-readme-visuals.js'`.
 
-### Task 2: README Visual Validator
+## Task 2: README Visual Validator
 
 **Files:**
 - Create: `scripts/ci/validate-readme-visuals.js`
@@ -123,7 +124,7 @@ Expected: FAIL with `Cannot find module './validate-readme-visuals.js'`.
 
 - [ ] **Step 1: Implement the validator**
 
-Create `scripts/ci/validate-readme-visuals.js` as a standalone CommonJS script. It must export `validateReadmeVisualsContent()` and `validateReadmeVisualsFile()`, allow the current app icon and shields.io badges, allow zero showcase images, and reject future showcase image references outside `docs/assets/readme/`.
+Create `scripts/ci/validate-readme-visuals.js` as a standalone CommonJS script. It must export `validateReadmeVisualsContent()` and `validateReadmeVisualsFile()`, allow the current app icon and shields.io badges, allow zero showcase images, ignore fenced code examples, report unreadable input paths without a stack trace, and reject future showcase image references outside `docs/assets/readme/`.
 
 ```js
 #!/usr/bin/env node
@@ -153,7 +154,7 @@ function isExternalUrl(src) {
 }
 
 function isAllowedBadge(src) {
-  return /^https:\/\/img\.shields\.io\/badge\//i.test(src);
+  return /^https:\/\/img\.shields\.io\//i.test(src);
 }
 
 function isExistingAppIcon(src) {
@@ -171,9 +172,31 @@ function isGeneratedOrRuntimePath(src) {
   return GENERATED_OR_RUNTIME_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
+function stripFencedCodeBlocks(content) {
+  const lines = content.split(/\r?\n/);
+  let fence = null;
+
+  return lines
+    .map((line) => {
+      const match = line.match(/^ {0,3}(```+|~~~+)/);
+      if (match == null) {
+        return fence == null ? line : "";
+      }
+
+      const marker = match[1];
+      if (fence == null) {
+        fence = { character: marker[0], length: marker.length };
+      } else if (marker[0] === fence.character && marker.length >= fence.length) {
+        fence = null;
+      }
+      return "";
+    })
+    .join("\n");
+}
+
 function findMarkdownImages(content) {
   const images = [];
-  const markdownImagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  const markdownImagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
   for (const match of content.matchAll(markdownImagePattern)) {
     images.push({
       alt: match[1].trim(),
@@ -202,7 +225,8 @@ function findHtmlImages(content) {
 }
 
 function findImages(content) {
-  return [...findMarkdownImages(content), ...findHtmlImages(content)];
+  const renderableContent = stripFencedCodeBlocks(content);
+  return [...findMarkdownImages(renderableContent), ...findHtmlImages(renderableContent)];
 }
 
 function shouldIgnoreImage(src) {
@@ -218,13 +242,13 @@ function validateReadmeVisualsContent(content) {
       continue;
     }
 
-    if (image.alt.length === 0) {
-      errors.push(`README showcase image is missing alt text: ${src}`);
-    }
-
     if (isExternalUrl(src)) {
       errors.push(`README showcase image must be a local repo asset, not an external URL: ${src}`);
       continue;
+    }
+
+    if (image.alt.length === 0) {
+      errors.push(`README showcase image is missing alt text: ${src}`);
     }
 
     const normalized = normalizeSrc(src);
@@ -254,7 +278,13 @@ function main() {
     process.exit(1);
   }
 
-  const { errors } = validateReadmeVisualsFile(args[0]);
+  let errors;
+  try {
+    ({ errors } = validateReadmeVisualsFile(args[0]));
+  } catch (error) {
+    console.error(`validate-readme-visuals.js: ${args[0]}: ${error.message}`);
+    process.exit(1);
+  }
   if (errors.length > 0) {
     console.error("README visual validation failed:");
     for (const error of errors) {
@@ -288,7 +318,7 @@ node scripts/ci/validate-readme-visuals.js README.md
 
 Expected: both commands pass.
 
-### Task 3: Maintainer Capture Contract
+## Task 3: Maintainer Capture Contract
 
 **Files:**
 - Create: `docs/maintainers/readme-visual-capture.md`
@@ -314,7 +344,7 @@ Add this bullet under `Maintain Packaging Or Runtime Behavior` in `docs/README.m
   maintainer process for reproducible, non-sensitive README showcase assets.
 ```
 
-### Task 4: Verification And Closeout
+## Task 4: Verification And Closeout
 
 **Files:**
 - Review: all files changed by this plan

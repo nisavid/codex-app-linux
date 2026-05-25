@@ -25,7 +25,7 @@ function isExternalUrl(src) {
 }
 
 function isAllowedBadge(src) {
-  return /^https:\/\/img\.shields\.io\/badge\//i.test(src);
+  return /^https:\/\/img\.shields\.io\//i.test(src);
 }
 
 function isExistingAppIcon(src) {
@@ -43,9 +43,31 @@ function isGeneratedOrRuntimePath(src) {
   return GENERATED_OR_RUNTIME_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
+function stripFencedCodeBlocks(content) {
+  const lines = content.split(/\r?\n/);
+  let fence = null;
+
+  return lines
+    .map((line) => {
+      const match = line.match(/^ {0,3}(```+|~~~+)/);
+      if (match == null) {
+        return fence == null ? line : "";
+      }
+
+      const marker = match[1];
+      if (fence == null) {
+        fence = { character: marker[0], length: marker.length };
+      } else if (marker[0] === fence.character && marker.length >= fence.length) {
+        fence = null;
+      }
+      return "";
+    })
+    .join("\n");
+}
+
 function findMarkdownImages(content) {
   const images = [];
-  const markdownImagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  const markdownImagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
   for (const match of content.matchAll(markdownImagePattern)) {
     images.push({
       alt: match[1].trim(),
@@ -74,7 +96,8 @@ function findHtmlImages(content) {
 }
 
 function findImages(content) {
-  return [...findMarkdownImages(content), ...findHtmlImages(content)];
+  const renderableContent = stripFencedCodeBlocks(content);
+  return [...findMarkdownImages(renderableContent), ...findHtmlImages(renderableContent)];
 }
 
 function shouldIgnoreImage(src) {
@@ -90,13 +113,13 @@ function validateReadmeVisualsContent(content) {
       continue;
     }
 
-    if (image.alt.length === 0) {
-      errors.push(`README showcase image is missing alt text: ${src}`);
-    }
-
     if (isExternalUrl(src)) {
       errors.push(`README showcase image must be a local repo asset, not an external URL: ${src}`);
       continue;
+    }
+
+    if (image.alt.length === 0) {
+      errors.push(`README showcase image is missing alt text: ${src}`);
     }
 
     const normalized = normalizeSrc(src);
@@ -126,7 +149,13 @@ function main() {
     process.exit(1);
   }
 
-  const { errors } = validateReadmeVisualsFile(args[0]);
+  let errors;
+  try {
+    ({ errors } = validateReadmeVisualsFile(args[0]));
+  } catch (error) {
+    console.error(`validate-readme-visuals.js: ${args[0]}: ${error.message}`);
+    process.exit(1);
+  }
   if (errors.length > 0) {
     console.error("README visual validation failed:");
     for (const error of errors) {
