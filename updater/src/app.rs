@@ -5,7 +5,8 @@ use crate::{
     cli::{Cli, Commands},
     codex_cli,
     config::{RuntimeConfig, RuntimePaths},
-    dmg_source, install, install_rollback, liveness, logging, notify, rollback,
+    dmg_source, install, install_rollback, liveness, logging, notify, package_verification,
+    rollback,
     state::{CliStatus, DmgVerification, DmgVerificationResult, PersistedState, UpdateStatus},
     trust,
 };
@@ -70,12 +71,84 @@ pub async fn run(cli: Cli) -> Result<()> {
         Commands::Status { json } => run_status(&config, &mut state, &paths, json),
         Commands::InstallReady => run_install_ready(&config, &mut state, &paths).await,
         Commands::Rollback => rollback::run(&config, &mut state, &paths).await,
-        Commands::InstallDeb { path } => install::install_deb(&path),
-        Commands::InstallRpm { path } => install::install_rpm(&path),
-        Commands::InstallPacman { path } => install::install_pacman(&path),
-        Commands::InstallRollbackDeb { path } => install_rollback::install_deb(&path),
-        Commands::InstallRollbackRpm { path } => install_rollback::install_rpm(&path),
-        Commands::InstallRollbackPacman { path } => install_rollback::install_pacman(&path),
+        Commands::InstallDeb {
+            path,
+            expected_sha256,
+            expected_package_name,
+            expected_package_version,
+        } => {
+            let expected = install::expected_package_from_args(
+                expected_sha256,
+                expected_package_name,
+                expected_package_version,
+            )?;
+            install::install_deb(&path, expected.as_ref())
+        }
+        Commands::InstallRpm {
+            path,
+            expected_sha256,
+            expected_package_name,
+            expected_package_version,
+        } => {
+            let expected = install::expected_package_from_args(
+                expected_sha256,
+                expected_package_name,
+                expected_package_version,
+            )?;
+            install::install_rpm(&path, expected.as_ref())
+        }
+        Commands::InstallPacman {
+            path,
+            expected_sha256,
+            expected_package_name,
+            expected_package_version,
+        } => {
+            let expected = install::expected_package_from_args(
+                expected_sha256,
+                expected_package_name,
+                expected_package_version,
+            )?;
+            install::install_pacman(&path, expected.as_ref())
+        }
+        Commands::InstallRollbackDeb {
+            path,
+            expected_sha256,
+            expected_package_name,
+            expected_package_version,
+        } => {
+            let expected = install::expected_package_from_args(
+                expected_sha256,
+                expected_package_name,
+                expected_package_version,
+            )?;
+            install_rollback::install_deb(&path, expected.as_ref())
+        }
+        Commands::InstallRollbackRpm {
+            path,
+            expected_sha256,
+            expected_package_name,
+            expected_package_version,
+        } => {
+            let expected = install::expected_package_from_args(
+                expected_sha256,
+                expected_package_name,
+                expected_package_version,
+            )?;
+            install_rollback::install_rpm(&path, expected.as_ref())
+        }
+        Commands::InstallRollbackPacman {
+            path,
+            expected_sha256,
+            expected_package_name,
+            expected_package_version,
+        } => {
+            let expected = install::expected_package_from_args(
+                expected_sha256,
+                expected_package_name,
+                expected_package_version,
+            )?;
+            install_rollback::install_pacman(&path, expected.as_ref())
+        }
     }
 }
 
@@ -884,6 +957,12 @@ async fn reconcile_pending_install(
                 mark_failed_and_persist(state, paths, error.to_string())?;
                 return Ok(());
             }
+            if let Err(error) =
+                expected_package_for_ready_install(state, &config.workspace_root, &package_path)
+            {
+                mark_failed_and_persist(state, paths, error.to_string())?;
+                return Ok(());
+            }
 
             // The persisted `auto_install_on_app_exit` key is kept for config
             // compatibility. In this flow it controls whether the updater
@@ -924,6 +1003,17 @@ async fn reconcile_pending_install(
                 mark_failed_and_persist(state, paths, error.to_string())?;
                 return Ok(());
             }
+            let expected_package = match expected_package_for_ready_install(
+                state,
+                &config.workspace_root,
+                &package_path,
+            ) {
+                Ok(expected) => expected,
+                Err(error) => {
+                    mark_failed_and_persist(state, paths, error.to_string())?;
+                    return Ok(());
+                }
+            };
 
             if liveness::is_app_running(config)? {
                 clear_install_auth_required_event(state, paths)?;
@@ -942,7 +1032,14 @@ async fn reconcile_pending_install(
                 return Ok(());
             }
 
-            trigger_install(state, paths, &config.workspace_root, &package_path).await?;
+            trigger_install(
+                state,
+                paths,
+                &config.workspace_root,
+                &package_path,
+                &expected_package,
+            )
+            .await?;
         }
         _ => {}
     }
@@ -1030,6 +1127,16 @@ async fn run_install_ready(
         maybe_send_notification(config.notifications, "Codex update failed", &message);
         return Err(anyhow::anyhow!(message));
     }
+    let expected_package =
+        match expected_package_for_ready_install(state, &config.workspace_root, &package_path) {
+            Ok(expected) => expected,
+            Err(error) => {
+                let message = error.to_string();
+                mark_failed_and_persist(state, paths, message.clone())?;
+                maybe_send_notification(config.notifications, "Codex update failed", &message);
+                return Err(anyhow::anyhow!(message));
+            }
+        };
 
     if liveness::is_app_running(config)? {
         clear_install_auth_required_event(state, paths)?;
@@ -1044,7 +1151,28 @@ async fn run_install_ready(
     }
 
     clear_install_auth_required_event(state, paths)?;
-    trigger_install(state, paths, &config.workspace_root, &package_path).await
+    trigger_install(
+        state,
+        paths,
+        &config.workspace_root,
+        &package_path,
+        &expected_package,
+    )
+    .await
+}
+
+fn expected_package_for_ready_install(
+    state: &PersistedState,
+    workspace_root: &Path,
+    package_path: &Path,
+) -> Result<install::ExpectedPackage> {
+    package_verification::expected_package_for_ready_install(
+        package_path,
+        workspace_root,
+        state.candidate_version.as_deref(),
+        state.dmg_sha256.as_deref(),
+        state.package_verification.as_ref(),
+    )
 }
 
 fn complete_pending_install_if_already_installed(
@@ -1082,6 +1210,7 @@ fn complete_pending_install_if_already_installed(
     state.candidate_version = None;
     if !candidate_is_installed {
         state.artifact_paths.package_path = None;
+        state.package_verification = None;
     }
     state.error_message = None;
     state.notified_events.clear();
@@ -1111,6 +1240,7 @@ fn recover_interrupted_install(
         state.candidate_version = None;
         if !candidate_is_installed {
             state.artifact_paths.package_path = None;
+            state.package_verification = None;
         }
         state.error_message = None;
         state.notified_events.clear();
@@ -1368,6 +1498,7 @@ async fn trigger_install(
     paths: &RuntimePaths,
     workspace_root: &Path,
     package_path: &Path,
+    expected_package: &install::ExpectedPackage,
 ) -> Result<()> {
     state.status = UpdateStatus::Installing;
     state.error_message = None;
@@ -1378,7 +1509,7 @@ async fn trigger_install(
         "Applying the locally rebuilt Linux package.",
     );
 
-    let output = install::pkexec_command(package_path)?
+    let output = install::pkexec_command(package_path, Some(expected_package))?
         .output()
         .context("Failed to launch pkexec for update installation")?;
     let status = output.status;
@@ -1515,6 +1646,28 @@ mod tests {
             verified_at: Some(Utc::now()),
             message: Some("Downloaded DMG matched repo-trusted metadata".to_string()),
         });
+    }
+
+    fn write_test_package_and_verification(
+        state: &mut PersistedState,
+        workspace_root: &Path,
+        version: &str,
+    ) -> Result<PathBuf> {
+        let workspace = workspace_root.join("workspaces").join(version);
+        let package_path = workspace.join("dist/codex.deb");
+        std::fs::create_dir_all(
+            package_path
+                .parent()
+                .expect("package path should have parent"),
+        )?;
+        std::fs::write(&package_path, b"deb")?;
+        state.package_verification = Some(package_verification::record_built_package(
+            &package_path,
+            &workspace,
+            version,
+            TRUSTED_TEST_DMG_SHA256,
+        )?);
+        Ok(package_path)
     }
 
     #[test]
@@ -1988,6 +2141,11 @@ mod tests {
         state.status = UpdateStatus::ReadyToInstall;
         state.candidate_version = Some("2999.03.25.010203".to_string());
         mark_test_dmg_verified(&mut state, "2999.03.25.010203");
+        let package_path = write_test_package_and_verification(
+            &mut state,
+            &config.workspace_root,
+            "2999.03.25.010203",
+        )?;
         state.artifact_paths.package_path = Some(package_path);
 
         reconcile_pending_install(&config, &mut state, &paths).await?;
@@ -2010,14 +2168,6 @@ mod tests {
         };
         paths.ensure_dirs()?;
 
-        let package_path = temp.path().join("dist/codex.deb");
-        std::fs::create_dir_all(
-            package_path
-                .parent()
-                .expect("package path should have parent"),
-        )?;
-        std::fs::write(&package_path, b"deb")?;
-
         let config = RuntimeConfig {
             dmg_url: "https://example.com/Codex.dmg".to_string(),
             initial_check_delay_seconds: 1,
@@ -2035,6 +2185,11 @@ mod tests {
         state.status = UpdateStatus::ReadyToInstall;
         state.candidate_version = Some("2999.03.25.010203".to_string());
         mark_test_dmg_verified(&mut state, "2999.03.25.010203");
+        let package_path = write_test_package_and_verification(
+            &mut state,
+            &config.workspace_root,
+            "2999.03.25.010203",
+        )?;
         state.artifact_paths.package_path = Some(package_path);
         state
             .notified_events
@@ -2100,6 +2255,58 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("Ready update is missing trusted DMG verification"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn package_verification_missing_ready_update_fails_closed() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(false);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.candidate_version = Some("2999.03.25.010203".to_string());
+        mark_test_dmg_verified(&mut state, "2999.03.25.010203");
+        let package_path = config
+            .workspace_root
+            .join("workspaces/2999.03.25.010203/dist/codex.deb");
+        std::fs::create_dir_all(
+            package_path
+                .parent()
+                .expect("package path should have parent"),
+        )?;
+        std::fs::write(&package_path, b"deb")?;
+        state.artifact_paths.package_path = Some(package_path);
+
+        let error = run_install_ready(&config, &mut state, &paths)
+            .await
+            .expect_err("ready update without package verification should fail");
+
+        assert!(error
+            .to_string()
+            .contains("Ready update package verification is missing"));
+        assert_eq!(state.status, UpdateStatus::Failed);
         Ok(())
     }
 

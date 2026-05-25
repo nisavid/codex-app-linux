@@ -45,30 +45,66 @@ pub enum Commands {
     InstallDeb {
         #[arg(long)]
         path: PathBuf,
+        #[arg(long, hide = true)]
+        expected_sha256: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_name: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_version: Option<String>,
     },
     /// Install an RPM package (.rpm) with elevated privileges.
     InstallRpm {
         #[arg(long)]
         path: PathBuf,
+        #[arg(long, hide = true)]
+        expected_sha256: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_name: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_version: Option<String>,
     },
     /// Install a pacman package (.pkg.tar.zst) with elevated privileges.
     InstallPacman {
         #[arg(long)]
         path: PathBuf,
+        #[arg(long, hide = true)]
+        expected_sha256: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_name: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_version: Option<String>,
     },
     /// Install a Debian package as an explicit rollback with elevated privileges.
     InstallRollbackDeb {
         #[arg(long)]
         path: PathBuf,
+        #[arg(long, hide = true)]
+        expected_sha256: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_name: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_version: Option<String>,
     },
     /// Install an RPM package as an explicit rollback with elevated privileges.
     InstallRollbackRpm {
         #[arg(long)]
         path: PathBuf,
+        #[arg(long, hide = true)]
+        expected_sha256: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_name: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_version: Option<String>,
     },
     /// Install a pacman package as an explicit rollback with elevated privileges.
     InstallRollbackPacman {
         #[arg(long)]
         path: PathBuf,
+        #[arg(long, hide = true)]
+        expected_sha256: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_name: Option<String>,
+        #[arg(long, hide = true)]
+        expected_package_version: Option<String>,
     },
 }

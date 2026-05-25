@@ -3,7 +3,7 @@
 use crate::{
     cache_cleanup,
     config::{RuntimeConfig, RuntimePaths},
-    install, install_rollback, liveness, notify,
+    install, install_rollback, liveness, notify, package_verification,
     state::{PersistedState, UpdateStatus},
 };
 use anyhow::{Context, Result};
@@ -32,6 +32,18 @@ pub fn record_current_package_as_known_good(state: &mut PersistedState) {
 
     state.last_known_good_version = Some(state.installed_version.clone());
     state.artifact_paths.rollback_package_path = Some(package_path.clone());
+    if let Some(verification) = state
+        .package_verification
+        .as_ref()
+        .filter(|verification| {
+            package_verification::verification_matches_package_path(verification, package_path)
+        })
+        .cloned()
+    {
+        state.rollback_package_verification = Some(verification);
+    } else {
+        state.rollback_package_verification = None;
+    }
 }
 
 /// Runs a user-requested rollback to the last retained known-good package.
@@ -54,13 +66,27 @@ pub async fn run(
         let message = format!("Rollback package is missing: {}", package_path.display());
         state.last_known_good_version = None;
         state.artifact_paths.rollback_package_path = None;
+        state.rollback_package_verification = None;
         state.error_message = Some(message.clone());
         state.save(&paths.state_file)?;
         println!("{message}");
         return Ok(());
     }
 
-    trigger_rollback(config, state, paths, &package_path).await
+    let expected_package = match package_verification::expected_package_for_rollback(
+        &package_path,
+        &config.workspace_root,
+        state.rollback_package_verification.as_ref(),
+    ) {
+        Ok(expected) => expected,
+        Err(error) => {
+            state.error_message = Some(error.to_string());
+            state.save(&paths.state_file)?;
+            return Err(error);
+        }
+    };
+
+    trigger_rollback(config, state, paths, &package_path, &expected_package).await
 }
 
 async fn trigger_rollback(
@@ -68,6 +94,7 @@ async fn trigger_rollback(
     state: &mut PersistedState,
     paths: &RuntimePaths,
     package_path: &Path,
+    expected_package: &install::ExpectedPackage,
 ) -> Result<()> {
     let blocked_candidate = state.candidate_version.clone().or_else(|| {
         (state.installed_version != "unknown").then(|| state.installed_version.clone())
@@ -85,7 +112,7 @@ async fn trigger_rollback(
         "Installing the last retained known-good package.",
     );
 
-    let output = install_rollback::pkexec_command(package_path)?
+    let output = install_rollback::pkexec_command(package_path, Some(expected_package))?
         .output()
         .context("Failed to launch pkexec for rollback")?;
     let status = output.status;
@@ -96,6 +123,7 @@ async fn trigger_rollback(
             state,
             install::installed_package_version(),
             package_path,
+            state.rollback_package_verification.clone(),
             blocked_candidate,
             blocked_dmg_sha256,
         );
@@ -160,6 +188,7 @@ fn apply_successful_rollback_state(
     state: &mut PersistedState,
     installed_version: String,
     package_path: &Path,
+    package_verification: Option<crate::state::PackageVerification>,
     blocked_candidate: Option<String>,
     blocked_dmg_sha256: Option<String>,
 ) {
@@ -168,6 +197,8 @@ fn apply_successful_rollback_state(
     state.candidate_version = None;
     state.artifact_paths.package_path = Some(package_path.to_path_buf());
     state.artifact_paths.rollback_package_path = Some(package_path.to_path_buf());
+    state.package_verification = package_verification.clone();
+    state.rollback_package_verification = package_verification;
     state.last_known_good_version = Some(installed_version);
     state.rollback_blocked_candidate_version = blocked_candidate;
     state.rollback_blocked_dmg_sha256 = blocked_dmg_sha256;
@@ -208,6 +239,74 @@ mod tests {
             state.artifact_paths.rollback_package_path,
             Some(package_path)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn package_verification_is_retained_for_known_good_rollback() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let workspace = temp.path().join("workspaces/26.429.20946");
+        let package_path = workspace.join("dist/codex.deb");
+        std::fs::create_dir_all(
+            package_path
+                .parent()
+                .expect("package path should have parent"),
+        )?;
+        std::fs::write(&package_path, b"deb")?;
+        let verification = package_verification::record_built_package(
+            &package_path,
+            &workspace,
+            "26.429.20946",
+            "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a",
+        )?;
+
+        let mut state = PersistedState::new(true);
+        state.installed_version = "26.429.20946".to_string();
+        state.package_verification = Some(verification.clone());
+        state.artifact_paths.package_path = Some(package_path);
+
+        record_current_package_as_known_good(&mut state);
+
+        assert_eq!(state.rollback_package_verification, Some(verification));
+        Ok(())
+    }
+
+    #[test]
+    fn mismatched_package_verification_clears_known_good_rollback_metadata() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let current_workspace = temp.path().join("workspaces/26.429.20946");
+        let current_package = current_workspace.join("dist/codex.deb");
+        std::fs::create_dir_all(
+            current_package
+                .parent()
+                .expect("current package should have parent"),
+        )?;
+        std::fs::write(&current_package, b"current")?;
+
+        let stale_workspace = temp.path().join("workspaces/26.428.10101");
+        let stale_package = stale_workspace.join("dist/codex.deb");
+        std::fs::create_dir_all(
+            stale_package
+                .parent()
+                .expect("stale package should have parent"),
+        )?;
+        std::fs::write(&stale_package, b"stale")?;
+        let stale_verification = package_verification::record_built_package(
+            &stale_package,
+            &stale_workspace,
+            "26.428.10101",
+            "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a",
+        )?;
+
+        let mut state = PersistedState::new(true);
+        state.installed_version = "26.429.20946".to_string();
+        state.package_verification = Some(stale_verification.clone());
+        state.rollback_package_verification = Some(stale_verification);
+        state.artifact_paths.package_path = Some(current_package);
+
+        record_current_package_as_known_good(&mut state);
+
+        assert_eq!(state.rollback_package_verification, None);
         Ok(())
     }
 
@@ -282,6 +381,58 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn package_verification_missing_rollback_fails_closed() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+        let rollback_path = temp
+            .path()
+            .join("cache/workspaces/26.429.20946/dist/codex.deb");
+        std::fs::create_dir_all(
+            rollback_path
+                .parent()
+                .expect("rollback package should have parent"),
+        )?;
+        std::fs::write(&rollback_path, b"deb")?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: temp.path().join("not-running-electron"),
+            cli_path: None,
+        };
+
+        let mut state = PersistedState::new(false);
+        state.artifact_paths.rollback_package_path = Some(rollback_path);
+
+        let error = run(&config, &mut state, &paths)
+            .await
+            .expect_err("rollback without package verification should fail");
+
+        assert!(error
+            .to_string()
+            .contains("Rollback package verification is missing"));
+        assert!(state
+            .error_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Rollback package verification is missing")));
+        Ok(())
+    }
+
     #[test]
     fn successful_rollback_repoints_package_paths_to_installed_package() -> Result<()> {
         let temp = tempfile::tempdir()?;
@@ -307,6 +458,7 @@ mod tests {
             &mut state,
             "2026.05.02.120000".to_string(),
             &rollback_path,
+            None,
             Some("2026.05.04.131500".to_string()),
             Some("badcafe0".repeat(8)),
         );
@@ -358,6 +510,7 @@ mod tests {
             &mut state,
             "2026.05.02.120000".to_string(),
             &rollback_path,
+            None,
             blocked_candidate,
             blocked_dmg_sha256,
         );

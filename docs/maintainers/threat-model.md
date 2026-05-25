@@ -35,13 +35,13 @@ The repository already has meaningful hardening: HTTPS-only non-loopback DMG
 URLs, URL redaction, partial downloads, package metadata checks, private staged
 install copies, package payload symlink rejection, package mode normalization,
 builder-root permission checks, trusted DMG metadata gating for unattended
-updater rebuilds and installs, default-enabled Electron sandboxing, release gate
-checks, Apple DMG verification tooling, descriptor-based required patch
-validation, sanitized Linux desktop-target launches, loopback-only no-cache
-webview serving, no-updater transition cleanup under package-owned support
-paths, default-enabled remote-control UI/mobile patching, and `0600` Linux
-remote-control device-key storage under XDG config. The remaining critical gaps
-are package digest binding for privileged installs, generated app security
+updater rebuilds and installs, package digest binding for updater-managed
+privileged installs, default-enabled Electron sandboxing, release gate checks,
+Apple DMG verification tooling, descriptor-based required patch validation,
+sanitized Linux desktop-target launches, loopback-only no-cache webview serving,
+no-updater transition cleanup under package-owned support paths, default-enabled
+remote-control UI/mobile patching, and `0600` Linux remote-control device-key
+storage under XDG config. The remaining critical gaps are generated app security
 review evidence, public artifact provenance, and a general-readiness review for
 the experimental remote-control/mobile host boundary.
 
