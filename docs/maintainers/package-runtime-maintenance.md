@@ -238,12 +238,25 @@ expected package filename shapes, copy the package into a private temporary
 staging directory, validate package identity from format-specific metadata, and
 then install that staged copy. Debian installs use `apt` or `dpkg`; RPM installs
 use `dnf`/`dnf5`, then `zypper`, then `rpm -Uvh`; pacman installs use
-`pacman -U --noconfirm`. Ready updates must retain a successful
-`dmg_verification` record whose version and digest match `candidate_version` and
-`dmg_sha256`; missing or failed DMG verification blocks install. This reduces
-source replacement races, but the updater still needs a package digest binding
-between the rebuilt package artifact and updater-reviewed state before the
-privileged install.
+`pacman -U --noconfirm`.
+
+Updater-managed package builds record package verification metadata in
+`state.json`: package kind, canonical package path, workspace directory, package
+name, package version, package SHA-256, candidate version, DMG SHA-256, and
+timestamp. Ready updates must retain a successful `dmg_verification` record
+whose version and digest match `candidate_version` and `dmg_sha256`, plus a
+matching `package_verification` record. Missing, stale, outside-workspace, or
+digest-mismatched package verification blocks install.
+
+Updater-managed `pkexec` calls pass hidden expected package metadata to the
+privileged install subcommands. When those expected values are present, the
+privileged path verifies the private staged copy's digest, package name, and
+package version immediately before invoking the system package manager. Manual
+`install-* --path` and `install-rollback-* --path` commands without expected
+metadata remain explicit administrator tools and keep the metadata-only package
+checks. The hidden expected metadata is a substitution and TOCTOU guard for the
+updater-managed path; it is not a separate authorization boundary for arbitrary
+authenticated manual installs.
 
 State handling matters:
 
@@ -254,6 +267,10 @@ State handling matters:
   installed, the state becomes `installed`; if the package still exists, the
   state returns to `ready_to_install`; if the package is missing, the state
   becomes `failed`.
+- `rollback_package_verification` is copied from the installed package's
+  `package_verification` record when the updater retains a known-good rollback
+  package. Rollback refuses to invoke `pkexec` when the retained package lacks
+  matching verification metadata.
 - New state files serialize package build status as `building_package`, but the
   reader still accepts legacy `building_deb`.
 - `artifact_paths.package_path` is still serialized as `deb_path` for

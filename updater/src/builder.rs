@@ -3,6 +3,7 @@
 use crate::{
     config::{RuntimeConfig, RuntimePaths},
     install::PackageKind,
+    package_verification,
     state::{ArtifactPaths, PersistedState, UpdateStatus},
 };
 use anyhow::{Context, Result};
@@ -80,8 +81,19 @@ pub async fn build_update(
     let workspace = BuilderWorkspace::prepare(&config.workspace_root, candidate_version)?;
 
     state.status = UpdateStatus::PreparingWorkspace;
+    state.package_verification = None;
     state.artifact_paths.workspace_dir = Some(workspace.workspace_dir.clone());
     state.save(&paths.state_file)?;
+
+    let trusted_dmg_sha256 = state
+        .dmg_sha256
+        .as_deref()
+        .context("Ready update is missing a trusted DMG digest before package verification")?;
+    let current_dmg_sha256 = package_verification::file_sha256(dmg_path)?;
+    anyhow::ensure!(
+        current_dmg_sha256 == trusted_dmg_sha256,
+        "Downloaded DMG digest changed before package build"
+    );
 
     copy_builder_bundle(&config.builder_bundle_root, &workspace.bundle_dir)?;
     let build_path = build_command_path(&workspace.bundle_dir);
@@ -137,6 +149,12 @@ pub async fn build_update(
     .with_context(|| format!("{} failed during local rebuild", build_script.display()))?;
 
     let package_path = find_package_in(&workspace.dist_dir)?;
+    state.package_verification = Some(package_verification::record_built_package(
+        &package_path,
+        &workspace.workspace_dir,
+        &package_version,
+        &current_dmg_sha256,
+    )?);
     state.status = UpdateStatus::ReadyToInstall;
     state.artifact_paths = ArtifactPaths {
         dmg_path: Some(dmg_path.to_path_buf()),
@@ -590,7 +608,7 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
     }
 
     #[tokio::test]
-    async fn builds_update_with_fake_bundle() -> Result<()> {
+    async fn builds_update_with_package_verification_metadata() -> Result<()> {
         let temp = tempdir()?;
         let bundle_root = temp.path().join("bundle");
         let state_root = temp.path().join("state");
@@ -736,8 +754,10 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
         };
         let dmg_path = temp.path().join("Codex.dmg");
         fs::write(&dmg_path, b"dmg")?;
+        let trusted_dmg_sha256 = package_verification::file_sha256(&dmg_path)?;
 
         let mut state = PersistedState::new(true);
+        state.dmg_sha256 = Some(trusted_dmg_sha256.clone());
         let artifacts = build_update(
             &config,
             &mut state,
@@ -783,6 +803,75 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
             "expected a native package (.deb, .rpm, or .pkg.tar.zst), got {}",
             artifacts.package_path.display()
         );
+        let verification = state
+            .package_verification
+            .as_ref()
+            .expect("package verification should be recorded for updater-built packages");
+        assert_eq!(verification.package_name, "codex-app");
+        assert_eq!(
+            verification.package_version,
+            crate::install::expected_package_version_from_source(
+                PackageKind::detect(),
+                "26.429.20946"
+            )
+        );
+        assert_eq!(verification.candidate_version, "26.429.20946");
+        assert_eq!(verification.dmg_sha256, trusted_dmg_sha256);
+        assert_eq!(
+            verification.package_path,
+            artifacts.package_path.canonicalize()?
+        );
+        assert_eq!(
+            verification.workspace_dir,
+            artifacts.workspace_dir.canonicalize()?
+        );
+        assert_eq!(verification.sha256.len(), 64);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn build_update_rejects_dmg_digest_mismatch() -> Result<()> {
+        let temp = tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 30,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: true,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("bundle"),
+            app_executable_path: PathBuf::from("/opt/codex-app/electron"),
+            cli_path: None,
+        };
+        let dmg_path = temp.path().join("Codex.dmg");
+        fs::write(&dmg_path, b"changed-dmg")?;
+
+        let mut state = PersistedState::new(true);
+        state.dmg_sha256 = Some("0".repeat(64));
+        let error = build_update(
+            &config,
+            &mut state,
+            &paths,
+            "2026.03.24+abcd1234",
+            &dmg_path,
+        )
+        .await
+        .expect_err("mismatched DMG digest should fail before rebuilding");
+
+        assert!(error
+            .to_string()
+            .contains("Downloaded DMG digest changed before package build"));
         Ok(())
     }
 

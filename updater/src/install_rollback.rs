@@ -1,6 +1,8 @@
 //! Explicit rollback package installation helpers.
 
-use crate::install::{stage_package_for_privileged_install, PackageKind};
+use crate::install::{
+    stage_package_for_privileged_install, verify_expected_package, ExpectedPackage, PackageKind,
+};
 use anyhow::{Context, Result};
 use std::{
     fs,
@@ -28,7 +30,7 @@ const PACMAN_PACKAGE_SUFFIXES: &[&str] = &[
     ".pkg.tar.lz5",
 ];
 
-pub fn install_deb(path: &Path) -> Result<()> {
+pub fn install_deb(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()> {
     anyhow::ensure!(
         path.exists(),
         "Debian rollback package not found: {}",
@@ -36,6 +38,7 @@ pub fn install_deb(path: &Path) -> Result<()> {
     );
     let staged = stage_package_for_privileged_install(path)?;
     let staged_path = staged.path();
+    verify_expected_package(staged_path, expected)?;
     ensure_deb_package_identity(staged_path)?;
 
     if program_exists(APT_CANDIDATES, "apt") {
@@ -48,7 +51,7 @@ pub fn install_deb(path: &Path) -> Result<()> {
     run_install(&mut command).context("dpkg rollback install failed")
 }
 
-pub fn install_rpm(path: &Path) -> Result<()> {
+pub fn install_rpm(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()> {
     anyhow::ensure!(
         path.exists(),
         "RPM rollback package not found: {}",
@@ -56,6 +59,7 @@ pub fn install_rpm(path: &Path) -> Result<()> {
     );
     let staged = stage_package_for_privileged_install(path)?;
     let staged_path = staged.path();
+    verify_expected_package(staged_path, expected)?;
     ensure_rpm_package_identity(staged_path)?;
 
     if let Some(dnf) = first_available_program(DNF_CANDIDATES, &["dnf", "dnf5"]) {
@@ -74,7 +78,7 @@ pub fn install_rpm(path: &Path) -> Result<()> {
     run_install(&mut command).context("rpm rollback install failed")
 }
 
-pub fn install_pacman(path: &Path) -> Result<()> {
+pub fn install_pacman(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()> {
     anyhow::ensure!(
         path.exists(),
         "Pacman rollback package not found: {}",
@@ -82,21 +86,27 @@ pub fn install_pacman(path: &Path) -> Result<()> {
     );
     let staged = stage_package_for_privileged_install(path)?;
     let staged_path = staged.path();
+    verify_expected_package(staged_path, expected)?;
     ensure_pacman_package_identity(staged_path)?;
 
     let mut command = pacman_command(staged_path);
     run_install(&mut command).context("pacman rollback install failed")
 }
 
-pub fn pkexec_command(package_path: &Path) -> Result<Command> {
+pub fn pkexec_command(package_path: &Path, expected: Option<&ExpectedPackage>) -> Result<Command> {
     let updater_binary = updater_binary_for_privileged_install()?;
     Ok(pkexec_command_with_updater_binary(
         &updater_binary,
         package_path,
+        expected,
     ))
 }
 
-fn pkexec_command_with_updater_binary(updater_binary: &Path, package_path: &Path) -> Command {
+fn pkexec_command_with_updater_binary(
+    updater_binary: &Path,
+    package_path: &Path,
+    expected: Option<&ExpectedPackage>,
+) -> Command {
     let subcommand = match PackageKind::from_path(package_path) {
         PackageKind::Rpm => "install-rollback-rpm",
         PackageKind::Deb => "install-rollback-deb",
@@ -109,6 +119,15 @@ fn pkexec_command_with_updater_binary(updater_binary: &Path, package_path: &Path
         .arg(subcommand)
         .arg("--path")
         .arg(package_path);
+    if let Some(expected) = expected {
+        command
+            .arg("--expected-sha256")
+            .arg(expected.sha256())
+            .arg("--expected-package-name")
+            .arg(expected.package_name())
+            .arg("--expected-package-version")
+            .arg(expected.package_version());
+    }
     command
 }
 
@@ -452,6 +471,7 @@ mod tests {
         let command = pkexec_command_with_updater_binary(
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.rpm"),
+            None,
         );
         let args: Vec<_> = command
             .get_args()
@@ -467,6 +487,41 @@ mod tests {
                 "/tmp/update.rpm"
             ]
         );
+    }
+
+    #[test]
+    fn package_verification_args_are_passed_to_privileged_rollback_command() -> Result<()> {
+        let expected = ExpectedPackage::new(
+            "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a",
+            "codex-app",
+            "26.429.20946-1",
+        )?;
+        let command = pkexec_command_with_updater_binary(
+            Path::new("/usr/bin/codex-app-updater"),
+            Path::new("/tmp/update.rpm"),
+            Some(&expected),
+        );
+        let args: Vec<_> = command
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "--disable-internal-agent",
+                "/usr/bin/codex-app-updater",
+                "install-rollback-rpm",
+                "--path",
+                "/tmp/update.rpm",
+                "--expected-sha256",
+                "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a",
+                "--expected-package-name",
+                "codex-app",
+                "--expected-package-version",
+                "26.429.20946-1"
+            ]
+        );
+        Ok(())
     }
 
     #[test]

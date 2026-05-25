@@ -82,6 +82,20 @@ pub struct DmgVerification {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Package artifact metadata recorded after an updater-managed package build.
+pub struct PackageVerification {
+    pub package_kind: String,
+    pub package_path: PathBuf,
+    pub workspace_dir: PathBuf,
+    pub package_name: String,
+    pub package_version: String,
+    pub sha256: String,
+    pub candidate_version: String,
+    pub dmg_sha256: String,
+    pub verified_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Full updater state stored on disk between daemon runs.
 pub struct PersistedState {
     pub installed_version: String,
@@ -93,6 +107,10 @@ pub struct PersistedState {
     pub dmg_sha256: Option<String>,
     #[serde(default)]
     pub dmg_verification: Option<DmgVerification>,
+    #[serde(default)]
+    pub package_verification: Option<PackageVerification>,
+    #[serde(default)]
+    pub rollback_package_verification: Option<PackageVerification>,
     pub artifact_paths: ArtifactPaths,
     pub error_message: Option<String>,
     pub notified_events: BTreeSet<String>,
@@ -133,6 +151,8 @@ impl PersistedState {
             remote_headers_fingerprint: None,
             dmg_sha256: None,
             dmg_verification: None,
+            package_verification: None,
+            rollback_package_verification: None,
             artifact_paths: ArtifactPaths::default(),
             error_message: None,
             notified_events: BTreeSet::new(),
@@ -320,6 +340,35 @@ mod tests {
         let loaded = PersistedState::load_or_default(&path, true)?;
 
         assert_eq!(loaded.dmg_verification, None);
+        Ok(())
+    }
+
+    #[test]
+    fn loads_legacy_state_without_package_verification_fields() -> Result<()> {
+        let temp = tempdir()?;
+        let path = temp.path().join("state.json");
+        fs::write(
+            &path,
+            r#"{
+  "installed_version": "2026.03.24",
+  "candidate_version": null,
+  "status": "idle",
+  "last_check_at": null,
+  "last_successful_check_at": null,
+  "remote_headers_fingerprint": null,
+  "dmg_sha256": null,
+  "dmg_verification": null,
+  "artifact_paths": {"dmg_path": null,"workspace_dir": null,"deb_path": null},
+  "error_message": null,
+  "notified_events": [],
+  "auto_install_on_app_exit": true
+}"#,
+        )?;
+
+        let loaded = PersistedState::load_or_default(&path, true)?;
+
+        assert_eq!(loaded.package_verification, None);
+        assert_eq!(loaded.rollback_package_verification, None);
         Ok(())
     }
 

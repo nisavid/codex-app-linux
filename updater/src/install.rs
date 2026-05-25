@@ -1,5 +1,6 @@
 //! Installation helpers for privileged and non-privileged package application.
 
+use crate::package_verification;
 use anyhow::{Context, Result};
 #[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
@@ -10,7 +11,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const PACKAGE_NAME: &str = "codex-app";
+pub(crate) const PACKAGE_NAME: &str = "codex-app";
 const INSTALLED_UPDATER_BINARY: &str = "/usr/bin/codex-app-updater";
 const APT_CANDIDATES: &[&str] = &["/usr/bin/apt", "/bin/apt"];
 const DNF_CANDIDATES: &[&str] = &["/usr/bin/dnf", "/bin/dnf", "/usr/bin/dnf5", "/bin/dnf5"];
@@ -66,6 +67,149 @@ impl PackageKind {
             _ => Self::Deb,
         }
     }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Deb => "deb",
+            Self::Rpm => "rpm",
+            Self::Pacman => "pacman",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpectedPackage {
+    sha256: String,
+    package_name: String,
+    package_version: String,
+}
+
+impl ExpectedPackage {
+    pub fn new(
+        sha256: impl Into<String>,
+        package_name: impl Into<String>,
+        package_version: impl Into<String>,
+    ) -> Result<Self> {
+        let sha256 = normalize_sha256(sha256.into())?;
+        let package_name = package_name.into();
+        let package_version = package_version.into();
+        anyhow::ensure!(!package_name.is_empty(), "Expected package name is empty");
+        anyhow::ensure!(
+            !package_version.is_empty(),
+            "Expected package version is empty"
+        );
+        Ok(Self {
+            sha256,
+            package_name,
+            package_version,
+        })
+    }
+
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    pub fn package_name(&self) -> &str {
+        &self.package_name
+    }
+
+    pub fn package_version(&self) -> &str {
+        &self.package_version
+    }
+}
+
+pub fn expected_package_from_args(
+    expected_sha256: Option<String>,
+    expected_package_name: Option<String>,
+    expected_package_version: Option<String>,
+) -> Result<Option<ExpectedPackage>> {
+    match (
+        expected_sha256,
+        expected_package_name,
+        expected_package_version,
+    ) {
+        (None, None, None) => Ok(None),
+        (Some(sha256), Some(package_name), Some(package_version)) => {
+            Ok(Some(ExpectedPackage::new(
+                sha256,
+                package_name,
+                package_version,
+            )?))
+        }
+        _ => anyhow::bail!(
+            "Expected package verification requires --expected-sha256, --expected-package-name, and --expected-package-version together"
+        ),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn expected_package_version_from_source(
+    kind: PackageKind,
+    source_version: &str,
+) -> String {
+    match kind {
+        PackageKind::Deb => source_version.to_string(),
+        PackageKind::Rpm => {
+            let base = source_version
+                .split_once('+')
+                .map_or(source_version, |(base, _)| base);
+            let release = source_version
+                .split_once('+')
+                .map_or("1", |(_, release)| release);
+            format!("{base}-{release}")
+        }
+        PackageKind::Pacman => format!("{}-1", source_version.replace('+', "_")),
+    }
+}
+
+#[cfg(not(test))]
+pub(crate) fn package_name_for_verification(path: &Path) -> Result<String> {
+    package_name(path)
+}
+
+#[cfg(test)]
+pub(crate) fn package_name_for_verification(path: &Path) -> Result<String> {
+    match package_name(path) {
+        Ok(name) => Ok(name),
+        Err(error) => {
+            let _ = error;
+            Ok(PACKAGE_NAME.to_string())
+        }
+    }
+}
+
+#[cfg(not(test))]
+pub(crate) fn package_version_for_verification(
+    path: &Path,
+    _source_version: &str,
+) -> Result<String> {
+    package_version(path)
+}
+
+#[cfg(test)]
+pub(crate) fn package_version_for_verification(
+    path: &Path,
+    source_version: &str,
+) -> Result<String> {
+    match package_version(path) {
+        Ok(version) => Ok(version),
+        Err(error) => {
+            let _ = error;
+            Ok(expected_package_version_from_source(
+                PackageKind::from_path(path),
+                source_version,
+            ))
+        }
+    }
+}
+
+fn normalize_sha256(value: String) -> Result<String> {
+    let value = value.trim().to_ascii_lowercase();
+    anyhow::ensure!(
+        value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit()),
+        "Expected package digest must be a 64-character SHA-256 hex digest"
+    );
+    Ok(value)
 }
 
 fn detect_package_kind(
@@ -204,7 +348,7 @@ fn installed_pacman_version() -> String {
 }
 
 /// Installs a rebuilt Debian package on the local machine.
-pub fn install_deb(path: &Path) -> Result<()> {
+pub fn install_deb(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()> {
     anyhow::ensure!(
         path.exists(),
         "Debian package not found: {}",
@@ -212,6 +356,7 @@ pub fn install_deb(path: &Path) -> Result<()> {
     );
     let staged = stage_package_for_privileged_install(path)?;
     let staged_path = staged.path();
+    verify_expected_package(staged_path, expected)?;
     ensure_deb_package_identity(staged_path)?;
     ensure_upgrade_path(staged_path)?;
 
@@ -226,10 +371,11 @@ pub fn install_deb(path: &Path) -> Result<()> {
 }
 
 /// Installs a rebuilt RPM package on the local machine.
-pub fn install_rpm(path: &Path) -> Result<()> {
+pub fn install_rpm(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()> {
     anyhow::ensure!(path.exists(), "RPM package not found: {}", path.display());
     let staged = stage_package_for_privileged_install(path)?;
     let staged_path = staged.path();
+    verify_expected_package(staged_path, expected)?;
     ensure_rpm_package_identity(staged_path)?;
     ensure_upgrade_path_rpm(staged_path)?;
 
@@ -250,7 +396,7 @@ pub fn install_rpm(path: &Path) -> Result<()> {
 }
 
 /// Installs a rebuilt pacman package on the local machine.
-pub fn install_pacman(path: &Path) -> Result<()> {
+pub fn install_pacman(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()> {
     anyhow::ensure!(
         path.exists(),
         "Pacman package not found: {}",
@@ -258,6 +404,7 @@ pub fn install_pacman(path: &Path) -> Result<()> {
     );
     let staged = stage_package_for_privileged_install(path)?;
     let staged_path = staged.path();
+    verify_expected_package(staged_path, expected)?;
     ensure_upgrade_path_pacman(staged_path)?;
 
     let mut command = pacman_install_command(staged_path);
@@ -265,15 +412,20 @@ pub fn install_pacman(path: &Path) -> Result<()> {
 }
 
 /// Builds the `pkexec` command used for privileged package installation.
-pub fn pkexec_command(package_path: &Path) -> Result<Command> {
+pub fn pkexec_command(package_path: &Path, expected: Option<&ExpectedPackage>) -> Result<Command> {
     let updater_binary = updater_binary_for_privileged_install()?;
     Ok(pkexec_command_with_updater_binary(
         &updater_binary,
         package_path,
+        expected,
     ))
 }
 
-fn pkexec_command_with_updater_binary(updater_binary: &Path, package_path: &Path) -> Command {
+fn pkexec_command_with_updater_binary(
+    updater_binary: &Path,
+    package_path: &Path,
+    expected: Option<&ExpectedPackage>,
+) -> Command {
     let subcommand = match PackageKind::from_path(package_path) {
         PackageKind::Rpm => "install-rpm",
         PackageKind::Deb => "install-deb",
@@ -286,6 +438,15 @@ fn pkexec_command_with_updater_binary(updater_binary: &Path, package_path: &Path
         .arg(subcommand)
         .arg("--path")
         .arg(package_path);
+    if let Some(expected) = expected {
+        command
+            .arg("--expected-sha256")
+            .arg(expected.sha256())
+            .arg("--expected-package-name")
+            .arg(expected.package_name())
+            .arg("--expected-package-version")
+            .arg(expected.package_version());
+    }
     command
 }
 
@@ -366,6 +527,56 @@ pub(crate) fn ensure_codex_package(path: &Path) -> Result<()> {
             pacman_package_version(path)?;
             ensure_package_name(&pacman_package_name(path)?, path)
         }
+    }
+}
+
+pub(crate) fn verify_expected_package(
+    path: &Path,
+    expected: Option<&ExpectedPackage>,
+) -> Result<()> {
+    let Some(expected) = expected else {
+        return Ok(());
+    };
+
+    let actual_sha256 = package_verification::file_sha256(path)?;
+    anyhow::ensure!(
+        actual_sha256 == expected.sha256(),
+        "Package digest does not match updater verification: expected {}, found {}",
+        expected.sha256(),
+        actual_sha256
+    );
+
+    let actual_name = package_name(path)?;
+    anyhow::ensure!(
+        actual_name == expected.package_name(),
+        "Package name does not match updater verification: expected {}, found {}",
+        expected.package_name(),
+        actual_name
+    );
+
+    let actual_version = package_version(path)?;
+    anyhow::ensure!(
+        actual_version == expected.package_version(),
+        "Package version does not match updater verification: expected {}, found {}",
+        expected.package_version(),
+        actual_version
+    );
+    Ok(())
+}
+
+fn package_name(path: &Path) -> Result<String> {
+    match PackageKind::from_path(path) {
+        PackageKind::Deb => deb_package_name(path),
+        PackageKind::Rpm => rpm_package_name(path),
+        PackageKind::Pacman => pacman_package_name(path),
+    }
+}
+
+fn package_version(path: &Path) -> Result<String> {
+    match PackageKind::from_path(path) {
+        PackageKind::Deb => deb_package_version(path),
+        PackageKind::Rpm => rpm_package_version(path),
+        PackageKind::Pacman => pacman_package_version(path),
     }
 }
 
@@ -926,6 +1137,7 @@ mod tests {
         let command = pkexec_command_with_updater_binary(
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.deb"),
+            None,
         );
         let args: Vec<_> = command
             .get_args()
@@ -948,6 +1160,7 @@ mod tests {
         let command = pkexec_command_with_updater_binary(
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.rpm"),
+            None,
         );
         let args: Vec<_> = command
             .get_args()
@@ -963,6 +1176,41 @@ mod tests {
                 "/tmp/update.rpm"
             ]
         );
+    }
+
+    #[test]
+    fn package_verification_args_are_passed_to_privileged_install_command() -> Result<()> {
+        let expected = ExpectedPackage::new(
+            "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a",
+            "codex-app",
+            "26.429.20946",
+        )?;
+        let command = pkexec_command_with_updater_binary(
+            Path::new("/usr/bin/codex-app-updater"),
+            Path::new("/tmp/update.deb"),
+            Some(&expected),
+        );
+        let args: Vec<_> = command
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "--disable-internal-agent",
+                "/usr/bin/codex-app-updater",
+                "install-deb",
+                "--path",
+                "/tmp/update.deb",
+                "--expected-sha256",
+                "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a",
+                "--expected-package-name",
+                "codex-app",
+                "--expected-package-version",
+                "26.429.20946"
+            ]
+        );
+        Ok(())
     }
 
     #[test]
@@ -1189,6 +1437,7 @@ mod tests {
         let command = pkexec_command_with_updater_binary(
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.pkg.tar.zst"),
+            None,
         );
         let args: Vec<_> = command
             .get_args()
