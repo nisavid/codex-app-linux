@@ -68,17 +68,23 @@ test("rejects reference-style showcase image sources outside policy", () => {
 ![Remote showcase][remote]
 ![Out-of-scope showcase][outside]
 ![Multiline remote showcase][multiline-remote]
+![Whitespace remote showcase] [whitespace-remote]
+> ![Blockquote remote showcase][blockquote-remote]
 
 [remote]: https://example.com/workbench.png
 [outside]: assets/workbench.png
 [multiline-remote]:
   https://example.com/multiline-workbench.png
+[whitespace-remote]: https://example.com/whitespace-workbench.png
+> [blockquote-remote]: https://example.com/blockquote-workbench.png
 `;
 
   assert.deepEqual(errorsFor(markdown), [
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench.png",
     "README showcase image must live under docs/assets/readme/: assets/workbench.png",
     "README showcase image must be a local repo asset, not an external URL: https://example.com/multiline-workbench.png",
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/whitespace-workbench.png",
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/blockquote-workbench.png",
   ]);
 });
 
