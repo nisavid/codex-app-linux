@@ -2370,6 +2370,18 @@ if '"$HOME/.bun/bin/codex"' not in source:
     raise SystemExit("CLI lookup must include bun global install path")
 if "if needs_cold_start;" not in runtime_body:
     raise SystemExit("second-instance handoff must skip CLI preflight")
+if 'COLD_START_HOOK_DIR="$SCRIPT_DIR/.codex-linux/cold-start.d"' not in source:
+    raise SystemExit("launcher must initialize COLD_START_HOOK_DIR before cold-start hooks run under set -u")
+if '"$COLD_START_HOOK_DIR"/*' not in cold_start_hooks_body:
+    raise SystemExit("cold-start hook discovery must use the initialized hook directory")
+if "bundled_plugin_name() {" not in source:
+    raise SystemExit("launcher must define bundled_plugin_name before plugin cache sync uses it")
+if "bundled_plugin_path_token_is_safe() {" not in source:
+    raise SystemExit("launcher must define a shared path-token guard for bundled plugin cache paths")
+if 'if ! bundled_plugin_path_token_is_safe "$plugin_name"; then' not in source:
+    raise SystemExit("browser plugin cache sync must reject noisy plugin-name command output")
+if source.count('if ! bundled_plugin_path_token_is_safe "$version"; then') != 4:
+    raise SystemExit("all bundled plugin cache syncs must reject noisy plugin-version command output")
 if 'prompt_args+=(--cli-path "$CODEX_CLI_PATH")' not in gui_prompt_body:
     raise SystemExit("GUI CLI prompt must pass --cli-path only when CODEX_CLI_PATH is non-empty")
 if 'prompt-install-cli --cli-path "$CODEX_CLI_PATH"' in gui_prompt_body:
