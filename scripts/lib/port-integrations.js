@@ -275,7 +275,7 @@ function resolveIntegrationEntrypoint(integration, key) {
     console.warn(`WARN: port integration '${integration.id}' has invalid ${key} entrypoint`);
     return null;
   }
-  if (path.isAbsolute(relativePath) || relativePath.split(/[\\/]/).includes("..")) {
+  if (path.isAbsolute(relativePath)) {
     console.warn(`WARN: port integration '${integration.id}' ${key} entrypoint must stay inside the integration directory`);
     return null;
   }
@@ -284,7 +284,21 @@ function resolveIntegrationEntrypoint(integration, key) {
     console.warn(`WARN: port integration '${integration.id}' ${key} entrypoint not found: ${entrypoint}`);
     return null;
   }
-  return entrypoint;
+  let realIntegrationDir;
+  let realEntrypoint;
+  try {
+    realIntegrationDir = fs.realpathSync.native(integration.dir);
+    realEntrypoint = fs.realpathSync.native(entrypoint);
+  } catch (error) {
+    console.warn(`WARN: Could not resolve port integration '${integration.id}' ${key}: ${error.message}`);
+    return null;
+  }
+  const relativeEntrypoint = path.relative(realIntegrationDir, realEntrypoint);
+  if (relativeEntrypoint === "" || relativeEntrypoint.startsWith("..") || path.isAbsolute(relativeEntrypoint)) {
+    console.warn(`WARN: port integration '${integration.id}' ${key} entrypoint must stay inside the integration directory`);
+    return null;
+  }
+  return realEntrypoint;
 }
 
 function loadIntegrationEntrypointModule(integration, key) {

@@ -282,12 +282,36 @@ test_update_builder_omits_build_time_port_integrations_config() {
     local workspace="$TMP_DIR/update-builder-port-integrations"
     local root="$workspace/root"
     local app_dir="$workspace/app"
-    local integration_config="$workspace/integrations.json"
     local staged_config="$root/usr/lib/codex-app/update-builder/port-integrations/integrations.json"
+    local staged_legacy_config="$root/usr/lib/codex-app/update-builder/port-integrations/features.json"
+    local source_config_dir="$REPO_DIR/port-integrations"
+    local source_config="$source_config_dir/integrations.json"
+    local source_legacy_config="$source_config_dir/features.json"
+    local source_config_backup="$workspace/integrations.json.backup"
+    local source_legacy_config_backup="$workspace/features.json.backup"
 
     mkdir -p "$workspace"
     make_fake_app "$app_dir"
-    cat > "$integration_config" <<'JSON'
+
+    (
+        restore_source_configs() {
+            if [ -f "$source_config_backup" ]; then
+                mv "$source_config_backup" "$source_config"
+            else
+                rm -f "$source_config"
+            fi
+            if [ -f "$source_legacy_config_backup" ]; then
+                mv "$source_legacy_config_backup" "$source_legacy_config"
+            else
+                rm -f "$source_legacy_config"
+            fi
+        }
+        trap restore_source_configs EXIT
+
+        [ ! -f "$source_config" ] || cp -p "$source_config" "$source_config_backup"
+        [ ! -f "$source_legacy_config" ] || cp -p "$source_legacy_config" "$source_legacy_config_backup"
+
+        cat > "$source_config" <<'JSON'
 {
   "enabled": [
     "example-integration"
@@ -298,12 +322,18 @@ test_update_builder_omits_build_time_port_integrations_config() {
   "localComment": "should not be packaged"
 }
 JSON
+        cat > "$source_legacy_config" <<'JSON'
+{
+  "enabled": [
+    "example-integration"
+  ],
+  "localComment": "legacy file should not be packaged"
+}
+JSON
 
-    (
         export APP_DIR="$app_dir"
         export PACKAGE_NAME="codex-app"
         export UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service"
-        export CODEX_PORT_INTEGRATIONS_CONFIG="$integration_config"
 
         # shellcheck disable=SC1091
         source "$REPO_DIR/scripts/lib/package-common.sh"
@@ -311,6 +341,7 @@ JSON
     )
 
     assert_file_not_exists "$staged_config"
+    assert_file_not_exists "$staged_legacy_config"
     assert_file_exists "$root/usr/lib/codex-app/update-builder/port-integrations/integrations.example.json"
 }
 
