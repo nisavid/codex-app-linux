@@ -193,16 +193,67 @@ function normalizeReferenceDefinitionContainers(content) {
     .join("\n");
 }
 
+function referenceDefinitionStart(line) {
+  let cursor = 0;
+  while (cursor < 3 && (line[cursor] === " " || line[cursor] === "\t")) {
+    cursor += 1;
+  }
+  return line[cursor] === "[" ? cursor : -1;
+}
+
+function parseReferenceDefinitionSource(lines, lineIndex, sourceStart) {
+  let sourceText = lines[lineIndex].slice(sourceStart).replace(/^[ \t]+/, "");
+  if (sourceText.length === 0) {
+    const continuation = lines[lineIndex + 1];
+    if (continuation == null || !/^[ \t]+/.test(continuation)) {
+      return null;
+    }
+    sourceText = continuation.replace(/^[ \t]+/, "");
+  }
+
+  let sourceEnd;
+  if (sourceText[0] === "<") {
+    sourceEnd = sourceText.indexOf(">");
+    if (sourceEnd === -1) {
+      return null;
+    }
+    sourceEnd += 1;
+  } else {
+    sourceEnd = sourceText.search(/[ \t]/);
+    if (sourceEnd === -1) {
+      sourceEnd = sourceText.length;
+    }
+  }
+
+  const source = sourceText.slice(0, sourceEnd);
+  const trailing = sourceText.slice(sourceEnd);
+  if (trailing.length === 0 || /^[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\))[ \t]*$/.test(trailing)) {
+    return normalizeReferenceSrc(source);
+  }
+  return null;
+}
+
 function findReferenceDefinitions(content) {
   const references = new Map();
-  const normalizedContent = normalizeReferenceDefinitionContainers(content);
-  const referenceDefinitionPattern =
-    /^[ \t]{0,3}\[((?:\\[^\n]|[^\]\n])+)\]:[ \t]*(?:\r?\n[ \t]+)?(<[^>\n]*>|[^ \t\n]+)(?:[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$/gm;
+  const lines = normalizeReferenceDefinitionContainers(content).split("\n");
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+    const openIndex = referenceDefinitionStart(line);
+    if (openIndex === -1) {
+      continue;
+    }
+    const labelEnd = findPlainReferenceLabelEnd(line, openIndex);
+    if (labelEnd === -1 || line[labelEnd + 1] !== ":") {
+      continue;
+    }
 
-  for (const match of normalizedContent.matchAll(referenceDefinitionPattern)) {
-    const label = normalizeReferenceLabel(match[1]);
+    const label = normalizeReferenceLabel(line.slice(openIndex + 1, labelEnd));
+    const src = parseReferenceDefinitionSource(lines, lineIndex, labelEnd + 2);
+    if (src == null) {
+      continue;
+    }
     if (!references.has(label)) {
-      references.set(label, normalizeReferenceSrc(match[2]));
+      references.set(label, src);
     }
   }
   return references;
