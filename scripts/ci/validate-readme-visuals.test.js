@@ -164,6 +164,15 @@ Use \`<img src="assets/out-of-scope.png">\` when documenting HTML syntax.
   assert.deepEqual(errorsFor(markdown), []);
 });
 
+test("preserves inline code spans inside image alt text", () => {
+  const markdown = `
+![\`Codex\`](docs/assets/readme/workbench.png)
+<img src="docs/assets/readme/browser-use.png" alt="\`Browser Use\`">
+`;
+
+  assert.deepEqual(errorsFor(markdown), []);
+});
+
 test("ignores escaped Markdown image syntax", () => {
   const markdown = `
 \\![External example](https://example.com/workbench.png)

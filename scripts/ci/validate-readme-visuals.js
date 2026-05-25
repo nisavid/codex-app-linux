@@ -92,8 +92,17 @@ function stripFencedCodeBlocks(content) {
     .join("\n");
 }
 
-function stripInlineCodeSpans(content) {
-  return content.replace(/(`+)[^\n]*?\1/g, "");
+function findInlineCodeSpans(content) {
+  const spans = [];
+  const inlineCodePattern = /(`+)[^\n]*?\1/g;
+  for (const match of content.matchAll(inlineCodePattern)) {
+    spans.push({ start: match.index, end: match.index + match[0].length });
+  }
+  return spans;
+}
+
+function isInsideInlineCodeSpan(spans, index) {
+  return spans.some((span) => index >= span.start && index < span.end);
 }
 
 function normalizeReferenceLabel(label) {
@@ -127,10 +136,13 @@ function findReferenceDefinitions(content) {
   return references;
 }
 
-function findMarkdownImages(content) {
+function findMarkdownImages(content, inlineCodeSpans = []) {
   const images = [];
   const markdownImagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
   for (const match of content.matchAll(markdownImagePattern)) {
+    if (isInsideInlineCodeSpan(inlineCodeSpans, match.index)) {
+      continue;
+    }
     if (isEscapedMarkdownImage(content, match.index)) {
       continue;
     }
@@ -142,6 +154,9 @@ function findMarkdownImages(content) {
   const references = findReferenceDefinitions(content);
   const referenceImagePattern = /!\[([^\]\n]*)\](?:\[([^\]\n]*)\])?/g;
   for (const match of content.matchAll(referenceImagePattern)) {
+    if (isInsideInlineCodeSpan(inlineCodeSpans, match.index)) {
+      continue;
+    }
     if (content[match.index + match[0].length] === "(") {
       continue;
     }
@@ -179,10 +194,13 @@ function parseSrcset(srcset) {
     .filter((candidate) => candidate.length > 0);
 }
 
-function findHtmlImages(content) {
+function findHtmlImages(content, inlineCodeSpans = []) {
   const images = [];
   const htmlImagePattern = /<(img|source)\b[^>]*>/gi;
   for (const match of content.matchAll(htmlImagePattern)) {
+    if (isInsideInlineCodeSpan(inlineCodeSpans, match.index)) {
+      continue;
+    }
     const tag = match[0];
     const tagName = match[1].toLowerCase();
     const alt = tagName === "img" ? getHtmlAttribute(tag, "alt") ?? "" : "";
@@ -210,8 +228,12 @@ function findHtmlImages(content) {
 }
 
 function findImages(content) {
-  const renderableContent = stripInlineCodeSpans(stripFencedCodeBlocks(content));
-  return [...findMarkdownImages(renderableContent), ...findHtmlImages(renderableContent)];
+  const renderableContent = stripFencedCodeBlocks(content);
+  const inlineCodeSpans = findInlineCodeSpans(renderableContent);
+  return [
+    ...findMarkdownImages(renderableContent, inlineCodeSpans),
+    ...findHtmlImages(renderableContent, inlineCodeSpans),
+  ];
 }
 
 function shouldIgnoreImage(src) {
