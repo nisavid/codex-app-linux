@@ -21,16 +21,30 @@ function normalizeSrc(src) {
   return src.trim().replace(/^\.?\//, "");
 }
 
-function canonicalizeLocalPath(src) {
-  const normalized = normalizeSrc(src);
-  if (normalized.length === 0) {
-    return normalized;
+function decodePathSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
   }
-  return path.posix.normalize(normalized).replace(/^\/+/, "");
+}
+
+function decodedPathSegments(src) {
+  return normalizeSrc(src)
+    .split("/")
+    .flatMap((segment) => decodePathSegment(segment).split("/"));
+}
+
+function canonicalizeLocalPath(src) {
+  const decoded = decodedPathSegments(src).join("/");
+  if (decoded.length === 0) {
+    return decoded;
+  }
+  return path.posix.normalize(decoded).replace(/^\/+/, "");
 }
 
 function hasParentPathSegment(src) {
-  return normalizeSrc(src).split("/").includes("..");
+  return decodedPathSegments(src).includes("..");
 }
 
 function isExternalUrl(src) {
