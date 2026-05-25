@@ -38,6 +38,20 @@ test("accepts local showcase images under docs/assets/readme with alt text", () 
   assert.deepEqual(errorsFor(markdown), []);
 });
 
+test("accepts local reference-style showcase images with alt text", () => {
+  const markdown = `
+![Codex workbench on Linux][workbench]
+![Browser Use annotations][]
+![Diff view with change summary]
+
+[workbench]: docs/assets/readme/workbench.png
+[Browser Use annotations]: docs/assets/readme/browser-use-annotations.webp
+[Diff view with change summary]: docs/assets/readme/diff-view.png
+`;
+
+  assert.deepEqual(errorsFor(markdown), []);
+});
+
 test("rejects local showcase images outside docs/assets/readme", () => {
   const markdown = `
 ![Codex workbench](assets/workbench.png)
@@ -45,6 +59,31 @@ test("rejects local showcase images outside docs/assets/readme", () => {
 
   assert.deepEqual(errorsFor(markdown), [
     "README showcase image must live under docs/assets/readme/: assets/workbench.png",
+  ]);
+});
+
+test("rejects reference-style showcase image sources outside policy", () => {
+  const markdown = `
+![Remote showcase][remote]
+![Out-of-scope showcase][outside]
+
+[remote]: https://example.com/workbench.png
+[outside]: assets/workbench.png
+`;
+
+  assert.deepEqual(errorsFor(markdown), [
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench.png",
+    "README showcase image must live under docs/assets/readme/: assets/workbench.png",
+  ]);
+});
+
+test("rejects showcase paths that escape docs/assets/readme", () => {
+  const markdown = `
+![Escaped showcase](docs/assets/readme/../outside.png)
+`;
+
+  assert.deepEqual(errorsFor(markdown), [
+    "README showcase image must live under docs/assets/readme/: docs/assets/readme/../outside.png",
   ]);
 });
 
@@ -102,6 +141,15 @@ test("ignores image-like syntax inside fenced code blocks", () => {
 ![External example](https://example.com/workbench.png)
 <img src="assets/out-of-scope.png">
 \`\`\`
+`;
+
+  assert.deepEqual(errorsFor(markdown), []);
+});
+
+test("ignores image-like syntax inside inline code spans", () => {
+  const markdown = `
+Use \`![External example](https://example.com/workbench.png)\` when documenting Markdown syntax.
+Use \`<img src="assets/out-of-scope.png">\` when documenting HTML syntax.
 `;
 
   assert.deepEqual(errorsFor(markdown), []);

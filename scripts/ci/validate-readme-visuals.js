@@ -2,6 +2,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const path = require("node:path");
 
 const APPROVED_SHOWCASE_PREFIX = "docs/assets/readme/";
 const GENERATED_OR_RUNTIME_PREFIXES = [
@@ -20,6 +21,18 @@ function normalizeSrc(src) {
   return src.trim().replace(/^\.?\//, "");
 }
 
+function canonicalizeLocalPath(src) {
+  const normalized = normalizeSrc(src);
+  if (normalized.length === 0) {
+    return normalized;
+  }
+  return path.posix.normalize(normalized).replace(/^\/+/, "");
+}
+
+function hasParentPathSegment(src) {
+  return normalizeSrc(src).split("/").includes("..");
+}
+
 function isExternalUrl(src) {
   return /^https?:\/\//i.test(src);
 }
@@ -33,7 +46,7 @@ function isExistingAppIcon(src) {
 }
 
 function isGeneratedOrRuntimePath(src) {
-  const normalized = normalizeSrc(src);
+  const normalized = canonicalizeLocalPath(src);
   if (normalized === "Codex.dmg") {
     return true;
   }
@@ -65,6 +78,33 @@ function stripFencedCodeBlocks(content) {
     .join("\n");
 }
 
+function stripInlineCodeSpans(content) {
+  return content.replace(/(`+)[\s\S]*?\1/g, "");
+}
+
+function normalizeReferenceLabel(label) {
+  return label.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizeReferenceSrc(src) {
+  const trimmed = src.trim();
+  if (trimmed.startsWith("<") && trimmed.endsWith(">")) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function findReferenceDefinitions(content) {
+  const references = new Map();
+  const referenceDefinitionPattern =
+    /^[ \t]{0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]*>|[^ \t\n]+)(?:[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$/gm;
+
+  for (const match of content.matchAll(referenceDefinitionPattern)) {
+    references.set(normalizeReferenceLabel(match[1]), normalizeReferenceSrc(match[2]));
+  }
+  return references;
+}
+
 function findMarkdownImages(content) {
   const images = [];
   const markdownImagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
@@ -72,6 +112,24 @@ function findMarkdownImages(content) {
     images.push({
       alt: match[1].trim(),
       src: match[2].trim(),
+    });
+  }
+  const references = findReferenceDefinitions(content);
+  const referenceImagePattern = /!\[([^\]\n]*)\](?:\[([^\]\n]*)\])?/g;
+  for (const match of content.matchAll(referenceImagePattern)) {
+    if (content[match.index + match[0].length] === "(") {
+      continue;
+    }
+
+    const referenceLabel = match[2] == null || match[2].length === 0 ? match[1] : match[2];
+    const src = references.get(normalizeReferenceLabel(referenceLabel));
+    if (src == null) {
+      continue;
+    }
+
+    images.push({
+      alt: match[1].trim(),
+      src: src.trim(),
     });
   }
   return images;
@@ -96,7 +154,7 @@ function findHtmlImages(content) {
 }
 
 function findImages(content) {
-  const renderableContent = stripFencedCodeBlocks(content);
+  const renderableContent = stripInlineCodeSpans(stripFencedCodeBlocks(content));
   return [...findMarkdownImages(renderableContent), ...findHtmlImages(renderableContent)];
 }
 
@@ -122,8 +180,8 @@ function validateReadmeVisualsContent(content) {
       errors.push(`README showcase image is missing alt text: ${src}`);
     }
 
-    const normalized = normalizeSrc(src);
-    if (!normalized.startsWith(APPROVED_SHOWCASE_PREFIX)) {
+    const normalized = canonicalizeLocalPath(src);
+    if (hasParentPathSegment(src) || !normalized.startsWith(APPROVED_SHOWCASE_PREFIX)) {
       errors.push(`README showcase image must live under docs/assets/readme/: ${src}`);
     }
     if (isGeneratedOrRuntimePath(src)) {
