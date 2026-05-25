@@ -80,10 +80,12 @@ test("rejects reference-style showcase image sources outside policy", () => {
 test("rejects showcase paths that escape docs/assets/readme", () => {
   const markdown = `
 ![Escaped showcase](docs/assets/readme/../outside.png)
+![Encoded escaped showcase](docs/assets/readme/%2e%2e/outside.png)
 `;
 
   assert.deepEqual(errorsFor(markdown), [
     "README showcase image must live under docs/assets/readme/: docs/assets/readme/../outside.png",
+    "README showcase image must live under docs/assets/readme/: docs/assets/readme/%2e%2e/outside.png",
   ]);
 });
 
