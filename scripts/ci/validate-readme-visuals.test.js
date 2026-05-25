@@ -118,6 +118,7 @@ test("rejects external showcase image URLs", () => {
 ![Remote showcase with title](https://example.com/workbench-title.png 'title')
 ![Remote showcase with angle destination](<https://example.com/workbench-angle.png>)
 ![Remote showcase with spaced angle destination](<https://example.com/workbench screenshot.png>)
+![Remote showcase [with state]](https://example.com/workbench-state.png)
 `;
 
   assert.deepEqual(errorsFor(markdown), [
@@ -125,6 +126,7 @@ test("rejects external showcase image URLs", () => {
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench-title.png",
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench-angle.png",
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench screenshot.png",
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench-state.png",
   ]);
 });
 
@@ -158,6 +160,10 @@ test("ignores image-like syntax inside fenced code blocks", () => {
 ![External example](https://example.com/workbench.png)
 <img src="assets/out-of-scope.png">
 \`\`\`
+
+> \`\`\`markdown
+> ![External blockquote example](https://example.com/blockquote-workbench.png)
+> \`\`\`
 `;
 
   assert.deepEqual(errorsFor(markdown), []);
