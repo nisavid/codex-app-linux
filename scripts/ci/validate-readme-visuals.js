@@ -197,10 +197,13 @@ function findReferenceDefinitions(content) {
   const references = new Map();
   const normalizedContent = normalizeReferenceDefinitionContainers(content);
   const referenceDefinitionPattern =
-    /^[ \t]{0,3}\[([^\]\n]+)\]:[ \t]*(?:\r?\n[ \t]+)?(<[^>\n]*>|[^ \t\n]+)(?:[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$/gm;
+    /^[ \t]{0,3}\[((?:\\[^\n]|[^\]\n])+)\]:[ \t]*(?:\r?\n[ \t]+)?(<[^>\n]*>|[^ \t\n]+)(?:[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$/gm;
 
   for (const match of normalizedContent.matchAll(referenceDefinitionPattern)) {
-    references.set(normalizeReferenceLabel(match[1]), normalizeReferenceSrc(match[2]));
+    const label = normalizeReferenceLabel(match[1]);
+    if (!references.has(label)) {
+      references.set(label, normalizeReferenceSrc(match[2]));
+    }
   }
   return references;
 }
