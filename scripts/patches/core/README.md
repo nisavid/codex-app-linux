@@ -4,7 +4,7 @@ Core patch modules live under `scripts/patches/core/**/patch.js` and are loaded
 automatically by `scripts/patches/engine.js`.
 
 Use this tree only for shipped Linux compatibility patches. Optional user-facing
-extras still belong in `linux-features/`.
+extras still belong in `port-integrations/`.
 
 Current namespaces:
 

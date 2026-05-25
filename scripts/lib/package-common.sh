@@ -104,11 +104,12 @@ package_with_updater_enabled() {
     [ "$(package_with_updater_value)" = "1" ]
 }
 
-clear_update_builder_linux_features_config() {
+clear_update_builder_port_integration_config() {
     local update_builder_root="$1"
-    local target="$update_builder_root/linux-features/features.json"
 
-    rm -f "$target"
+    rm -f \
+        "$update_builder_root/port-integrations/integrations.json" \
+        "$update_builder_root/port-integrations/features.json"
 }
 
 render_desktop_entry() {
@@ -550,7 +551,7 @@ stage_update_builder_bundle() {
         "$update_builder_root/scripts/lib" \
         "$update_builder_root/scripts/patches" \
         "$update_builder_root/launcher" \
-        "$update_builder_root/linux-features" \
+        "$update_builder_root/port-integrations" \
         "$update_builder_root/packaging/linux" \
         "$update_builder_root/assets"
 
@@ -583,8 +584,8 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/scripts/lib/asar-patch.sh" "$update_builder_root/scripts/lib/asar-patch.sh"
     cp "$REPO_DIR/scripts/lib/webview-install.sh" "$update_builder_root/scripts/lib/webview-install.sh"
     cp "$REPO_DIR/scripts/lib/bundled-plugins.sh" "$update_builder_root/scripts/lib/bundled-plugins.sh"
-    cp "$REPO_DIR/scripts/lib/linux-features.js" "$update_builder_root/scripts/lib/linux-features.js"
-    cp "$REPO_DIR/scripts/lib/linux-features.sh" "$update_builder_root/scripts/lib/linux-features.sh"
+    cp "$REPO_DIR/scripts/lib/port-integrations.js" "$update_builder_root/scripts/lib/port-integrations.js"
+    cp "$REPO_DIR/scripts/lib/port-integrations.sh" "$update_builder_root/scripts/lib/port-integrations.sh"
     cp "$REPO_DIR/scripts/lib/linux-target-context.js" "$update_builder_root/scripts/lib/linux-target-context.js"
     cp "$REPO_DIR/scripts/lib/linux-update-bridge-patch.js" "$update_builder_root/scripts/lib/linux-update-bridge-patch.js"
     cp "$REPO_DIR/scripts/lib/patch-report.js" "$update_builder_root/scripts/lib/patch-report.js"
@@ -604,8 +605,8 @@ stage_update_builder_bundle() {
     cp "$UPDATER_SERVICE_SOURCE" "$update_builder_root/packaging/linux/codex-app-updater.service"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postinst" "$update_builder_root/packaging/linux/codex-app-updater.postinst"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.prerm" "$update_builder_root/packaging/linux/codex-app-updater.prerm"
-    cp -r "$REPO_DIR/linux-features/." "$update_builder_root/linux-features/"
-    clear_update_builder_linux_features_config "$update_builder_root"
+    cp -r "$REPO_DIR/port-integrations/." "$update_builder_root/port-integrations/"
+    clear_update_builder_port_integration_config "$update_builder_root"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postrm" "$update_builder_root/packaging/linux/codex-app-updater.postrm"
     cp "$REPO_DIR/assets/codex.png" "$update_builder_root/assets/codex.png"
     if [ -d "$node_runtime_source" ]; then

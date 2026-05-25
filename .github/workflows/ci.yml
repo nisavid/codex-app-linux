@@ -59,13 +59,13 @@ jobs:
           for file in scripts/patches/*.js; do
             node --check "$file"
           done
-          for file in linux-features/*/patch.js; do
+          for file in port-integrations/*/*.js; do
             [ -f "$file" ] || continue
             node --check "$file"
           done
-          feature_tests=(linux-features/*/test.js)
-          if [ -e "${feature_tests[0]}" ]; then
-            node --test --test-concurrency=1 "${feature_tests[@]}"
+          integration_tests=(port-integrations/*/test.js)
+          if [ -e "${integration_tests[0]}" ]; then
+            node --test --test-concurrency=1 "${integration_tests[@]}"
           fi
           node --check scripts/ci/validate-patch-report.js
 

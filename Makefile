@@ -64,7 +64,7 @@ help:
 	@printf '  %-18s %s\n' "make inspect-dmg" "Inspect a DMG and write rebuild reports without changing codex-app/"
 	@printf '  %-18s %s\n' "make build-app" "Run install.sh and regenerate codex-app/ (reuses cached Codex.dmg)"
 	@printf '  %-18s %s\n' "make build-app-fresh" "Remove cached Codex.dmg and regenerate codex-app/"
-	@printf '  %-18s %s\n' "make setup-native" "Guided setup summary and Linux feature config helper"
+	@printf '  %-18s %s\n' "make setup-native" "Guided setup summary and port integration config helper"
 	@printf '  %-18s %s\n' "make bootstrap-native" "Install deps, fresh-build, package, and install"
 	@printf '  %-18s %s\n' "make install-native" "Fresh-build, package, and install"
 	@printf '  %-18s %s\n' "make update-native" "Pull trusted checkout, fresh-build, package, and install"

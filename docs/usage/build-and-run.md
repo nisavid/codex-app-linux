@@ -193,22 +193,25 @@ Override the webview port by exporting it for the build command:
 CODEX_WEBVIEW_PORT=5180 make build-dev-app
 ```
 
-### Linux Features
+### Port Integrations
 
-Linux-side feature modules live in `linux-features/`. This fork enables the
-current Linux integration set by default: Open target discovery, remote-control
-UI, mobile-control host patches, Read Aloud, Read Aloud MCP, and conversation
-mode. Open target discovery lets the generated app discover Linux terminals,
-editors, and file managers for the Open menus.
+Port integrations are build-time integration modules that adapt official Codex app
+behavior and local runtime helpers to this Linux port. The source path is
+`port-integrations/`.
 
-To disable default features or enable still-optional integrations, copy
-`linux-features/features.example.json` to the git-ignored
-`linux-features/features.json`, edit the `enabled` and `disabled` lists, then
+This fork enables the current supported integration set by default: Open target
+discovery, remote-control UI, mobile-control host patches, Read Aloud, Read
+Aloud MCP, and conversation mode. Open target discovery lets the generated app
+discover Linux terminals, editors, and file managers for the Open menus.
+
+To disable default integrations or enable still-optional integrations, copy
+`port-integrations/integrations.example.json` to the git-ignored
+`port-integrations/integrations.json`, edit the `enabled` and `disabled` lists, then
 rebuild. Packaged installs can use
-`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` for the same
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/port-integrations.json` for the same
 override shape; checkout builds ignore that persistent user file and use
-`linux-features/features.json` or `CODEX_LINUX_FEATURES_CONFIG` instead. See
-[`linux-features/README.md`](../../linux-features/README.md) for the feature
+`port-integrations/integrations.json` or `CODEX_PORT_INTEGRATIONS_CONFIG` instead. See
+[`port-integrations/README.md`](../../port-integrations/README.md) for the integration
 contract.
 
 ### Linux Computer Use UI Opt-In
@@ -297,15 +300,15 @@ To remove the existing generated tree and redownload the DMG:
 
 Run `make setup-native` when you want a host preflight summary before choosing
 the build and install commands. The helper reports package-manager, desktop
-session, package-format, updater, Computer Use, Read Aloud, and optional Linux
-feature readiness. It can write `linux-features/features.json` for the next
-build, but it does not implicitly build, package, or install.
+session, package-format, updater, Computer Use, Read Aloud, and optional port
+integration readiness. It can write `port-integrations/integrations.json`
+for the next build, but it does not implicitly build, package, or install.
 
-For non-interactive feature config:
+For non-interactive integration config:
 
 ```bash
-CODEX_LINUX_FEATURES=remote-mobile-control,read-aloud \
-CODEX_LINUX_DISABLE_FEATURES=conversation-mode \
+CODEX_PORT_INTEGRATIONS=remote-mobile-control,read-aloud \
+CODEX_DISABLE_PORT_INTEGRATIONS=conversation-mode \
 CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
 make setup-native
 ```

@@ -7,20 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- New default Linux feature `read-aloud-mcp` that stages a standalone Rust Read
+- New default port integration `read-aloud-mcp` that stages a standalone Rust Read
   Aloud MCP plugin with `doctor`, `read_aloud`, and `stop` tools. The MCP server
-  reuses the Kokoro runner/model configuration from the Read Aloud UI feature.
-  When bundled, the feature patches Codex's bundled plugin registry so the app
+  reuses the Kokoro runner/model configuration from the Read Aloud UI integration.
+  When bundled, the integration patches Codex's bundled plugin registry so the app
   keeps `read-aloud` installed, and the launcher syncs the plugin cache so new
   Codex windows expose the MCP tools through the same auto-install path as
   Computer Use.
 
 ### Changed
 
-- The current Linux integration features now default on: remote-control UI,
+- The current supported port integrations now default on: remote-control UI,
   mobile-control host patches, Read Aloud, Read Aloud MCP, and conversation
-  mode. Local `linux-features/features.json` and persisted package overrides can
-  still disable defaults or enable still-optional features.
+  mode. Local `port-integrations/integrations.json` and persisted package overrides can
+  still disable defaults or enable still-optional integrations.
 
 ### Fixed
 
@@ -33,13 +33,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - New local AppImage build target for manual-update installs on systems where native packages are awkward.
 - Opt-in multi-instance launcher support via `--new-instance` or `CODEX_MULTI_LAUNCH=1`, with isolated Electron profiles, pid files, sockets, logs, and bounded webview ports.
-- New opt-in Linux features `remote-control-ui` and `remote-mobile-control` that patch official app remote-control surfaces on Linux without faking backend state, MFA, or connected-client data.
-- `linux-features` can now contribute opt-in `webview-asset` patch descriptors in addition to main-bundle patches, so feature-scoped Linux UI experiments can hook hashed webview assets without being promoted into the core patch registry.
+- New opt-in port integrations `remote-control-ui` and `remote-mobile-control` that patch official app remote-control surfaces on Linux without faking backend state, MFA, or connected-client data.
+- `port-integrations` can now contribute opt-in `webview-asset` patch descriptors in addition to main-bundle patches, so feature-scoped Linux UI experiments can hook hashed webview assets without being promoted into the core patch registry.
 - Nix outputs for the default app, Computer Use UI, remote mobile control, the combined feature set, and the installer.
 
 ### Fixed
 
-- Updater and launcher edge cases around interrupted installs, persisted Linux features, user-local managed checkout metadata, webview origin probes behind proxy settings, and package metadata.
+- Updater and launcher edge cases around interrupted installs, persisted port integrations, user-local managed checkout metadata, webview origin probes behind proxy settings, and package metadata.
 - Pacman builds now expose a `codex-app-latest.pkg.tar.zst` symlink for the most recent local package artifact.
 - The webview patcher can keep the composer rate-limit footer visible across official app bundle drift.
 

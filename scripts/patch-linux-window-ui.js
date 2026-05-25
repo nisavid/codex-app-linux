@@ -6,12 +6,12 @@ const {
   writePatchReport,
 } = require("./lib/patch-report.js");
 const {
-  enabledLinuxFeatureIds,
-  enabledLinuxFeatureStageHooks,
-  loadEnabledLinuxFeatures,
-  loadLinuxFeaturePatchDescriptors,
-  loadLinuxFeatureMainBundlePatches,
-} = require("./lib/linux-features.js");
+  enabledPortIntegrationIds,
+  enabledPortIntegrationStageHooks,
+  loadEnabledPortIntegrations,
+  loadPortIntegrationPatchDescriptors,
+  loadPortIntegrationMainBundlePatches,
+} = require("./lib/port-integrations.js");
 const {
   detectLinuxTargetContext,
   linuxTargetSummary,
@@ -199,14 +199,14 @@ module.exports = {
   createMainBundleContext,
   detectLinuxTargetContext,
   discoverCorePatchDescriptors,
-  enabledLinuxFeatureIds,
-  enabledLinuxFeatureStageHooks,
+  enabledPortIntegrationIds,
+  enabledPortIntegrationStageHooks,
   isComputerUseUiEnabled,
   legacyCorePatchDescriptors,
   linuxTargetSummary,
-  loadEnabledLinuxFeatures,
-  loadLinuxFeaturePatchDescriptors,
-  loadLinuxFeatureMainBundlePatches,
+  loadEnabledPortIntegrations,
+  loadPortIntegrationPatchDescriptors,
+  loadPortIntegrationMainBundlePatches,
   normalizePatchDescriptors,
   parseOsRelease,
   patchCommentPreloadBundle,

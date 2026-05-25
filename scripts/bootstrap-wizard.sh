@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-FEATURES_ROOT="${CODEX_LINUX_FEATURES_ROOT:-$REPO_DIR/linux-features}"
+INTEGRATIONS_ROOT="${CODEX_PORT_INTEGRATIONS_ROOT:-${CODEX_LINUX_FEATURES_ROOT:-$REPO_DIR/port-integrations}}"
 PACKAGE_NAME="${PACKAGE_NAME:-codex-app}"
 
 info() {
@@ -29,17 +29,20 @@ Environment:
   CODEX_BOOTSTRAP_DRY_RUN=1            preview install/cleanup actions without changing them
   CODEX_BOOTSTRAP_INSTALL_DEPS=1       run bash scripts/install-deps.sh after checks
   CODEX_BOOTSTRAP_INSTALL_NATIVE=1     run make install-native after checks
-  CODEX_BOOTSTRAP_CLEANUP_FEATURES=a,b cleanup feature-owned data with confirmation
-  CODEX_LINUX_FEATURES=a,b             enable build-time Linux features
-  CODEX_LINUX_DISABLE_FEATURES=a,b     disable build-time Linux features
-  CODEX_LINUX_FEATURES_ROOT=/path      override linux-features root
-  CODEX_LINUX_FEATURES_CONFIG=/path    override features.json path
+  CODEX_BOOTSTRAP_CLEANUP_INTEGRATIONS=a,b cleanup integration-owned data with confirmation
+  CODEX_PORT_INTEGRATIONS=a,b             enable build-time port integrations
+  CODEX_DISABLE_PORT_INTEGRATIONS=a,b     disable build-time port integrations
+  CODEX_PORT_INTEGRATIONS_ROOT=/path      override port-integrations root
+  CODEX_PORT_INTEGRATIONS_CONFIG=/path    override integrations.json path
   PACKAGE_NAME=codex-cua-lab           check side-by-side installed package state
   PACKAGE_WITH_UPDATER=0               choose manual-update package mode
 
+Legacy CODEX_LINUX_FEATURES_* and CODEX_BOOTSTRAP_CLEANUP_FEATURES variables
+are accepted as compatibility aliases.
+
 The wizard is conservative: it does not install packages, start services, stop
-ydotoold, or delete feature-owned user data unless the user explicitly asks and
-confirms exact paths. It prepares feature config and prints the exact
+ydotoold, or delete integration-owned user data unless the user explicitly asks and
+confirms exact paths. It prepares integration config and prints the exact
 rebuild/reinstall command to run next.
 EOF
 }
@@ -124,11 +127,17 @@ package_with_updater_enabled() {
     esac
 }
 
-feature_config_path() {
-    if [ -n "${CODEX_LINUX_FEATURES_CONFIG:-}" ]; then
+integration_config_path() {
+    if [ -n "${CODEX_PORT_INTEGRATIONS_CONFIG:-}" ]; then
+        printf '%s\n' "$CODEX_PORT_INTEGRATIONS_CONFIG"
+    elif [ -n "${CODEX_LINUX_FEATURES_CONFIG:-}" ]; then
         printf '%s\n' "$CODEX_LINUX_FEATURES_CONFIG"
+    elif [ -e "$INTEGRATIONS_ROOT/integrations.json" ]; then
+        printf '%s\n' "$INTEGRATIONS_ROOT/integrations.json"
+    elif [ -e "$INTEGRATIONS_ROOT/features.json" ]; then
+        printf '%s\n' "$INTEGRATIONS_ROOT/features.json"
     else
-        printf '%s\n' "$FEATURES_ROOT/features.json"
+        printf '%s\n' "$INTEGRATIONS_ROOT/integrations.json"
     fi
 }
 
@@ -521,7 +530,7 @@ print_read_aloud_details() {
     else
         info "  Read Aloud doctor command: enable read-aloud-mcp and rebuild/install, then run codex-read-aloud-linux doctor from the staged plugin."
     fi
-    info "  Setup hint: use the Read Aloud settings download flow or linux-features/read-aloud/install-kokoro-runtime.sh; custom paths stay in settings/env."
+    info "  Setup hint: use the Read Aloud settings download flow or port-integrations/read-aloud/install-kokoro-runtime.sh; custom paths stay in settings/env."
 }
 
 print_computer_use_details() {
@@ -588,28 +597,28 @@ print_system_summary() {
     info "Installed updater mode: $(updater_install_summary)"
 }
 
-run_feature_config_python() {
+run_integration_config_python() {
     local enable_raw="$1"
     local disable_raw="$2"
     local apply_changes="$3"
     local config_path
-    config_path="$(feature_config_path)"
+    config_path="$(integration_config_path)"
 
     if ! command -v python3 >/dev/null 2>&1; then
         if [ -n "$enable_raw$disable_raw" ]; then
-            error "python3 is required to edit Linux feature config. Run bash scripts/install-deps.sh first."
+            error "python3 is required to edit port integration config. Run bash scripts/install-deps.sh first."
         fi
-        warn "python3 is missing; skipping Linux feature discovery and config editing"
+        warn "python3 is missing; skipping port integration discovery and config editing"
         return
     fi
 
-    python3 - "$FEATURES_ROOT" "$config_path" "$enable_raw" "$disable_raw" "$apply_changes" <<'PY'
+    python3 - "$INTEGRATIONS_ROOT" "$config_path" "$enable_raw" "$disable_raw" "$apply_changes" <<'PY'
 import json
 import pathlib
 import re
 import sys
 
-features_root = pathlib.Path(sys.argv[1])
+integrations_root = pathlib.Path(sys.argv[1])
 config_path = pathlib.Path(sys.argv[2])
 enable_raw = sys.argv[3]
 disable_raw = sys.argv[4]
@@ -632,7 +641,7 @@ def split_ids(raw):
     result = []
     for item in ids:
         if not id_re.match(item):
-            die(f"Invalid Linux feature id: {item}")
+            die(f"Invalid port integration id: {item}")
         if item not in seen:
             seen.add(item)
             result.append(item)
@@ -646,46 +655,54 @@ def read_json(path, label):
     except Exception as exc:
         die(f"Could not read {label} at {path}: {exc}")
 
-def discover_features(root):
-    features = {}
+def discover_integrations(root):
+    integrations = {}
     if not root.exists():
-        warn(f"Linux features root not found: {root}")
-        return features
+        warn(f"port integrations root not found: {root}")
+        return integrations
+    manifest_paths = {}
+    for manifest_path in sorted(root.glob("*/integration.json")):
+        manifest_paths[manifest_path.parent] = manifest_path
     for manifest_path in sorted(root.glob("*/feature.json")):
-        data = read_json(manifest_path, f"Linux feature manifest {manifest_path}") or {}
-        feature_id = data.get("id")
-        if not isinstance(feature_id, str) or not id_re.match(feature_id):
-            warn(f"Skipping feature with invalid id in {manifest_path}")
+        manifest_paths.setdefault(manifest_path.parent, manifest_path)
+    for manifest_path in sorted(manifest_paths.values()):
+        data = read_json(manifest_path, f"port integration manifest {manifest_path}") or {}
+        integration_id = data.get("id")
+        if not isinstance(integration_id, str) or not id_re.match(integration_id):
+            warn(f"Skipping integration with invalid id in {manifest_path}")
             continue
-        if feature_id in features:
-            warn(f"Skipping duplicate Linux feature id: {feature_id}")
+        if integration_id in integrations:
+            warn(f"Skipping duplicate port integration id: {integration_id}")
             continue
-        title = data.get("title") or data.get("name") or feature_id
+        title = data.get("title") or data.get("name") or integration_id
         description = data.get("description") or ""
-        features[feature_id] = {
-            "id": feature_id,
+        integrations[integration_id] = {
+            "id": integration_id,
             "title": str(title),
             "description": str(description),
         }
-    return dict(sorted(features.items()))
+    return dict(sorted(integrations.items()))
 
 def read_enabled_ids(path):
     if not path.exists():
-        fallback = features_root / "features.example.json"
+        fallback = integrations_root / "integrations.example.json"
+        legacy_fallback = integrations_root / "features.example.json"
         if fallback.exists():
-            data = read_json(fallback, "Linux features example config") or {}
+            data = read_json(fallback, "port integrations example config") or {}
+        elif legacy_fallback.exists():
+            data = read_json(legacy_fallback, "port integrations example config") or {}
         else:
             return []
     else:
-        data = read_json(path, "Linux features config") or {}
+        data = read_json(path, "port integrations config") or {}
     enabled = data.get("enabled", [])
     if not isinstance(enabled, list):
-        die(f"Linux features config {path} must contain an enabled array")
+        die(f"port integrations config {path} must contain an enabled array")
     result = []
     seen = set()
     for item in enabled:
         if not isinstance(item, str) or not id_re.match(item):
-            die(f"Invalid Linux feature id in {path}: {item}")
+            die(f"Invalid port integration id in {path}: {item}")
         if item not in seen:
             seen.add(item)
             result.append(item)
@@ -694,55 +711,55 @@ def read_enabled_ids(path):
 def csv(ids):
     return ", ".join(ids) if ids else "none"
 
-features = discover_features(features_root)
+integrations = discover_integrations(integrations_root)
 current = read_enabled_ids(config_path)
 enable = split_ids(enable_raw)
 disable = split_ids(disable_raw)
 conflicting = sorted(set(enable) & set(disable))
 if conflicting:
-    die(f"Linux feature ids cannot be both enabled and disabled: {csv(conflicting)}")
+    die(f"port integration ids cannot be both enabled and disabled: {csv(conflicting)}")
 
-for feature_id in enable:
-    if feature_id not in features:
-        die(f"Unknown Linux feature id: {feature_id}")
-for feature_id in disable:
-    if feature_id not in features and feature_id not in current:
-        die(f"Unknown Linux feature id: {feature_id}")
+for integration_id in enable:
+    if integration_id not in integrations:
+        die(f"Unknown port integration id: {integration_id}")
+for integration_id in disable:
+    if integration_id not in integrations and integration_id not in current:
+        die(f"Unknown port integration id: {integration_id}")
 
-final = [feature_id for feature_id in current if feature_id not in set(disable)]
-for feature_id in enable:
-    if feature_id not in final:
-        final.append(feature_id)
+final = [integration_id for integration_id in current if integration_id not in set(disable)]
+for integration_id in enable:
+    if integration_id not in final:
+        final.append(integration_id)
 
 if apply_changes and (enable or disable):
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps({"enabled": final}, indent=2) + "\n")
-    print(f"[setup] Updated Linux feature config: {config_path}")
+    print(f"[setup] Updated port integration config: {config_path}")
 elif not config_path.exists():
-    print(f"[setup] Linux feature config: {config_path} (not created yet)")
+    print(f"[setup] port integration config: {config_path} (not created yet)")
 else:
-    print(f"[setup] Linux feature config: {config_path}")
+    print(f"[setup] port integration config: {config_path}")
 
-print(f"[setup] Enabled Linux features: {csv(final)}")
+print(f"[setup] Enabled port integrations: {csv(final)}")
 
-unknown_enabled = [feature_id for feature_id in final if feature_id not in features]
+unknown_enabled = [integration_id for integration_id in final if integration_id not in integrations]
 if unknown_enabled:
-    warn(f"Enabled feature ids not found in this checkout: {csv(unknown_enabled)}")
+    warn(f"Enabled integration ids not found in this checkout: {csv(unknown_enabled)}")
 
 if "conversation-mode" in final and "read-aloud" not in final:
-    warn("conversation-mode is enabled without read-aloud; speech output requires the Read Aloud feature.")
+    warn("conversation-mode is enabled without read-aloud; speech output requires the Read Aloud integration.")
 
-if features:
-    print("[setup] Available Linux features:")
-    for feature_id, feature in features.items():
-        state = "enabled" if feature_id in final else "available"
-        sample = " (developer sample)" if feature_id == "example-feature" else ""
-        print(f"[setup]   [{state}] {feature_id}{sample} - {feature['title']}")
+if integrations:
+    print("[setup] Available port integrations:")
+    for integration_id, integration in integrations.items():
+        state = "enabled" if integration_id in final else "available"
+        sample = " (developer sample)" if integration_id == "example-integration" else ""
+        print(f"[setup]   [{state}] {integration_id}{sample} - {integration['title']}")
 else:
-    print("[setup] Available Linux features: none found")
+    print("[setup] Available port integrations: none found")
 
 if apply_changes and (enable or disable):
-    print("[setup] Feature changes apply after rebuilding and reinstalling Codex App Linux.")
+    print("[setup] Integration changes apply after rebuilding and reinstalling Codex App Linux.")
 PY
 }
 
@@ -761,7 +778,7 @@ print_safe_disable_guidance() {
     local disable_raw="$1"
     [ -n "$disable_raw" ] || return 0
 
-    info "Disabling a build-time feature only edits linux-features/features.json for the next rebuild."
+    info "Disabling a build-time integration only edits port-integrations/integrations.json for the next rebuild."
 
     if list_includes_id "$disable_raw" "remote-mobile-control"; then
         local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -789,7 +806,7 @@ print_safe_disable_guidance() {
     fi
 }
 
-validate_cleanup_feature_ids() {
+validate_cleanup_integration_ids() {
     local raw="$1"
     local item
     raw="${raw//,/ }"
@@ -800,7 +817,7 @@ validate_cleanup_feature_ids() {
             "")
                 ;;
             *)
-                error "Unsupported cleanup feature id: $item"
+                error "Unsupported cleanup integration id: $item"
                 ;;
         esac
     done
@@ -830,7 +847,7 @@ confirm_and_delete_path() {
         return
     fi
     if ! cleanup_path_is_safe "$path"; then
-        warn "Refusing cleanup path outside the known feature-owned locations: $path"
+        warn "Refusing cleanup path outside the known integration-owned locations: $path"
         return
     fi
 
@@ -849,17 +866,17 @@ confirm_and_delete_path() {
     fi
 }
 
-run_feature_cleanup() {
-    local cleanup_raw="${CODEX_BOOTSTRAP_CLEANUP_FEATURES:-}"
+run_integration_cleanup() {
+    local cleanup_raw="${CODEX_BOOTSTRAP_CLEANUP_INTEGRATIONS:-${CODEX_BOOTSTRAP_CLEANUP_FEATURES:-}}"
     if [ -z "$cleanup_raw" ]; then
         if noninteractive_mode; then
             return
         fi
         local wants_cleanup=""
-        prompt_read wants_cleanup "[setup] Clean up feature-owned local data now? [y/N]: " || true
+        prompt_read wants_cleanup "[setup] Clean up integration-owned local data now? [y/N]: " || true
         case "$wants_cleanup" in
             y|Y|yes|Yes|YES)
-                prompt_read cleanup_raw "[setup] Cleanup feature ids (comma-separated): " || true
+                prompt_read cleanup_raw "[setup] Cleanup integration ids (comma-separated): " || true
                 ;;
             *)
                 return
@@ -868,13 +885,13 @@ run_feature_cleanup() {
     fi
 
     [ -n "$cleanup_raw" ] || return
-    validate_cleanup_feature_ids "$cleanup_raw"
+    validate_cleanup_integration_ids "$cleanup_raw"
 
     if noninteractive_mode && ! dry_run_enabled; then
         error "Cleanup requires an interactive terminal and exact path confirmation."
     fi
 
-    info "Feature cleanup is separate from disabling features for the next rebuild."
+    info "Integration cleanup is separate from disabling integrations for the next rebuild."
     if dry_run_enabled; then
         info "Dry-run cleanup: matching paths will be printed and not deleted."
     else
@@ -915,7 +932,7 @@ print_package_mode_guidance() {
         info "No-updater mode takes effect only after rebuilding and reinstalling the native package."
         info "Next rebuild/reinstall command: PACKAGE_WITH_UPDATER=0 make install-native"
     fi
-    info "AppImage builds never include codex-app-updater. Nix feature choices stay declarative in flake outputs, not linux-features/features.json."
+    info "AppImage builds never include codex-app-updater. Nix integration choices stay declarative in flake outputs, not port-integrations/integrations.json."
 }
 
 run_repo_command() {
@@ -997,25 +1014,25 @@ maybe_run_install_steps() {
     fi
 }
 
-prompt_for_feature_changes() {
-    local enable_raw="${CODEX_LINUX_FEATURES:-}"
-    local disable_raw="${CODEX_LINUX_DISABLE_FEATURES:-}"
+prompt_for_integration_changes() {
+    local enable_raw="${CODEX_PORT_INTEGRATIONS:-${CODEX_LINUX_FEATURES:-}}"
+    local disable_raw="${CODEX_DISABLE_PORT_INTEGRATIONS:-${CODEX_LINUX_DISABLE_FEATURES:-}}"
 
     if truthy "${CODEX_BOOTSTRAP_NONINTERACTIVE:-0}" || ! [ -t 0 ]; then
-        run_feature_config_python "$enable_raw" "$disable_raw" "1"
+        run_integration_config_python "$enable_raw" "$disable_raw" "1"
         print_safe_disable_guidance "$disable_raw"
         return
     fi
 
-    run_feature_config_python "" "" "0"
+    run_integration_config_python "" "" "0"
     echo
-    prompt_read enable_raw "[setup] Enable feature ids for the next build (comma-separated, blank keeps current): " || true
-    prompt_read disable_raw "[setup] Disable feature ids for the next build (comma-separated, blank disables none): " || true
+    prompt_read enable_raw "[setup] Enable integration ids for the next build (comma-separated, blank keeps current): " || true
+    prompt_read disable_raw "[setup] Disable integration ids for the next build (comma-separated, blank disables none): " || true
     if [ -n "$enable_raw$disable_raw" ]; then
-        run_feature_config_python "$enable_raw" "$disable_raw" "1"
+        run_integration_config_python "$enable_raw" "$disable_raw" "1"
         print_safe_disable_guidance "$disable_raw"
     else
-        info "Feature config unchanged."
+        info "Integration config unchanged."
     fi
 
     local answer
@@ -1038,16 +1055,16 @@ prompt_for_feature_changes() {
 
 main() {
     print_system_summary
-    prompt_for_feature_changes
+    prompt_for_integration_changes
     print_computer_use_details
     print_read_aloud_details
-    run_feature_cleanup
+    run_integration_cleanup
     print_package_mode_guidance
     maybe_run_install_steps
     if dry_run_enabled; then
         info "Dry-run completed."
     else
-        info "Feature cleanup did not change services, groups, key files, model files, or plugin caches unless explicitly confirmed above."
+        info "Integration cleanup did not change services, groups, key files, model files, or plugin caches unless explicitly confirmed above."
     fi
     info "If Computer Use needs ydotoold, input group membership, a portal backend, or logout/login, run those steps explicitly after reviewing the commands."
 }

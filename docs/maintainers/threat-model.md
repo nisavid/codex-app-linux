@@ -26,7 +26,7 @@ The highest-risk areas are:
    tightly bound to a verified package identity and digest.
 3. **Desktop and renderer containment.** The generated Electron app, local
    webview server, Codex CLI, Linux Computer Use backend, and default-enabled
-   remote-control/mobile feature patches all run with the user's desktop
+   remote-control/mobile port integration patches all run with the user's desktop
    privileges. A renderer, plugin, localhost, CLI, or same-user XDG config
    compromise can affect local files, screenshots, input, remote-control device
    keys, and user processes.
@@ -55,7 +55,7 @@ In scope:
 - ASAR and generated-app inspection tooling:
   `scripts/patch-linux-window-ui.js`,
   `scripts/patch-linux-window-ui.test.js`, `scripts/patches/`,
-  `scripts/lib/linux-features.js`, `scripts/lib/linux-target-context.js`, and
+  `scripts/lib/port-integrations.js`, `scripts/lib/linux-target-context.js`, and
   `scripts/inspect-electron-security.js`.
 - Native package builders and templates: `scripts/build-deb.sh`,
   `scripts/build-rpm.sh`, `scripts/build-pacman.sh`, `scripts/lib/package-common.sh`,
@@ -63,8 +63,9 @@ In scope:
 - Updater service and CLI: `updater/`, `updater/Cargo.toml`, and updater tests.
 - Linux Computer Use backend and bundled plugin resources:
   `computer-use-linux/` and `plugins/openai-bundled/plugins/computer-use/`.
-- Linux feature patches: `linux-features/`, including default-enabled desktop
-  target discovery, remote-control/mobile patches, and feature-specific
+- Port integration patches in `port-integrations/`, including
+  default-enabled desktop target discovery, remote-control/mobile integration
+  patches, and integration-specific
   generated-app patches.
 - Release, CI, and Nix trust roots: `.github/workflows/`, `Makefile`,
   `flake.nix`, `flake.lock`, `Cargo.toml`, and `Cargo.lock`.
@@ -132,23 +133,23 @@ Open questions that materially affect risk:
 - **Local webview server:** serves extracted webview assets on loopback port
   `5175` by default through `launcher/webview-server.py`, sends no-cache
   headers, and validates startup markers before Electron launch.
-- **Linux feature and patch registry:** applies descriptor-backed core patches
-  and optional feature patches to generated main-process, webview, and
+- **Port integration and patch registry:** applies descriptor-backed core patches
+  and configurable integration patches to generated main-process, webview, and
   extracted-app bundles; required official-app patches must fail closed in
-  patch reports.
+  patch reports. The source path is `port-integrations/`.
 - **Linux open-target discovery:** default-enabled patching of generated app
   open-target behavior to discover terminals, IDEs, file managers, and
   `.desktop` entries, sanitize the launch environment, and invoke targets with
   argument vectors.
-- **Opt-in remote-control and Codex mobile patches:** Linux feature patches can
-  expose official app remote-control UI surfaces, preserve `remote_control`
-  config for the local app-server, and replace the macOS native device-key
-  module with a Linux software key store at
+- **Remote-control and Codex mobile port integrations:** integration patches can expose
+  official app remote-control UI surfaces, preserve `remote_control` config for
+  the local app-server, and replace the macOS native device-key module with a
+  Linux software key store at
   `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/remote-control-device-keys-v1.json`.
 - **Linux Computer Use backend:** Rust MCP backend and plugin resources that can
   inspect accessibility state, capture screenshots, and synthesize desktop
   input through AT-SPI, GNOME/KDE portal, and ydotool-style backends when
-  official app UI and OpenAI account gating enable the feature.
+  official app UI and OpenAI account gating enable Computer Use.
 - **Native package builders:** convert a generated app tree into `.deb`, `.rpm`,
   or pacman packages under the `codex-app` identity.
 - **AppImage builder:** creates a local manual AppImage under the `codex-app`
@@ -174,7 +175,7 @@ Open questions that materially affect risk:
 | Build toolchain | npm, Electron releases, Rust crates, distro tools, 7z/7zz | generated app and packages | Dependency compromise, unpinned downloads, malicious native modules |
 | Generated app bundle | extracted official app and patched ASAR | Linux Electron runtime | Renderer isolation, IPC, navigation, local file access |
 | Local webview origin | loopback HTTP server | Electron renderer | Same-user port spoofing, stale assets, marker spoofing |
-| Linux feature patches | generated app bundle | desktop launch helpers and platform integrations | Descriptor drift, command launch semantics, unsafe environment inheritance |
+| Port integration patches | generated app bundle | desktop launch helpers and platform integrations | Descriptor drift, command launch semantics, unsafe environment inheritance |
 | Remote-control/mobile patches | official app and account/mobile service state | local UI gates, app-server config, XDG device-key store | Software key theft, misleading availability, confused authorization state |
 | User config/state/cache | XDG user-writable files | updater decisions and rebuild inputs | Path substitution, stale state, developer-mode misuse, secret leakage |
 | Updater rebuild | unprivileged user service | package builder scripts and artifacts | Builder-root trust, PATH/tool influence, package identity |
@@ -195,7 +196,7 @@ flowchart LR
   W --> E["Electron renderer"]
   E --> C["Codex CLI"]
   E --> M["Computer Use MCP backend"]
-  E --> RC["Remote-control/mobile feature patches"]
+  E --> RC["Remote-control/mobile port integration patches"]
   M --> H["Desktop state, screenshots, input"]
   RC --> K["XDG software device-key store"]
   U --> B["Package builder"]
@@ -241,10 +242,10 @@ flowchart LR
   processes.
 - Generated ASAR/webview content, renderer messages, plugin manifests, and
   Computer Use requests.
-- Remote-control feature config, app-server config values, generated remote UI
+- Remote-control app-server config values, generated remote UI
   bundle state, mobile enrollment messages, and XDG device-key files.
 - `.desktop` entries, icon files, PATH entries, XDG desktop/session variables,
-  and Linux feature configuration used when discovering desktop targets.
+  and port integration configuration used when discovering desktop targets.
 - Package paths passed to privileged install subcommands.
 - Subprocess stdout/stderr that may be written to service logs or state.
 
@@ -388,7 +389,7 @@ or input automation beyond user intent.
 **Impact:** High for confidentiality and integrity of the user's desktop
 session.
 
-**Existing mitigations:** feature remains subject to OpenAI account-side
+**Existing mitigations:** Computer Use remains subject to OpenAI account-side
 rollout and host accessibility/input prerequisites; backend is packaged as a
 local app component rather than a network service; requested app selection now
 errors when no accessible app matches; the backend carries explicit identity
@@ -431,7 +432,7 @@ added.
 ### T5b: Remote-Control Or Mobile Host Enrollment Misstates Trust
 
 **Entry points:** default-enabled `remote-control-ui` and `remote-mobile-control`
-features, generated remote-control and Codex mobile webview bundles,
+port integrations, generated remote-control and Codex mobile webview bundles,
 app-server config preservation, Linux software device-key store, and OpenAI
 account/mobile enrollment flows.
 
@@ -574,12 +575,12 @@ still contain arbitrary sensitive values.
   release gates.
 - `launcher/webview-server.py`: loopback webview serving, cache headers, and
   port/bind assumptions.
-- `linux-features/open-target-discovery/`: Linux desktop target discovery,
+- `port-integrations/open-target-discovery/`: Linux desktop target discovery,
   `.desktop` parsing, argument-vector launches, and environment sanitization.
-- `linux-features/remote-control-ui/` and
-  `linux-features/remote-mobile-control/`: remote-control/mobile UI gates,
-  app-server config preservation, Linux device-key storage, and generated-copy
-  patches.
+- `port-integrations/remote-control-ui/` and
+  `port-integrations/remote-mobile-control/`: port integrations for
+  remote-control/mobile UI gates, app-server config preservation, Linux
+  device-key storage, and generated-copy patches.
 - `scripts/lib/dmg.sh`: installer DMG download and version extraction.
 - `scripts/lib/native-modules.sh`: native dependency version floors and
   Electron-specific temporary source compatibility patches.

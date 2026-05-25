@@ -6,7 +6,8 @@ Scan target: local Linux-port upstream sync merge from
 
 Scope:
 
-- Opt-in `remote-control-ui` and `remote-mobile-control` Linux feature patches.
+- The then-opt-in `remote-control-ui` and `remote-mobile-control` port integration
+  patches.
 - AppImage packaging and no-updater package paths.
 - Linux launch-action socket, second-instance handoff, and shutdown guard
   patching.
@@ -26,7 +27,8 @@ Result: no reportable security findings in this diff.
 
 Security notes:
 
-- The remote-control/mobile features remain opt-in. The patches expose Linux
+- In the scanned diff, the remote-control/mobile integrations remained opt-in. The
+  patches expose Linux
   plumbing and Linux-specific copy, but do not fabricate connected clients, MFA
   completion, enrollment, access-required, or remote-environment state.
 - Linux remote-control device keys are software keys in
@@ -41,8 +43,10 @@ Security notes:
   gated by the Linux warm-start setting. This sync also restores a `before-quit`
   guard for bootstrap-owned second-instance bundles so launch actions do not
   reopen UI during shutdown.
-- The update-builder Linux feature config now stages only the sanitized enabled
-  feature list. Local comments and disabled-list metadata are not packaged.
+- The update-builder port integration config now omits checkout-local
+  `integrations.json` and legacy `features.json` files. Updater rebuilds use the
+  packaged default-enabled manifests unless the user provides the persistent XDG
+  override.
 
 Follow-up:
 

@@ -153,13 +153,14 @@ The ASAR patch step currently:
   `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` is set at build time or
   `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/settings.json` contains
   `"codex-linux-computer-use-ui-enabled": true`.
-- applies `open-target-discovery` by default through `linux-features/` so the
-  app can discover Linux terminals, editors, and file managers for the Open
-  menus. Checkout builds use `linux-features/features.json` or an explicit
-  `CODEX_LINUX_FEATURES_CONFIG` file. Native package update-builder bundles do
-  not ship a generated `features.json`; they resolve
-  `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` at rebuild
-  time, then fall back to `linux-features/features.example.json`.
+- applies the `open-target-discovery` port integration by default through
+  `port-integrations/` so the app can discover Linux terminals,
+  editors, and file managers for the Open menus. Checkout builds use
+  `port-integrations/integrations.json` or an explicit `CODEX_PORT_INTEGRATIONS_CONFIG`
+  file. Native package update-builder bundles do not ship a generated
+  `integrations.json`; they resolve
+  `${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/port-integrations.json` at rebuild
+  time, then fall back to `port-integrations/integrations.example.json`.
 
 ## Updater Boundary
 

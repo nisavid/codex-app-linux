@@ -9,8 +9,8 @@ const {
   linuxTargetSummary,
 } = require("../lib/linux-target-context.js");
 const {
-  loadLinuxFeaturePatchDescriptors,
-} = require("../lib/linux-features.js");
+  loadPortIntegrationPatchDescriptors,
+} = require("../lib/port-integrations.js");
 const {
   findIconAsset,
   findMainBundle,
@@ -49,8 +49,8 @@ function legacyCorePatchDescriptors(options = {}) {
   return corePatchDescriptors(options);
 }
 
-function featurePatchDescriptors() {
-  return normalizePatchDescriptors(loadLinuxFeaturePatchDescriptors());
+function portIntegrationPatchDescriptors() {
+  return normalizePatchDescriptors(loadPortIntegrationPatchDescriptors());
 }
 
 function createMainBundleContext(iconAsset, options = {}) {
@@ -88,7 +88,7 @@ function mainBundlePatchDescriptors(context) {
   return normalizePatchDescriptors([
     ...corePatchDescriptors({ corePatchRoot: context.corePatchRoot })
       .filter((patch) => patch.phase === "main-bundle"),
-    ...featurePatchDescriptors().filter((patch) => patch.phase === "main-bundle"),
+    ...portIntegrationPatchDescriptors().filter((patch) => patch.phase === "main-bundle"),
   ]);
 }
 
@@ -105,7 +105,7 @@ function patchExtractedApp(extractedDir, options = {}) {
   const baseContext = createMainBundleContext(null, options);
   const patchDescriptors = normalizePatchDescriptors([
     ...corePatchDescriptors({ corePatchRoot: options.corePatchRoot }),
-    ...featurePatchDescriptors(),
+    ...portIntegrationPatchDescriptors(),
   ]);
 
   setReportLinuxTarget(report, baseContext.linux);
@@ -189,7 +189,7 @@ function allPatchPolicies(options = {}) {
       phase,
       appliesTo,
     })),
-    ...featurePatchDescriptors().map(({ id, name, ciPolicy, phase, appliesTo }) => ({
+    ...portIntegrationPatchDescriptors().map(({ id, name, ciPolicy, phase, appliesTo }) => ({
       name: name ?? id,
       ciPolicy,
       phase,
@@ -232,7 +232,7 @@ module.exports = {
   allPatchPolicies,
   corePatchDescriptors,
   createMainBundleContext,
-  featurePatchDescriptors,
+  portIntegrationPatchDescriptors,
   legacyCorePatchDescriptors,
   patchExtractedApp,
   patchMainBundleSource,

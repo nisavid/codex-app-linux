@@ -1,0 +1,10 @@
+{
+  "id": "example-integration",
+  "title": "Example Port Integration",
+  "description": "Disabled example showing the port-integrations ASAR patch and stage hook contract.",
+  "defaultEnabled": false,
+  "entrypoints": {
+    "mainBundlePatch": "./patch.js",
+    "stageHook": "./stage.sh"
+  }
+}

@@ -42,7 +42,7 @@ const REQUIRED_BUNDLE_FILES: [(&str, &str); 18] = [
     ("node-runtime", "node-runtime"),
     ("packaging/linux", "packaging/linux"),
     ("assets/codex.png", "assets/codex.png"),
-    ("linux-features", "linux-features"),
+    ("port-integrations", "port-integrations"),
 ];
 const OPTIONAL_BUNDLE_FILES: [(&str, &str); 3] = [
     ("scripts/build-rpm.sh", "scripts/build-rpm.sh"),
@@ -576,15 +576,15 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         Ok(())
     }
 
-    fn write_fake_linux_features_bundle(root: &Path) -> Result<()> {
-        fs::create_dir_all(root.join("linux-features/example-feature"))?;
+    fn write_fake_port_integrations_bundle(root: &Path) -> Result<()> {
+        fs::create_dir_all(root.join("port-integrations/example-integration"))?;
         fs::write(
-            root.join("linux-features/features.example.json"),
+            root.join("port-integrations/integrations.example.json"),
             b"{\"enabled\":[],\"disabled\":[]}\n",
         )?;
         fs::write(
-            root.join("linux-features/example-feature/feature.json"),
-            b"{\"id\":\"example-feature\"}\n",
+            root.join("port-integrations/example-integration/integration.json"),
+            b"{\"id\":\"example-integration\"}\n",
         )?;
         Ok(())
     }
@@ -602,7 +602,7 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         fs::create_dir_all(bundle_root.join("assets"))?;
         fs::create_dir_all(bundle_root.join("node-runtime/bin"))?;
         write_fake_computer_use_bundle(&bundle_root)?;
-        write_fake_linux_features_bundle(&bundle_root)?;
+        write_fake_port_integrations_bundle(&bundle_root)?;
         fs::write(
             bundle_root.join("launcher/start.sh.template"),
             b"# fake launcher template\n",
@@ -768,7 +768,7 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
             .exists());
         assert!(artifacts
             .workspace_dir
-            .join("builder/linux-features/features.example.json")
+            .join("builder/port-integrations/integrations.example.json")
             .exists());
         assert!(artifacts
             .workspace_dir
@@ -799,7 +799,7 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
         fs::create_dir_all(source_root.join("assets"))?;
         fs::create_dir_all(source_root.join("node-runtime/bin"))?;
         write_fake_computer_use_bundle(&source_root)?;
-        write_fake_linux_features_bundle(&source_root)?;
+        write_fake_port_integrations_bundle(&source_root)?;
         fs::write(source_root.join("install.sh"), b"#!/bin/bash\n")?;
         fs::write(
             source_root.join("launcher/start.sh.template"),
@@ -861,7 +861,7 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
             .exists());
         assert!(destination_root.join("node-runtime/bin/node").exists());
         assert!(destination_root
-            .join("linux-features/features.example.json")
+            .join("port-integrations/integrations.example.json")
             .exists());
         assert!(!destination_root.join("scripts/build-rpm.sh").exists());
         assert!(!destination_root.join("scripts/build-pacman.sh").exists());

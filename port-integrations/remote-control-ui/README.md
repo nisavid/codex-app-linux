@@ -1,0 +1,23 @@
+# Remote Control UI
+
+Default-on port integration for the official OpenAI app bundle's
+`remote_control` and Codex mobile surfaces.
+
+This integration only opens the Linux UI gates. It does not fake backend state such
+as connected clients, MFA completion, or remote control environments.
+
+Disable it locally with:
+
+```json
+{
+  "disabled": [
+    "remote-control-ui"
+  ]
+}
+```
+
+Run the integration tests with:
+
+```bash
+node --test port-integrations/remote-control-ui/test.js
+```
