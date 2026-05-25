@@ -66,7 +66,7 @@ Strong candidates:
 - Diff or change-review view with a readable color scheme.
 - Remote Control settings after validating the generated Linux app no longer
   presents Mac-only copy in the captured surface.
-- Settings side-panel views that show Linux-relevant app integration without
+- Settings side-panel views that show Linux-relevant port integration behavior without
   exposing private account details.
 
 Optional or future candidates:
