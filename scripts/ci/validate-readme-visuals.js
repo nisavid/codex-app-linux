@@ -93,7 +93,7 @@ function stripFencedCodeBlocks(content) {
 }
 
 function stripInlineCodeSpans(content) {
-  return content.replace(/(`+)[\s\S]*?\1/g, "");
+  return content.replace(/(`+)[^\n]*?\1/g, "");
 }
 
 function normalizeReferenceLabel(label) {
@@ -111,7 +111,7 @@ function normalizeReferenceSrc(src) {
 function findReferenceDefinitions(content) {
   const references = new Map();
   const referenceDefinitionPattern =
-    /^[ \t]{0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]*>|[^ \t\n]+)(?:[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$/gm;
+    /^[ \t]{0,3}\[([^\]\n]+)\]:[ \t]*(?:\r?\n[ \t]+)?(<[^>\n]*>|[^ \t\n]+)(?:[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$/gm;
 
   for (const match of content.matchAll(referenceDefinitionPattern)) {
     references.set(normalizeReferenceLabel(match[1]), normalizeReferenceSrc(match[2]));

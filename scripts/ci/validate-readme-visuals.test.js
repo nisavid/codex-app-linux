@@ -66,14 +66,18 @@ test("rejects reference-style showcase image sources outside policy", () => {
   const markdown = `
 ![Remote showcase][remote]
 ![Out-of-scope showcase][outside]
+![Multiline remote showcase][multiline-remote]
 
 [remote]: https://example.com/workbench.png
 [outside]: assets/workbench.png
+[multiline-remote]:
+  https://example.com/multiline-workbench.png
 `;
 
   assert.deepEqual(errorsFor(markdown), [
     "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench.png",
     "README showcase image must live under docs/assets/readme/: assets/workbench.png",
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/multiline-workbench.png",
   ]);
 });
 
@@ -155,6 +159,18 @@ Use \`<img src="assets/out-of-scope.png">\` when documenting HTML syntax.
 `;
 
   assert.deepEqual(errorsFor(markdown), []);
+});
+
+test("does not strip images between backticks on different lines", () => {
+  const markdown = `
+Opening \` marker on one line.
+![Remote showcase](https://example.com/workbench.png)
+Closing \` marker on another line.
+`;
+
+  assert.deepEqual(errorsFor(markdown), [
+    "README showcase image must be a local repo asset, not an external URL: https://example.com/workbench.png",
+  ]);
 });
 
 test("reports unreadable README paths without a stack trace", () => {
