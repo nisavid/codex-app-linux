@@ -228,12 +228,24 @@ function findClosingMarkdownLabelBracket(content, openIndex) {
   return -1;
 }
 
+function isInlineImageDestinationPadding(character) {
+  return character === " " || character === "\t" || character === "\n" || character === "\r";
+}
+
+function skipInlineImageDestinationPadding(content, index) {
+  let cursor = index;
+  while (isInlineImageDestinationPadding(content[cursor])) {
+    cursor += 1;
+  }
+  return cursor;
+}
+
 function parseInlineImageDestination(content, labelEnd) {
   if (content[labelEnd + 1] !== "(") {
     return null;
   }
 
-  let cursor = labelEnd + 2;
+  let cursor = skipInlineImageDestinationPadding(content, labelEnd + 2);
   if (content[cursor] === "<") {
     const destinationStart = cursor;
     for (cursor += 1; cursor < content.length && content[cursor] !== "\n"; cursor += 1) {
@@ -253,7 +265,7 @@ function parseInlineImageDestination(content, labelEnd) {
 
   const destinationStart = cursor;
   let depth = 0;
-  for (; cursor < content.length && content[cursor] !== "\n"; cursor += 1) {
+  for (; cursor < content.length; cursor += 1) {
     if (isEscapedCharacter(content, cursor)) {
       continue;
     }
@@ -271,7 +283,7 @@ function parseInlineImageDestination(content, labelEnd) {
       depth -= 1;
       continue;
     }
-    if ((content[cursor] === " " || content[cursor] === "\t") && depth === 0) {
+    if (isInlineImageDestinationPadding(content[cursor]) && depth === 0) {
       const end = findInlineImageEndAfterDestination(content, cursor);
       return end == null
         ? null
@@ -285,10 +297,7 @@ function parseInlineImageDestination(content, labelEnd) {
 }
 
 function findInlineImageEndAfterDestination(content, index) {
-  let cursor = index;
-  while (content[cursor] === " " || content[cursor] === "\t") {
-    cursor += 1;
-  }
+  const cursor = skipInlineImageDestinationPadding(content, index);
   if (content[cursor] === ")") {
     return cursor + 1;
   }
