@@ -633,7 +633,6 @@ sync_browser_use_bundled_plugin_cache() {
     if ! bundled_plugin_path_token_is_safe "$plugin_name"; then
         plugin_name="$plugin_dir_name"
     fi
-    [ -n "$plugin_name" ] || return 0
     bundled_plugin_path_token_is_safe "$plugin_name" || return 0
     [ -n "$plugin_dir_name" ] || return 0
 
