@@ -229,16 +229,75 @@ function findClosingMarkdownLabelBracket(content, openIndex) {
 }
 
 function parseInlineImageDestination(content, labelEnd) {
-  const match = content
-    .slice(labelEnd + 1)
-    .match(/^\((<[^>\n]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/);
-  if (match == null) {
+  if (content[labelEnd + 1] !== "(") {
     return null;
   }
-  return {
-    end: labelEnd + 1 + match[0].length,
-    src: normalizeReferenceSrc(match[1]),
-  };
+
+  let cursor = labelEnd + 2;
+  if (content[cursor] === "<") {
+    const destinationStart = cursor;
+    for (cursor += 1; cursor < content.length && content[cursor] !== "\n"; cursor += 1) {
+      if (content[cursor] !== ">" || isEscapedCharacter(content, cursor)) {
+        continue;
+      }
+      const end = findInlineImageEndAfterDestination(content, cursor + 1);
+      return end == null
+        ? null
+        : {
+            end,
+            src: normalizeReferenceSrc(content.slice(destinationStart, cursor + 1)),
+          };
+    }
+    return null;
+  }
+
+  const destinationStart = cursor;
+  let depth = 0;
+  for (; cursor < content.length && content[cursor] !== "\n"; cursor += 1) {
+    if (isEscapedCharacter(content, cursor)) {
+      continue;
+    }
+    if (content[cursor] === "(") {
+      depth += 1;
+      continue;
+    }
+    if (content[cursor] === ")") {
+      if (depth === 0) {
+        return {
+          end: cursor + 1,
+          src: content.slice(destinationStart, cursor),
+        };
+      }
+      depth -= 1;
+      continue;
+    }
+    if ((content[cursor] === " " || content[cursor] === "\t") && depth === 0) {
+      const end = findInlineImageEndAfterDestination(content, cursor);
+      return end == null
+        ? null
+        : {
+            end,
+            src: content.slice(destinationStart, cursor),
+          };
+    }
+  }
+  return null;
+}
+
+function findInlineImageEndAfterDestination(content, index) {
+  let cursor = index;
+  while (content[cursor] === " " || content[cursor] === "\t") {
+    cursor += 1;
+  }
+  if (content[cursor] === ")") {
+    return cursor + 1;
+  }
+
+  const titleMatch = content.slice(cursor).match(/^(?:"[^"]*"|'[^']*'|\([^)]*\))[ \t]*\)/);
+  if (titleMatch == null) {
+    return null;
+  }
+  return cursor + titleMatch[0].length;
 }
 
 function findPlainReferenceLabelEnd(content, openIndex) {
