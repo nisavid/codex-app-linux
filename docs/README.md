@@ -18,6 +18,9 @@ Use this index to choose the smallest document that matches your goal.
 
 ## Understand The Design
 
+- [Port Architecture](port-architecture.md) explains how the official OpenAI
+  Codex DMG becomes a Linux Electron app and where replacement, patching, and
+  launcher orchestration fit.
 - [Port Integrations](../port-integrations/README.md) explains the configurable
   integration registry under `port-integrations/`.
 - [Webview Server Evaluation](webview-server-evaluation.md) explains why the
