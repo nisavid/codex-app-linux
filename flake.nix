@@ -379,23 +379,23 @@ PY
           fi
         '';
 
-        linuxFeaturesConfig = linuxFeatureIds:
-          pkgs.writeText "codex-linux-features.json" (builtins.toJSON {
-            enabled = linuxFeatureIds;
+        portIntegrationsConfig = portIntegrationIds:
+          pkgs.writeText "codex-port-integrations.json" (builtins.toJSON {
+            enabled = portIntegrationIds;
           });
 
-        enabledFeatureIds = { enableComputerUseUi ? false, linuxFeatureIds ? [ ] }:
-          pkgs.lib.optionals enableComputerUseUi [ "computer-use-ui" ] ++ linuxFeatureIds;
+        enabledIntegrationIds = { enableComputerUseUi ? false, portIntegrationIds ? [ ] }:
+          pkgs.lib.optionals enableComputerUseUi [ "computer-use-ui" ] ++ portIntegrationIds;
 
         packageSuffix = args:
           let
-            featureIds = enabledFeatureIds args;
+            integrationIds = enabledIntegrationIds args;
           in
-          if featureIds == [ ] then "" else "-${pkgs.lib.concatStringsSep "-" featureIds}";
+          if integrationIds == [ ] then "" else "-${pkgs.lib.concatStringsSep "-" integrationIds}";
 
-        mkCodexAppPayload = { enableComputerUseUi ? false, linuxFeatureIds ? [ ] }:
+        mkCodexAppPayload = { enableComputerUseUi ? false, portIntegrationIds ? [ ] }:
         pkgs.stdenv.mkDerivation {
-          pname = "codex-app${packageSuffix { inherit enableComputerUseUi linuxFeatureIds; }}-payload";
+          pname = "codex-app${packageSuffix { inherit enableComputerUseUi portIntegrationIds; }}-payload";
           version = codexVersion;
           src = sourceRoot;
           __structuredAttrs = true;
@@ -437,7 +437,7 @@ PY
             export CXXFLAGS="''${CXXFLAGS:-} -ffile-prefix-map=$TMPDIR=/build -fdebug-prefix-map=$TMPDIR=/build -fmacro-prefix-map=$TMPDIR=/build"
             export RUSTFLAGS="''${RUSTFLAGS:-} --remap-path-prefix=$TMPDIR=/build -C link-arg=-Wl,--build-id=none"
             export CODEX_MANAGED_NODE_SOURCE="${pkgs.nodejs}"
-            export CODEX_LINUX_FEATURES_CONFIG="${linuxFeaturesConfig linuxFeatureIds}"
+            export CODEX_PORT_INTEGRATIONS_CONFIG="${portIntegrationsConfig portIntegrationIds}"
             export CODEX_ELECTRON_ZIP_SOURCE="${electronZip}"
             export CODEX_NATIVE_MODULES_SOURCE="${codexNativeModules}"
             ${pkgs.lib.optionalString (browserUseNodeRepl != null) ''
@@ -473,15 +473,15 @@ PY
           '';
         };
 
-        mkCodexApp = { enableComputerUseUi ? false, linuxFeatureIds ? [ ] }:
+        mkCodexApp = { enableComputerUseUi ? false, portIntegrationIds ? [ ] }:
         let
-          featureArgs = { inherit enableComputerUseUi linuxFeatureIds; };
+          integrationArgs = { inherit enableComputerUseUi portIntegrationIds; };
           payload = mkCodexAppPayload {
-            inherit enableComputerUseUi linuxFeatureIds;
+            inherit enableComputerUseUi portIntegrationIds;
           };
         in
         pkgs.stdenv.mkDerivation {
-          pname = "codex-app${packageSuffix featureArgs}";
+          pname = "codex-app${packageSuffix integrationArgs}";
           version = codexVersion;
           src = payload;
 
@@ -544,12 +544,12 @@ PY
           meta = {
             description =
               let
-                featureIds = enabledFeatureIds featureArgs;
+                integrationIds = enabledIntegrationIds integrationArgs;
               in
-              if featureIds == [ ] then
+              if integrationIds == [ ] then
                 "Codex App for Linux"
               else
-                "Codex App for Linux with ${pkgs.lib.concatStringsSep ", " featureIds} enabled";
+                "Codex App for Linux with ${pkgs.lib.concatStringsSep ", " integrationIds} enabled";
             homepage = "https://github.com/nisavid/codex-app-linux";
             license = pkgs.lib.licenses.mit;
             platforms = pkgs.lib.platforms.linux;
@@ -564,12 +564,12 @@ PY
         };
 
         codexAppRemoteMobileControl = mkCodexApp {
-          linuxFeatureIds = [ "remote-mobile-control" ];
+          portIntegrationIds = [ "remote-mobile-control" ];
         };
 
         codexAppComputerUseUiRemoteMobileControl = mkCodexApp {
           enableComputerUseUi = true;
-          linuxFeatureIds = [ "remote-mobile-control" ];
+          portIntegrationIds = [ "remote-mobile-control" ];
         };
 
         installer = pkgs.writeShellApplication {

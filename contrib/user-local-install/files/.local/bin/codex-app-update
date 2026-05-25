@@ -118,7 +118,11 @@ log "Rebuilding wrapper..."
 (
     cd "$BUILD_REPO_DIR"
     mkdir -p "$STATE_DIR/tmp"
-    if [ -f "$SOURCE_REPO_DIR/linux-features/features.json" ]; then
+    if [ -f "$SOURCE_REPO_DIR/port-integrations/integrations.json" ]; then
+        export CODEX_PORT_INTEGRATIONS_CONFIG="$SOURCE_REPO_DIR/port-integrations/integrations.json"
+    elif [ -f "$SOURCE_REPO_DIR/port-integrations/features.json" ]; then
+        export CODEX_PORT_INTEGRATIONS_CONFIG="$SOURCE_REPO_DIR/port-integrations/features.json"
+    elif [ -f "$SOURCE_REPO_DIR/linux-features/features.json" ]; then
         export CODEX_LINUX_FEATURES_CONFIG="$SOURCE_REPO_DIR/linux-features/features.json"
     fi
     TMPDIR="$STATE_DIR/tmp" \

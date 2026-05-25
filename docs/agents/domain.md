@@ -19,6 +19,8 @@ If `CONTEXT.md` or `docs/adr/` does not exist, proceed silently. Do not request 
 - `docs/maintainers/package-runtime-maintenance.md` covers package, launcher, updater, and generated-artifact maintenance.
 - `docs/maintainers/threat-model.md` describes repository trust boundaries and threat paths.
 - `docs/policies/agentic-maintenance.md` describes what belongs in tracked docs, agent policy, and local session evidence.
+- `docs/usage/support-routing.md` explains whether behavior belongs with
+  OpenAI, the Linux-port upstream, or this fork.
 
 ## Upstream Terminology
 
@@ -35,6 +37,18 @@ fine.
   and patched for Linux.
 - `OpenAI-hosted services`: account, rollout, entitlement, remote-control, and
   other service-side behavior outside this fork's local packaging path.
+
+## Port Integration Terminology
+
+Use `port integration` for configurable build-time modules that adapt official app
+behavior or local runtime helpers to this Linux port. The implementation path,
+config file, and environment variables are `port-integrations/`,
+`port-integrations.json`, and `CODEX_PORT_INTEGRATIONS_*`; mention those exact names
+only when documenting source paths or config APIs.
+
+Do not call port integrations features of Linux. They are port-authored
+integrations for user-facing Codex app surfaces, and this fork enables the
+supported integration set by default as part of the complete local package.
 
 ## File structure
 

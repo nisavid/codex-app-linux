@@ -562,7 +562,7 @@ fn doctor_report(active_backend: Option<String>) -> DoctorReport {
         native_fallback_enabled,
         native_fallbacks,
         message,
-        setup_hint: "Use the Read Aloud settings download flow, run linux-features/read-aloud/install-kokoro-runtime.sh, or set CODEX_LINUX_READ_ALOUD_KOKORO_PYTHON/MODEL/VOICES.".to_string(),
+        setup_hint: "Use the Read Aloud settings download flow, run port-integrations/read-aloud/install-kokoro-runtime.sh, or set CODEX_LINUX_READ_ALOUD_KOKORO_PYTHON/MODEL/VOICES.".to_string(),
     }
 }
 

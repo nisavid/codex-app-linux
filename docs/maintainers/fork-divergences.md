@@ -71,8 +71,14 @@ old target from the merge result.
 | patch-report profile `upstream-build` | `official-dmg-build`; the old profile is accepted only as a legacy alias | Exists in `upstream/main`; port incoming validation-profile edits to the current profile name. |
 | CI job or local CI target `upstream` for official DMG validation | `official-dmg`; the old target is accepted only as a legacy alias | Exists in `upstream/main`; port incoming official DMG validation job/target changes to the current name. |
 | `UPSTREAM_DMG_URL`, `UPSTREAM_DMG_PATH`, `UPSTREAM_DMG_CACHE_HIT` | `OFFICIAL_DMG_URL`, `OFFICIAL_DMG_PATH`, `OFFICIAL_DMG_CACHE_HIT`; old variables are legacy aliases | Exists in `upstream/main`; port incoming official DMG environment changes to the current variables and preserve legacy fallbacks only for compatibility. |
-| Linux feature hook `CODEX_UPSTREAM_APP_DIR` | `CODEX_OFFICIAL_APP_DIR`; the old variable is a legacy alias | Exists in `upstream/main`; port incoming stage-hook environment changes to the current variable and keep the legacy alias only for existing hooks. |
+| Port integration hook `CODEX_UPSTREAM_APP_DIR` | `CODEX_OFFICIAL_APP_DIR`; the old variable is a legacy alias | Exists in `upstream/main`; port incoming stage-hook environment changes to the current variable and keep the legacy alias only for existing hooks. |
 | Make target `inspect-upstream` | `inspect-dmg`; the old target is a legacy alias | Exists in `upstream/main`; port incoming inspect-target behavior to `inspect-dmg` and keep the old target as an alias only while useful. |
+| `linux-features/` | `port-integrations/`; the old root is accepted only as a legacy override target | Exists in the Linux-port upstream's old registry naming; port incoming registry edits to `port-integrations/`. |
+| `linux-features/*/feature.json` | `port-integrations/*/integration.json`; old manifests are accepted only for legacy roots | Exists in the Linux-port upstream's old registry naming; port incoming manifest edits to the current manifest path. |
+| `linux-features/features.example.json` and `linux-features/features.json` | `port-integrations/integrations.example.json` and `port-integrations/integrations.json`; old names are compatibility fallbacks | Exists in the Linux-port upstream's old registry naming; port incoming config-shape changes to the current config names. |
+| `scripts/lib/linux-features.js` and `scripts/lib/linux-features.sh` | `scripts/lib/port-integrations.js` and `scripts/lib/port-integrations.sh` | Exists in the Linux-port upstream's old registry naming; port incoming helper changes to the current helper names. |
+| `CODEX_LINUX_FEATURES_ROOT`, `CODEX_LINUX_FEATURES_CONFIG`, `CODEX_LINUX_FEATURES`, `CODEX_LINUX_DISABLE_FEATURES` | `CODEX_PORT_INTEGRATIONS_ROOT`, `CODEX_PORT_INTEGRATIONS_CONFIG`, `CODEX_PORT_INTEGRATIONS`, `CODEX_DISABLE_PORT_INTEGRATIONS`; old variables are legacy aliases | Exists in the Linux-port upstream's old registry naming; port incoming environment handling to the current variables and preserve aliases only for compatibility. |
+| `CODEX_BOOTSTRAP_CLEANUP_FEATURES` | `CODEX_BOOTSTRAP_CLEANUP_INTEGRATIONS`; the old variable is a legacy alias | Exists in earlier local setup helper behavior; use the current variable in docs and tests. |
 
 ## Divergence Inventory
 
@@ -283,24 +289,31 @@ checkout builds or race pending updater install state.
 `packaging/linux/codex-packaged-runtime.sh`, then inspect regenerated
 `codex-app/start.sh`.
 
-### 9. ASAR And Linux UI Patch Behavior
+### 9. ASAR, Port Integration, And Linux UI Patch Behavior
 
 **Fork delta:** ASAR patches remain fail-soft for volatile official app bundle
 shapes. The current fork delta includes local identity updates, sanitized
 generated keybind literals, `CODEX_APP_LAUNCH_ACTION_SOCKET`, Linux window
 default refinements, opt-in multi-instance launch support, default-enabled
 Electron sandboxing with an explicit compatibility opt-out, and default-enabled
-Linux open-target discovery through the feature registry. It also keeps the
-Linux Computer Use plugin manifest gate default-on while keeping Computer Use UI
+Open target discovery through the port integration registry. It also keeps the Linux
+Computer Use plugin manifest gate default-on while keeping Computer Use UI
 patches opt-in through
 `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` or the persisted
 `codex-linux-computer-use-ui-enabled` setting. Remote-control UI and mobile
-remote-control host patches are default-enabled Linux features and keep private
+remote-control host patches are default-enabled port integrations and keep private
 device-key material under `${XDG_CONFIG_HOME:-~/.config}/codex-app`.
 
 **Upstream baseline:** Upstream already carries Linux ASAR patching. This fork
 maintains local patch safety and selected Linux behavior changes on top of that
 patching system.
+
+**Naming policy:** Durable docs call configurable modules port integrations.
+The source path is `port-integrations/`, manifests are `integration.json`,
+configs are `integrations.json` or `port-integrations.json`, and environment
+variables use `CODEX_PORT_INTEGRATIONS_*`. If upstream changes a module under
+the old `linux-features/` naming scheme, port the change to the current local
+path and preserve the docs terminology.
 
 **Why it matters:** Official app minified bundle shapes change often. Linux
 behavior should degrade with actionable warnings instead of breaking app
@@ -308,9 +321,9 @@ generation unless a required invariant fails.
 
 **Current paths:** `scripts/patch-linux-window-ui.js`,
 `scripts/patch-linux-window-ui.test.js`, `scripts/lib/asar-patch.sh`,
-`scripts/lib/linux-features.js`, `linux-features/open-target-discovery/`,
-`linux-features/remote-control-ui/`, `linux-features/remote-mobile-control/`,
-`linux-features/features.example.json`, `install.sh`,
+`scripts/lib/port-integrations.js`, `port-integrations/open-target-discovery/`,
+`port-integrations/remote-control-ui/`, `port-integrations/remote-mobile-control/`,
+`port-integrations/integrations.example.json`, `install.sh`,
 `launcher/start.sh.template`, `tests/scripts_smoke.sh`,
 `docs/usage/troubleshooting.md`.
 

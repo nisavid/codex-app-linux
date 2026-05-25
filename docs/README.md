@@ -11,11 +11,15 @@ Use this index to choose the smallest document that matches your goal.
   commands.
 - [Troubleshooting](usage/troubleshooting.md) lists common launch, CLI, webview,
   package, and updater symptoms.
+- [Support and Issue Routing](usage/support-routing.md) explains whether a
+  behavior belongs with OpenAI, the Linux-port upstream, or this fork.
 - [User-Local App Integration](../contrib/user-local-install/README.md)
   describes the experimental rootless install layout under XDG user paths.
 
 ## Understand The Design
 
+- [Port Integrations](../port-integrations/README.md) explains the configurable
+  integration registry under `port-integrations/`.
 - [Webview Server Evaluation](webview-server-evaluation.md) explains why the
   launcher currently serves the extracted webview bundle with a local Python
   HTTP server and what would need to change before replacing it.

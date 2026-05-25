@@ -17,7 +17,7 @@ fi
 
 TMP_DIR="$(mktemp -d)"
 
-export CODEX_LINUX_FEATURES_CONFIG="$REPO_DIR/linux-features/features.example.json"
+export CODEX_PORT_INTEGRATIONS_CONFIG="$REPO_DIR/port-integrations/integrations.example.json"
 
 cleanup() {
     rm -rf "$TMP_DIR"
@@ -89,28 +89,28 @@ if (JSON.stringify(actual) !== JSON.stringify(expected)) {
 NODE
 }
 
-make_wizard_feature_root() {
-    local features_root="$1"
+make_wizard_integration_root() {
+    local integrations_root="$1"
     mkdir -p \
-        "$features_root/conversation-mode" \
-        "$features_root/example-feature" \
-        "$features_root/read-aloud" \
-        "$features_root/read-aloud-mcp" \
-        "$features_root/remote-mobile-control"
-    printf '%s\n' '{"enabled":[]}' > "$features_root/features.example.json"
-    cat > "$features_root/conversation-mode/feature.json" <<'JSON'
+        "$integrations_root/conversation-mode" \
+        "$integrations_root/example-integration" \
+        "$integrations_root/read-aloud" \
+        "$integrations_root/read-aloud-mcp" \
+        "$integrations_root/remote-mobile-control"
+    printf '%s\n' '{"enabled":[]}' > "$integrations_root/integrations.example.json"
+    cat > "$integrations_root/conversation-mode/integration.json" <<'JSON'
 {"id":"conversation-mode","name":"Conversation mode","description":"Voice conversation loop."}
 JSON
-    cat > "$features_root/example-feature/feature.json" <<'JSON'
-{"id":"example-feature","title":"Example Linux Feature","description":"Developer sample."}
+    cat > "$integrations_root/example-integration/integration.json" <<'JSON'
+{"id":"example-integration","title":"Example Port Integration","description":"Developer sample."}
 JSON
-    cat > "$features_root/read-aloud/feature.json" <<'JSON'
+    cat > "$integrations_root/read-aloud/integration.json" <<'JSON'
 {"id":"read-aloud","name":"Read aloud","description":"Read assistant responses aloud."}
 JSON
-    cat > "$features_root/read-aloud-mcp/feature.json" <<'JSON'
+    cat > "$integrations_root/read-aloud-mcp/integration.json" <<'JSON'
 {"id":"read-aloud-mcp","title":"Read Aloud MCP","description":"Read Aloud MCP plugin staging."}
 JSON
-    cat > "$features_root/remote-mobile-control/feature.json" <<'JSON'
+    cat > "$integrations_root/remote-mobile-control/integration.json" <<'JSON'
 {"id":"remote-mobile-control","title":"Experimental Remote Mobile Control","description":"Mobile host enrollment patches."}
 JSON
 }
@@ -252,8 +252,8 @@ SCRIPT
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-update-bridge-patch.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/patch-report.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/rebuild-report.sh"
-    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-features.js"
-    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-features.sh"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/port-integrations.js"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/port-integrations.sh"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-target-context.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/engine.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/registry.js"
@@ -265,9 +265,9 @@ SCRIPT
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/desktop/i3/README.md"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/patches/core/package/deb/README.md"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/launcher/webview-server.py"
-    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/linux-features/README.md"
-    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/linux-features/example-feature/feature.json"
-    assert_file_not_exists "$pkg_root/usr/lib/codex-app/update-builder/linux-features/features.json"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/port-integrations/README.md"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/port-integrations/example-integration/integration.json"
+    assert_file_not_exists "$pkg_root/usr/lib/codex-app/update-builder/port-integrations/integrations.json"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/node-runtime/bin/node"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/computer-use-linux/Cargo.toml"
@@ -277,20 +277,20 @@ SCRIPT
     assert_file_exists "$pkg_root/opt/codex-app/resources/node-runtime/bin/node"
 }
 
-test_update_builder_omits_build_time_linux_features_config() {
-    info "Checking update-builder omits build-time Linux feature config"
-    local workspace="$TMP_DIR/update-builder-linux-features"
+test_update_builder_omits_build_time_port_integrations_config() {
+    info "Checking update-builder omits build-time port integration config"
+    local workspace="$TMP_DIR/update-builder-port-integrations"
     local root="$workspace/root"
     local app_dir="$workspace/app"
-    local feature_config="$workspace/features.json"
-    local staged_config="$root/usr/lib/codex-app/update-builder/linux-features/features.json"
+    local integration_config="$workspace/integrations.json"
+    local staged_config="$root/usr/lib/codex-app/update-builder/port-integrations/integrations.json"
 
     mkdir -p "$workspace"
     make_fake_app "$app_dir"
-    cat > "$feature_config" <<'JSON'
+    cat > "$integration_config" <<'JSON'
 {
   "enabled": [
-    "example-feature"
+    "example-integration"
   ],
   "disabled": [
     "open-target-discovery"
@@ -303,7 +303,7 @@ JSON
         export APP_DIR="$app_dir"
         export PACKAGE_NAME="codex-app"
         export UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service"
-        export CODEX_LINUX_FEATURES_CONFIG="$feature_config"
+        export CODEX_PORT_INTEGRATIONS_CONFIG="$integration_config"
 
         # shellcheck disable=SC1091
         source "$REPO_DIR/scripts/lib/package-common.sh"
@@ -311,7 +311,26 @@ JSON
     )
 
     assert_file_not_exists "$staged_config"
-    assert_file_exists "$root/usr/lib/codex-app/update-builder/linux-features/features.example.json"
+    assert_file_exists "$root/usr/lib/codex-app/update-builder/port-integrations/integrations.example.json"
+}
+
+test_update_builder_omits_legacy_port_integration_config() {
+    info "Checking update-builder omits legacy port integration config"
+    local workspace="$TMP_DIR/update-builder-legacy-port-integrations"
+    local update_builder_root="$workspace/update-builder"
+
+    mkdir -p "$update_builder_root/port-integrations"
+    printf '%s\n' '{"enabled":["example-integration"]}' > "$update_builder_root/port-integrations/integrations.json"
+    printf '%s\n' '{"enabled":["example-integration"]}' > "$update_builder_root/port-integrations/features.json"
+
+    (
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        clear_update_builder_port_integration_config "$update_builder_root"
+    )
+
+    assert_file_not_exists "$update_builder_root/port-integrations/integrations.json"
+    assert_file_not_exists "$update_builder_root/port-integrations/features.json"
 }
 
 test_deb_builder_respects_package_identity() {
@@ -860,23 +879,23 @@ test_native_shortcut_targets_compose_existing_flows() {
     assert_contains "$setup_log" 'bash scripts/bootstrap-wizard.sh'
 }
 
-test_setup_native_wizard_noninteractive_feature_writer() {
-    info "Checking setup-native wizard non-interactive feature writer"
+test_setup_native_wizard_noninteractive_integration_writer() {
+    info "Checking setup-native wizard non-interactive integration writer"
     local workspace="$TMP_DIR/setup-native-writer"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     cat > "$config" <<'JSON'
 {"enabled":["conversation-mode"]}
 JSON
 
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
-    CODEX_LINUX_FEATURES="remote-mobile-control,read-aloud" \
-    CODEX_LINUX_DISABLE_FEATURES="conversation-mode" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
+    CODEX_PORT_INTEGRATIONS="remote-mobile-control,read-aloud" \
+    CODEX_DISABLE_PORT_INTEGRATIONS="conversation-mode" \
     PACKAGE_WITH_UPDATER=0 \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
 
@@ -885,66 +904,66 @@ JSON
     assert_contains "$output_log" "read-aloud"
     assert_contains "$output_log" "Manual-update native package mode selected"
     assert_contains "$output_log" "PACKAGE_WITH_UPDATER=0 make install-native"
-    assert_contains "$output_log" "Feature changes apply after rebuilding and reinstalling"
+    assert_contains "$output_log" "Integration changes apply after rebuilding and reinstalling"
 }
 
-test_setup_native_wizard_rejects_invalid_feature_ids() {
-    info "Checking setup-native wizard invalid feature validation"
-    local workspace="$TMP_DIR/setup-native-invalid-feature"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+test_setup_native_wizard_rejects_invalid_integration_ids() {
+    info "Checking setup-native wizard invalid integration validation"
+    local workspace="$TMP_DIR/setup-native-invalid-integration"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":[]}' > "$config"
 
     if CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-        CODEX_LINUX_FEATURES_ROOT="$features_root" \
-        CODEX_LINUX_FEATURES_CONFIG="$config" \
-        CODEX_LINUX_FEATURES="missing-feature" \
+        CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+        CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
+        CODEX_PORT_INTEGRATIONS="missing-integration" \
             bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log" 2>&1; then
-        fail "setup wizard should reject unknown feature ids"
+        fail "setup wizard should reject unknown integration ids"
     fi
 
-    assert_contains "$output_log" "Unknown Linux feature id: missing-feature"
+    assert_contains "$output_log" "Unknown port integration id: missing-integration"
     assert_json_enabled_equals "$config" '[]'
 }
 
-test_setup_native_wizard_rejects_conflicting_feature_ids() {
-    info "Checking setup-native wizard conflicting feature validation"
-    local workspace="$TMP_DIR/setup-native-conflicting-feature"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+test_setup_native_wizard_rejects_conflicting_integration_ids() {
+    info "Checking setup-native wizard conflicting integration validation"
+    local workspace="$TMP_DIR/setup-native-conflicting-integration"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":[]}' > "$config"
 
     if CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-        CODEX_LINUX_FEATURES_ROOT="$features_root" \
-        CODEX_LINUX_FEATURES_CONFIG="$config" \
-        CODEX_LINUX_FEATURES="read-aloud" \
-        CODEX_LINUX_DISABLE_FEATURES="read-aloud" \
+        CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+        CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
+        CODEX_PORT_INTEGRATIONS="read-aloud" \
+        CODEX_DISABLE_PORT_INTEGRATIONS="read-aloud" \
             bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log" 2>&1; then
-        fail "setup wizard should reject conflicting feature ids"
+        fail "setup wizard should reject conflicting integration ids"
     fi
 
-    assert_contains "$output_log" "Linux feature ids cannot be both enabled and disabled: read-aloud"
+    assert_contains "$output_log" "port integration ids cannot be both enabled and disabled: read-aloud"
     assert_json_enabled_equals "$config" '[]'
 }
 
 test_setup_native_wizard_disable_is_non_destructive() {
     info "Checking setup-native wizard opt-out guidance is non-destructive"
     local workspace="$TMP_DIR/setup-native-disable-safe"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
     local key_file="$fake_home/.config/codex-app/remote-control-device-keys-v1.json"
     local model_file="$fake_home/.local/share/codex-app/read-aloud/kokoro-venv/bin/python"
     local plugin_cache="$fake_home/.codex/plugins/cache/openai-bundled/read-aloud"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     cat > "$config" <<'JSON'
 {"enabled":["remote-mobile-control","read-aloud","read-aloud-mcp"]}
 JSON
@@ -957,9 +976,9 @@ JSON
     XDG_CONFIG_HOME="$fake_home/.config" \
     XDG_DATA_HOME="$fake_home/.local/share" \
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
-    CODEX_LINUX_DISABLE_FEATURES="remote-mobile-control,read-aloud,read-aloud-mcp" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
+    CODEX_DISABLE_PORT_INTEGRATIONS="remote-mobile-control,read-aloud,read-aloud-mcp" \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
 
     assert_json_enabled_equals "$config" '[]'
@@ -973,24 +992,24 @@ JSON
 }
 
 test_setup_native_wizard_summary_keeps_existing_config() {
-    info "Checking setup-native wizard read-only summary keeps existing feature config"
+    info "Checking setup-native wizard read-only summary keeps existing integration config"
     local workspace="$TMP_DIR/setup-native-summary"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     cat > "$config" <<'JSON'
 {"enabled":["remote-mobile-control"]}
 JSON
 
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
 
     assert_json_enabled_equals "$config" '["remote-mobile-control"]'
-    assert_contains "$output_log" "Enabled Linux features: remote-mobile-control"
+    assert_contains "$output_log" "Enabled port integrations: remote-mobile-control"
     assert_contains "$output_log" "Default native package mode includes codex-app-updater"
     assert_contains "$output_log" "make install-native"
 }
@@ -998,13 +1017,13 @@ JSON
 test_setup_native_wizard_uses_package_name_for_installed_state() {
     info "Checking setup-native wizard package-name-aware installed state"
     local workspace="$TMP_DIR/setup-native-package-name"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local bin_dir="$workspace/bin"
     local dpkg_args="$workspace/dpkg-query.args"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":[]}' > "$config"
     mkdir -p "$bin_dir"
     cat > "$bin_dir/dpkg-query" <<SCRIPT
@@ -1029,8 +1048,8 @@ SCRIPT
     PATH="$bin_dir:$PATH" \
     PACKAGE_NAME="codex-cua-lab" \
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
 
     assert_contains "$output_log" "Installed package: deb 1.2.3"
@@ -1043,12 +1062,12 @@ SCRIPT
 test_setup_native_wizard_portal_summary_survives_busctl_sigpipe() {
     info "Checking setup-native wizard portal summary avoids pipefail SIGPIPE false negatives"
     local workspace="$TMP_DIR/setup-native-portal-sigpipe"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local bin_dir="$workspace/bin"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":[]}' > "$config"
     mkdir -p "$bin_dir"
     cat > "$bin_dir/pgrep" <<'SCRIPT'
@@ -1067,8 +1086,8 @@ SCRIPT
 
     PATH="$bin_dir:$PATH" \
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log" 2>&1
 
     assert_contains "$output_log" "portal=available on session bus"
@@ -1077,16 +1096,16 @@ SCRIPT
 test_setup_native_wizard_warns_when_conversation_mode_lacks_read_aloud() {
     info "Checking setup-native wizard warns about conversation-mode without Read Aloud"
     local workspace="$TMP_DIR/setup-native-conversation-warning"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":["conversation-mode"]}' > "$config"
 
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log" 2>&1
 
     assert_contains "$output_log" "conversation-mode is enabled without read-aloud"
@@ -1095,19 +1114,19 @@ test_setup_native_wizard_warns_when_conversation_mode_lacks_read_aloud() {
 test_setup_native_wizard_dry_runs_deps_and_install_native() {
     info "Checking setup-native wizard dry-run dependency and native install orchestration"
     local workspace="$TMP_DIR/setup-native-dry-run-install"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":[]}' > "$config"
 
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
     CODEX_BOOTSTRAP_DRY_RUN=1 \
     CODEX_BOOTSTRAP_INSTALL_DEPS=1 \
     CODEX_BOOTSTRAP_INSTALL_NATIVE=1 \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
     PACKAGE_WITH_UPDATER=0 \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
 
@@ -1119,12 +1138,12 @@ test_setup_native_wizard_dry_runs_deps_and_install_native() {
 test_setup_native_wizard_prints_deep_readiness_guidance() {
     info "Checking setup-native wizard detailed Computer Use and Read Aloud readiness"
     local workspace="$TMP_DIR/setup-native-readiness"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":["read-aloud","read-aloud-mcp"]}' > "$config"
     mkdir -p "$fake_home/.config/codex-app" "$fake_home/.local/share/codex-app/read-aloud"
 
@@ -1137,8 +1156,8 @@ test_setup_native_wizard_prints_deep_readiness_guidance() {
     XDG_SESSION_TYPE=wayland \
     CODEX_LINUX_SETTINGS_FILE="$fake_home/.config/codex-app/settings.json" \
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
 
     assert_contains "$output_log" "Computer Use details:"
@@ -1155,13 +1174,13 @@ test_setup_native_wizard_prints_deep_readiness_guidance() {
 test_setup_native_wizard_uinput_stat_is_bounded() {
     info "Checking setup-native wizard bounds slow uinput metadata reads"
     local workspace="$TMP_DIR/setup-native-uinput-stat"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local bin_dir="$workspace/bin"
     local fake_uinput="$workspace/uinput"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":[]}' > "$config"
     mkdir -p "$bin_dir"
     printf '%s\n' 'fake uinput' > "$fake_uinput"
@@ -1175,8 +1194,8 @@ SCRIPT
     PATH="$bin_dir:$PATH" \
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
     CODEX_BOOTSTRAP_UINPUT_PATH="$fake_uinput" \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
         timeout 3 bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
 
     assert_contains "$output_log" "uinput=read/write access"
@@ -1186,12 +1205,12 @@ SCRIPT
 test_setup_native_wizard_read_aloud_paths_match_runtime_defaults() {
     info "Checking setup-native wizard Read Aloud default paths and Linux app id"
     local workspace="$TMP_DIR/setup-native-read-aloud-defaults"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":["read-aloud"]}' > "$config"
     mkdir -p "$fake_home/.config/codex-cua-lab" "$fake_home/.local/share/kokoro"
     printf '%s\n' '{"codex-linux-read-aloud-kokoro-python":"/custom/python"}' > "$fake_home/.config/codex-cua-lab/settings.json"
@@ -1205,8 +1224,8 @@ test_setup_native_wizard_read_aloud_paths_match_runtime_defaults() {
     CODEX_APP_ID="codex-desktop" \
     CODEX_LINUX_SETTINGS_FILE="$fake_home/.config/codex-cua-lab/settings.json" \
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
 
     assert_contains "$output_log" "Settings file: $fake_home/.config/codex-cua-lab/settings.json (file)"
@@ -1219,19 +1238,19 @@ test_setup_native_wizard_read_aloud_paths_match_runtime_defaults() {
 test_setup_native_wizard_sway_hint_is_conservative() {
     info "Checking setup-native wizard Sway backend hint stays conservative"
     local workspace="$TMP_DIR/setup-native-sway-hint"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":[]}' > "$config"
 
     XDG_CURRENT_DESKTOP=sway \
     DESKTOP_SESSION=sway \
     XDG_SESSION_DESKTOP=sway \
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
 
     assert_contains "$output_log" "Sway -> not explicitly supported by the current i3 backend"
@@ -1241,13 +1260,13 @@ test_setup_native_wizard_sway_hint_is_conservative() {
 test_setup_native_wizard_cleanup_requires_interactive_confirmation() {
     info "Checking setup-native wizard cleanup refuses non-interactive deletion"
     local workspace="$TMP_DIR/setup-native-cleanup-noninteractive"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
     local key_file="$fake_home/.config/codex-app/remote-control-device-keys-v1.json"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":["remote-mobile-control"]}' > "$config"
     mkdir -p "$(dirname "$key_file")"
     printf '%s\n' '{"deviceKeys":[]}' > "$key_file"
@@ -1255,9 +1274,9 @@ test_setup_native_wizard_cleanup_requires_interactive_confirmation() {
     if HOME="$fake_home" \
         XDG_CONFIG_HOME="$fake_home/.config" \
         CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-        CODEX_BOOTSTRAP_CLEANUP_FEATURES="remote-mobile-control" \
-        CODEX_LINUX_FEATURES_ROOT="$features_root" \
-        CODEX_LINUX_FEATURES_CONFIG="$config" \
+        CODEX_BOOTSTRAP_CLEANUP_INTEGRATIONS="remote-mobile-control" \
+        CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+        CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
             bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log" 2>&1; then
         fail "setup wizard should refuse non-interactive cleanup"
     fi
@@ -1269,13 +1288,13 @@ test_setup_native_wizard_cleanup_requires_interactive_confirmation() {
 test_setup_native_wizard_dry_run_cleanup_allows_noninteractive_preview() {
     info "Checking setup-native wizard non-interactive dry-run cleanup preview"
     local workspace="$TMP_DIR/setup-native-cleanup-dry-run-noninteractive"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
     local key_file="$fake_home/.config/codex-app/remote-control-device-keys-v1.json"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":["remote-mobile-control"]}' > "$config"
     mkdir -p "$(dirname "$key_file")"
     printf '%s\n' '{"deviceKeys":[]}' > "$key_file"
@@ -1284,9 +1303,9 @@ test_setup_native_wizard_dry_run_cleanup_allows_noninteractive_preview() {
     XDG_CONFIG_HOME="$fake_home/.config" \
     CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
     CODEX_BOOTSTRAP_DRY_RUN=1 \
-    CODEX_BOOTSTRAP_CLEANUP_FEATURES="remote-mobile-control" \
-    CODEX_LINUX_FEATURES_ROOT="$features_root" \
-    CODEX_LINUX_FEATURES_CONFIG="$config" \
+    CODEX_BOOTSTRAP_CLEANUP_INTEGRATIONS="remote-mobile-control" \
+    CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$config" \
         bash "$REPO_DIR/scripts/bootstrap-wizard.sh" >"$output_log"
 
     assert_file_exists "$key_file"
@@ -1297,13 +1316,13 @@ test_setup_native_wizard_dry_run_cleanup_allows_noninteractive_preview() {
 test_setup_native_wizard_dry_run_cleanup_does_not_delete_confirmed_paths() {
     info "Checking setup-native wizard dry-run cleanup is non-destructive"
     local workspace="$TMP_DIR/setup-native-cleanup-dry-run"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
     local key_file="$fake_home/.config/codex-app/remote-control-device-keys-v1.json"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":["remote-mobile-control"]}' > "$config"
     mkdir -p "$(dirname "$key_file")"
     printf '%s\n' '{"deviceKeys":[]}' > "$key_file"
@@ -1317,9 +1336,9 @@ test_setup_native_wizard_dry_run_cleanup_does_not_delete_confirmed_paths() {
         export HOME="$fake_home"
         export XDG_CONFIG_HOME="$fake_home/.config"
         export CODEX_BOOTSTRAP_DRY_RUN=1
-        export CODEX_BOOTSTRAP_CLEANUP_FEATURES="remote-mobile-control"
-        export CODEX_LINUX_FEATURES_ROOT="$features_root"
-        export CODEX_LINUX_FEATURES_CONFIG="$config"
+        export CODEX_BOOTSTRAP_CLEANUP_INTEGRATIONS="remote-mobile-control"
+        export CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root"
+        export CODEX_PORT_INTEGRATIONS_CONFIG="$config"
         {
             printf '\n'
             printf '\n'
@@ -1336,15 +1355,15 @@ test_setup_native_wizard_dry_run_cleanup_does_not_delete_confirmed_paths() {
 test_setup_native_wizard_cleanup_deletes_only_confirmed_paths() {
     info "Checking setup-native wizard deletes only explicitly confirmed cleanup paths"
     local workspace="$TMP_DIR/setup-native-cleanup-confirmed"
-    local features_root="$workspace/linux-features"
-    local config="$workspace/features.json"
+    local integrations_root="$workspace/port-integrations"
+    local config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
     local key_file="$fake_home/.config/codex-app/remote-control-device-keys-v1.json"
     local read_aloud_data="$fake_home/.local/share/codex-app/read-aloud"
     local plugin_cache="$fake_home/.codex/plugins/cache/openai-bundled/read-aloud"
 
-    make_wizard_feature_root "$features_root"
+    make_wizard_integration_root "$integrations_root"
     printf '%s\n' '{"enabled":["remote-mobile-control","read-aloud"]}' > "$config"
     mkdir -p "$(dirname "$key_file")" "$read_aloud_data" "$plugin_cache"
     printf '%s\n' '{"deviceKeys":[]}' > "$key_file"
@@ -1360,9 +1379,9 @@ test_setup_native_wizard_cleanup_deletes_only_confirmed_paths() {
         export HOME="$fake_home"
         export XDG_CONFIG_HOME="$fake_home/.config"
         export XDG_DATA_HOME="$fake_home/.local/share"
-        export CODEX_BOOTSTRAP_CLEANUP_FEATURES="remote-mobile-control,read-aloud"
-        export CODEX_LINUX_FEATURES_ROOT="$features_root"
-        export CODEX_LINUX_FEATURES_CONFIG="$config"
+        export CODEX_BOOTSTRAP_CLEANUP_INTEGRATIONS="remote-mobile-control,read-aloud"
+        export CODEX_PORT_INTEGRATIONS_ROOT="$integrations_root"
+        export CODEX_PORT_INTEGRATIONS_CONFIG="$config"
         {
             printf '\n'
             printf '\n'
@@ -1467,11 +1486,11 @@ test_installer_copies_webview_into_generated_app() {
     local workspace="$TMP_DIR/webview-extraction-target"
     local fake_app_dir="$workspace/Codex.app"
     local install_dir="$workspace/codex-app"
-    local feature_config="$workspace/features.json"
+    local integration_config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
 
     mkdir -p "$fake_app_dir" "$install_dir"
-    cat > "$feature_config" <<'JSON'
+    cat > "$integration_config" <<'JSON'
 {
   "disabled": [
     "conversation-mode",
@@ -1486,7 +1505,7 @@ JSON
 
     CODEX_INSTALLER_SOURCE_ONLY=1 \
     CODEX_INSTALL_DIR="$install_dir" \
-    CODEX_LINUX_FEATURES_CONFIG="$feature_config" \
+    CODEX_PORT_INTEGRATIONS_CONFIG="$integration_config" \
     FAKE_APP_DIR="$fake_app_dir" \
     bash -c '
         source "$1"
@@ -2216,14 +2235,14 @@ NODE
     assert_contains "$REPO_DIR/launcher/start.sh.template" "ADOPTED_WEBVIEW_PID"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "Reusing webview server pid="
     assert_contains "$REPO_DIR/launcher/start.sh.template" "run_cold_start_hooks"
-    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/feature.json" '"stageHook": "./stage.sh"'
-    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/stage.sh" "cold-start.d"
-    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/stage.sh" "remote-mobile-control"
-    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/stage.sh" "cold-start-hook.sh"
-    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/cold-start-hook.sh" "remote-control start"
-    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/cold-start-hook.sh" "/run/current-system/sw/bin"
-    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/cold-start-hook.sh" "codex-remote-control.service"
-    assert_contains "$REPO_DIR/linux-features/remote-mobile-control/cold-start-hook.sh" "continuing best-effort in the background"
+    assert_contains "$REPO_DIR/port-integrations/remote-mobile-control/integration.json" '"stageHook": "./stage.sh"'
+    assert_contains "$REPO_DIR/port-integrations/remote-mobile-control/stage.sh" "cold-start.d"
+    assert_contains "$REPO_DIR/port-integrations/remote-mobile-control/stage.sh" "remote-mobile-control"
+    assert_contains "$REPO_DIR/port-integrations/remote-mobile-control/stage.sh" "cold-start-hook.sh"
+    assert_contains "$REPO_DIR/port-integrations/remote-mobile-control/cold-start-hook.sh" "remote-control start"
+    assert_contains "$REPO_DIR/port-integrations/remote-mobile-control/cold-start-hook.sh" "/run/current-system/sw/bin"
+    assert_contains "$REPO_DIR/port-integrations/remote-mobile-control/cold-start-hook.sh" "codex-remote-control.service"
+    assert_contains "$REPO_DIR/port-integrations/remote-mobile-control/cold-start-hook.sh" "continuing best-effort in the background"
     assert_contains "$REPO_DIR/flake.nix" "homeManagerModules"
     assert_contains "$REPO_DIR/flake.nix" "nixosModules"
     assert_contains "$REPO_DIR/nix/home-manager-module.nix" "codex-remote-control"
@@ -2583,6 +2602,9 @@ PY
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" "CODEX_USER_LOCAL_OZONE_PLATFORM"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" 'exec "${APP_DIR}/start.sh" --x11 "$@"'
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" 'exec "${APP_DIR}/start.sh" --wayland "$@"'
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "CODEX_PORT_INTEGRATIONS_CONFIG"
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "port-integrations/integrations.json"
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "port-integrations/features.json"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "--force-x11"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "user-local.env"
     assert_contains "$REPO_DIR/contrib/user-local-install/README.md" "--force-x11"
@@ -4233,7 +4255,7 @@ test_linux_computer_use_ui_opt_in_smoke() {
     local workspace="$TMP_DIR/computer-use-ui-opt-in"
     local extracted="$workspace/extracted"
     local fake_home="$workspace/home"
-    local feature_config="$workspace/features.json"
+    local integration_config="$workspace/integrations.json"
     local output_log="$workspace/output.log"
     local main_bundle="$extracted/.vite/build/main-test.js"
     local renderer_asset="$extracted/webview/assets/use-model-settings-test.js"
@@ -4243,7 +4265,7 @@ test_linux_computer_use_ui_opt_in_smoke() {
     local install_flow_body
 
     mkdir -p "$workspace" "$fake_home/.config/codex-app"
-    cat > "$feature_config" <<'JSON'
+    cat > "$integration_config" <<'JSON'
 {
   "disabled": [
     "conversation-mode",
@@ -4275,7 +4297,7 @@ JS
     printf '%s\n' "$install_flow_body" > "$install_flow_asset"
 
     # Branch 1: no env var, no settings.json — only the plugin manifest gate runs.
-    env -u CODEX_LINUX_ENABLE_COMPUTER_USE_UI CODEX_LINUX_FEATURES_CONFIG="$feature_config" \
+    env -u CODEX_LINUX_ENABLE_COMPUTER_USE_UI CODEX_PORT_INTEGRATIONS_CONFIG="$integration_config" \
         HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
         node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
     assert_contains "$main_bundle" '(t===`darwin`||t===`linux`)&&e.computerUse'
@@ -4289,7 +4311,7 @@ JS
     printf '%s\n' "$renderer_body" > "$renderer_asset"
     printf '%s\n' "$install_flow_body" > "$install_flow_asset"
 
-    env CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 CODEX_LINUX_FEATURES_CONFIG="$feature_config" \
+    env CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 CODEX_PORT_INTEGRATIONS_CONFIG="$integration_config" \
         HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
         node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
     assert_contains "$main_bundle" '(t===`darwin`||t===`linux`)&&e.computerUse'
@@ -4304,7 +4326,7 @@ JS
     printf '%s\n' "$install_flow_body" > "$install_flow_asset"
     printf '%s\n' '{"codex-linux-computer-use-ui-enabled": true}' > "$fake_home/.config/codex-app/settings.json"
 
-    env -u CODEX_LINUX_ENABLE_COMPUTER_USE_UI CODEX_LINUX_FEATURES_CONFIG="$feature_config" \
+    env -u CODEX_LINUX_ENABLE_COMPUTER_USE_UI CODEX_PORT_INTEGRATIONS_CONFIG="$integration_config" \
         HOME="$fake_home" XDG_CONFIG_HOME="$fake_home/.config" \
         node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
     assert_contains "$main_bundle" 'return n===`linux`?{...e,computerUse:!0,computerUseNodeRepl:!0}'
@@ -5128,7 +5150,8 @@ main() {
     test_common_helper_sourcing
     test_desktop_renderer_preserves_non_updater_actions
     test_deb_builder_smoke
-    test_update_builder_omits_build_time_linux_features_config
+    test_update_builder_omits_build_time_port_integrations_config
+    test_update_builder_omits_legacy_port_integration_config
     test_deb_builder_respects_package_identity
     test_deb_builder_can_disable_updater
     test_rpm_builder_smoke
@@ -5140,9 +5163,9 @@ main() {
     test_make_build_app_uses_installer_download_flow_by_default
     test_make_build_app_fresh_uses_installer_fresh_flow
     test_native_shortcut_targets_compose_existing_flows
-    test_setup_native_wizard_noninteractive_feature_writer
-    test_setup_native_wizard_rejects_invalid_feature_ids
-    test_setup_native_wizard_rejects_conflicting_feature_ids
+    test_setup_native_wizard_noninteractive_integration_writer
+    test_setup_native_wizard_rejects_invalid_integration_ids
+    test_setup_native_wizard_rejects_conflicting_integration_ids
     test_setup_native_wizard_disable_is_non_destructive
     test_setup_native_wizard_summary_keeps_existing_config
     test_setup_native_wizard_uses_package_name_for_installed_state

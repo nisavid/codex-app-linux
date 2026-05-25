@@ -28,6 +28,8 @@ native packages.
   [Manual and Custom Builds](#manual-and-custom-builds).
 - **AppImage or package details:** use
   [Native Package Details](#native-package-details).
+- **Where to report issues:** use
+  [Support and Issue Routing](docs/usage/support-routing.md).
 - **Computer Use, updater, release, or maintainer work:** use
   [Linux Computer Use](#linux-computer-use) and [Learn More](#learn-more).
 
@@ -88,8 +90,8 @@ make setup-native
 
 The guided setup helper detects the host package manager, desktop session,
 package format, updater hints, Computer Use readiness signals, and optional
-Linux feature config. It can write the git-ignored
-`linux-features/features.json` file for the next build, but it does not run the
+port integration config. It can write the git-ignored
+`port-integrations/integrations.json` file for the next build, but it does not run the
 build, package, or install flow unless you explicitly opt in through
 `CODEX_BOOTSTRAP_INSTALL_DEPS=1` or `CODEX_BOOTSTRAP_INSTALL_NATIVE=1`.
 
@@ -115,16 +117,16 @@ build, package, or install flow unless you explicitly opt in through
 
 - **Working:** the standard Codex app UI, native packages, AppImage self-builds,
   local updater, managed runtime, Codex CLI preflight, Chrome native host,
-  browser resources, and Linux feature registry.
+  browser resources, and port integration registry.
 - **Desktop-dependent:** tray behavior, warm start, multi-instance launches,
   and Linux keybind handling can vary by desktop environment.
 - **Host-gated:** Linux Computer Use is packaged, but real readiness depends on
   local AT-SPI, screenshot portal or compositor support, `ydotool`, and input
   permissions.
-- **Default Linux integrations:** remote-control UI, mobile-control host
-  patches, Read Aloud, Read Aloud MCP, and conversation mode are enabled in the
-  Linux feature registry by default. Account, rollout, MFA, connected-client,
-  audio, and host-network requirements still apply.
+- **Default port integrations:** remote-control UI, mobile-control host patches,
+  Read Aloud, Read Aloud MCP, conversation mode, and Open target discovery are
+  enabled by default. Account, rollout, MFA, connected-client, audio, and
+  host-network requirements still apply.
 - **NixOS:** the flake exposes the default app, Computer Use UI compatibility
   outputs, remote-mobile compatibility aliases, and installer outputs with
   pinned DMG metadata.
@@ -199,32 +201,35 @@ bounded range and uses per-port pid, socket, log, and Electron user-data paths.
 CODEX_MULTI_LAUNCH=1 CODEX_MULTI_LAUNCH_PORT_RANGE=5175-5199 ./codex-app/start.sh
 ```
 
-## Linux Features
+## Port Integrations
 
-Linux-side feature modules live in `linux-features/`. This fork enables the
-current Linux integration set by default: Open target discovery, remote-control
-UI, mobile-control host patches, Read Aloud, Read Aloud MCP, and conversation
-mode. Open target discovery lets the Open menus discover Linux terminals,
-editors, and file managers from the current desktop session.
+Port integrations are build-time integration modules that adapt official Codex app
+behavior and local runtime helpers to this Linux port. The source path is
+`port-integrations/`, but the modules are not features of Linux itself,
+and their user-facing concepts are not necessarily Linux-only Codex features.
 
-To disable default features or enable still-optional integrations, copy
-`linux-features/features.example.json` to the git-ignored
-`linux-features/features.json`, edit the `enabled` and `disabled` lists, then
+This fork enables the current supported integration set by default: Open target
+discovery, remote-control UI, mobile-control host patches, Read Aloud, Read
+Aloud MCP, and conversation mode. Open target discovery lets the Open menus
+discover Linux terminals, editors, and file managers from the current desktop
+session.
+
+To disable default integrations or enable still-optional integrations, copy
+`port-integrations/integrations.example.json` to the git-ignored
+`port-integrations/integrations.json`, edit the `enabled` and `disabled` lists, then
 rebuild. Packaged installs can use
-`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/linux-features.json` for the same
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/port-integrations.json` for the same
 override shape; checkout builds ignore that persistent user file and use
-`linux-features/features.json` or `CODEX_LINUX_FEATURES_CONFIG` instead.
-See [`linux-features/README.md`](linux-features/README.md) for the feature
+`port-integrations/integrations.json` or `CODEX_PORT_INTEGRATIONS_CONFIG` instead.
+See [`port-integrations/README.md`](port-integrations/README.md) for the integration
 contract.
 
 The `remote-control-ui`, `remote-mobile-control`, `read-aloud`,
-`read-aloud-mcp`, and `conversation-mode` feature modules are default-enabled
-Linux integration patches for the official OpenAI app bundle and local runtime
-helpers.
-Treat them as UI/runtime integrations, not as account-policy bypasses: OpenAI
-rollouts, MFA state, connected-client state, audio availability, and host
-network exposure still come from OpenAI-hosted services and your local
-environment.
+`read-aloud-mcp`, and `conversation-mode` integrations expose or support official
+app surfaces through Linux-specific implementation code. Treat them as
+UI/runtime integrations, not as account-policy bypasses: OpenAI rollouts, MFA
+state, connected-client state, audio availability, and host network exposure
+still come from OpenAI-hosted services and your local environment.
 
 ## Native Package Details
 
@@ -346,9 +351,9 @@ a development shell:
 nix develop github:nisavid/codex-app-linux
 ```
 
-Feature-specific outputs are available when you want the generated app to carry
-non-default compatibility options or legacy feature-specific aliases that would
-otherwise be read from the git-ignored `linux-features/features.json`:
+Integration-specific outputs are available when you want the generated app to carry
+non-default integration choices that would otherwise be read from the git-ignored
+`port-integrations/integrations.json`:
 
 ```bash
 nix run github:nisavid/codex-app-linux#codex-app-computer-use-ui
@@ -489,6 +494,7 @@ and log locations.
 | --- | --- |
 | Build, run, package, install, or customize the app | [Build and Run Guide](docs/usage/build-and-run.md) |
 | Diagnose launch, CLI, webview, or updater issues | [Troubleshooting](docs/usage/troubleshooting.md) |
+| Decide where to report an issue or feature request | [Support and Issue Routing](docs/usage/support-routing.md) |
 | Set up or debug Linux Computer Use | [Build and Run Guide](docs/usage/build-and-run.md#linux-computer-use-ui-opt-in) and [Troubleshooting](docs/usage/troubleshooting.md) |
 | Browse all repo docs by role and task | [Documentation Index](docs/README.md) |
 | Contribute a change | [Contributing](CONTRIBUTING.md) |

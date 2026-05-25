@@ -23,6 +23,13 @@ document, or sentence clearly scopes the relevant surface, concise terms such
 as `upstream`, `DMG`, or `app bundle` are fine. Do not use plain
 `upstream` when both meanings are plausible.
 
+Use `port integration` in durable docs for configurable build-time modules that
+adapt official app behavior or local runtime helpers to this Linux port. The
+implementation path and config APIs are `port-integrations/`,
+`port-integrations.json`, and `CODEX_PORT_INTEGRATIONS_*`; use those exact names only
+for source paths, file paths, and environment variables. Do not describe these
+integrations as features of Linux.
+
 Treat this file as always-loaded agent policy. Keep detailed package recipes, runtime notes, and validation matrices in maintainer docs when those docs exist.
 
 ## Agent skills
@@ -151,8 +158,8 @@ This is a single-context repo. See `docs/agents/domain.md`.
 - Shared package staging helpers: `scripts/lib/package-common.sh`
 - Linux Computer Use backend and bundled plugin: `computer-use-linux/` and `plugins/openai-bundled/plugins/computer-use/`
 - Host dependency bootstrap: `scripts/install-deps.sh`
-- Linux patch registry and patch descriptors: `scripts/patches/` and
-  `scripts/lib/linux-features.js`
+- Linux patch registry and port integration descriptors: `scripts/patches/`,
+  `scripts/lib/port-integrations.js`, and `port-integrations/`
 - Linux package templates, maintainer scripts, desktop entry, service unit, packaged runtime helper: `packaging/linux/`
 - Rust updater service and CLI: `updater/`
 - Updater crate version and versioning policy: `updater/Cargo.toml` and

@@ -10,6 +10,8 @@ bin/codex-*
 target/
 dist/
 dist-next/
+port-integrations/integrations.json
+port-integrations/features.json
 linux-features/features.json
 .idea/
 .claude/
