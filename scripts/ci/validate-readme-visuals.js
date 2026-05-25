@@ -125,12 +125,41 @@ function isEscapedMarkdownImage(content, index) {
   return backslashCount % 2 === 1;
 }
 
+function stripReferenceContainerMarkers(line) {
+  let stripped = line;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const withoutBlockquote = stripped.replace(/^[ \t]{0,3}>[ \t]?/, "");
+    if (withoutBlockquote !== stripped) {
+      stripped = withoutBlockquote;
+      changed = true;
+      continue;
+    }
+
+    const withoutListMarker = stripped.replace(/^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+/, "");
+    if (withoutListMarker !== stripped) {
+      stripped = withoutListMarker;
+      changed = true;
+    }
+  }
+  return stripped;
+}
+
+function normalizeReferenceDefinitionContainers(content) {
+  return content
+    .split(/\r?\n/)
+    .map((line) => stripReferenceContainerMarkers(line))
+    .join("\n");
+}
+
 function findReferenceDefinitions(content) {
   const references = new Map();
+  const normalizedContent = normalizeReferenceDefinitionContainers(content);
   const referenceDefinitionPattern =
     /^[ \t]{0,3}\[([^\]\n]+)\]:[ \t]*(?:\r?\n[ \t]+)?(<[^>\n]*>|[^ \t\n]+)(?:[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$/gm;
 
-  for (const match of content.matchAll(referenceDefinitionPattern)) {
+  for (const match of normalizedContent.matchAll(referenceDefinitionPattern)) {
     references.set(normalizeReferenceLabel(match[1]), normalizeReferenceSrc(match[2]));
   }
   return references;
@@ -152,7 +181,7 @@ function findMarkdownImages(content, inlineCodeSpans = []) {
     });
   }
   const references = findReferenceDefinitions(content);
-  const referenceImagePattern = /!\[([^\]\n]*)\](?:\[([^\]\n]*)\])?/g;
+  const referenceImagePattern = /!\[([^\]\n]*)\](?:[ \t]*\[([^\]\n]*)\])?/g;
   for (const match of content.matchAll(referenceImagePattern)) {
     if (isInsideInlineCodeSpan(inlineCodeSpans, match.index)) {
       continue;
