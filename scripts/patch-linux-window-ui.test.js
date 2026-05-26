@@ -390,6 +390,20 @@ test("build info preserves unknown dirty state when only source commit override 
   }
 });
 
+test("build info keeps dirty suffixes in short source commit overrides", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-build-info-dirty-source-"));
+  try {
+    const info = sourceInfoFromGit(tempRoot, {
+      CODEX_LINUX_SOURCE_COMMIT: "abcdef1234567890abcdef1234567890abcdef12-dirty",
+    });
+
+    assert.equal(info.shortCommit, "abcdef123456-dirty");
+    assert.equal(info.dirty, null);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("build info strips credentials from URL-form source remotes", () => {
   assert.equal(
     sanitizeGitRemoteUrl("https://user:secret@example.com/org/repo.git"),
@@ -1395,6 +1409,32 @@ test("adds Linux build information to the tray menu", () => {
   assert.match(patched, /dirty===null/);
   assert.match(patched, /dirty state unknown/);
   assert.match(patched, /Codex App Linux build information/);
+});
+
+test("build information tray detail prefers readable dirty-unknown revisions", () => {
+  const patched = applyPatchTwice(applyLinuxBuildInfoTrayPatch, `${mainBundlePrefix}${trayBundleFixture()}`);
+  const helperStart = patched.indexOf("function codexLinuxBuildInfoValue");
+  const helperEnd = patched.indexOf("async function codexLinuxShowBuildInfo");
+  assert.notEqual(helperStart, -1);
+  assert.notEqual(helperEnd, -1);
+
+  const sandbox = {
+    input: {
+      source: {
+        commit: "abcdef1234567890abcdef1234567890abcdef12-dirty",
+        shortCommit: "abcdef123456-dirty",
+        dirty: null,
+      },
+    },
+    result: null,
+  };
+  vm.runInNewContext(
+    `${patched.slice(helperStart, helperEnd)};result=codexLinuxBuildInfoDetail(input);`,
+    sandbox,
+  );
+
+  assert.match(sandbox.result, /Linux source revision: abcdef123456-dirty \(dirty state unknown\)/);
+  assert.doesNotMatch(sandbox.result, /abcdef1234567890abcdef1234567890abcdef12/);
 });
 
 test("adds Linux build information when the tray menu computes sections before returning", () => {

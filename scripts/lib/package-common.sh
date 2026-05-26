@@ -581,11 +581,21 @@ function sanitizeGitRemoteUrl(remote) {
   return value;
 }
 
+function shortSourceCommit(commit) {
+  if (commit == null) {
+    return null;
+  }
+  const value = String(commit);
+  const suffix = value.endsWith("-dirty") ? "-dirty" : "";
+  const revision = suffix ? value.slice(0, -suffix.length) : value;
+  return `${revision.slice(0, 12)}${suffix}`;
+}
+
 const commit = process.env.CODEX_LINUX_SOURCE_COMMIT?.trim() || git(["rev-parse", "HEAD"]);
 const status = git(["status", "--porcelain"]);
 const info = {
   commit,
-  shortCommit: commit == null ? null : commit.slice(0, 12),
+  shortCommit: shortSourceCommit(commit),
   branch: process.env.CODEX_LINUX_SOURCE_BRANCH?.trim() || git(["branch", "--show-current"]),
   remote: sanitizeGitRemoteUrl(process.env.CODEX_LINUX_SOURCE_REMOTE?.trim() || git(["remote", "get-url", "origin"])),
   describe: process.env.CODEX_LINUX_SOURCE_DESCRIBE?.trim() || git(["describe", "--always", "--dirty", "--tags"]),
