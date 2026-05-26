@@ -199,6 +199,48 @@ test("Thorium stage hook upgrades a core Linux-patched Chrome plugin", () => {
   }
 });
 
+test("Thorium stage hook does not advertise native host paths when Chrome plugin is missing", () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thorium-stage-missing-plugin-"));
+  try {
+    const installDir = path.join(workspace, "install");
+    const workDir = path.join(workspace, "work");
+    const featuresConfig = path.join(workspace, "integrations.json");
+    const manifestPathsFile = path.join(installDir, ".codex-linux", "chrome-native-host-manifest-paths");
+
+    fs.mkdirSync(installDir, { recursive: true });
+    fs.mkdirSync(workDir, { recursive: true });
+    fs.writeFileSync(featuresConfig, JSON.stringify({ enabled: ["thorium-chrome-plugin"] }, null, 2));
+
+    const result = run("bash", [
+      "-lc",
+      [
+        "source \"$PORT_INTEGRATIONS_RUNNER\"",
+        "info(){ echo \"$*\" >&2; }",
+        "warn(){ echo \"$*\" >&2; }",
+        "SCRIPT_DIR=\"$REPO_ROOT\"",
+        "INSTALL_DIR=\"$INSTALL_DIR\"",
+        "WORK_DIR=\"$WORK_DIR\"",
+        "ARCH=x86_64",
+        "run_port_integration_stage_hooks",
+      ].join("\n"),
+    ], {
+      env: {
+        ...process.env,
+        CODEX_PORT_INTEGRATIONS_CONFIG: featuresConfig,
+        PORT_INTEGRATIONS_RUNNER: path.join(repoRoot, "scripts", "lib", "port-integrations.sh"),
+        REPO_ROOT: repoRoot,
+        INSTALL_DIR: installDir,
+        WORK_DIR: workDir,
+      },
+    });
+
+    assert.match(result.stderr, /Chrome plugin not found; skipping Thorium Chrome plugin patch/);
+    assert.equal(fs.existsSync(manifestPathsFile), false);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("Thorium patcher handles the current browser-client metadata shape", () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thorium-current-browser-client-"));
   try {
