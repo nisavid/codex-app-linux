@@ -196,7 +196,7 @@ PY
 # ─── Fixture server ────────────────────────────────────────────────────────
 setup_server() {
     FIXTURES=$(mktemp -d) || fail "mktemp -d failed"
-    mkdir -p "$FIXTURES/assets" "$FIXTURES/.codex-linux"
+    mkdir -p "$FIXTURES/assets/nested" "$FIXTURES/.codex-linux"
     cat >"$FIXTURES/index.html" <<'EOF'
 <!doctype html>
 <html>
@@ -208,7 +208,8 @@ setup_server() {
 </body>
 </html>
 EOF
-    printf '%s\n' "console.log('trusted startup asset');" > "$FIXTURES/assets/app-test.js"
+    printf '%s\n' "import './nested/chunk.js';" "console.log('trusted startup asset');" > "$FIXTURES/assets/app-test.js"
+    printf '%s\n' "console.log('trusted transitive asset');" > "$FIXTURES/assets/nested/chunk.js"
     cat >"$FIXTURES/wrong-title.html" <<'EOF'
 <!doctype html>
 <html><head><title>Not Codex</title></head>
@@ -227,7 +228,7 @@ import sys
 
 
 root = pathlib.Path(sys.argv[1])
-for relative_path in ("assets/app-test.js", "index.html"):
+for relative_path in ("assets/app-test.js", "assets/nested/chunk.js", "index.html"):
     asset_path = root / relative_path
     digest = hashlib.sha256(asset_path.read_bytes()).hexdigest()
     print(f"{digest}  {relative_path}")
@@ -349,6 +350,11 @@ main() {
     printf '%s\n' "console.log('tampered startup asset');" > "$FIXTURES/assets/app-test.js"
     assert_rc "orig  tampered startup asset (markers-only)" 0 verify_webview_origin__orig "$URL_OK"
     assert_rc "new   tampered startup asset"  1 verify_webview_origin__new  "$URL_OK"
+    printf '%s\n' "import './nested/chunk.js';" "console.log('trusted startup asset');" > "$FIXTURES/assets/app-test.js"
+    printf '%s\n' "console.log('tampered transitive asset');" > "$FIXTURES/assets/nested/chunk.js"
+    assert_rc "orig  tampered transitive asset (markers-only)" 0 verify_webview_origin__orig "$URL_OK"
+    assert_rc "new   tampered transitive asset"  1 verify_webview_origin__new  "$URL_OK"
+    printf '%s\n' "console.log('trusted transitive asset');" > "$FIXTURES/assets/nested/chunk.js"
     rm -f "$FIXTURES/assets/app-test.js"
     assert_rc "orig  missing startup asset (markers-only)" 0 verify_webview_origin__orig "$URL_OK"
     assert_rc "new   missing startup asset"   1 verify_webview_origin__new  "$URL_OK"

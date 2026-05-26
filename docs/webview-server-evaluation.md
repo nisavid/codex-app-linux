@@ -2,9 +2,17 @@
 
 ## Context
 
-The current launcher starts a local `python3 -m http.server "$CODEX_LINUX_WEBVIEW_PORT"` process for the extracted webview bundle. It waits for the configured port to become reachable, verifies startup markers and generated startup-asset hashes, then exports `ELECTRON_RENDERER_URL` so side-by-side app IDs can use an isolated local origin.
+The current launcher starts a local
+`python3 -m http.server "$CODEX_LINUX_WEBVIEW_PORT"` process for the extracted
+webview bundle. It waits for the configured port to become reachable, verifies
+startup markers and generated startup-asset graph hashes, then exports
+`ELECTRON_RENDERER_URL` so side-by-side app IDs can use an isolated local
+origin.
 
-The extracted webview payload is a static bundle under `codex-app/content/webview` and is relatively large: about 35 MB across 693 files. The generated `index.html` references hashed assets through relative paths, so the app still expects a stable local origin.
+The extracted webview payload is a static bundle under `codex-app/content/webview`.
+The official app bundle can include hundreds of hashed chunks and static assets.
+The generated `index.html` references hashed assets through relative paths, so
+the app still expects a stable local origin.
 
 ## Options
 
@@ -14,7 +22,7 @@ What changes:
 
 - Keep `python3 -m http.server "$CODEX_LINUX_WEBVIEW_PORT"`
 - Keep improving the current process lifecycle and readiness behavior
-- Validate the served startup document and direct startup assets against the
+- Validate the served startup document and startup asset graph against the
   generated integrity manifest
 - Improve port-collision handling and logging
 
@@ -97,15 +105,15 @@ If we later implement the recommended hardening or a Rust server, the change poi
 - Stale launcher/server processes after crashes
 - Chromium waiting on a server that has not finished binding yet
 - Hidden assumptions in the extracted app about a localhost origin
-- Startup asset references that drift beyond the generated integrity manifest
+- Generated manifest coverage that drifts as the upstream webview bundle shape changes
 
 ## Acceptance Criteria For A Future Change
 
 - Electron starts reliably when the launcher is invoked once
 - A stale server process does not block a new launch
 - The webview origin is available before Electron tries to load it
-- The webview origin serves the generated startup document and startup assets
-  before Electron tries to load it
+- The webview origin serves the generated startup document and startup asset
+  graph before Electron tries to load it
 - Launcher logs clearly show server start, bind, and shutdown events
 - The app still renders the same webview assets without broken relative paths
 
