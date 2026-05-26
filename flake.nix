@@ -10,6 +10,8 @@
     flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
       let
         pkgs = import nixpkgs { inherit system; };
+        flakeSourceCommit = self.rev or (self.dirtyRev or "");
+        flakeSourceDateEpoch = toString (self.lastModified or 1);
         sourceRoot = pkgs.lib.cleanSourceWith {
           src = ./.;
           filter = path: type:
@@ -432,7 +434,10 @@ PY
             export npm_config_cafile="$SSL_CERT_FILE"
             export CARGO_HOME="$TMPDIR/cargo-home"
             export CARGO_BUILD_JOBS=1
-            export SOURCE_DATE_EPOCH=1
+            export SOURCE_DATE_EPOCH="${flakeSourceDateEpoch}"
+            ${pkgs.lib.optionalString (flakeSourceCommit != "") ''
+            export CODEX_LINUX_SOURCE_COMMIT="${flakeSourceCommit}"
+            ''}
             ${pkgs.lib.optionalString enableComputerUseUi ''
             export CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1
             ''}
