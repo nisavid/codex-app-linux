@@ -1684,6 +1684,26 @@ EOF
     assert_contains "$output_log" "missing webview startup asset: assets/missing.svg"
 }
 
+test_webview_integrity_manifest_fails_missing_local_require() {
+    info "Checking webview integrity manifest fails on missing local require assets"
+    local workspace="$TMP_DIR/webview-integrity-missing-local-require"
+    local install_dir="$workspace/codex-app"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$install_dir/content/webview/assets"
+    printf "%s\n" "<title>Codex</title><script type=\"module\" src=\"./assets/app-test.js\"></script>" > "$install_dir/content/webview/index.html"
+    printf "%s\n" "require(\"./missing.js\");" > "$install_dir/content/webview/assets/app-test.js"
+
+    if CODEX_INSTALLER_SOURCE_ONLY=1 CODEX_INSTALL_DIR="$install_dir" bash -c \
+        'source "$1"; write_webview_integrity_manifest "$2"' \
+        _ "$REPO_DIR/install.sh" "$install_dir" >"$output_log" 2>&1; then
+        fail "Expected webview integrity manifest generation to fail for a missing local require asset"
+    fi
+
+    assert_file_not_exists "$install_dir/.codex-linux/webview-integrity.sha256"
+    assert_contains "$output_log" "missing webview startup asset: assets/missing.js"
+}
+
 test_webview_integrity_manifest_ignores_non_startup_html_links() {
     info "Checking webview integrity manifest ignores non-startup HTML links"
     local workspace="$TMP_DIR/webview-integrity-html-links"
@@ -1741,6 +1761,40 @@ EOF
     assert_not_contains "$install_dir/.codex-linux/webview-integrity.sha256" "missing-line-comment.js"
     assert_not_contains "$install_dir/.codex-linux/webview-integrity.sha256" "missing-block-comment.js"
     assert_not_contains "$install_dir/.codex-linux/webview-integrity.sha256" "missing-dynamic-comment.js"
+}
+
+test_webview_integrity_manifest_ignores_css_comment_references() {
+    info "Checking webview integrity manifest ignores CSS comment references"
+    local workspace="$TMP_DIR/webview-integrity-css-comments"
+    local install_dir="$workspace/codex-app"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$install_dir/content/webview/assets/styles"
+    cat > "$install_dir/content/webview/index.html" <<'HTML'
+<title>Codex</title>
+<link rel="stylesheet" href="./assets/styles/app.css">
+HTML
+    cat > "$install_dir/content/webview/assets/styles/app.css" <<'EOF'
+/* @import "./missing-comment.css"; */
+/*
+.logo {
+    background-image: url("../missing-comment.svg");
+}
+*/
+.startup {
+    color: white;
+}
+EOF
+
+    CODEX_INSTALLER_SOURCE_ONLY=1 CODEX_INSTALL_DIR="$install_dir" bash -c \
+        'source "$1"; write_webview_integrity_manifest "$2"' \
+        _ "$REPO_DIR/install.sh" "$install_dir" >"$output_log" 2>&1
+
+    assert_file_exists "$install_dir/.codex-linux/webview-integrity.sha256"
+    assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  index.html"
+    assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  assets/styles/app.css"
+    assert_not_contains "$install_dir/.codex-linux/webview-integrity.sha256" "missing-comment.css"
+    assert_not_contains "$install_dir/.codex-linux/webview-integrity.sha256" "missing-comment.svg"
 }
 
 test_installer_inspect_mode_does_not_write_install_metadata() {
@@ -5512,8 +5566,10 @@ main() {
     test_webview_integrity_manifest_fails_missing_multiline_from_import
     test_webview_integrity_manifest_fails_missing_dynamic_import_options
     test_webview_integrity_manifest_fails_missing_new_url_trailing_comma
+    test_webview_integrity_manifest_fails_missing_local_require
     test_webview_integrity_manifest_ignores_non_startup_html_links
     test_webview_integrity_manifest_ignores_import_text_in_js_strings_and_comments
+    test_webview_integrity_manifest_ignores_css_comment_references
     test_installer_inspect_mode_does_not_write_install_metadata
     test_rebuild_report_tolerates_bad_patch_json
     test_rebuild_report_records_missing_patch_json
