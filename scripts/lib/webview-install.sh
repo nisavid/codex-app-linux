@@ -268,6 +268,30 @@ def mask_js_comments_and_strings(text):
     return "".join(chars)
 
 
+def mask_css_comments(text):
+    chars = list(text)
+    index = 0
+    while index < len(text):
+        if text[index] == "/" and index + 1 < len(text) and text[index + 1] == "*":
+            chars[index] = " "
+            chars[index + 1] = " "
+            index += 2
+            while index < len(text):
+                if text[index] == "\n":
+                    index += 1
+                    continue
+                if text[index] == "*" and index + 1 < len(text) and text[index + 1] == "/":
+                    chars[index] = " "
+                    chars[index + 1] = " "
+                    index += 2
+                    break
+                chars[index] = " "
+                index += 1
+            continue
+        index += 1
+    return "".join(chars)
+
+
 def iter_js_dependency_references(text):
     code = mask_js_comments_and_strings(text)
     for pattern in (JS_IMPORT_REF_RE, JS_FROM_REF_RE, JS_BARE_IMPORT_REF_RE):
@@ -276,7 +300,7 @@ def iter_js_dependency_references(text):
     for match in JS_NEW_URL_REF_RE.finditer(code):
         yield text[match.start("ref"):match.end("ref")], True, True
     for match in JS_REQUIRE_REF_RE.finditer(code):
-        yield text[match.start("ref"):match.end("ref")], False, False
+        yield text[match.start("ref"):match.end("ref")], True, False
     for match in RELATIVE_ASSET_REF_RE.finditer(text):
         reference = match.group("ref")
         if has_static_asset_suffix(reference):
@@ -284,8 +308,9 @@ def iter_js_dependency_references(text):
 
 
 def iter_css_dependency_references(text):
+    code = mask_css_comments(text)
     for pattern in (CSS_IMPORT_REF_RE, CSS_URL_REF_RE):
-        for match in pattern.finditer(text):
+        for match in pattern.finditer(code):
             yield match.group("ref"), True, True
 
 
