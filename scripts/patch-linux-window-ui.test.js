@@ -79,6 +79,7 @@ const {
   packageProfile,
   sanitizeGitRemoteUrl,
   sourceInfo,
+  sourceInfoFromGit,
 } = require("./lib/build-info.js");
 const {
   recordPatch,
@@ -371,6 +372,19 @@ test("build info sanitizes staged source metadata from packaged update-builder",
     const info = sourceInfo(tempRoot, {});
     assert.equal(info.remote, "https://example.com/org/repo.git");
     assert.equal(info.sourceInfoPath, undefined);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("build info preserves unknown dirty state when only source commit override is available", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-build-info-override-source-"));
+  try {
+    const info = sourceInfoFromGit(tempRoot, {
+      CODEX_LINUX_SOURCE_COMMIT: "abcdef1234567890",
+    });
+
+    assert.equal(info.dirty, null);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
