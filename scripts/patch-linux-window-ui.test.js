@@ -1392,6 +1392,8 @@ test("adds Linux build information to the tray menu", () => {
   assert.match(patched, /Enabled port integrations:/);
   assert.match(patched, /Official OpenAI DMG SHA256:/);
   assert.match(patched, /Linux source revision:/);
+  assert.match(patched, /dirty===null/);
+  assert.match(patched, /dirty state unknown/);
   assert.match(patched, /Codex App Linux build information/);
 });
 
