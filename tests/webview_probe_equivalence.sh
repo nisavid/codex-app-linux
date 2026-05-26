@@ -220,9 +220,18 @@ EOF
 <body>no loader marker</body></html>
 EOF
     WEBVIEW_INTEGRITY_FILE="$FIXTURES/.codex-linux/webview-integrity.sha256"
-    {
-        (cd "$FIXTURES" && sha256sum index.html assets/app-test.js)
-    } > "$WEBVIEW_INTEGRITY_FILE"
+    python3 - "$FIXTURES" > "$WEBVIEW_INTEGRITY_FILE" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+
+root = pathlib.Path(sys.argv[1])
+for relative_path in ("assets/app-test.js", "index.html"):
+    asset_path = root / relative_path
+    digest = hashlib.sha256(asset_path.read_bytes()).hexdigest()
+    print(f"{digest}  {relative_path}")
+PY
 
     PORT_OPEN=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));p=s.getsockname()[1];s.close();print(p)')
     PORT_CLOSED=$(find_closed_tcp_port) || fail "could not find an unused closed localhost port"
@@ -338,8 +347,10 @@ main() {
     assert_rc "orig  dead port"              1 verify_webview_origin__orig "$URL_DEAD"
     assert_rc "new   dead port"              1 verify_webview_origin__new  "$URL_DEAD"
     printf '%s\n' "console.log('tampered startup asset');" > "$FIXTURES/assets/app-test.js"
+    assert_rc "orig  tampered startup asset (markers-only)" 0 verify_webview_origin__orig "$URL_OK"
     assert_rc "new   tampered startup asset"  1 verify_webview_origin__new  "$URL_OK"
     rm -f "$FIXTURES/assets/app-test.js"
+    assert_rc "orig  missing startup asset (markers-only)" 0 verify_webview_origin__orig "$URL_OK"
     assert_rc "new   missing startup asset"   1 verify_webview_origin__new  "$URL_OK"
 
     info "watchdog cap — 5 s sleeper must die at ~0.2 s"

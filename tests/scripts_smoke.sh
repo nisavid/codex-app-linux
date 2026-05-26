@@ -1568,6 +1568,10 @@ JSON
     assert_file_exists "$install_dir/.codex-linux/webview-integrity.sha256"
     assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  index.html"
     assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  assets/app-test.js"
+    (
+        cd "$install_dir/content/webview" \
+            && sha256sum --check "$install_dir/.codex-linux/webview-integrity.sha256" >/dev/null
+    ) || fail "Expected webview-integrity.sha256 digests to match generated startup assets"
     [ ! -e "$fake_app_dir/content/webview/index.html" ] || fail "Webview was copied into the temporary DMG app instead of the generated app"
 }
 

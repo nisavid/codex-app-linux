@@ -21,7 +21,7 @@ extract_webview() {
         if [ -f "$webview_index" ]; then
             sed -i 's/--startup-background: transparent/--startup-background: #1e1e1e/' "$webview_index"
         fi
-        write_webview_integrity_manifest "$install_dir"
+        write_webview_integrity_manifest "$install_dir" || return $?
         info "Webview files copied"
     else
         warn "Webview directory not found in asar — app may not work"
@@ -102,6 +102,8 @@ for relative_path in sorted(relative_paths):
 
 manifest_file.write_text("".join(lines), encoding="utf-8")
 PY
+    local py_rc=$?
+    [ "$py_rc" -eq 0 ] || return "$py_rc"
     info "Webview integrity manifest written"
 }
 
