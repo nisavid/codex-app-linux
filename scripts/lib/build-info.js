@@ -88,6 +88,16 @@ function sanitizeSourceInfo(info) {
   return sanitized;
 }
 
+function shortSourceCommit(commit) {
+  if (commit == null) {
+    return null;
+  }
+  const value = String(commit);
+  const suffix = value.endsWith("-dirty") ? "-dirty" : "";
+  const revision = suffix ? value.slice(0, -suffix.length) : value;
+  return `${revision.slice(0, 12)}${suffix}`;
+}
+
 function sourceInfoFromGit(repoDir, env = process.env) {
   const overrideCommit = env.CODEX_LINUX_SOURCE_COMMIT?.trim();
   const insideWorkTree = runGit(repoDir, ["rev-parse", "--is-inside-work-tree"]) === "true";
@@ -99,7 +109,7 @@ function sourceInfoFromGit(repoDir, env = process.env) {
   const status = runGit(repoDir, ["status", "--porcelain"]);
   return {
     commit,
-    shortCommit: commit == null ? null : commit.slice(0, 12),
+    shortCommit: shortSourceCommit(commit),
     branch: env.CODEX_LINUX_SOURCE_BRANCH?.trim() || runGit(repoDir, ["branch", "--show-current"]),
     remote: sanitizeGitRemoteUrl(env.CODEX_LINUX_SOURCE_REMOTE?.trim() || runGit(repoDir, ["remote", "get-url", "origin"])),
     describe: env.CODEX_LINUX_SOURCE_DESCRIBE?.trim() || runGit(repoDir, ["describe", "--always", "--dirty", "--tags"]),
@@ -122,7 +132,7 @@ function sourceInfo(repoDir, env = process.env) {
   }
   return {
     commit: env.CODEX_LINUX_SOURCE_COMMIT?.trim() || null,
-    shortCommit: env.CODEX_LINUX_SOURCE_COMMIT?.trim()?.slice(0, 12) || null,
+    shortCommit: shortSourceCommit(env.CODEX_LINUX_SOURCE_COMMIT?.trim()),
     branch: env.CODEX_LINUX_SOURCE_BRANCH?.trim() || null,
     remote: sanitizeGitRemoteUrl(env.CODEX_LINUX_SOURCE_REMOTE?.trim() || null),
     describe: env.CODEX_LINUX_SOURCE_DESCRIBE?.trim() || null,
