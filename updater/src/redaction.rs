@@ -78,7 +78,7 @@ fn split_trailing_punctuation(token: &str) -> (&str, &str) {
         let Some(ch) = token[..end].chars().last() else {
             break;
         };
-        if matches!(ch, '.' | ',' | ';' | ')' | ']' | '}' | '"' | '\'') {
+        if matches!(ch, '.' | ',' | ';' | ')' | ']' | '}' | '>' | '"' | '\'') {
             end -= ch.len_utf8();
         } else {
             break;
@@ -177,7 +177,7 @@ fn unquoted_value_end(input: &str, key: &str, value_start: usize) -> usize {
     let mut value_end = value_start;
     while value_end < bytes.len() {
         let byte = bytes[value_end];
-        let terminates = if key == "authorization" {
+        let terminates = if is_authorization_key(key) {
             matches!(byte, b'\n' | b'\r' | b',' | b';')
         } else {
             byte.is_ascii_whitespace() || matches!(byte, b',' | b';')
@@ -208,7 +208,12 @@ fn is_secret_key(key: &str) -> bool {
             | "apikey"
             | "_authtoken"
             | "authorization"
+            | "proxy-authorization"
     )
+}
+
+fn is_authorization_key(key: &str) -> bool {
+    matches!(key, "authorization" | "proxy-authorization")
 }
 
 #[cfg(test)]
@@ -217,11 +222,11 @@ mod tests {
 
     #[test]
     fn redacts_urls_before_persistence() {
-        let input = "npm failed for HTTPS://user:pass@example.com/pkg.tgz?token=secret#frag";
+        let input = "npm failed for <HTTPS://user:pass@example.com/pkg.tgz?token=secret#frag>";
 
         let redacted = redact_for_persistence(input);
 
-        assert_eq!(redacted, "npm failed for https://example.com/pkg.tgz");
+        assert_eq!(redacted, "npm failed for <https://example.com/pkg.tgz>");
     }
 
     #[test]
@@ -238,14 +243,15 @@ mod tests {
 
     #[test]
     fn redacts_authorization_payloads_before_persistence() {
-        let input = "Authorization: Bearer abc.def.ghi\nok\nproxy authorization=Basic dXNlcjpwYXNz";
+        let input = "Authorization: Bearer abc.def.ghi\nok\nproxy authorization=Basic dXNlcjpwYXNz\nProxy-Authorization: Basic proxy-secret";
 
         let redacted = redact_for_persistence(input);
 
         assert_eq!(
             redacted,
-            "Authorization: [REDACTED]\nok\nproxy authorization=[REDACTED]"
+            "Authorization: [REDACTED]\nok\nproxy authorization=[REDACTED]\nProxy-Authorization: [REDACTED]"
         );
+        assert!(!redacted.contains("proxy-secret"));
     }
 
     #[test]
