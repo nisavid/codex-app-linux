@@ -760,15 +760,17 @@ try:
     for line in extra_locations.read_text(encoding="utf-8").splitlines():
         relative = line.strip()
         pure_path = pathlib.PurePosixPath(relative)
+        normalized = pure_path.as_posix()
         if (
             not relative
             or relative.startswith("#")
             or pure_path.is_absolute()
             or ".." in pure_path.parts
+            or normalized in {"", "."}
         ):
             continue
-        if relative not in manifest_locations:
-            manifest_locations.append(relative)
+        if normalized not in manifest_locations:
+            manifest_locations.append(normalized)
 except OSError:
     pass
 

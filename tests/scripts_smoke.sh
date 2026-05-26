@@ -3419,6 +3419,7 @@ test_chrome_native_host_manifest_writer() {
     local app_dir="$workspace/app"
     local home_dir="$workspace/home"
     local host_path="$workspace/extension-host"
+    local absolute_ignored="$workspace/absolute-ignored"
     local manifest_path
 
     mkdir -p "$plugin_dir/scripts" "$app_dir/.codex-linux" "$home_dir" "$(dirname "$host_path")"
@@ -3427,11 +3428,14 @@ test_chrome_native_host_manifest_writer() {
     cat > "$plugin_dir/scripts/extension-id.json" <<'JSON'
 {"extensionId":"abcdefghijklmnopabcdefghijklmnop","extensionHostName":"com.example.codextest"}
 JSON
-    cat > "$app_dir/.codex-linux/chrome-native-host-manifest-paths" <<'EOF'
+    cat > "$app_dir/.codex-linux/chrome-native-host-manifest-paths" <<EOF
 # optional browser manifests
 .config/thorium/NativeMessagingHosts
-/tmp/ignored
+$absolute_ignored
 ../ignored
+.
+./
+./.config/thorium/NativeMessagingHosts
 .config/thorium/NativeMessagingHosts
 EOF
 
@@ -3464,8 +3468,9 @@ PY
         assert_contains "$manifest_path" "chrome-extension://abcdefghijklmnopabcdefghijklmnop/"
         assert_contains "$manifest_path" "$host_path"
     done
-    assert_file_not_exists "$home_dir/tmp/ignored/com.example.codextest.json"
+    assert_file_not_exists "$absolute_ignored/com.example.codextest.json"
     assert_file_not_exists "$workspace/ignored/com.example.codextest.json"
+    assert_file_not_exists "$home_dir/com.example.codextest.json"
 }
 
 make_fake_extracted_asar() {
