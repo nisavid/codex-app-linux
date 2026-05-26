@@ -2,6 +2,7 @@
 
 use crate::{
     config::{RuntimeConfig, RuntimePaths},
+    redaction,
     state::{CliStatus, PersistedState},
 };
 use anyhow::{anyhow, Context, Result};
@@ -561,9 +562,10 @@ fn read_installed_version(cli_path: &Path) -> Result<String> {
 
     let fallback = run_command(cli_path, ["version"])?;
     extract_version(&fallback).ok_or_else(|| {
+        let sanitized = redaction::redact_for_persistence(fallback.trim());
         anyhow!(
             "Codex CLI returned an unparseable version string: {}",
-            fallback.trim()
+            sanitized
         )
     })
 }
@@ -577,7 +579,8 @@ fn read_latest_version() -> Result<String> {
         .with_context(|| format!("Failed to spawn {}", npm.display()))?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stderr =
+            redaction::redact_for_persistence(String::from_utf8_lossy(&output.stderr).trim());
         anyhow::bail!(
             "{} view {} version failed with {}{}",
             npm.display(),
@@ -700,7 +703,8 @@ where
         .with_context(|| format!("Failed to spawn {}", program.display()))?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stderr =
+            redaction::redact_for_persistence(String::from_utf8_lossy(&output.stderr).trim());
         anyhow::bail!(
             "{} exited with {}{}",
             program.display(),
@@ -783,12 +787,12 @@ fn format_command_args(args: &[OsString]) -> String {
 }
 
 fn format_command_output(output: &Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stderr = redaction::redact_for_persistence(String::from_utf8_lossy(&output.stderr).trim());
     if !stderr.is_empty() {
         return format!(": {stderr}");
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stdout = redaction::redact_for_persistence(String::from_utf8_lossy(&output.stdout).trim());
     if stdout.is_empty() {
         String::new()
     } else {
@@ -1056,6 +1060,48 @@ mod tests {
         assert_eq!(state.cli_latest_version.as_deref(), Some("0.42.0"));
         assert_eq!(state.cli_status, CliStatus::UpToDate);
         assert_eq!(state.cli_error_message, None);
+        Ok(())
+    }
+
+    #[test]
+    fn command_output_redacts_stderr_before_formatting() -> Result<()> {
+        use std::os::unix::process::ExitStatusExt;
+
+        let output = Output {
+            status: std::process::ExitStatus::from_raw(1 << 8),
+            stdout: Vec::new(),
+            stderr: b"npm ERR! _authToken=cli-secret Authorization: Bearer header-secret".to_vec(),
+        };
+
+        let formatted = format_command_output(&output);
+
+        assert_eq!(
+            formatted,
+            ": npm ERR! _authToken=[REDACTED] Authorization: [REDACTED]"
+        );
+        assert!(!formatted.contains("cli-secret"));
+        assert!(!formatted.contains("header-secret"));
+        Ok(())
+    }
+
+    #[test]
+    fn installed_version_error_redacts_successful_unparseable_output() -> Result<()> {
+        let temp = tempdir()?;
+        let codex_path = temp.path().join("codex");
+        write_executable_script(
+            &codex_path,
+            "#!/bin/sh\necho 'token=version-secret Authorization: Bearer header-secret'\n",
+        )?;
+
+        let error = read_installed_version(&codex_path).expect_err("version parse failure");
+        let message = error.to_string();
+
+        assert_eq!(
+            message,
+            "Codex CLI returned an unparseable version string: token=[REDACTED] Authorization: [REDACTED]"
+        );
+        assert!(!message.contains("version-secret"));
+        assert!(!message.contains("header-secret"));
         Ok(())
     }
 
