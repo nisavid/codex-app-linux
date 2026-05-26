@@ -1,4 +1,5 @@
 name: Verify Apple DMG
+run-name: Verify Apple DMG ${{ inputs.dmg_sha256 || 'flake-hash' }}
 
 on:
   workflow_dispatch:

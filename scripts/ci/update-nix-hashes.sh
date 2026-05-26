@@ -148,7 +148,7 @@ main() {
     old_electron_version="$(read_flake_string electronVersion)"
 
     local validate_status=0
-    WRITE_PINS=1 APPCAST_URL="$APPCAST_URL" \
+    WRITE_PINS=1 APPCAST_URL="$APPCAST_URL" CODEX_DMG_SRI="$new_dmg_hash" \
         "$REPO_DIR/scripts/ci/validate-nix-pins.sh" "$OFFICIAL_DMG_PATH" || validate_status="$?"
     if [ "$validate_status" -eq 75 ]; then
         echo "Official Codex rollout in progress; leaving pins unchanged until Codex.dmg matches the appcast."
