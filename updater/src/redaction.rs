@@ -174,20 +174,66 @@ fn redact_value(output: &mut String, input: &str, key: &str, value_start: usize)
 
 fn unquoted_value_end(input: &str, key: &str, value_start: usize) -> usize {
     let bytes = input.as_bytes();
+    if is_authorization_key(key) {
+        return authorization_value_end(input, value_start);
+    }
+
     let mut value_end = value_start;
     while value_end < bytes.len() {
         let byte = bytes[value_end];
-        let terminates = if is_authorization_key(key) {
-            matches!(byte, b'\n' | b'\r' | b',' | b';')
-        } else {
-            byte.is_ascii_whitespace() || matches!(byte, b',' | b';')
-        };
-        if terminates {
+        if byte.is_ascii_whitespace() || matches!(byte, b',' | b';') {
             break;
         }
         value_end += 1;
     }
     value_end
+}
+
+fn authorization_value_end(input: &str, value_start: usize) -> usize {
+    let scheme_end = authorization_token_end(input, value_start);
+    let scheme = &input[value_start..scheme_end];
+    if scheme.eq_ignore_ascii_case("bearer") || scheme.eq_ignore_ascii_case("basic") {
+        let credential_start = skip_horizontal_whitespace(input, scheme_end);
+        if credential_start > scheme_end {
+            return authorization_token_end(input, credential_start);
+        }
+    }
+
+    line_authorization_value_end(input, value_start)
+}
+
+fn authorization_token_end(input: &str, token_start: usize) -> usize {
+    let bytes = input.as_bytes();
+    let mut token_end = token_start;
+    while token_end < bytes.len() {
+        let byte = bytes[token_end];
+        if byte.is_ascii_whitespace() || matches!(byte, b',' | b';') {
+            break;
+        }
+        token_end += 1;
+    }
+    token_end
+}
+
+fn line_authorization_value_end(input: &str, value_start: usize) -> usize {
+    let bytes = input.as_bytes();
+    let mut value_end = value_start;
+    while value_end < bytes.len() {
+        if matches!(bytes[value_end], b'\n' | b'\r' | b',' | b';') {
+            break;
+        }
+        value_end += 1;
+    }
+    value_end
+}
+
+fn skip_horizontal_whitespace(input: &str, start: usize) -> usize {
+    let bytes = input.as_bytes();
+    let mut index = start;
+    while index < bytes.len() && matches!(bytes[index], b' ' | b'\t') {
+        index += 1;
+    }
+    index
 }
 
 fn is_key_char(byte: u8) -> bool {
@@ -243,13 +289,13 @@ mod tests {
 
     #[test]
     fn redacts_authorization_payloads_before_persistence() {
-        let input = "Authorization: Bearer abc.def.ghi\nok\nproxy authorization=Basic dXNlcjpwYXNz\nProxy-Authorization: Basic proxy-secret";
+        let input = "Authorization: Bearer abc.def.ghi failed with status 1\nok\nproxy authorization=Basic dXNlcjpwYXNz\nProxy-Authorization: Basic proxy-secret";
 
         let redacted = redact_for_persistence(input);
 
         assert_eq!(
             redacted,
-            "Authorization: [REDACTED]\nok\nproxy authorization=[REDACTED]\nProxy-Authorization: [REDACTED]"
+            "Authorization: [REDACTED] failed with status 1\nok\nproxy authorization=[REDACTED]\nProxy-Authorization: [REDACTED]"
         );
         assert!(!redacted.contains("proxy-secret"));
     }
