@@ -69,17 +69,23 @@ STATIC_ASSET_SUFFIXES = {
     ".woff2",
 }
 JS_IMPORT_REF_RE = re.compile(
+    r"""\bimport\s*\(\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)\s*\)"""
+)
+JS_FROM_REF_RE = re.compile(
     r"""
-    (?:
-        \bimport\s*\(\s*
-        |\brequire\s*\(\s*
-        |\b(?:import|export)\s+
-        |\bfrom\s*
-        |\bnew\s+URL\s*\(\s*
-    )
+    \b(?:import|export)\b[^;\n]*?\bfrom\s*
     (?P<quote>["'])(?P<ref>[^"']+)(?P=quote)
     """,
     re.VERBOSE,
+)
+JS_BARE_IMPORT_REF_RE = re.compile(
+    r"""\bimport\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)"""
+)
+JS_NEW_URL_REF_RE = re.compile(
+    r"""\bnew\s+URL\s*\(\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)\s*,\s*import\.meta\.url\s*\)"""
+)
+JS_REQUIRE_REF_RE = re.compile(
+    r"""\brequire\s*\(\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)\s*\)"""
 )
 RELATIVE_ASSET_REF_RE = re.compile(
     r"""(?P<quote>["'])(?P<ref>(?:\./|\../)[^"']+)(?P=quote)"""
@@ -152,7 +158,12 @@ def has_static_asset_suffix(reference):
 
 
 def iter_js_dependency_references(text):
-    for match in JS_IMPORT_REF_RE.finditer(text):
+    for pattern in (JS_IMPORT_REF_RE, JS_FROM_REF_RE, JS_BARE_IMPORT_REF_RE):
+        for match in pattern.finditer(text):
+            yield match.group("ref"), True, False
+    for match in JS_NEW_URL_REF_RE.finditer(text):
+        yield match.group("ref"), True, True
+    for match in JS_REQUIRE_REF_RE.finditer(text):
         yield match.group("ref"), False, False
     for match in RELATIVE_ASSET_REF_RE.finditer(text):
         reference = match.group("ref")
@@ -163,7 +174,7 @@ def iter_js_dependency_references(text):
 def iter_css_dependency_references(text):
     for pattern in (CSS_IMPORT_REF_RE, CSS_URL_REF_RE):
         for match in pattern.finditer(text):
-            yield match.group("ref"), False, True
+            yield match.group("ref"), True, True
 
 
 def iter_dependency_references(relative_path, asset_path):
