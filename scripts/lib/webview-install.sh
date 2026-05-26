@@ -68,6 +68,20 @@ STATIC_ASSET_SUFFIXES = {
     ".woff",
     ".woff2",
 }
+STARTUP_LINK_RELS = {
+    "modulepreload",
+    "preload",
+    "stylesheet",
+}
+STARTUP_SRC_TAGS = {
+    "audio",
+    "embed",
+    "img",
+    "script",
+    "source",
+    "track",
+    "video",
+}
 JS_IMPORT_REF_RE = re.compile(
     r"""\bimport\s*\(\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)\s*\)"""
 )
@@ -104,12 +118,30 @@ class StartupAssetParser(html.parser.HTMLParser):
         self.paths = set()
 
     def handle_starttag(self, tag, attrs):
-        for name, value in attrs:
-            if name not in {"href", "src"} or not value:
+        tag = tag.lower()
+        attr_map = {
+            name.lower(): value
+            for name, value in attrs
+            if name and value is not None
+        }
+
+        values = []
+        if tag in STARTUP_SRC_TAGS:
+            values.append(attr_map.get("src"))
+        elif tag == "link" and self.link_rel_is_startup(attr_map.get("rel", "")):
+            values.append(attr_map.get("href"))
+
+        for value in values:
+            if not value:
                 continue
             normalized = normalize_asset_reference(value, "index.html", allow_plain=True)
             if normalized is not None:
                 self.paths.add(normalized)
+
+    @staticmethod
+    def link_rel_is_startup(rel_value):
+        rel_tokens = {token.lower() for token in rel_value.split()}
+        return bool(rel_tokens & STARTUP_LINK_RELS)
 
 
 def normalize_asset_reference(reference, base_relative_path, allow_plain):
@@ -157,14 +189,94 @@ def has_static_asset_suffix(reference):
     return pathlib.PurePosixPath(path).suffix.lower() in STATIC_ASSET_SUFFIXES
 
 
+def mask_js_comments_and_strings(text):
+    chars = list(text)
+    index = 0
+    while index < len(text):
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+
+        if char == "/" and next_char == "/":
+            chars[index] = " "
+            chars[index + 1] = " "
+            index += 2
+            while index < len(text) and text[index] != "\n":
+                chars[index] = " "
+                index += 1
+            continue
+
+        if char == "/" and next_char == "*":
+            chars[index] = " "
+            chars[index + 1] = " "
+            index += 2
+            while index < len(text):
+                if text[index] == "\n":
+                    index += 1
+                    continue
+                if text[index] == "*" and index + 1 < len(text) and text[index + 1] == "/":
+                    chars[index] = " "
+                    chars[index + 1] = " "
+                    index += 2
+                    break
+                chars[index] = " "
+                index += 1
+            continue
+
+        if char in {"'", '"'}:
+            quote = char
+            index += 1
+            while index < len(text):
+                if text[index] == "\\":
+                    chars[index] = " "
+                    if index + 1 < len(text) and text[index + 1] != "\n":
+                        chars[index + 1] = " "
+                        index += 2
+                    else:
+                        index += 1
+                    continue
+                if text[index] == quote:
+                    index += 1
+                    break
+                if text[index] != "\n":
+                    chars[index] = " "
+                index += 1
+            continue
+
+        if char == "`":
+            chars[index] = " "
+            index += 1
+            while index < len(text):
+                if text[index] == "\\":
+                    chars[index] = " "
+                    if index + 1 < len(text) and text[index + 1] != "\n":
+                        chars[index + 1] = " "
+                        index += 2
+                    else:
+                        index += 1
+                    continue
+                if text[index] == "`":
+                    chars[index] = " "
+                    index += 1
+                    break
+                if text[index] != "\n":
+                    chars[index] = " "
+                index += 1
+            continue
+
+        index += 1
+
+    return "".join(chars)
+
+
 def iter_js_dependency_references(text):
+    code = mask_js_comments_and_strings(text)
     for pattern in (JS_IMPORT_REF_RE, JS_FROM_REF_RE, JS_BARE_IMPORT_REF_RE):
-        for match in pattern.finditer(text):
-            yield match.group("ref"), True, False
-    for match in JS_NEW_URL_REF_RE.finditer(text):
-        yield match.group("ref"), True, True
-    for match in JS_REQUIRE_REF_RE.finditer(text):
-        yield match.group("ref"), False, False
+        for match in pattern.finditer(code):
+            yield text[match.start("ref"):match.end("ref")], True, False
+    for match in JS_NEW_URL_REF_RE.finditer(code):
+        yield text[match.start("ref"):match.end("ref")], True, True
+    for match in JS_REQUIRE_REF_RE.finditer(code):
+        yield text[match.start("ref"):match.end("ref")], False, False
     for match in RELATIVE_ASSET_REF_RE.finditer(text):
         reference = match.group("ref")
         if has_static_asset_suffix(reference):
