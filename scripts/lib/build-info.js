@@ -103,7 +103,7 @@ function sourceInfoFromGit(repoDir, env = process.env) {
     branch: env.CODEX_LINUX_SOURCE_BRANCH?.trim() || runGit(repoDir, ["branch", "--show-current"]),
     remote: sanitizeGitRemoteUrl(env.CODEX_LINUX_SOURCE_REMOTE?.trim() || runGit(repoDir, ["remote", "get-url", "origin"])),
     describe: env.CODEX_LINUX_SOURCE_DESCRIBE?.trim() || runGit(repoDir, ["describe", "--always", "--dirty", "--tags"]),
-    dirty: status != null && status.length > 0,
+    dirty: status == null ? null : status.length > 0,
   };
 }
 
