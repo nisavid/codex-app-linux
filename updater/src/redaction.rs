@@ -219,7 +219,7 @@ fn line_authorization_value_end(input: &str, value_start: usize) -> usize {
     let bytes = input.as_bytes();
     let mut value_end = value_start;
     while value_end < bytes.len() {
-        if matches!(bytes[value_end], b'\n' | b'\r' | b',' | b';') {
+        if matches!(bytes[value_end], b'\n' | b'\r') {
             break;
         }
         value_end += 1;
@@ -289,15 +289,26 @@ mod tests {
 
     #[test]
     fn redacts_authorization_payloads_before_persistence() {
-        let input = "Authorization: Bearer abc.def.ghi failed with status 1\nok\nproxy authorization=Basic dXNlcjpwYXNz\nProxy-Authorization: Basic proxy-secret";
+        let input = "Authorization: Bearer abc.def.ghi failed with status 1\nok\nproxy authorization=Basic dXNlcjpwYXNz status=401 package=codex-app\nProxy-Authorization: Basic proxy-secret";
 
         let redacted = redact_for_persistence(input);
 
         assert_eq!(
             redacted,
-            "Authorization: [REDACTED] failed with status 1\nok\nproxy authorization=[REDACTED]\nProxy-Authorization: [REDACTED]"
+            "Authorization: [REDACTED] failed with status 1\nok\nproxy authorization=[REDACTED] status=401 package=codex-app\nProxy-Authorization: [REDACTED]"
         );
         assert!(!redacted.contains("proxy-secret"));
+    }
+
+    #[test]
+    fn redacts_non_basic_authorization_payloads_to_line_end() {
+        let input = "Authorization: Digest username=\"u\", response=\"secret\" status=401\npackage=codex-app";
+
+        let redacted = redact_for_persistence(input);
+
+        assert_eq!(redacted, "Authorization: [REDACTED]\npackage=codex-app");
+        assert!(!redacted.contains("username"));
+        assert!(!redacted.contains("secret"));
     }
 
     #[test]
