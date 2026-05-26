@@ -1,5 +1,5 @@
 name: Verify Apple DMG
-run-name: Verify Apple DMG ${{ inputs.dmg_sha256 || 'flake-hash' }}
+run-name: Verify Apple DMG ${{ inputs.dmg_sha256 || 'flake-hash' }}${{ inputs.dispatch_id && format(' {0}', inputs.dispatch_id) || '' }}
 
 on:
   workflow_dispatch:
@@ -10,6 +10,10 @@ on:
         default: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg
       dmg_sha256:
         description: Expected DMG SHA-256 hex digest; leave empty to use flake.nix
+        required: false
+        default: ""
+      dispatch_id:
+        description: Unique caller-provided identifier for correlating hash-refresh verification runs
         required: false
         default: ""
       require_dmg_gatekeeper:

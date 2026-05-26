@@ -2204,6 +2204,7 @@ test_hash_refresh_evidence_helper() {
     local sri="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
     local sha="0000000000000000000000000000000000000000000000000000000000000000"
     local url="https://github.com/nisavid/codex-app-linux/actions/runs/123"
+    local dispatch_id="smoke-verify-123"
 
     mkdir -p "$fake_bin"
     "$REPO_DIR/scripts/ci/hash-refresh-evidence.sh" sri-to-hex "$sri" > "$hex_file"
@@ -2214,8 +2215,8 @@ test_hash_refresh_evidence_helper() {
 
     cat > "$runs_json" <<JSON
 [
-  {"databaseId":122,"displayTitle":"Verify Apple DMG $sha","status":"completed","conclusion":"failure","url":"https://github.com/nisavid/codex-app-linux/actions/runs/122","createdAt":"2025-12-31T23:59:59Z"},
-  {"databaseId":123,"displayTitle":"Verify Apple DMG $sha","status":"completed","conclusion":"success","url":"$url","createdAt":"2026-05-25T00:00:00Z"}
+  {"databaseId":122,"displayTitle":"Verify Apple DMG $sha stale-dispatch","status":"completed","conclusion":"failure","url":"https://github.com/nisavid/codex-app-linux/actions/runs/122","createdAt":"2026-05-25T00:00:00Z"},
+  {"databaseId":123,"displayTitle":"Verify Apple DMG $sha $dispatch_id","status":"completed","conclusion":"success","url":"$url","createdAt":"2026-05-25T00:00:00Z"}
 ]
 JSON
     cat > "$fake_bin/gh" <<SCRIPT
@@ -2233,14 +2234,15 @@ SCRIPT
     chmod +x "$fake_bin/gh"
 
     local actual_url
-    actual_url="$(CODEX_HASH_REFRESH_VERIFY_MIN_CREATED_AT="2026-01-01T00:00:00Z" PATH="$fake_bin:$PATH" "$REPO_DIR/scripts/ci/hash-refresh-evidence.sh" wait-apple-verification --dmg-sha256 "$sha" --timeout-seconds 1 --poll-interval-seconds 1)"
+    actual_url="$(CODEX_HASH_REFRESH_VERIFY_DISPATCH_ID="$dispatch_id" PATH="$fake_bin:$PATH" "$REPO_DIR/scripts/ci/hash-refresh-evidence.sh" wait-apple-verification --dmg-sha256 "$sha" --timeout-seconds 1 --poll-interval-seconds 1)"
     [ "$actual_url" = "$url" ] || fail "Expected Apple verification URL $url, got $actual_url"
     assert_contains "$gh_log" "workflow run verify-apple-dmg.yml"
+    assert_contains "$gh_log" "dispatch_id=$dispatch_id"
 
     cat > "$runs_json" <<JSON
-[{"databaseId":124,"displayTitle":"Verify Apple DMG $sha","status":"completed","conclusion":"failure","url":"$url","createdAt":"2026-05-25T00:00:00Z"}]
+[{"databaseId":124,"displayTitle":"Verify Apple DMG $sha $dispatch_id","status":"completed","conclusion":"failure","url":"$url","createdAt":"2026-05-25T00:00:00Z"}]
 JSON
-    if CODEX_HASH_REFRESH_VERIFY_MIN_CREATED_AT="2026-01-01T00:00:00Z" PATH="$fake_bin:$PATH" "$REPO_DIR/scripts/ci/hash-refresh-evidence.sh" wait-apple-verification --dmg-sha256 "$sha" --timeout-seconds 1 --poll-interval-seconds 1 >/dev/null 2>&1; then
+    if CODEX_HASH_REFRESH_VERIFY_DISPATCH_ID="$dispatch_id" PATH="$fake_bin:$PATH" "$REPO_DIR/scripts/ci/hash-refresh-evidence.sh" wait-apple-verification --dmg-sha256 "$sha" --timeout-seconds 1 --poll-interval-seconds 1 >/dev/null 2>&1; then
         fail "Expected failed Apple verification conclusion to fail"
     fi
 

@@ -49,19 +49,17 @@ PY
 
 json_find_run() {
     local run_name="$1"
-    local min_created_at="$2"
     node -e '
 const fs = require("node:fs");
 const runName = process.argv[2];
-const minCreatedAt = process.argv[3];
 const input = fs.readFileSync(0, "utf8");
 const runs = JSON.parse(input);
-const match = runs.find((run) => run.displayTitle === runName && String(run.createdAt || "") >= minCreatedAt);
+const match = runs.find((run) => run.displayTitle === runName);
 if (!match) {
   process.exit(1);
 }
 process.stdout.write(JSON.stringify(match));
-' _ "$run_name" "$min_created_at"
+' _ "$run_name"
 }
 
 json_field() {
@@ -105,19 +103,15 @@ wait_apple_verification() {
     [[ "$poll_interval_seconds" =~ ^[0-9]+$ ]] || error "--poll-interval-seconds must be numeric"
     [ "$poll_interval_seconds" -gt 0 ] || error "--poll-interval-seconds must be greater than zero"
 
-    local run_name="$DEFAULT_RUN_PREFIX $dmg_sha256"
-    local min_created_at="${CODEX_HASH_REFRESH_VERIFY_MIN_CREATED_AT:-$(python3 - <<'PY'
-from datetime import datetime, timedelta, timezone
-
-print((datetime.now(timezone.utc) - timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%SZ"))
-PY
-)}"
-    echo "[hash-refresh-evidence] Dispatching $workflow for $dmg_sha256" >&2
+    local dispatch_id="${CODEX_HASH_REFRESH_VERIFY_DISPATCH_ID:-hash-refresh-${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-0}-$$-$RANDOM}"
+    local run_name="$DEFAULT_RUN_PREFIX $dmg_sha256 $dispatch_id"
+    echo "[hash-refresh-evidence] Dispatching $workflow for $dmg_sha256 with dispatch ID $dispatch_id" >&2
     gh workflow run "$workflow" \
         --repo "$repo" \
         --ref "$ref" \
         -f "dmg_url=$dmg_url" \
         -f "dmg_sha256=$dmg_sha256" \
+        -f "dispatch_id=$dispatch_id" \
         -f "require_dmg_gatekeeper=false" \
         -f "require_dmg_staple=false" >/dev/null
 
@@ -131,7 +125,7 @@ PY
             --event workflow_dispatch \
             --limit 20 \
             --json databaseId,displayTitle,status,conclusion,url,createdAt)"
-        if match="$(printf '%s' "$runs_json" | json_find_run "$run_name" "$min_created_at" 2>/dev/null)"; then
+        if match="$(printf '%s' "$runs_json" | json_find_run "$run_name" 2>/dev/null)"; then
             status="$(printf '%s' "$match" | json_field status)"
             conclusion="$(printf '%s' "$match" | json_field conclusion 2>/dev/null || true)"
             url="$(printf '%s' "$match" | json_field url)"
