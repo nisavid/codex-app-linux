@@ -1640,6 +1640,50 @@ EOF
     assert_contains "$output_log" "missing webview startup asset: assets/missing.js"
 }
 
+test_webview_integrity_manifest_fails_missing_dynamic_import_options() {
+    info "Checking webview integrity manifest fails on missing dynamic import options"
+    local workspace="$TMP_DIR/webview-integrity-missing-dynamic-import-options"
+    local install_dir="$workspace/codex-app"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$install_dir/content/webview/assets"
+    printf "%s\n" "<title>Codex</title><script type=\"module\" src=\"./assets/app-test.js\"></script>" > "$install_dir/content/webview/index.html"
+    cat > "$install_dir/content/webview/assets/app-test.js" <<'EOF'
+import("./missing.js", { with: { type: "json" } });
+EOF
+
+    if CODEX_INSTALLER_SOURCE_ONLY=1 CODEX_INSTALL_DIR="$install_dir" bash -c \
+        'source "$1"; write_webview_integrity_manifest "$2"' \
+        _ "$REPO_DIR/install.sh" "$install_dir" >"$output_log" 2>&1; then
+        fail "Expected webview integrity manifest generation to fail for a missing dynamic import with options"
+    fi
+
+    assert_file_not_exists "$install_dir/.codex-linux/webview-integrity.sha256"
+    assert_contains "$output_log" "missing webview startup asset: assets/missing.js"
+}
+
+test_webview_integrity_manifest_fails_missing_new_url_trailing_comma() {
+    info "Checking webview integrity manifest fails on missing new URL trailing comma assets"
+    local workspace="$TMP_DIR/webview-integrity-missing-new-url-trailing-comma"
+    local install_dir="$workspace/codex-app"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$install_dir/content/webview/assets"
+    printf "%s\n" "<title>Codex</title><script type=\"module\" src=\"./assets/app-test.js\"></script>" > "$install_dir/content/webview/index.html"
+    cat > "$install_dir/content/webview/assets/app-test.js" <<'EOF'
+new URL("./missing.svg", import.meta.url,);
+EOF
+
+    if CODEX_INSTALLER_SOURCE_ONLY=1 CODEX_INSTALL_DIR="$install_dir" bash -c \
+        'source "$1"; write_webview_integrity_manifest "$2"' \
+        _ "$REPO_DIR/install.sh" "$install_dir" >"$output_log" 2>&1; then
+        fail "Expected webview integrity manifest generation to fail for a missing new URL trailing comma asset"
+    fi
+
+    assert_file_not_exists "$install_dir/.codex-linux/webview-integrity.sha256"
+    assert_contains "$output_log" "missing webview startup asset: assets/missing.svg"
+}
+
 test_webview_integrity_manifest_ignores_non_startup_html_links() {
     info "Checking webview integrity manifest ignores non-startup HTML links"
     local workspace="$TMP_DIR/webview-integrity-html-links"
@@ -5466,6 +5510,8 @@ main() {
     test_installer_copies_webview_into_generated_app
     test_webview_integrity_manifest_fails_missing_static_import
     test_webview_integrity_manifest_fails_missing_multiline_from_import
+    test_webview_integrity_manifest_fails_missing_dynamic_import_options
+    test_webview_integrity_manifest_fails_missing_new_url_trailing_comma
     test_webview_integrity_manifest_ignores_non_startup_html_links
     test_webview_integrity_manifest_ignores_import_text_in_js_strings_and_comments
     test_installer_inspect_mode_does_not_write_install_metadata
