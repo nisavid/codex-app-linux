@@ -1610,6 +1610,33 @@ test_webview_integrity_manifest_fails_missing_static_import() {
         fail "Expected webview integrity manifest generation to fail for a missing static import"
     fi
 
+    assert_file_not_exists "$install_dir/.codex-linux/webview-integrity.sha256"
+    assert_contains "$output_log" "missing webview startup asset: assets/missing.js"
+}
+
+test_webview_integrity_manifest_fails_missing_multiline_from_import() {
+    info "Checking webview integrity manifest fails on missing multiline from imports"
+    local workspace="$TMP_DIR/webview-integrity-missing-multiline-import"
+    local install_dir="$workspace/codex-app"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$install_dir/content/webview/assets"
+    printf "%s\n" "<title>Codex</title><script type=\"module\" src=\"./assets/app-test.js\"></script>" > "$install_dir/content/webview/index.html"
+    cat > "$install_dir/content/webview/assets/app-test.js" <<'EOF'
+import {
+    missing
+} from "./missing.js";
+
+console.log(missing);
+EOF
+
+    if CODEX_INSTALLER_SOURCE_ONLY=1 CODEX_INSTALL_DIR="$install_dir" bash -c \
+        'source "$1"; write_webview_integrity_manifest "$2"' \
+        _ "$REPO_DIR/install.sh" "$install_dir" >"$output_log" 2>&1; then
+        fail "Expected webview integrity manifest generation to fail for a missing multiline from import"
+    fi
+
+    assert_file_not_exists "$install_dir/.codex-linux/webview-integrity.sha256"
     assert_contains "$output_log" "missing webview startup asset: assets/missing.js"
 }
 
@@ -5438,6 +5465,7 @@ main() {
     test_installer_writes_package_version_from_app_plist
     test_installer_copies_webview_into_generated_app
     test_webview_integrity_manifest_fails_missing_static_import
+    test_webview_integrity_manifest_fails_missing_multiline_from_import
     test_webview_integrity_manifest_ignores_non_startup_html_links
     test_webview_integrity_manifest_ignores_import_text_in_js_strings_and_comments
     test_installer_inspect_mode_does_not_write_install_metadata

@@ -87,7 +87,7 @@ JS_IMPORT_REF_RE = re.compile(
 )
 JS_FROM_REF_RE = re.compile(
     r"""
-    \b(?:import|export)\b[^;\n]*?\bfrom\s*
+    \b(?:import|export)\b[^;]*?\bfrom\s*
     (?P<quote>["'])(?P<ref>[^"']+)(?P=quote)
     """,
     re.VERBOSE,
