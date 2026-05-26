@@ -2,7 +2,7 @@
 
 ## Context
 
-The current launcher starts a local `python3 -m http.server "$CODEX_LINUX_WEBVIEW_PORT"` process for the extracted webview bundle. It waits for the configured port to become reachable before launching Electron, and exports `ELECTRON_RENDERER_URL` so side-by-side app IDs can use an isolated local origin.
+The current launcher starts a local `python3 -m http.server "$CODEX_LINUX_WEBVIEW_PORT"` process for the extracted webview bundle. It waits for the configured port to become reachable, verifies startup markers and generated startup-asset hashes, then exports `ELECTRON_RENDERER_URL` so side-by-side app IDs can use an isolated local origin.
 
 The extracted webview payload is a static bundle under `codex-app/content/webview` and is relatively large: about 35 MB across 693 files. The generated `index.html` references hashed assets through relative paths, so the app still expects a stable local origin.
 
@@ -14,6 +14,8 @@ What changes:
 
 - Keep `python3 -m http.server "$CODEX_LINUX_WEBVIEW_PORT"`
 - Keep improving the current process lifecycle and readiness behavior
+- Validate the served startup document and direct startup assets against the
+  generated integrity manifest
 - Improve port-collision handling and logging
 
 Benefits:
@@ -21,6 +23,8 @@ Benefits:
 - Lowest implementation risk
 - No packaging or runtime-binary changes
 - Preserves the existing static-asset serving model
+- Binds launch readiness to generated webview content instead of marker strings
+  alone
 
 Risks:
 
@@ -83,6 +87,7 @@ If we later implement the recommended hardening or a Rust server, the change poi
 
 - `install.sh` launcher generation
 - the local webview startup block around the configured webview port
+- the generated webview integrity manifest under `.codex-linux/`
 - packaging if a Rust server binary is added
 - launcher logging and cleanup logic around the PID file and `http.server` shutdown
 
@@ -92,12 +97,15 @@ If we later implement the recommended hardening or a Rust server, the change poi
 - Stale launcher/server processes after crashes
 - Chromium waiting on a server that has not finished binding yet
 - Hidden assumptions in the extracted app about a localhost origin
+- Startup asset references that drift beyond the generated integrity manifest
 
 ## Acceptance Criteria For A Future Change
 
 - Electron starts reliably when the launcher is invoked once
 - A stale server process does not block a new launch
 - The webview origin is available before Electron tries to load it
+- The webview origin serves the generated startup document and startup assets
+  before Electron tries to load it
 - Launcher logs clearly show server start, bind, and shutdown events
 - The app still renders the same webview assets without broken relative paths
 
@@ -107,3 +115,4 @@ If we later implement the recommended hardening or a Rust server, the change poi
 - Port-collision test for the configured webview port
 - Stale-process cleanup test
 - Basic render test that verifies the webview assets are reachable from the expected origin
+- Integrity-failure tests for missing or modified startup assets

@@ -114,9 +114,10 @@ Important launcher behavior:
 - It starts `python3 -m http.server 5175 --bind 127.0.0.1` from
   `content/webview/`, writes the owned webview PID under
   `~/.local/state/codex-app/webview.pid`, waits for the port, and verifies
-  `http://127.0.0.1:5175/index.html` contains expected Codex startup markers
-  before Electron launches. Warm starts can reuse an existing verified webview
-  server from the same app directory.
+  `http://127.0.0.1:5175/index.html` contains expected Codex startup markers and
+  serves the generated startup-asset hashes before Electron launches. Warm
+  starts can reuse an existing verified webview server from the same app
+  directory.
 - `--new-instance` and `CODEX_MULTI_LAUNCH=1` intentionally bypass the normal
   warm-start reuse path by selecting a free port in a bounded range and using
   per-port pid, socket, log, and Electron user-data paths.

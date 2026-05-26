@@ -1551,7 +1551,7 @@ JSON
         write_app_version_metadata() { :; }
         patch_asar() {
             mkdir -p "$WORK_DIR/app-extracted/webview/assets"
-            printf "%s\n" "<title>Codex</title><div class=\"startup-loader\"></div>" > "$WORK_DIR/app-extracted/webview/index.html"
+            printf "%s\n" "<title>Codex</title><div class=\"startup-loader\"></div><script type=\"module\" src=\"./assets/app-test.js\"></script>" > "$WORK_DIR/app-extracted/webview/index.html"
             printf "%s\n" "asset" > "$WORK_DIR/app-extracted/webview/assets/app-test.js"
         }
         download_electron() { :; }
@@ -1565,6 +1565,9 @@ JSON
     assert_contains "$output_log" "Webview files copied"
     assert_file_exists "$install_dir/content/webview/index.html"
     assert_file_exists "$install_dir/content/webview/assets/app-test.js"
+    assert_file_exists "$install_dir/.codex-linux/webview-integrity.sha256"
+    assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  index.html"
+    assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  assets/app-test.js"
     [ ! -e "$fake_app_dir/content/webview/index.html" ] || fail "Webview was copied into the temporary DMG app instead of the generated app"
 }
 
@@ -2643,6 +2646,9 @@ PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" "CODEX_SYNC_CLI_PREFLIGHT"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "wait_for_webview_server"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "verify_webview_origin"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "WEBVIEW_INTEGRITY_FILE"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "verify_webview_integrity_manifest"
+    assert_contains "$REPO_DIR/scripts/lib/webview-install.sh" "webview-integrity.sha256"
     # Probe-shape invariants: shell-native bash /dev/tcp + curl, with the
     # bounded-execution defenses preserved (0.2 s watchdog + 2 s curl cap).
     assert_contains "$REPO_DIR/launcher/start.sh.template" '/dev/tcp/127.0.0.1/"$CODEX_LINUX_WEBVIEW_PORT"'
@@ -4497,8 +4503,10 @@ test_webview_probe_equivalence() {
     # the live launcher template, runs them against a controlled localhost
     # python3 http.server fixture, and asserts the verdicts match the
     # python3 reference implementation across every input class (open/closed
-    # port, marker-OK, 404, wrong title, missing loader, dead port) plus
-    # confirms the watchdog cap still fires within its 100-1000 ms window.
+    # port, marker-OK, 404, wrong title, missing loader, dead port), checks the
+    # generated webview integrity manifest path for tampered or missing startup
+    # assets, and confirms the watchdog cap still fires within its 100-1000 ms
+    # window.
     bash "$REPO_DIR/tests/webview_probe_equivalence.sh" \
         || fail "webview probe equivalence harness reported a verdict mismatch or unbounded watchdog"
 }

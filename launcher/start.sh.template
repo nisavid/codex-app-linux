@@ -16,6 +16,7 @@ resolve_script_dir() {
 
 SCRIPT_DIR="$(resolve_script_dir)"
 WEBVIEW_DIR="$SCRIPT_DIR/content/webview"
+WEBVIEW_INTEGRITY_FILE="$SCRIPT_DIR/.codex-linux/webview-integrity.sha256"
 PACKAGED_RUNTIME_HELPER="/usr/lib/$CODEX_LINUX_APP_ID/packaged-runtime.sh"
 if [ ! -f "$PACKAGED_RUNTIME_HELPER" ]; then
     PACKAGED_RUNTIME_HELPER="$SCRIPT_DIR/.codex-linux/codex-packaged-runtime.sh"
@@ -1491,12 +1492,109 @@ if missing:
 PY
 }
 
+verify_webview_integrity_manifest() {
+    local url="$1"
+
+    python3 - "$url" "$WEBVIEW_INTEGRITY_FILE" <<'PY'
+import hashlib
+import pathlib
+import posixpath
+import sys
+import urllib.parse
+import urllib.request
+
+
+url = sys.argv[1]
+manifest_path = pathlib.Path(sys.argv[2])
+
+if not manifest_path.is_file():
+    print(
+        f"Webview integrity validation failed for {url}; missing manifest: {manifest_path}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+base_url = urllib.parse.urljoin(url, ".")
+validated = 0
+try:
+    lines = manifest_path.read_text(encoding="utf-8").splitlines()
+except Exception as error:
+    print(
+        f"Webview integrity validation failed for {url}; could not read manifest {manifest_path}: {error}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+for line_number, line in enumerate(lines, start=1):
+    if not line.strip():
+        continue
+    try:
+        expected_digest, relative_path = line.split(None, 1)
+    except ValueError:
+        print(
+            f"Webview integrity validation failed for {url}; malformed manifest line {line_number}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    relative_path = relative_path.strip()
+    normalized = posixpath.normpath(relative_path)
+    if (
+        len(expected_digest) != 64
+        or any(ch not in "0123456789abcdefABCDEF" for ch in expected_digest)
+        or not relative_path
+        or relative_path.startswith("/")
+        or normalized == "."
+        or normalized == ".."
+        or normalized.startswith("../")
+        or normalized != relative_path
+        or "\\" in relative_path
+        or any(ord(ch) < 32 for ch in relative_path)
+    ):
+        print(
+            f"Webview integrity validation failed for {url}; unsafe manifest entry on line {line_number}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    asset_url = urllib.parse.urljoin(base_url, urllib.parse.quote(relative_path, safe="/"))
+    try:
+        with opener.open(asset_url, timeout=2) as response:
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: response.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except Exception as error:
+        print(
+            f"Webview integrity validation failed for {asset_url}; {error}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    actual_digest = digest.hexdigest()
+    if actual_digest.lower() != expected_digest.lower():
+        print(
+            f"Webview integrity validation failed for {asset_url}; digest mismatch",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    validated += 1
+
+if validated == 0:
+    print(
+        f"Webview integrity validation failed for {url}; manifest contains no assets",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+}
+
 verify_webview_origin() {
     local url="$1"
     local body err detail
 
     if ! command -v curl >/dev/null 2>&1; then
-        verify_webview_origin_with_python "$url"
+        verify_webview_origin_with_python "$url" || return $?
+        verify_webview_integrity_manifest "$url"
         return $?
     fi
 
@@ -1526,6 +1624,8 @@ verify_webview_origin() {
         echo "Webview origin validation failed for $url; missing markers: ${missing[*]}" >&2
         return 1
     fi
+
+    verify_webview_integrity_manifest "$url"
 }
 
 pid_has_webview_server_cmdline() {

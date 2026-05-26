@@ -137,7 +137,8 @@ Orchestration makes the generated app behave like a Linux desktop app:
 
 - The generated `start.sh` prepares XDG config, cache, state, PID, and log paths.
 - The launcher starts a local loopback webview server for extracted web assets,
-  validates startup markers, and exports `ELECTRON_RENDERER_URL`.
+  validates startup markers plus generated startup-asset hashes, and exports
+  `ELECTRON_RENDERER_URL`.
 - It discovers or preflights the Codex CLI before Electron starts.
 - It chooses Linux Electron flags for sandboxing, Wayland or X11 behavior, GPU
   behavior, app identity, and side-by-side instances.
@@ -237,7 +238,8 @@ At launch time, the script:
 3. loads packaged-only runtime behavior when installed from a native package;
 4. reconciles stale app and webview PID files;
 5. starts or reuses the local webview server;
-6. verifies that the loopback webview origin serves expected startup markers;
+6. verifies that the loopback webview origin serves expected startup markers and
+   generated startup-asset hashes;
 7. discovers or preflights the Codex CLI;
 8. syncs bundled plugin resources where needed;
 9. launches the Linux Electron binary with the patched app payload.
