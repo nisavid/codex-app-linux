@@ -4,8 +4,10 @@ This optional port integration extends the bundled Chrome plugin to recognize
 Thorium as a Chromium-family browser.
 
 It is disabled by default because Thorium is a narrower browser variant that the
-core Linux port does not regularly test. Enable it by adding the integration id
-to `port-integrations/integrations.json` before building or installing:
+core Linux port does not regularly test. For checkout builds, enable it by
+adding the integration id to `port-integrations/integrations.json`. For
+installed updater rebuilds, use
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/port-integrations.json` instead:
 
 ```json
 {

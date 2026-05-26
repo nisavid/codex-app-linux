@@ -49,7 +49,17 @@ function sanitizeGitRemoteUrl(remote) {
     return null;
   }
   const value = String(remote).trim();
-  if (value.length === 0 || path.isAbsolute(value) || value.startsWith("./") || value.startsWith("../")) {
+  if (
+    value.length === 0
+    || path.isAbsolute(value)
+    || path.win32.isAbsolute(value)
+    || value === "."
+    || value === ".."
+    || value.startsWith("./")
+    || value.startsWith("../")
+    || value === "~"
+    || value.startsWith("~/")
+  ) {
     return null;
   }
   try {
@@ -63,7 +73,10 @@ function sanitizeGitRemoteUrl(remote) {
       return url.toString();
     }
   } catch {
-    return value;
+    if (/^(?:[^@\s/:]+@)?[^@\s/:]+:.+$/.test(value)) {
+      return value;
+    }
+    return null;
   }
   return value;
 }

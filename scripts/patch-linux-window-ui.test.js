@@ -288,7 +288,7 @@ test("build info captures official DMG hash, port integrations, distro profile, 
     fs.mkdirSync(path.join(integrationsRoot, "read-aloud"), { recursive: true });
     fs.mkdirSync(path.join(integrationsRoot, "zed-opener"), { recursive: true });
     fs.writeFileSync(path.join(integrationsRoot, "integrations.example.json"), "{\"enabled\":[]}\n", "utf8");
-    fs.writeFileSync(path.join(integrationsRoot, "integrations.json"), "{\"enabled\":[\"zed-opener\"]}\n", "utf8");
+    fs.writeFileSync(path.join(integrationsRoot, "port-integrations.json"), "{\"enabled\":[\"zed-opener\"]}\n", "utf8");
     fs.writeFileSync(
       path.join(integrationsRoot, "read-aloud", "integration.json"),
       "{\"id\":\"read-aloud\",\"defaultEnabled\":true}\n",
@@ -299,7 +299,7 @@ test("build info captures official DMG hash, port integrations, distro profile, 
       "{\"id\":\"zed-opener\"}\n",
       "utf8",
     );
-    process.env.CODEX_PORT_INTEGRATIONS_CONFIG = path.join(integrationsRoot, "integrations.json");
+    process.env.CODEX_PORT_INTEGRATIONS_CONFIG = path.join(integrationsRoot, "port-integrations.json");
 
     const target = detectLinuxTargetContext({
       osReleaseFields: {
@@ -386,6 +386,10 @@ test("build info strips credentials from URL-form source remotes", () => {
     "ssh://example.com/org/repo.git",
   );
   assert.equal(sanitizeGitRemoteUrl("file:///home/builder/repo.git"), null);
+  assert.equal(sanitizeGitRemoteUrl("repo.git"), null);
+  assert.equal(sanitizeGitRemoteUrl("foo/bar.git"), null);
+  assert.equal(sanitizeGitRemoteUrl("~/repo.git"), null);
+  assert.equal(sanitizeGitRemoteUrl("git@github.com:org/repo.git"), "git@github.com:org/repo.git");
 });
 
 test("package profile distinguishes Fedora package managers by major version", () => {
