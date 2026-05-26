@@ -195,7 +195,7 @@ impl PersistedState {
     /// Marks the state as failed while preserving any useful recovery metadata.
     pub fn mark_failed(&mut self, message: impl Into<String>) {
         self.status = UpdateStatus::Failed;
-        self.error_message = Some(redaction::redact_for_persistence(&message.into()));
+        self.error_message = Some(message.into());
     }
 
     pub(crate) fn redacted_for_persistence(&self) -> Self {
@@ -318,6 +318,26 @@ mod tests {
         assert!(!content.contains("user:pass"));
         assert!(content.contains("[REDACTED]"));
         assert!(content.contains("https://example.com/a"));
+        Ok(())
+    }
+
+    #[test]
+    fn mark_failed_redacts_only_when_persisted() -> Result<()> {
+        let temp = tempdir()?;
+        let path = temp.path().join("state.json");
+        let mut state = PersistedState::new(true);
+
+        state.mark_failed("failed with token=state-secret");
+        assert_eq!(
+            state.error_message.as_deref(),
+            Some("failed with token=state-secret")
+        );
+
+        state.save(&path)?;
+        let content = fs::read_to_string(&path)?;
+
+        assert!(!content.contains("state-secret"));
+        assert!(content.contains("token=[REDACTED]"));
         Ok(())
     }
 
