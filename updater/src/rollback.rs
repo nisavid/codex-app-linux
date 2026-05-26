@@ -3,7 +3,7 @@
 use crate::{
     cache_cleanup,
     config::{RuntimeConfig, RuntimePaths},
-    install, install_rollback, liveness, notify, package_verification,
+    install, install_rollback, liveness, notify, package_verification, redaction,
     state::{PersistedState, UpdateStatus},
 };
 use anyhow::{Context, Result};
@@ -172,7 +172,7 @@ fn pkexec_authentication_was_not_obtained(status: &std::process::ExitStatus) -> 
 }
 
 fn summarize_command_output(output: &[u8]) -> Option<String> {
-    let text = String::from_utf8_lossy(output).trim().to_string();
+    let text = redaction::redact_for_persistence(String::from_utf8_lossy(output).trim());
     if text.is_empty() {
         None
     } else if text.chars().count() > COMMAND_OUTPUT_SUMMARY_LIMIT {
@@ -533,6 +533,19 @@ mod tests {
 
         assert!(summary.len() < output.len());
         assert!(summary.ends_with("... [truncated]"));
+    }
+
+    #[test]
+    fn command_output_summary_redacts_privileged_rollback_output() {
+        let output = b"rollback failed password=rollback-secret Authorization: Basic header-secret";
+        let summary = summarize_command_output(output).expect("summary");
+
+        assert_eq!(
+            summary,
+            "rollback failed password=[REDACTED] Authorization: [REDACTED]"
+        );
+        assert!(!summary.contains("rollback-secret"));
+        assert!(!summary.contains("header-secret"));
     }
 
     #[test]

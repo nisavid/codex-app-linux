@@ -6,7 +6,7 @@ use crate::{
     codex_cli,
     config::{RuntimeConfig, RuntimePaths},
     dmg_source, install, install_rollback, liveness, logging, notify, package_verification,
-    rollback,
+    redaction, rollback,
     state::{CliStatus, DmgVerification, DmgVerificationResult, PersistedState, UpdateStatus},
     trust,
 };
@@ -357,7 +357,12 @@ fn summarize_command_output(output: &[u8]) -> Option<String> {
         return None;
     }
 
-    let mut lines = text.lines().rev().take(3).collect::<Vec<_>>();
+    let mut lines = text
+        .lines()
+        .rev()
+        .take(3)
+        .map(redaction::redact_for_persistence)
+        .collect::<Vec<_>>();
     lines.reverse();
     Some(lines.join(" | "))
 }
@@ -518,7 +523,10 @@ fn run_status(
     normalize_workspace_dir_and_persist(&config.workspace_root, state, paths)?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(state)?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&state.redacted_for_persistence())?
+        );
     } else {
         println!("status: {:?}", state.status);
         println!("installed_version: {}", state.installed_version);
@@ -556,7 +564,12 @@ fn run_status(
         );
         println!(
             "cli_error: {}",
-            state.cli_error_message.as_deref().unwrap_or("none")
+            state
+                .cli_error_message
+                .as_deref()
+                .map(redaction::redact_for_persistence)
+                .as_deref()
+                .unwrap_or("none")
         );
     }
 
@@ -566,7 +579,12 @@ fn run_status(
 fn update_error_status_line(state: &PersistedState) -> String {
     format!(
         "update_error: {}",
-        state.error_message.as_deref().unwrap_or("none")
+        state
+            .error_message
+            .as_deref()
+            .map(redaction::redact_for_persistence)
+            .as_deref()
+            .unwrap_or("none")
     )
 }
 
@@ -2512,6 +2530,20 @@ mod tests {
             .status()?;
         assert!(!pkexec_authentication_was_not_obtained(&status));
         Ok(())
+    }
+
+    #[test]
+    fn command_output_summary_redacts_privileged_install_output() {
+        let output = b"line one\nerror token=install-secret\nAuthorization: Bearer header-secret\n";
+
+        let summary = summarize_command_output(output).expect("summary");
+
+        assert_eq!(
+            summary,
+            "line one | error token=[REDACTED] | Authorization: [REDACTED]"
+        );
+        assert!(!summary.contains("install-secret"));
+        assert!(!summary.contains("header-secret"));
     }
 
     #[test]

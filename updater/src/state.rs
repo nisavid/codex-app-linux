@@ -1,5 +1,6 @@
 //! Persisted updater state and compatibility with older on-disk formats.
 
+use crate::redaction;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -186,7 +187,7 @@ impl PersistedState {
 
     /// Persists the updater state to JSON on disk.
     pub fn save(&self, path: &Path) -> Result<()> {
-        let content = serde_json::to_string_pretty(self)?;
+        let content = serde_json::to_string_pretty(&self.redacted_for_persistence())?;
         atomic_write(path, content.as_bytes())?;
         Ok(())
     }
@@ -194,7 +195,20 @@ impl PersistedState {
     /// Marks the state as failed while preserving any useful recovery metadata.
     pub fn mark_failed(&mut self, message: impl Into<String>) {
         self.status = UpdateStatus::Failed;
-        self.error_message = Some(message.into());
+        self.error_message = Some(redaction::redact_for_persistence(&message.into()));
+    }
+
+    pub(crate) fn redacted_for_persistence(&self) -> Self {
+        let mut state = self.clone();
+        state.error_message = state
+            .error_message
+            .as_deref()
+            .map(redaction::redact_for_persistence);
+        state.cli_error_message = state
+            .cli_error_message
+            .as_deref()
+            .map(redaction::redact_for_persistence);
+        state
     }
 }
 
@@ -283,6 +297,27 @@ mod tests {
         );
         assert!(loaded.notified_events.contains("ready_to_install"));
         assert!(!loaded.auto_install_on_app_exit);
+        Ok(())
+    }
+
+    #[test]
+    fn save_redacts_persisted_error_messages() -> Result<()> {
+        let temp = tempdir()?;
+        let path = temp.path().join("state.json");
+        let mut state = PersistedState::new(true);
+        state.error_message = Some(
+            "failed with token=state-secret from https://user:pass@example.com/a?b=c".to_string(),
+        );
+        state.cli_error_message = Some("npm failed: Authorization: Bearer cli-secret".to_string());
+
+        state.save(&path)?;
+        let content = fs::read_to_string(&path)?;
+
+        assert!(!content.contains("state-secret"));
+        assert!(!content.contains("cli-secret"));
+        assert!(!content.contains("user:pass"));
+        assert!(content.contains("[REDACTED]"));
+        assert!(content.contains("https://example.com/a"));
         Ok(())
     }
 

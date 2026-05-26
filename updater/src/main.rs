@@ -27,6 +27,8 @@ mod notify;
 #[cfg(unix)]
 mod package_verification;
 #[cfg(unix)]
+mod redaction;
+#[cfg(unix)]
 mod rollback;
 #[cfg(unix)]
 mod state;

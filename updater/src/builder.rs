@@ -3,7 +3,7 @@
 use crate::{
     config::{RuntimeConfig, RuntimePaths},
     install::PackageKind,
-    package_verification,
+    package_verification, redaction,
     state::{ArtifactPaths, PersistedState, UpdateStatus},
 };
 use anyhow::{Context, Result};
@@ -484,7 +484,7 @@ async fn run_and_log(command: &mut Command, log_path: &Path) -> Result<()> {
     let mut combined = Vec::new();
     combined.extend_from_slice(&output.stdout);
     combined.extend_from_slice(&output.stderr);
-    fs::write(log_path, &combined)
+    fs::write(log_path, redaction::redact_bytes_for_persistence(&combined))
         .with_context(|| format!("Failed to write {}", log_path.display()))?;
 
     if !output.status.success() {
@@ -543,6 +543,36 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_and_log_redacts_command_output_before_writing_log() -> Result<()> {
+        let temp = tempdir()?;
+        let script = temp.path().join("leaky-command.sh");
+        let log_path = temp.path().join("command.log");
+        fs::write(
+            &script,
+            "#!/bin/sh\necho 'stdout token=stdout-secret'\necho 'stderr Authorization: Bearer stderr-secret' >&2\nexit 1\n",
+        )?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
+        }
+
+        let mut command = Command::new("/bin/sh");
+        command.arg(&script).env_clear();
+        let result = run_and_log(&mut command, &log_path).await;
+
+        assert!(result.is_err());
+        let log = fs::read_to_string(&log_path)?;
+        assert_eq!(
+            log,
+            "stdout token=[REDACTED]\nstderr Authorization: [REDACTED]\n"
+        );
+        assert!(!log.contains("stdout-secret"));
+        assert!(!log.contains("stderr-secret"));
         Ok(())
     }
 
