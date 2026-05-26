@@ -2193,6 +2193,105 @@ SCRIPT
     assert_contains "$output_log" "$script_dir/target/release/codex-chrome-extension-host"
 }
 
+test_hash_refresh_evidence_helper() {
+    info "Checking hash-refresh evidence helper"
+    local workspace="$TMP_DIR/hash-refresh-evidence"
+    local fake_bin="$workspace/bin"
+    local runs_json="$workspace/runs.json"
+    local gh_log="$workspace/gh.log"
+    local body_file="$workspace/pr-body.md"
+    local hex_file="$workspace/hex.txt"
+    local sri="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    local sha="0000000000000000000000000000000000000000000000000000000000000000"
+    local url="https://github.com/nisavid/codex-app-linux/actions/runs/123"
+
+    mkdir -p "$fake_bin"
+    "$REPO_DIR/scripts/ci/hash-refresh-evidence.sh" sri-to-hex "$sri" > "$hex_file"
+    assert_contains "$hex_file" "$sha"
+    if "$REPO_DIR/scripts/ci/hash-refresh-evidence.sh" sri-to-hex "sha256-not-valid" >/dev/null 2>&1; then
+        fail "Expected invalid SRI conversion to fail"
+    fi
+
+    cat > "$runs_json" <<JSON
+[
+  {"databaseId":122,"displayTitle":"Verify Apple DMG $sha","status":"completed","conclusion":"failure","url":"https://github.com/nisavid/codex-app-linux/actions/runs/122","createdAt":"2025-12-31T23:59:59Z"},
+  {"databaseId":123,"displayTitle":"Verify Apple DMG $sha","status":"completed","conclusion":"success","url":"$url","createdAt":"2026-05-25T00:00:00Z"}
+]
+JSON
+    cat > "$fake_bin/gh" <<SCRIPT
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$gh_log"
+if [ "\$1 \$2" = "workflow run" ]; then
+  exit 0
+fi
+if [ "\$1 \$2" = "run list" ]; then
+  cat "$runs_json"
+  exit 0
+fi
+exit 2
+SCRIPT
+    chmod +x "$fake_bin/gh"
+
+    local actual_url
+    actual_url="$(CODEX_HASH_REFRESH_VERIFY_MIN_CREATED_AT="2026-01-01T00:00:00Z" PATH="$fake_bin:$PATH" "$REPO_DIR/scripts/ci/hash-refresh-evidence.sh" wait-apple-verification --dmg-sha256 "$sha" --timeout-seconds 1 --poll-interval-seconds 1)"
+    [ "$actual_url" = "$url" ] || fail "Expected Apple verification URL $url, got $actual_url"
+    assert_contains "$gh_log" "workflow run verify-apple-dmg.yml"
+
+    cat > "$runs_json" <<JSON
+[{"databaseId":124,"displayTitle":"Verify Apple DMG $sha","status":"completed","conclusion":"failure","url":"$url","createdAt":"2026-05-25T00:00:00Z"}]
+JSON
+    if CODEX_HASH_REFRESH_VERIFY_MIN_CREATED_AT="2026-01-01T00:00:00Z" PATH="$fake_bin:$PATH" "$REPO_DIR/scripts/ci/hash-refresh-evidence.sh" wait-apple-verification --dmg-sha256 "$sha" --timeout-seconds 1 --poll-interval-seconds 1 >/dev/null 2>&1; then
+        fail "Expected failed Apple verification conclusion to fail"
+    fi
+
+    "$REPO_DIR/scripts/ci/hash-refresh-evidence.sh" render-pr-body \
+        --output "$body_file" \
+        --dmg-sri "$sri" \
+        --dmg-sha256 "$sha" \
+        --app-version "26.1.2" \
+        --app-build "1234" \
+        --electron-version "42.0.0" \
+        --better-sqlite3-version "12.10.0" \
+        --node-pty-version "1.1.0" \
+        --verification-url "$url" \
+        --branch "bot/update-codex-dmg-hash"
+    assert_contains "$body_file" "Official app version: \`26.1.2\`"
+    assert_contains "$body_file" "Official app build: \`1234\`"
+    assert_contains "$body_file" "Apple DMG verification: passed in $url"
+}
+
+test_validate_nix_pins_writes_evidence_env() {
+    info "Checking validate-nix-pins evidence writer"
+    local workspace="$TMP_DIR/validate-nix-pins-evidence"
+    local evidence_env="$workspace/evidence.env"
+    local sri="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+    mkdir -p "$workspace"
+    (
+        CODEX_VALIDATE_NIX_PINS_LIBRARY=1
+        CODEX_NIX_PIN_EVIDENCE_ENV="$evidence_env"
+        CODEX_DMG_SRI="$sri"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/ci/validate-nix-pins.sh"
+        dmg_app_short_version="26.1.2"
+        dmg_codex_version="26.1.2"
+        dmg_bundle_version="1234"
+        dmg_electron_version="42.0.0"
+        dmg_better_sqlite3_version="12.9.0"
+        native_better_sqlite3_version="12.10.0"
+        native_node_pty_version="1.1.0"
+        write_pin_evidence_env
+    )
+
+    assert_contains "$evidence_env" "CODEX_DMG_SRI=sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    assert_contains "$evidence_env" "CODEX_DMG_SHA256=0000000000000000000000000000000000000000000000000000000000000000"
+    assert_contains "$evidence_env" "CODEX_APP_PACKAGE_VERSION=26.1.2"
+    assert_contains "$evidence_env" "CODEX_APP_BUNDLE_VERSION=1234"
+    assert_contains "$evidence_env" "CODEX_ELECTRON_VERSION=42.0.0"
+    assert_contains "$evidence_env" "CODEX_NATIVE_BETTER_SQLITE3_VERSION=12.10.0"
+    assert_contains "$evidence_env" "CODEX_NATIVE_NODE_PTY_VERSION=1.1.0"
+}
+
 test_launcher_template_sanity() {
     info "Checking launcher template markers"
     assert_contains "$REPO_DIR/install.sh" 'DEFAULT_CODEX_WEBVIEW_PORT=5175'
@@ -5239,6 +5338,8 @@ main() {
     test_native_module_rebuild_rejects_prebuilt_source_without_native_artifacts
     test_bundled_plugin_builders_accept_prebuilt_binaries
     test_bundled_plugin_builders_fallback_from_invalid_chrome_host_override
+    test_hash_refresh_evidence_helper
+    test_validate_nix_pins_writes_evidence_env
     test_browser_use_node_repl_fallback_runtime
     test_chrome_plugin_staging
     test_chrome_browser_client_profile_root_variants

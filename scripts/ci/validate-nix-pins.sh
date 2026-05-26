@@ -16,6 +16,7 @@ NATIVE_MODULES_PKG="${NATIVE_MODULES_PKG:-$REPO_DIR/nix/native-modules/package.j
 # build.
 WRITE_PINS="${WRITE_PINS:-0}"
 APPCAST_URL="${APPCAST_URL:-}"
+CODEX_NIX_PIN_EVIDENCE_ENV="${CODEX_NIX_PIN_EVIDENCE_ENV:-}"
 
 fail() {
     echo "ERROR: $*" >&2
@@ -105,6 +106,58 @@ sys.stdout.write(match.group(1).strip())
 '
 }
 
+sri_to_hex() {
+    local sri="$1"
+    [[ "$sri" =~ ^sha256-[A-Za-z0-9+/=]{44}$ ]] || fail "Invalid sha256 SRI digest: $sri"
+    python3 - "$sri" <<'PY'
+import base64
+import sys
+
+payload = sys.argv[1].split("-", 1)[1]
+try:
+    raw = base64.b64decode(payload, validate=True)
+except Exception as exc:
+    raise SystemExit(f"Invalid base64 payload: {exc}")
+if len(raw) != 32:
+    raise SystemExit(f"Decoded SHA-256 payload is {len(raw)} bytes, expected 32")
+print(raw.hex())
+PY
+}
+
+write_shell_assignment() {
+    local name="$1"
+    local value="$2"
+    printf '%s=%q\n' "$name" "$value"
+}
+
+write_pin_evidence_env() {
+    [ -n "$CODEX_NIX_PIN_EVIDENCE_ENV" ] || return 0
+
+    local evidence_dmg_sri="${CODEX_DMG_SRI:-}"
+    local evidence_dmg_sha256="${CODEX_DMG_SHA256:-}"
+    local tmp_file
+
+    [ -n "$evidence_dmg_sri" ] || evidence_dmg_sri="$(flake_dmg_sri)"
+    if [ -z "$evidence_dmg_sha256" ]; then
+        evidence_dmg_sha256="$(sri_to_hex "$evidence_dmg_sri")"
+    fi
+    [[ "$evidence_dmg_sha256" =~ ^[0-9a-fA-F]{64}$ ]] || fail "Invalid DMG SHA-256 evidence: $evidence_dmg_sha256"
+
+    mkdir -p "$(dirname "$CODEX_NIX_PIN_EVIDENCE_ENV")"
+    tmp_file="${CODEX_NIX_PIN_EVIDENCE_ENV}.tmp"
+    {
+        write_shell_assignment CODEX_DMG_SRI "$evidence_dmg_sri"
+        write_shell_assignment CODEX_DMG_SHA256 "$(printf '%s' "$evidence_dmg_sha256" | tr '[:upper:]' '[:lower:]')"
+        write_shell_assignment CODEX_APP_PACKAGE_VERSION "$dmg_app_short_version"
+        write_shell_assignment CODEX_APP_BUNDLE_VERSION "$dmg_bundle_version"
+        write_shell_assignment CODEX_ELECTRON_VERSION "$dmg_electron_version"
+        write_shell_assignment CODEX_DMG_BETTER_SQLITE3_VERSION "$dmg_better_sqlite3_version"
+        write_shell_assignment CODEX_NATIVE_BETTER_SQLITE3_VERSION "$native_better_sqlite3_version"
+        write_shell_assignment CODEX_NATIVE_NODE_PTY_VERSION "$native_node_pty_version"
+    } > "$tmp_file"
+    mv "$tmp_file" "$CODEX_NIX_PIN_EVIDENCE_ENV"
+}
+
 read_nix_fetchurl_field() {
     local binding="$1"
     local field="$2"
@@ -161,6 +214,7 @@ assert_equal() {
     echo "OK: $label = $actual"
 }
 
+main() {
 if [ ! -s "$OFFICIAL_DMG_PATH" ]; then
     mkdir -p "$(dirname "$OFFICIAL_DMG_PATH")"
     curl -fL --retry 3 -o "$OFFICIAL_DMG_PATH" "$OFFICIAL_DMG_URL"
@@ -179,8 +233,10 @@ APP_DIR="$(find "$WORK_DIR/dmg" -maxdepth 3 -name "*.app" -type d | head -1)"
 
 ASAR_PATH="$APP_DIR/Contents/Resources/app.asar"
 PLIST_PATH="$APP_DIR/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/Info.plist"
+APP_PLIST_PATH="$APP_DIR/Contents/Info.plist"
 [ -f "$ASAR_PATH" ] || fail "Could not find app.asar in DMG"
 [ -f "$PLIST_PATH" ] || fail "Could not find Electron Info.plist in DMG"
+[ -f "$APP_PLIST_PATH" ] || fail "Could not find app Info.plist in DMG"
 ASAR_EXTRACT_DIR="$WORK_DIR/app-extracted"
 npx --yes asar extract "$ASAR_PATH" "$ASAR_EXTRACT_DIR"
 
@@ -190,6 +246,22 @@ import sys
 
 with open(sys.argv[1], "rb") as handle:
     print(plistlib.load(handle).get("CFBundleVersion", ""))
+PY
+)"
+dmg_bundle_version="$(python3 - "$APP_PLIST_PATH" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    print(plistlib.load(handle).get("CFBundleVersion", ""))
+PY
+)"
+dmg_app_short_version="$(python3 - "$APP_PLIST_PATH" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    print(plistlib.load(handle).get("CFBundleShortVersionString", ""))
 PY
 )"
 dmg_codex_version="$(json_file_field "$ASAR_EXTRACT_DIR/package.json" "value.version")"
@@ -235,10 +307,12 @@ if [ "$WRITE_PINS" = "1" ]; then
 fi
 
 assert_equal "Codex app version pin" "$dmg_codex_version" "$nix_codex_version"
+assert_equal "Codex app bundle short version" "$dmg_app_short_version" "$dmg_codex_version"
 assert_equal "Electron version pin" "$dmg_electron_version" "$nix_electron_version"
 assert_equal "native-modules Electron pin" "$nix_electron_version" "$native_electron_version"
 assert_equal "native-modules better-sqlite3 build pin" "$expected_native_better_sqlite3_version" "$native_better_sqlite3_version"
 assert_equal "native-modules node-pty pin" "$dmg_node_pty_version" "$native_node_pty_version"
+write_pin_evidence_env
 
 flake_node_repl_url="$(read_nix_fetchurl_field browserUseNodeReplRuntime url)"
 flake_node_repl_sri="$(read_nix_fetchurl_field browserUseNodeReplRuntime hash)"
@@ -281,3 +355,8 @@ assert_equal "Browser Use node_repl URL pin" "$installer_node_repl_url" "$flake_
 assert_equal "Browser Use node_repl SHA-256 pin" "$installer_node_repl_sha" "$flake_node_repl_sha"
 
 echo "Nix pins match the official DMG, installer defaults, and native module build floors."
+}
+
+if [ "${CODEX_VALIDATE_NIX_PINS_LIBRARY:-0}" != "1" ]; then
+    main
+fi
