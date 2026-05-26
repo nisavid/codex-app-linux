@@ -289,6 +289,8 @@ test_update_builder_omits_build_time_port_integrations_config() {
     local staged_config="$root/usr/lib/codex-app/update-builder/port-integrations/integrations.json"
     local staged_legacy_config="$root/usr/lib/codex-app/update-builder/port-integrations/features.json"
     local source_info="$root/usr/lib/codex-app/update-builder/.codex-linux/source-info.json"
+    local local_remote_update_builder="$workspace/local-remote-update-builder"
+    local local_remote_source_info="$local_remote_update_builder/.codex-linux/source-info.json"
     local source_config_dir="$REPO_DIR/port-integrations"
     local source_config="$source_config_dir/integrations.json"
     local source_legacy_config="$source_config_dir/features.json"
@@ -361,6 +363,26 @@ if (info.remote !== "ssh://example.com/org/repo.git") {
 }
 if (info.capturedAt !== new Date(1710000000 * 1000).toISOString()) {
   throw new Error(`unexpected capturedAt: ${info.capturedAt}`);
+}
+NODE
+
+    (
+        export APP_DIR="$app_dir"
+        export PACKAGE_NAME="codex-app"
+        export CODEX_LINUX_SOURCE_REMOTE="foo/bar.git"
+        export SOURCE_DATE_EPOCH="1710000000"
+
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        stage_update_builder_source_info "$local_remote_update_builder"
+    )
+
+    node - "$local_remote_source_info" <<'NODE' || fail "Expected local-path source remote to be omitted"
+const fs = require("node:fs");
+const sourceInfoPath = process.argv[2];
+const info = JSON.parse(fs.readFileSync(sourceInfoPath, "utf8"));
+if (info.remote !== null) {
+  throw new Error(`unexpected remote: ${info.remote}`);
 }
 NODE
 }
