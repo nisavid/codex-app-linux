@@ -6,12 +6,12 @@ patcher="$SCRIPT_DIR/port-integrations/thorium-chrome-plugin/patch-chrome-plugin
 manifest_paths_dir="$INSTALL_DIR/.codex-linux"
 manifest_paths_file="$manifest_paths_dir/chrome-native-host-manifest-paths"
 
-mkdir -p "$manifest_paths_dir"
-printf '%s\n' ".config/thorium/NativeMessagingHosts" > "$manifest_paths_file"
-
 if [ ! -d "$chrome_plugin" ]; then
     echo "WARN: Chrome plugin not found; skipping Thorium Chrome plugin patch" >&2
     exit 0
 fi
+
+mkdir -p "$manifest_paths_dir"
+printf '%s\n' ".config/thorium/NativeMessagingHosts" > "$manifest_paths_file"
 
 node "$patcher" "$chrome_plugin" >&2
