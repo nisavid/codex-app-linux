@@ -83,7 +83,7 @@ STARTUP_SRC_TAGS = {
     "video",
 }
 JS_IMPORT_REF_RE = re.compile(
-    r"""\bimport\s*\(\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)\s*\)"""
+    r"""\bimport\s*\(\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)\s*(?:,[^)]*)?\)"""
 )
 JS_FROM_REF_RE = re.compile(
     r"""
@@ -96,7 +96,7 @@ JS_BARE_IMPORT_REF_RE = re.compile(
     r"""\bimport\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)"""
 )
 JS_NEW_URL_REF_RE = re.compile(
-    r"""\bnew\s+URL\s*\(\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)\s*,\s*import\.meta\.url\s*\)"""
+    r"""\bnew\s+URL\s*\(\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)\s*,\s*import\.meta\.url\s*,?\s*\)"""
 )
 JS_REQUIRE_REF_RE = re.compile(
     r"""\brequire\s*\(\s*(?P<quote>["'])(?P<ref>[^"']+)(?P=quote)\s*\)"""
