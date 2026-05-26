@@ -25,6 +25,7 @@ const {
   applyLinuxChromePluginAutoInstallPatch,
   applyLinuxAppUpdaterBridgePatch,
   applyLinuxAppUpdaterMenuPatch,
+  applyLinuxBuildInfoTrayPatch,
   applyLinuxExplicitIpcQuitPatch,
   applyLinuxExplicitQuitPromptBypassPatch,
   applyLinuxExplicitTrayQuitPatch,
@@ -73,6 +74,12 @@ const {
 const {
   validateReport,
 } = require("./ci/validate-patch-report.js");
+const {
+  buildInfo,
+  packageProfile,
+  sanitizeGitRemoteUrl,
+  sourceInfo,
+} = require("./lib/build-info.js");
 const {
   recordPatch,
 } = require("./lib/patch-report.js");
@@ -256,6 +263,145 @@ test("Linux target context falls back after unreadable os-release candidates", (
   }
 });
 
+test("build info captures official DMG hash, port integrations, distro profile, and source revision", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-build-info-"));
+  const originalConfig = process.env.CODEX_PORT_INTEGRATIONS_CONFIG;
+  try {
+    const dmgPath = path.join(tempRoot, "Codex.dmg");
+    fs.writeFileSync(dmgPath, "fake dmg payload", "utf8");
+
+    const appDir = path.join(tempRoot, "Codex.app");
+    fs.mkdirSync(path.join(appDir, "Contents"), { recursive: true });
+    fs.writeFileSync(
+      path.join(appDir, "Contents", "Info.plist"),
+      [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
+        "<plist version=\"1.0\"><dict>",
+        "<key>CFBundleShortVersionString</key><string>1.2.3</string>",
+        "</dict></plist>",
+      ].join(""),
+      "utf8",
+    );
+
+    const integrationsRoot = path.join(tempRoot, "port-integrations");
+    fs.mkdirSync(path.join(integrationsRoot, "read-aloud"), { recursive: true });
+    fs.mkdirSync(path.join(integrationsRoot, "zed-opener"), { recursive: true });
+    fs.writeFileSync(path.join(integrationsRoot, "integrations.example.json"), "{\"enabled\":[]}\n", "utf8");
+    fs.writeFileSync(path.join(integrationsRoot, "integrations.json"), "{\"enabled\":[\"zed-opener\"]}\n", "utf8");
+    fs.writeFileSync(
+      path.join(integrationsRoot, "read-aloud", "integration.json"),
+      "{\"id\":\"read-aloud\",\"defaultEnabled\":true}\n",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(integrationsRoot, "zed-opener", "integration.json"),
+      "{\"id\":\"zed-opener\"}\n",
+      "utf8",
+    );
+    process.env.CODEX_PORT_INTEGRATIONS_CONFIG = path.join(integrationsRoot, "integrations.json");
+
+    const target = detectLinuxTargetContext({
+      osReleaseFields: {
+        ID: "ubuntu",
+        ID_LIKE: "debian",
+        VERSION_ID: "24.04",
+        PRETTY_NAME: "Ubuntu 24.04 LTS",
+      },
+      env: {
+        PATH: "",
+        XDG_CURRENT_DESKTOP: "GNOME",
+        XDG_SESSION_TYPE: "wayland",
+      },
+    });
+    const info = buildInfo({
+      repoDir: tempRoot,
+      dmgPath,
+      appDir,
+      electronVersion: "42.1.0",
+      appId: "codex-app",
+      appDisplayName: "Codex App",
+      integrationsRoot,
+      linuxTarget: target,
+      env: {
+        SOURCE_DATE_EPOCH: "1710000000",
+        CODEX_LINUX_SOURCE_COMMIT: "abcdef1234567890",
+        CODEX_LINUX_SOURCE_REMOTE: "https://user:secret@example.com/org/codex-app-linux.git",
+      },
+    });
+
+    assert.equal(info.generatedAt, new Date(1710000000 * 1000).toISOString());
+    assert.equal(info.officialDmg.path, undefined);
+    assert.equal(info.officialDmg.sha256, "e33df8d941faed4fdc3bb688fea70572931e81a6e0c2603b810338177148dfa2");
+    assert.equal(info.officialDmg.appVersion, "1.2.3");
+    assert.equal(info.source.shortCommit, "abcdef123456");
+    assert.equal(info.source.remote, "https://example.com/org/codex-app-linux.git");
+    assert.equal(info.packageProfile.id, "debian-family");
+    assert.equal(info.packageProfile.packageManager, "apt");
+    assert.deepEqual(info.portIntegrations.enabled, ["read-aloud", "zed-opener"]);
+    assert.equal(info.portIntegrations.configPath, undefined);
+  } finally {
+    if (originalConfig == null) {
+      delete process.env.CODEX_PORT_INTEGRATIONS_CONFIG;
+    } else {
+      process.env.CODEX_PORT_INTEGRATIONS_CONFIG = originalConfig;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("build info sanitizes staged source metadata from packaged update-builder", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-build-info-staged-source-"));
+  try {
+    const sourceInfoDir = path.join(tempRoot, ".codex-linux");
+    fs.mkdirSync(sourceInfoDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sourceInfoDir, "source-info.json"),
+      JSON.stringify({
+        commit: "0123456789abcdef",
+        shortCommit: "0123456789ab",
+        branch: "main",
+        remote: "https://user:secret@example.com/org/repo.git",
+        sourceInfoPath: "/home/builder/codex/.codex-linux/source-info.json",
+        provenance: "packaged-update-builder",
+      }),
+      "utf8",
+    );
+
+    const info = sourceInfo(tempRoot, {});
+    assert.equal(info.remote, "https://example.com/org/repo.git");
+    assert.equal(info.sourceInfoPath, undefined);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("build info strips credentials from URL-form source remotes", () => {
+  assert.equal(
+    sanitizeGitRemoteUrl("https://user:secret@example.com/org/repo.git"),
+    "https://example.com/org/repo.git",
+  );
+  assert.equal(
+    sanitizeGitRemoteUrl("ssh://user:secret@example.com/org/repo.git"),
+    "ssh://example.com/org/repo.git",
+  );
+  assert.equal(sanitizeGitRemoteUrl("file:///home/builder/repo.git"), null);
+});
+
+test("package profile distinguishes Fedora package managers by major version", () => {
+  const fedora40 = detectLinuxTargetContext({
+    osReleaseFields: { ID: "fedora", VERSION_ID: "40", PRETTY_NAME: "Fedora Linux 40" },
+    env: { PATH: "" },
+  });
+  const fedora41 = detectLinuxTargetContext({
+    osReleaseFields: { ID: "fedora", VERSION_ID: "41", PRETTY_NAME: "Fedora Linux 41" },
+    env: { PATH: "" },
+  });
+
+  assert.equal(packageProfile(fedora40).packageManager, "dnf");
+  assert.equal(packageProfile(fedora41).packageManager, "dnf5");
+});
+
 test("auto-discovered core patches can target a specific Linux distro", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-core-patch-root-"));
   try {
@@ -376,6 +522,7 @@ test("default core patch descriptors are grouped and unique", () => {
     "linux-avatar-overlay-mouse-passthrough",
     "linux-file-manager",
     "linux-tray",
+    "linux-build-info-tray",
     "linux-single-instance",
     "linux-computer-use-ui-feature",
     "linux-computer-use-plugin-gate",
@@ -1216,6 +1363,29 @@ test("adds Linux tray support including the platform guard", () => {
     /\(E\|\|process\.platform===`linux`&&\(typeof codexLinuxIsTrayEnabled!==`function`\|\|codexLinuxIsTrayEnabled\(\)\)\)&&oe\(\);/,
   );
   assert.doesNotMatch(patched, /process\.platform===`linux`&&codexLinuxIsTrayEnabled\(\)/);
+});
+
+test("adds Linux build information to the tray menu", () => {
+  const patched = applyPatchTwice(applyLinuxBuildInfoTrayPatch, `${mainBundlePrefix}${trayBundleFixture()}`);
+
+  assert.match(patched, /function codexLinuxShowBuildInfo\(\)/);
+  assert.match(patched, /codex-linux-build-info\.json/);
+  assert.match(patched, /label:`Build Information`,click:\(\)=>\{codexLinuxShowBuildInfo\(\)\}/);
+  assert.match(patched, /Enabled port integrations:/);
+  assert.match(patched, /Official OpenAI DMG SHA256:/);
+  assert.match(patched, /Linux source revision:/);
+  assert.match(patched, /Codex App Linux build information/);
+});
+
+test("adds Linux build information when the tray menu computes sections before returning", () => {
+  const source =
+    `${mainBundlePrefix}var pb=class{trayMenuThreads={runningThreads:[],unreadThreads:[],pinnedThreads:[],recentThreads:[],usageLimits:[]};` +
+    "getNativeTrayMenuItems(){let{runningThreads:e}=this.trayMenuThreads,t=e.length>0?[{label:`Running`}]:[];return[...t,...t.length>0?[{type:`separator`}]:[],{label:rB(this.appName),click:()=>{n.app.quit()}}]}};";
+
+  const patched = applyPatchTwice(applyLinuxBuildInfoTrayPatch, source);
+
+  assert.match(patched, /function codexLinuxBuildInfoPaths\(\)[\s\S]*;var pb=class/);
+  assert.match(patched, /return\[\.\.\.process\.platform===`linux`\?\[\{label:`Build Information`/);
 });
 
 test("adds Linux tray support for current minified window and startup identifiers", () => {

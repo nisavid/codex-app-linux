@@ -252,6 +252,8 @@ SCRIPT
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-update-bridge-patch.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/patch-report.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/rebuild-report.sh"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/build-info.js"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/build-info.sh"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/port-integrations.js"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/port-integrations.sh"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/scripts/lib/linux-target-context.js"
@@ -273,6 +275,8 @@ SCRIPT
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/computer-use-linux/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/updater/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/plugins/openai-bundled/plugins/computer-use/.mcp.json"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/plugins/openai-bundled/plugins/read-aloud/.mcp.json"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/.codex-linux/source-info.json"
     assert_file_exists "$pkg_root/usr/lib/codex-app/packaged-runtime.sh"
     assert_file_exists "$pkg_root/opt/codex-app/resources/node-runtime/bin/node"
 }
@@ -284,6 +288,7 @@ test_update_builder_omits_build_time_port_integrations_config() {
     local app_dir="$workspace/app"
     local staged_config="$root/usr/lib/codex-app/update-builder/port-integrations/integrations.json"
     local staged_legacy_config="$root/usr/lib/codex-app/update-builder/port-integrations/features.json"
+    local source_info="$root/usr/lib/codex-app/update-builder/.codex-linux/source-info.json"
     local source_config_dir="$REPO_DIR/port-integrations"
     local source_config="$source_config_dir/integrations.json"
     local source_legacy_config="$source_config_dir/features.json"
@@ -334,6 +339,8 @@ JSON
         export APP_DIR="$app_dir"
         export PACKAGE_NAME="codex-app"
         export UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service"
+        export CODEX_LINUX_SOURCE_REMOTE="ssh://builder:secret-token@example.com/org/repo.git"
+        export SOURCE_DATE_EPOCH="1710000000"
 
         # shellcheck disable=SC1091
         source "$REPO_DIR/scripts/lib/package-common.sh"
@@ -343,6 +350,19 @@ JSON
     assert_file_not_exists "$staged_config"
     assert_file_not_exists "$staged_legacy_config"
     assert_file_exists "$root/usr/lib/codex-app/update-builder/port-integrations/integrations.example.json"
+    assert_file_exists "$source_info"
+
+    node - "$source_info" <<'NODE' || fail "Expected staged source info to be sanitized and reproducible"
+const fs = require("node:fs");
+const sourceInfoPath = process.argv[2];
+const info = JSON.parse(fs.readFileSync(sourceInfoPath, "utf8"));
+if (info.remote !== "ssh://example.com/org/repo.git") {
+  throw new Error(`unexpected remote: ${info.remote}`);
+}
+if (info.capturedAt !== new Date(1710000000 * 1000).toISOString()) {
+  throw new Error(`unexpected capturedAt: ${info.capturedAt}`);
+}
+NODE
 }
 
 test_update_builder_omits_legacy_port_integration_config() {
@@ -1572,6 +1592,7 @@ EOF
         install_app() { :; }
         install_bundled_plugin_resources() { :; }
         create_start_script() { :; }
+        write_build_info() { :; }
 
         main
     ' _ "$REPO_DIR/install.sh" >"$output_log" 2>&1
@@ -2535,6 +2556,8 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/install.sh" "MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_41=\"12.9.0\""
     assert_contains "$REPO_DIR/install.sh" "MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42=\"12.10.0\""
     assert_contains "$REPO_DIR/flake.nix" 'export MIN_BETTER_SQLITE3_VERSION_FOR_ELECTRON_42="12.10.0"'
+    assert_contains "$REPO_DIR/flake.nix" "flakeSourceCommit"
+    assert_contains "$REPO_DIR/flake.nix" 'export CODEX_LINUX_SOURCE_COMMIT="${flakeSourceCommit}"'
     assert_contains "$REPO_DIR/nix/native-modules/package.json" '"better-sqlite3": "12.10.0"'
     assert_contains "$REPO_DIR/scripts/ci/validate-nix-pins.sh" "better_sqlite3_build_version"
     assert_contains "$REPO_DIR/install.sh" "error \"Webview server helper not found"
@@ -2951,6 +2974,11 @@ PY
     assert_not_matches "$REPO_DIR/packaging/linux/control" "Depends:.*npm"
     assert_not_matches "$REPO_DIR/packaging/linux/codex-app.spec" "Requires:.*nodejs"
     assert_not_matches "$REPO_DIR/packaging/linux/codex-app.spec" "Requires:.*npm"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.spec" "%global codex_elf_suffix %{nil}"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.spec" "libatk-bridge-2.0.so.0%{codex_elf_suffix}"
+    assert_contains "$REPO_DIR/packaging/linux/codex-app.spec" "libgbm.so.1%{codex_elf_suffix}"
+    assert_not_matches "$REPO_DIR/packaging/linux/codex-app.spec" "Requires:.*at-spi2-atk"
+    assert_not_matches "$REPO_DIR/packaging/linux/codex-app.spec" "Requires:.*mesa-libgbm"
     assert_not_contains "$REPO_DIR/packaging/linux/PKGBUILD.template" "'nodejs>=20'"
     assert_contains "$REPO_DIR/packaging/linux/PKGBUILD.template" "optional override for the bundled managed Node.js runtime"
     assert_contains "$REPO_DIR/scripts/lib/node-runtime.sh" "MANAGED_NODE_VERSION"
@@ -3388,29 +3416,37 @@ test_chrome_native_host_manifest_writer() {
     info "Checking Chrome native host manifest writer"
     local workspace="$TMP_DIR/chrome-native-host-manifest"
     local plugin_dir="$workspace/plugin"
+    local app_dir="$workspace/app"
     local home_dir="$workspace/home"
     local host_path="$workspace/extension-host"
     local manifest_path
 
-    mkdir -p "$plugin_dir/scripts" "$home_dir" "$(dirname "$host_path")"
+    mkdir -p "$plugin_dir/scripts" "$app_dir/.codex-linux" "$home_dir" "$(dirname "$host_path")"
     printf '#!/bin/sh\n' > "$host_path"
     chmod +x "$host_path"
     cat > "$plugin_dir/scripts/extension-id.json" <<'JSON'
 {"extensionId":"abcdefghijklmnopabcdefghijklmnop","extensionHostName":"com.example.codextest"}
 JSON
+    cat > "$app_dir/.codex-linux/chrome-native-host-manifest-paths" <<'EOF'
+# optional browser manifests
+.config/thorium/NativeMessagingHosts
+/tmp/ignored
+../ignored
+.config/thorium/NativeMessagingHosts
+EOF
 
-    python3 - "$REPO_DIR/launcher/start.sh.template" "$host_path" "$home_dir" "$plugin_dir" <<'PY'
+    python3 - "$REPO_DIR/launcher/start.sh.template" "$host_path" "$home_dir" "$plugin_dir" "$app_dir" <<'PY'
 import subprocess
 import sys
 from pathlib import Path
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
-marker = "python3 - \"$host_path\" \"$HOME\" \"$plugin_dir\" <<'PY'\n"
+marker = "python3 - \"$host_path\" \"$HOME\" \"$plugin_dir\" \"$SCRIPT_DIR\" <<'PY'\n"
 start = source.index(marker) + len(marker)
 end = source.index("\nPY\n", start)
 script = source[start:end]
 subprocess.run(
-    ["python3", "-", sys.argv[2], sys.argv[3], sys.argv[4]],
+    ["python3", "-", sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]],
     input=script,
     text=True,
     check=True,
@@ -3420,13 +3456,16 @@ PY
     for relative in \
         ".config/google-chrome/NativeMessagingHosts" \
         ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts" \
-        ".config/chromium/NativeMessagingHosts"; do
+        ".config/chromium/NativeMessagingHosts" \
+        ".config/thorium/NativeMessagingHosts"; do
         manifest_path="$home_dir/$relative/com.example.codextest.json"
         assert_file_exists "$manifest_path"
         assert_contains "$manifest_path" "com.example.codextest"
         assert_contains "$manifest_path" "chrome-extension://abcdefghijklmnopabcdefghijklmnop/"
         assert_contains "$manifest_path" "$host_path"
     done
+    assert_file_not_exists "$home_dir/tmp/ignored/com.example.codextest.json"
+    assert_file_not_exists "$workspace/ignored/com.example.codextest.json"
 }
 
 make_fake_extracted_asar() {
