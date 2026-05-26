@@ -12,6 +12,9 @@ if [ ! -d "$chrome_plugin" ]; then
 fi
 
 mkdir -p "$manifest_paths_dir"
-printf '%s\n' ".config/thorium/NativeMessagingHosts" > "$manifest_paths_file"
+touch "$manifest_paths_file"
+if ! grep -Fxq ".config/thorium/NativeMessagingHosts" "$manifest_paths_file"; then
+    printf '%s\n' ".config/thorium/NativeMessagingHosts" >> "$manifest_paths_file"
+fi
 
 node "$patcher" "$chrome_plugin" >&2

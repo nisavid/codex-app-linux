@@ -153,10 +153,13 @@ test("Thorium stage hook upgrades a core Linux-patched Chrome plugin", () => {
     const workDir = path.join(workspace, "work");
     const chromePlugin = path.join(installDir, "resources", "plugins", "openai-bundled", "plugins", "chrome");
     const featuresConfig = path.join(workspace, "integrations.json");
+    const manifestPathsFile = path.join(installDir, ".codex-linux", "chrome-native-host-manifest-paths");
 
     fs.mkdirSync(workDir, { recursive: true });
     writeFakeChromePlugin(chromePlugin);
     fs.writeFileSync(featuresConfig, JSON.stringify({ enabled: ["thorium-chrome-plugin"] }, null, 2));
+    fs.mkdirSync(path.dirname(manifestPathsFile), { recursive: true });
+    fs.writeFileSync(manifestPathsFile, ".config/vivaldi/NativeMessagingHosts\n", "utf8");
 
     run("node", [path.join(repoRoot, "scripts", "lib", "patch-chrome-plugin.js"), chromePlugin]);
     run("bash", [
@@ -190,10 +193,10 @@ test("Thorium stage hook upgrades a core Linux-patched Chrome plugin", () => {
     assert.match(fs.readFileSync(path.join(scriptsDir, "chrome-is-running.js"), "utf8"), /thorium-browser-avx2/);
     assert.match(fs.readFileSync(path.join(scriptsDir, "check-extension-installed.js"), "utf8"), /linuxThoriumUserDataDirectory/);
     assert.match(fs.readFileSync(path.join(scriptsDir, "open-chrome-window.js"), "utf8"), /commandPath\("thorium-browser-avx2"\)/);
-    assert.equal(
-      fs.readFileSync(path.join(installDir, ".codex-linux", "chrome-native-host-manifest-paths"), "utf8").trim(),
+    assert.deepEqual(fs.readFileSync(manifestPathsFile, "utf8").trim().split(/\n/), [
+      ".config/vivaldi/NativeMessagingHosts",
       ".config/thorium/NativeMessagingHosts",
-    );
+    ]);
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }
