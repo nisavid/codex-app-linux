@@ -40,6 +40,7 @@ import hashlib
 import html.parser
 import pathlib
 import posixpath
+import re
 import sys
 import urllib.parse
 
@@ -47,6 +48,48 @@ import urllib.parse
 webview_root = pathlib.Path(sys.argv[1]).resolve()
 manifest_file = pathlib.Path(sys.argv[2])
 index_path = webview_root / "index.html"
+STATIC_ASSET_SUFFIXES = {
+    ".avif",
+    ".cjs",
+    ".css",
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".js",
+    ".json",
+    ".mjs",
+    ".otf",
+    ".png",
+    ".svg",
+    ".ttf",
+    ".wasm",
+    ".webp",
+    ".woff",
+    ".woff2",
+}
+JS_IMPORT_REF_RE = re.compile(
+    r"""
+    (?:
+        \bimport\s*\(\s*
+        |\brequire\s*\(\s*
+        |\b(?:import|export)\s+
+        |\bfrom\s*
+        |\bnew\s+URL\s*\(\s*
+    )
+    (?P<quote>["'])(?P<ref>[^"']+)(?P=quote)
+    """,
+    re.VERBOSE,
+)
+RELATIVE_ASSET_REF_RE = re.compile(
+    r"""(?P<quote>["'])(?P<ref>(?:\./|\../)[^"']+)(?P=quote)"""
+)
+CSS_IMPORT_REF_RE = re.compile(
+    r"""@import\s+(?:url\(\s*)?(?P<quote>["']?)(?P<ref>[^"'\s;)]+)(?P=quote)\s*\)?"""
+)
+CSS_URL_REF_RE = re.compile(
+    r"""url\(\s*(?P<quote>["']?)(?P<ref>[^"')]+)(?P=quote)\s*\)"""
+)
 
 
 class StartupAssetParser(html.parser.HTMLParser):
@@ -58,20 +101,32 @@ class StartupAssetParser(html.parser.HTMLParser):
         for name, value in attrs:
             if name not in {"href", "src"} or not value:
                 continue
-            parsed = urllib.parse.urlsplit(value)
-            if parsed.scheme or parsed.netloc:
-                continue
-            path = urllib.parse.unquote(parsed.path)
-            if path.startswith("/"):
-                path = path.lstrip("/")
-            if not path:
-                continue
-            normalized = posixpath.normpath(path)
-            if normalized == "." or normalized.startswith("../") or normalized == "..":
-                raise SystemExit(f"webview startup asset escapes content root: {value}")
-            if "\\" in normalized or any(ord(ch) < 32 for ch in normalized):
-                raise SystemExit(f"webview startup asset has unsafe path characters: {value}")
-            self.paths.add(normalized)
+            normalized = normalize_asset_reference(value, "index.html", allow_plain=True)
+            if normalized is not None:
+                self.paths.add(normalized)
+
+
+def normalize_asset_reference(reference, base_relative_path, allow_plain):
+    parsed = urllib.parse.urlsplit(reference.strip())
+    if parsed.scheme or parsed.netloc:
+        return None
+    path = urllib.parse.unquote(parsed.path)
+    if not path or path.startswith("#"):
+        return None
+    if not allow_plain and not path.startswith(("/", "./", "../")):
+        return None
+    if "\\" in path or any(ord(ch) < 32 for ch in path):
+        raise SystemExit(f"webview startup asset has unsafe path characters: {reference}")
+    if path.startswith("/"):
+        combined = path.lstrip("/")
+    else:
+        combined = posixpath.join(posixpath.dirname(base_relative_path), path)
+    normalized = posixpath.normpath(combined)
+    if normalized == "." or normalized.startswith("../") or normalized == "..":
+        raise SystemExit(f"webview startup asset escapes content root: {reference}")
+    if "\\" in normalized or any(ord(ch) < 32 for ch in normalized):
+        raise SystemExit(f"webview startup asset has unsafe path characters: {reference}")
+    return normalized
 
 
 def digest_file(path):
@@ -82,20 +137,87 @@ def digest_file(path):
     return digest.hexdigest()
 
 
-if not index_path.is_file():
-    raise SystemExit(f"missing webview startup document: {index_path}")
-
-parser = StartupAssetParser()
-parser.feed(index_path.read_text(encoding="utf-8", errors="ignore"))
-relative_paths = {"index.html", *parser.paths}
-
-lines = []
-for relative_path in sorted(relative_paths):
+def webview_asset_path(relative_path):
     asset_path = (webview_root / relative_path).resolve()
     try:
         asset_path.relative_to(webview_root)
     except ValueError:
         raise SystemExit(f"webview startup asset escapes content root: {relative_path}")
+    return asset_path
+
+
+def has_static_asset_suffix(reference):
+    path = urllib.parse.urlsplit(reference).path
+    return pathlib.PurePosixPath(path).suffix.lower() in STATIC_ASSET_SUFFIXES
+
+
+def iter_js_dependency_references(text):
+    for match in JS_IMPORT_REF_RE.finditer(text):
+        yield match.group("ref"), False, False
+    for match in RELATIVE_ASSET_REF_RE.finditer(text):
+        reference = match.group("ref")
+        if has_static_asset_suffix(reference):
+            yield reference, False, False
+
+
+def iter_css_dependency_references(text):
+    for pattern in (CSS_IMPORT_REF_RE, CSS_URL_REF_RE):
+        for match in pattern.finditer(text):
+            yield match.group("ref"), False, True
+
+
+def iter_dependency_references(relative_path, asset_path):
+    suffix = pathlib.PurePosixPath(relative_path).suffix.lower()
+    if suffix not in {".js", ".mjs", ".cjs", ".css"}:
+        return
+    text = asset_path.read_text(encoding="utf-8", errors="ignore")
+    if suffix == ".css":
+        yield from iter_css_dependency_references(text)
+    else:
+        yield from iter_js_dependency_references(text)
+
+
+def collect_startup_asset_graph(initial_paths):
+    relative_paths = {"index.html"}
+    pending = []
+
+    def add_path(relative_path):
+        if relative_path not in relative_paths:
+            relative_paths.add(relative_path)
+            pending.append(relative_path)
+
+    for relative_path in sorted(initial_paths):
+        add_path(relative_path)
+
+    while pending:
+        relative_path = pending.pop(0)
+        asset_path = webview_asset_path(relative_path)
+        if not asset_path.is_file():
+            raise SystemExit(f"missing webview startup asset: {relative_path}")
+
+        for reference, require_existing, allow_plain in iter_dependency_references(relative_path, asset_path):
+            normalized = normalize_asset_reference(reference, relative_path, allow_plain)
+            if normalized is None:
+                continue
+            dependency_path = webview_asset_path(normalized)
+            if dependency_path.is_file():
+                add_path(normalized)
+            elif require_existing:
+                raise SystemExit(f"missing webview startup asset: {normalized}")
+
+    return relative_paths
+
+
+if not index_path.is_file():
+    raise SystemExit(f"missing webview startup document: {index_path}")
+
+parser = StartupAssetParser()
+parser.feed(index_path.read_text(encoding="utf-8", errors="ignore"))
+relative_paths = collect_startup_asset_graph(parser.paths)
+
+lines = []
+for relative_path in sorted(relative_paths):
+    asset_path = webview_asset_path(relative_path)
     if not asset_path.is_file():
         raise SystemExit(f"missing webview startup asset: {relative_path}")
     lines.append(f"{digest_file(asset_path)}  {relative_path}\n")

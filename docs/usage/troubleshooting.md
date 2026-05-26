@@ -78,7 +78,7 @@ origin on port `5175`. The launcher starts
 `python3 -m http.server --bind 127.0.0.1 5175` from `content/webview/`, waits
 for the port, and checks that
 `http://127.0.0.1:5175/index.html` contains expected Codex startup markers and
-that the origin serves the startup assets recorded in
+that the origin serves the startup asset graph recorded in
 `.codex-linux/webview-integrity.sha256`. Only loopback access is expected.
 
 If the app opens to a blank window or never leaves the splash screen:

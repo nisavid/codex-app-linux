@@ -1550,9 +1550,23 @@ JSON
         detect_electron_version() { :; }
         write_app_version_metadata() { :; }
         patch_asar() {
-            mkdir -p "$WORK_DIR/app-extracted/webview/assets"
+            mkdir -p "$WORK_DIR/app-extracted/webview/assets/images" \
+                "$WORK_DIR/app-extracted/webview/assets/nested" \
+                "$WORK_DIR/app-extracted/webview/assets/styles"
             printf "%s\n" "<title>Codex</title><div class=\"startup-loader\"></div><script type=\"module\" src=\"./assets/app-test.js\"></script>" > "$WORK_DIR/app-extracted/webview/index.html"
-            printf "%s\n" "asset" > "$WORK_DIR/app-extracted/webview/assets/app-test.js"
+            cat > "$WORK_DIR/app-extracted/webview/assets/app-test.js" <<'\''EOF'\''
+import "./nested/chunk.js";
+import "./styles/app.css";
+console.log("asset");
+console.log("documentation sample: require('./package.json').version");
+EOF
+            printf "%s\n" "console.log(\"chunk\");" > "$WORK_DIR/app-extracted/webview/assets/nested/chunk.js"
+            cat > "$WORK_DIR/app-extracted/webview/assets/styles/app.css" <<'\''EOF'\''
+@import "./nested.css";
+.logo { background-image: url("../images/logo.svg"); }
+EOF
+            printf "%s\n" ".logo { color: white; }" > "$WORK_DIR/app-extracted/webview/assets/styles/nested.css"
+            printf "%s\n" "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>" > "$WORK_DIR/app-extracted/webview/assets/images/logo.svg"
         }
         download_electron() { :; }
         install_app() { :; }
@@ -1568,6 +1582,11 @@ JSON
     assert_file_exists "$install_dir/.codex-linux/webview-integrity.sha256"
     assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  index.html"
     assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  assets/app-test.js"
+    assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  assets/images/logo.svg"
+    assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  assets/nested/chunk.js"
+    assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  assets/styles/app.css"
+    assert_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  assets/styles/nested.css"
+    assert_not_contains "$install_dir/.codex-linux/webview-integrity.sha256" "  assets/package.json"
     (
         cd "$install_dir/content/webview" \
             && sha256sum --check "$install_dir/.codex-linux/webview-integrity.sha256" >/dev/null

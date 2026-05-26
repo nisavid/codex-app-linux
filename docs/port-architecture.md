@@ -295,7 +295,7 @@ Use these documents for deeper follow-up:
 | DMG extraction and version detection | `scripts/lib/dmg.sh` |
 | ASAR extraction, native rebuild, and repack | `scripts/lib/asar-patch.sh`, `scripts/lib/native-modules.sh` |
 | Payload patch registry | `scripts/patch-linux-window-ui.js`, `scripts/patches/`, `port-integrations/` |
-| Webview extraction and startup assets | `scripts/lib/webview-install.sh`, `launcher/webview-server.py` |
+| Webview extraction and startup asset integrity | `scripts/lib/webview-install.sh`, `launcher/webview-server.py` |
 | Launcher orchestration | `launcher/start.sh.template` |
 | Bundled plugin and helper staging | `scripts/lib/bundled-plugins.sh`, `plugins/openai-bundled/`, `computer-use-linux/` |
 | Native package payload | `scripts/lib/package-common.sh`, `packaging/linux/`, `packaging/appimage/` |
