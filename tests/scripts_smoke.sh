@@ -1594,6 +1594,25 @@ EOF
     [ ! -e "$fake_app_dir/content/webview/index.html" ] || fail "Webview was copied into the temporary DMG app instead of the generated app"
 }
 
+test_webview_integrity_manifest_fails_missing_static_import() {
+    info "Checking webview integrity manifest fails on missing static imports"
+    local workspace="$TMP_DIR/webview-integrity-missing-import"
+    local install_dir="$workspace/codex-app"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$install_dir/content/webview/assets"
+    printf "%s\n" "<title>Codex</title><script type=\"module\" src=\"./assets/app-test.js\"></script>" > "$install_dir/content/webview/index.html"
+    printf "%s\n" "import \"./missing.js\";" > "$install_dir/content/webview/assets/app-test.js"
+
+    if CODEX_INSTALLER_SOURCE_ONLY=1 CODEX_INSTALL_DIR="$install_dir" bash -c \
+        'source "$1"; write_webview_integrity_manifest "$2"' \
+        _ "$REPO_DIR/install.sh" "$install_dir" >"$output_log" 2>&1; then
+        fail "Expected webview integrity manifest generation to fail for a missing static import"
+    fi
+
+    assert_contains "$output_log" "missing webview startup asset: assets/missing.js"
+}
+
 test_installer_inspect_mode_does_not_write_install_metadata() {
     info "Checking inspect mode does not write install metadata"
     local workspace="$TMP_DIR/inspect-no-install-metadata"
@@ -5359,6 +5378,7 @@ main() {
     test_installer_detects_electron_version_from_plist
     test_installer_writes_package_version_from_app_plist
     test_installer_copies_webview_into_generated_app
+    test_webview_integrity_manifest_fails_missing_static_import
     test_installer_inspect_mode_does_not_write_install_metadata
     test_rebuild_report_tolerates_bad_patch_json
     test_rebuild_report_records_missing_patch_json
