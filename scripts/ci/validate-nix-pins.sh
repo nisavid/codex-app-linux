@@ -137,7 +137,7 @@ write_pin_evidence_env() {
     local evidence_dmg_sha256="${CODEX_DMG_SHA256:-}"
     local tmp_file
 
-    [ -n "$evidence_dmg_sri" ] || evidence_dmg_sri="$(flake_dmg_sri)"
+    [ -n "$evidence_dmg_sri" ] || evidence_dmg_sri="$(read_nix_fetchurl_field codexDmg hash)"
     if [ -z "$evidence_dmg_sha256" ]; then
         evidence_dmg_sha256="$(sri_to_hex "$evidence_dmg_sri")"
     fi
