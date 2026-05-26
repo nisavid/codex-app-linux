@@ -51,7 +51,7 @@ pending package.
 | Blank window | Check whether port `5175` is already in use: `ss -tlnp \| grep 5175`. |
 | `ERR_CONNECTION_REFUSED` on `:5175` | Confirm `python3` works and port `5175` is free. The launcher serves the extracted webview bundle locally before Electron starts. |
 | `webview bundle is missing or empty` | Regenerate the app with `./install.sh` or `make build-app`; the generated app must contain `content/webview/index.html`. |
-| Stuck on the Codex logo splash | Check `~/.cache/codex-app/launcher.log`. Another process may be serving port `5175`, or `content/webview/` may be incomplete. |
+| Stuck on the Codex logo splash | Check `~/.cache/codex-app/launcher.log`. Another process may be serving port `5175`, or `content/webview/` may be incomplete or fail integrity validation. |
 | `CODEX_CLI_PATH` error | Install the CLI with `npm i -g @openai/codex` or `npm i -g --prefix ~/.local @openai/codex`. If you intentionally use another install, set `CODEX_CLI_PATH=/path/to/codex` for one launch or add `cli_path = "/path/to/codex"` to `~/.config/codex-app-updater/config.toml`. |
 | Electron hangs while the CLI is outdated | Re-run the launcher, then inspect `~/.cache/codex-app/launcher.log` and `~/.local/state/codex-app-updater/service.log`. The CLI preflight is best-effort, uses a 1-hour registry lookup cooldown, falls back to `npm install -g --prefix ~/.local` when global install fails, and warns instead of blocking when automatic refresh fails. |
 | GPU, Vulkan, or Wayland errors | The launcher sets `--ozone-platform-hint=auto` by default and adds `--enable-features=WaylandWindowDecorations` only when `--ozone-platform=wayland` is selected. To force X11, try `./codex-app/start.sh --ozone-platform=x11`. |
@@ -77,8 +77,9 @@ Codex expects the extracted webview assets to be available from a local
 origin on port `5175`. The launcher starts
 `python3 -m http.server --bind 127.0.0.1 5175` from `content/webview/`, waits
 for the port, and checks that
-`http://127.0.0.1:5175/index.html` contains expected Codex startup markers.
-Only loopback access is expected.
+`http://127.0.0.1:5175/index.html` contains expected Codex startup markers and
+that the origin serves the startup assets recorded in
+`.codex-linux/webview-integrity.sha256`. Only loopback access is expected.
 
 If the app opens to a blank window or never leaves the splash screen:
 

@@ -14,11 +14,13 @@
 # Scenarios:
 #   TCP probe       — open localhost port             → both impls succeed
 #   TCP probe       — closed localhost port           → both impls fail
-#   HTTP verify     — body has both required markers  → both impls succeed
+#   HTTP verify     — body has both required markers and trusted assets → both impls succeed
 #   HTTP verify     — 404 path                        → both impls fail
 #   HTTP verify     — wrong <title>                   → both impls fail
 #   HTTP verify     — body missing startup-loader     → both impls fail
 #   HTTP verify     — origin port is dead             → both impls fail
+#   HTTP verify     — startup asset differs from manifest → new impl fails
+#   HTTP verify     — startup asset listed in manifest is missing → new impl fails
 #   watchdog cap    — a 5 s sleeper is killed at ~0.2 s
 #
 # Exit 0 when every verdict matches and the watchdog cap fires within its
@@ -95,12 +97,14 @@ load_new_impls() {
     {
         extract_function webview_port_is_open
         extract_function verify_webview_origin_with_python
+        extract_function verify_webview_integrity_manifest
         extract_function verify_webview_origin
     } > "$extracted"
 
     # Sanity check: extraction must have produced both function definitions.
     grep -q '^webview_port_is_open() {$'  "$extracted" || { rm -f "$extracted"; fail "webview_port_is_open not extracted from template"; }
     grep -q '^verify_webview_origin_with_python() {$' "$extracted" || { rm -f "$extracted"; fail "verify_webview_origin_with_python not extracted from template"; }
+    grep -q '^verify_webview_integrity_manifest() {$' "$extracted" || { rm -f "$extracted"; fail "verify_webview_integrity_manifest not extracted from template"; }
     grep -q '^verify_webview_origin() {$' "$extracted" || { rm -f "$extracted"; fail "verify_webview_origin not extracted from template"; }
 
     # shellcheck source=/dev/null
@@ -192,16 +196,19 @@ PY
 # ─── Fixture server ────────────────────────────────────────────────────────
 setup_server() {
     FIXTURES=$(mktemp -d) || fail "mktemp -d failed"
+    mkdir -p "$FIXTURES/assets" "$FIXTURES/.codex-linux"
     cat >"$FIXTURES/index.html" <<'EOF'
 <!doctype html>
 <html>
 <head><title>Codex</title></head>
 <body>
 <div id="startup-loader">loading</div>
+<script type="module" src="./assets/app-test.js"></script>
 <script>console.log('Codex webview');</script>
 </body>
 </html>
 EOF
+    printf '%s\n' "console.log('trusted startup asset');" > "$FIXTURES/assets/app-test.js"
     cat >"$FIXTURES/wrong-title.html" <<'EOF'
 <!doctype html>
 <html><head><title>Not Codex</title></head>
@@ -212,6 +219,10 @@ EOF
 <html><head><title>Codex</title></head>
 <body>no loader marker</body></html>
 EOF
+    WEBVIEW_INTEGRITY_FILE="$FIXTURES/.codex-linux/webview-integrity.sha256"
+    {
+        (cd "$FIXTURES" && sha256sum index.html assets/app-test.js)
+    } > "$WEBVIEW_INTEGRITY_FILE"
 
     PORT_OPEN=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));p=s.getsockname()[1];s.close();print(p)')
     PORT_CLOSED=$(find_closed_tcp_port) || fail "could not find an unused closed localhost port"
@@ -326,6 +337,10 @@ main() {
     assert_rc "new   missing startup-loader" 1 verify_webview_origin__new  "$URL_NOLOADER"
     assert_rc "orig  dead port"              1 verify_webview_origin__orig "$URL_DEAD"
     assert_rc "new   dead port"              1 verify_webview_origin__new  "$URL_DEAD"
+    printf '%s\n' "console.log('tampered startup asset');" > "$FIXTURES/assets/app-test.js"
+    assert_rc "new   tampered startup asset"  1 verify_webview_origin__new  "$URL_OK"
+    rm -f "$FIXTURES/assets/app-test.js"
+    assert_rc "new   missing startup asset"   1 verify_webview_origin__new  "$URL_OK"
 
     info "watchdog cap — 5 s sleeper must die at ~0.2 s"
     local probe_pid kill_pid t0 t1 elapsed_ms

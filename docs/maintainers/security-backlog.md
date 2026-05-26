@@ -43,7 +43,6 @@ Highest priority:
 
 Medium priority:
 
-- [Reduce local webview spoofing risk](https://github.com/nisavid/codex-app-linux/issues/56)
 - [Review generated-app Electron IPC and file-manager handling](https://github.com/nisavid/codex-app-linux/issues/57)
 - [Review Linux Computer Use desktop-control boundary](https://github.com/nisavid/codex-app-linux/issues/58)
 - [Review experimental remote-control and Codex mobile host boundary](https://github.com/nisavid/codex-app-linux/issues/59)

@@ -132,7 +132,8 @@ Open questions that materially affect risk:
   records app/webview liveness, and launches Electron.
 - **Local webview server:** serves extracted webview assets on loopback port
   `5175` by default through `launcher/webview-server.py`, sends no-cache
-  headers, and validates startup markers before Electron launch.
+  headers, and validates startup markers plus generated startup-asset hashes
+  before Electron launch.
 - **Port integration and patch registry:** applies descriptor-backed core patches
   and configurable integration patches to generated main-process, webview, and
   extracted-app bundles; required official-app patches must fail closed in
@@ -174,7 +175,7 @@ Open questions that materially affect risk:
 | Official OpenAI Codex DMG | Internet/CDN/OpenAI artifact hosting | local installer, updater, Nix hash workflow | Authenticity, freshness, downgrade, malicious payload |
 | Build toolchain | npm, Electron releases, Rust crates, distro tools, 7z/7zz | generated app and packages | Dependency compromise, unpinned downloads, malicious native modules |
 | Generated app bundle | extracted official app and patched ASAR | Linux Electron runtime | Renderer isolation, IPC, navigation, local file access |
-| Local webview origin | loopback HTTP server | Electron renderer | Same-user port spoofing, stale assets, marker spoofing |
+| Local webview origin | loopback HTTP server | Electron renderer | Same-user port spoofing, stale assets, served-asset substitution |
 | Port integration patches | generated app bundle | desktop launch helpers and platform integrations | Descriptor drift, command launch semantics, unsafe environment inheritance |
 | Remote-control/mobile patches | official app and account/mobile service state | local UI gates, app-server config, XDG device-key store | Software key theft, misleading availability, confused authorization state |
 | User config/state/cache | XDG user-writable files | updater decisions and rebuild inputs | Path substitution, stale state, developer-mode misuse, secret leakage |
@@ -238,8 +239,8 @@ flowchart LR
   local build directories.
 - Official OpenAI Codex DMG bytes, HTTP metadata, npm metadata/tarballs,
   Electron archives, Rust crates, distro package state, and CI workflow inputs.
-- Local loopback ports and any marker-compatible content served by same-user
-  processes.
+- Local loopback ports and any generated startup-asset-compatible content served
+  by same-user processes.
 - Generated ASAR/webview content, renderer messages, plugin manifests, and
   Computer Use requests.
 - Remote-control app-server config values, generated remote UI
@@ -364,15 +365,16 @@ context isolation is disabled or insufficient.
 **Impact:** High for user account compromise; higher if combined with package
 or updater trust failures.
 
-**Existing mitigations:** loopback bind, startup marker checks, live app marker
-preservation, default-enabled Chromium sandboxing, explicit
+**Existing mitigations:** loopback bind, startup marker checks, generated
+webview startup-asset hash validation, live app marker preservation,
+default-enabled Chromium sandboxing, explicit
 `CODEX_APP_DISABLE_ELECTRON_SANDBOX` opt-out, static
 `scripts/inspect-electron-security.js` release-gate inspection, and
 `launcher/webview-server.py` no-cache headers.
 
-**Gaps:** fixed port and marker checks are spoofable by same-user processes;
-generated bundle IPC, CSP, navigation, and Electron `webPreferences` require
-review for each public release candidate.
+**Gaps:** fixed port reuse remains a same-user trust input; generated bundle
+IPC, CSP, navigation, and Electron `webPreferences` require review for each
+public release candidate.
 
 **Priority:** High.
 
@@ -550,17 +552,16 @@ still contain arbitrary sensitive values.
 1. Bind privileged installs to a verified package digest and identity.
 2. Attach Apple signature/notarization and version evidence to hash-refresh PRs.
 3. Review generated app Electron security settings before public releases.
-4. Reduce fixed-port local webview spoofing.
-5. Add package signing, checksums, and hosted provenance for public artifacts.
-6. Review Computer Use command routing, screenshots, and input backends whenever
+4. Add package signing, checksums, and hosted provenance for public artifacts.
+5. Review Computer Use command routing, screenshots, and input backends whenever
    that surface changes.
-7. Review remote-control/mobile host enrollment, UI gates, and Linux device-key
+6. Review remote-control/mobile host enrollment, UI gates, and Linux device-key
    storage as the default-enabled surface evolves beyond experimental use.
-8. Review Linux open-target discovery heuristics and launch environment
+7. Review Linux open-target discovery heuristics and launch environment
    sanitization when adding target families or `.desktop` handling.
-9. Review npm CLI auto-upgrade trust and add an approved-version or consent
+8. Review npm CLI auto-upgrade trust and add an approved-version or consent
    path.
-10. Redact credential-looking subprocess output before persistence.
+9. Redact credential-looking subprocess output before persistence.
 
 ## Focus Paths For Manual Security Review
 

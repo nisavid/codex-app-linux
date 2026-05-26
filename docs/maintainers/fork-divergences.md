@@ -335,7 +335,7 @@ ASAR patchers or launch flags change.
 **Fork delta:** The launcher keeps webview server state under the local app
 identity and XDG state paths, preserves live app markers during warm-start or
 second-instance handoff, and keeps origin validation tied to loopback startup
-assets before Electron launch.
+assets plus `.codex-linux/webview-integrity.sha256` before Electron launch.
 
 **Upstream baseline:** Upstream already has the local webview server model and
 much of the launcher lifecycle. This fork preserves and renames that behavior
@@ -347,7 +347,7 @@ launches must avoid LAN exposure, stale servers, and PID ownership races.
 **Current paths:** `launcher/start.sh.template`,
 `launcher/webview-server.py`, `scripts/lib/webview-install.sh`, `install.sh`,
 `docs/webview-server-evaluation.md`, `docs/usage/troubleshooting.md`,
-`tests/scripts_smoke.sh`.
+`tests/scripts_smoke.sh`, `tests/webview_probe_equivalence.sh`.
 
 **Preservation checks:** Use `docs/webview-server-evaluation.md` before
 changing the local server model, port behavior, or warm-start adoption.
