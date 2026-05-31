@@ -137,7 +137,10 @@ pub async fn build_update_from(
             "CODEX_REBUILD_REPORT_JSON",
             workspace.reports_dir.join("rebuild-report.json"),
         )
-        .env("CODEX_MANAGED_NODE_SOURCE", workspace.bundle_dir.join("node-runtime"))
+        .env(
+            "CODEX_MANAGED_NODE_SOURCE",
+            workspace.bundle_dir.join("node-runtime"),
+        )
         .env("PATH", &build_path)
         .current_dir(&workspace.bundle_dir);
     // Honor the user's saved integration selection (the in-app Update picker

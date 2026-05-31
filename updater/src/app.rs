@@ -5,8 +5,8 @@ use crate::{
     cli::{Cli, Commands},
     codex_cli,
     config::{RuntimeConfig, RuntimePaths},
-    dmg_source, install, install_rollback, liveness, logging, notify, package_verification,
-    redaction, rollback, feature_picker,
+    dmg_source, feature_picker, install, install_rollback, liveness, logging, notify,
+    package_verification, redaction, rollback,
     state::{CliStatus, DmgVerification, DmgVerificationResult, PersistedState, UpdateStatus},
     trust, wrapper, wrapper_apply,
 };
@@ -3565,6 +3565,7 @@ mod tests {
         Ok(())
     }
 
+    #[test]
     fn status_clears_superseded_ready_update() -> Result<()> {
         let _env_guard = crate::test_util::env_lock();
         let temp = tempfile::tempdir()?;

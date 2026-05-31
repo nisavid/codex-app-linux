@@ -24,9 +24,9 @@ use tracing::{info, warn};
 use crate::{
     builder,
     config::{RuntimeConfig, RuntimePaths},
-    install, notify,
+    dmg_source, install, notify,
     state::{PersistedState, UpdateStatus},
-    dmg_source, wrapper,
+    wrapper,
 };
 
 /// How the running app was installed, which determines how a wrapper update is

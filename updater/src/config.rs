@@ -462,14 +462,16 @@ mod tests {
     }
 
     #[test]
-    fn effective_integration_config_prefers_saved_picker_config_then_builder_config() -> Result<()> {
+    fn effective_integration_config_prefers_saved_picker_config_then_builder_config() -> Result<()>
+    {
         let _guard = crate::test_util::env_lock();
         let temp = tempdir()?;
         let settings_dir = temp.path().join("settings");
         let settings_file = settings_dir.join("settings.json");
         let saved_integration_config = settings_dir.join("port-integrations.json");
-        let builder_integration_config =
-            temp.path().join("builder/port-integrations/integrations.json");
+        let builder_integration_config = temp
+            .path()
+            .join("builder/port-integrations/integrations.json");
 
         fs::create_dir_all(builder_integration_config.parent().unwrap())?;
         fs::write(

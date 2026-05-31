@@ -58,7 +58,11 @@ enum PickOutcome {
 
 /// Runs the integration picker. Returns `Ok(())` in every non-panic case; a skip
 /// (no display, no dialog tool, no catalog, cancelled) leaves integrations unchanged.
-pub fn run_pick_integrations(config: &RuntimeConfig, paths: &RuntimePaths, json: bool) -> Result<()> {
+pub fn run_pick_integrations(
+    config: &RuntimeConfig,
+    paths: &RuntimePaths,
+    json: bool,
+) -> Result<()> {
     let outcome = pick(config, paths)?;
     if json {
         match &outcome {
@@ -371,7 +375,8 @@ fn show_picker(
 
 /// Writes the chosen enabled set to the stable integration-config path.
 fn write_integration_config(enabled: &[String]) -> Result<()> {
-    let path = config::integration_config_path().context("could not resolve integration config path")?;
+    let path =
+        config::integration_config_path().context("could not resolve integration config path")?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("Failed to create {}", dir.display()))?;

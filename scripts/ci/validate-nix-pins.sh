@@ -286,19 +286,11 @@ ASAR_PATH="$APP_DIR/Contents/Resources/app.asar"
 PLIST_PATH="$APP_DIR/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/Info.plist"
 APP_PLIST_PATH="$APP_DIR/Contents/Info.plist"
 [ -f "$ASAR_PATH" ] || fail "Could not find app.asar in DMG"
-[ -f "$PLIST_PATH" ] || fail "Could not find Electron Info.plist in DMG"
 [ -f "$APP_PLIST_PATH" ] || fail "Could not find app Info.plist in DMG"
 ASAR_EXTRACT_DIR="$WORK_DIR/app-extracted"
 npx --yes asar extract "$ASAR_PATH" "$ASAR_EXTRACT_DIR"
 
-dmg_electron_version="$(python3 - "$PLIST_PATH" <<'PY'
-import plistlib
-import sys
-
-with open(sys.argv[1], "rb") as handle:
-    print(plistlib.load(handle).get("CFBundleVersion", ""))
-PY
-)"
+dmg_electron_version="$(detect_dmg_electron_version "$APP_DIR" "$ASAR_EXTRACT_DIR")"
 dmg_bundle_version="$(python3 - "$APP_PLIST_PATH" <<'PY'
 import plistlib
 import sys
