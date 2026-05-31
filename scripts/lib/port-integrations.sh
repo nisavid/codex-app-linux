@@ -7,6 +7,7 @@
 run_port_integration_stage_hooks() {
     local app_dir="${1:-}"
     local integration_helper="$SCRIPT_DIR/scripts/lib/port-integrations.js"
+    local hooks_output
     local integration_id
     local hook_path
 
@@ -21,6 +22,11 @@ run_port_integration_stage_hooks() {
         return 1
     fi
 
+    if ! hooks_output="$(node "$integration_helper" --stage-hooks)"; then
+        warn "port integration stage hook discovery failed"
+        return 1
+    fi
+
     while IFS=$'\t' read -r integration_id hook_path; do
         [ -n "$integration_id" ] || continue
         [ -n "$hook_path" ] || continue
@@ -29,5 +35,5 @@ run_port_integration_stage_hooks() {
             warn "port integration stage hook failed: $integration_id"
             return 1
         fi
-    done < <(node "$integration_helper" --stage-hooks)
+    done <<< "$hooks_output"
 }

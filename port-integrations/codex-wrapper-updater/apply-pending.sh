@@ -44,6 +44,10 @@ resolve_update_manager() {
         echo "$CODEX_UPDATE_MANAGER_PATH"
         return 0
     fi
+    if [ -n "${CODEX_APP_UPDATER_PATH:-}" ] && [ -x "$CODEX_APP_UPDATER_PATH" ]; then
+        echo "$CODEX_APP_UPDATER_PATH"
+        return 0
+    fi
     command -v codex-app-updater 2>/dev/null
 }
 

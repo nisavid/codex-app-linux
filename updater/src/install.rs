@@ -118,6 +118,21 @@ impl ExpectedPackage {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InstallOptions {
+    allow_same_version: bool,
+}
+
+impl InstallOptions {
+    pub fn new(allow_same_version: bool, expected: Option<&ExpectedPackage>) -> Result<Self> {
+        anyhow::ensure!(
+            !allow_same_version || expected.is_some(),
+            "--allow-same-version requires expected package verification arguments"
+        );
+        Ok(Self { allow_same_version })
+    }
+}
+
 pub fn expected_package_from_args(
     expected_sha256: Option<String>,
     expected_package_name: Option<String>,
@@ -347,8 +362,11 @@ fn installed_pacman_version() -> String {
     }
 }
 
-/// Installs a rebuilt Debian package on the local machine.
-pub fn install_deb(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()> {
+pub fn install_deb_with_options(
+    path: &Path,
+    expected: Option<&ExpectedPackage>,
+    options: InstallOptions,
+) -> Result<()> {
     anyhow::ensure!(
         path.exists(),
         "Debian package not found: {}",
@@ -358,10 +376,10 @@ pub fn install_deb(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()
     let staged_path = staged.path();
     verify_expected_package(staged_path, expected)?;
     ensure_deb_package_identity(staged_path)?;
-    ensure_upgrade_path(staged_path)?;
+    ensure_upgrade_path(staged_path, options.allow_same_version)?;
 
     if program_exists(APT_CANDIDATES, "apt") {
-        let mut command = apt_install_command(staged_path)?;
+        let mut command = apt_install_command(staged_path, options.allow_same_version)?;
         run_install(&mut command).context("apt install failed")?;
         return Ok(());
     }
@@ -370,33 +388,39 @@ pub fn install_deb(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()
     run_install(&mut command).context("dpkg -i failed")
 }
 
-/// Installs a rebuilt RPM package on the local machine.
-pub fn install_rpm(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()> {
+pub fn install_rpm_with_options(
+    path: &Path,
+    expected: Option<&ExpectedPackage>,
+    options: InstallOptions,
+) -> Result<()> {
     anyhow::ensure!(path.exists(), "RPM package not found: {}", path.display());
     let staged = stage_package_for_privileged_install(path)?;
     let staged_path = staged.path();
     verify_expected_package(staged_path, expected)?;
     ensure_rpm_package_identity(staged_path)?;
-    ensure_upgrade_path_rpm(staged_path)?;
+    ensure_upgrade_path_rpm(staged_path, options.allow_same_version)?;
 
     if program_exists(DNF_CANDIDATES, "dnf") || program_exists(DNF_CANDIDATES, "dnf5") {
-        let mut command = dnf_install_command(staged_path)?;
+        let mut command = dnf_install_command(staged_path, options.allow_same_version)?;
         run_install(&mut command).context("dnf install failed")?;
         return Ok(());
     }
 
     if program_exists(ZYPPER_CANDIDATES, "zypper") {
-        let mut command = zypper_install_command(staged_path)?;
+        let mut command = zypper_install_command(staged_path, options.allow_same_version)?;
         run_install(&mut command).context("zypper install failed")?;
         return Ok(());
     }
 
-    let mut command = rpm_install_command(staged_path);
+    let mut command = rpm_install_command(staged_path, options.allow_same_version);
     run_install(&mut command).context("rpm -Uvh failed")
 }
 
-/// Installs a rebuilt pacman package on the local machine.
-pub fn install_pacman(path: &Path, expected: Option<&ExpectedPackage>) -> Result<()> {
+pub fn install_pacman_with_options(
+    path: &Path,
+    expected: Option<&ExpectedPackage>,
+    options: InstallOptions,
+) -> Result<()> {
     anyhow::ensure!(
         path.exists(),
         "Pacman package not found: {}",
@@ -405,7 +429,7 @@ pub fn install_pacman(path: &Path, expected: Option<&ExpectedPackage>) -> Result
     let staged = stage_package_for_privileged_install(path)?;
     let staged_path = staged.path();
     verify_expected_package(staged_path, expected)?;
-    ensure_upgrade_path_pacman(staged_path)?;
+    ensure_upgrade_path_pacman(staged_path, options.allow_same_version)?;
 
     let mut command = pacman_install_command(staged_path);
     run_install(&mut command).context("pacman -U failed")
@@ -413,11 +437,21 @@ pub fn install_pacman(path: &Path, expected: Option<&ExpectedPackage>) -> Result
 
 /// Builds the `pkexec` command used for privileged package installation.
 pub fn pkexec_command(package_path: &Path, expected: Option<&ExpectedPackage>) -> Result<Command> {
+    pkexec_command_with_options(package_path, expected, false)
+}
+
+pub fn pkexec_command_with_options(
+    package_path: &Path,
+    expected: Option<&ExpectedPackage>,
+    allow_same_version: bool,
+) -> Result<Command> {
+    let _options = InstallOptions::new(allow_same_version, expected)?;
     let updater_binary = updater_binary_for_privileged_install()?;
     Ok(pkexec_command_with_updater_binary(
         &updater_binary,
         package_path,
         expected,
+        allow_same_version,
     ))
 }
 
@@ -425,6 +459,7 @@ fn pkexec_command_with_updater_binary(
     updater_binary: &Path,
     package_path: &Path,
     expected: Option<&ExpectedPackage>,
+    allow_same_version: bool,
 ) -> Command {
     let subcommand = match PackageKind::from_path(package_path) {
         PackageKind::Rpm => "install-rpm",
@@ -446,6 +481,9 @@ fn pkexec_command_with_updater_binary(
             .arg(expected.package_name())
             .arg("--expected-package-version")
             .arg(expected.package_version());
+    }
+    if allow_same_version {
+        command.arg("--allow-same-version");
     }
     command
 }
@@ -704,15 +742,20 @@ fn parse_pacman_installed_version(stdout: Vec<u8>) -> String {
     }
 }
 
-fn ensure_upgrade_path(path: &Path) -> Result<()> {
+fn ensure_upgrade_path(path: &Path, allow_same_version: bool) -> Result<()> {
     let installed = installed_package_version();
     if installed == "unknown" {
         return Ok(());
     }
 
     let candidate = deb_package_version(path)?;
+    let version_allowed = if allow_same_version {
+        is_version_newer_or_same(&candidate, &installed)?
+    } else {
+        is_version_newer(&candidate, &installed)?
+    };
     anyhow::ensure!(
-        is_version_newer(&candidate, &installed)?,
+        version_allowed,
         "Refusing to install non-newer package version {candidate} over installed version {installed}"
     );
     Ok(())
@@ -752,36 +795,46 @@ fn ensure_rpm_package_identity(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn ensure_upgrade_path_pacman(path: &Path) -> Result<()> {
+fn ensure_upgrade_path_pacman(path: &Path, allow_same_version: bool) -> Result<()> {
     let installed = installed_pacman_version();
     if installed == "unknown" {
         return Ok(());
     }
 
     let candidate = pacman_package_version(path)?;
+    let version_allowed = if allow_same_version {
+        is_version_newer_or_same_pacman(&candidate, &installed)?
+    } else {
+        is_version_newer_pacman(&candidate, &installed)?
+    };
     anyhow::ensure!(
-        is_version_newer_pacman(&candidate, &installed)?,
+        version_allowed,
         "Refusing to install non-newer package version {candidate} over installed version {installed}"
     );
     Ok(())
 }
 
-fn ensure_upgrade_path_rpm(path: &Path) -> Result<()> {
+fn ensure_upgrade_path_rpm(path: &Path, allow_same_version: bool) -> Result<()> {
     let installed = installed_rpm_version();
     if installed == "unknown" {
         return Ok(());
     }
 
     let candidate = rpm_package_version(path)?;
+    let version_allowed = match compare_generated_package_versions(&candidate, &installed) {
+        Some(std::cmp::Ordering::Greater) => true,
+        Some(std::cmp::Ordering::Equal) => allow_same_version,
+        _ => false,
+    };
     anyhow::ensure!(
-        generated_package_version_is_newer(&candidate, &installed),
+        version_allowed,
         "Refusing to install non-newer package version {candidate} over installed version {installed}"
     );
     Ok(())
 }
 
-fn apt_install_command(path: &Path) -> Result<Command> {
-    install_command_in_parent(&program_path(APT_CANDIDATES, "apt"), path)
+fn apt_install_command(path: &Path, reinstall: bool) -> Result<Command> {
+    install_command_in_parent(&program_path(APT_CANDIDATES, "apt"), path, reinstall)
 }
 
 fn dpkg_install_command(path: &Path) -> Command {
@@ -790,11 +843,11 @@ fn dpkg_install_command(path: &Path) -> Command {
     command
 }
 
-fn dnf_install_command(path: &Path) -> Result<Command> {
-    install_command_in_parent(&program_path(DNF_CANDIDATES, "dnf"), path)
+fn dnf_install_command(path: &Path, reinstall: bool) -> Result<Command> {
+    install_command_in_parent(&program_path(DNF_CANDIDATES, "dnf"), path, reinstall)
 }
 
-fn zypper_install_command(path: &Path) -> Result<Command> {
+fn zypper_install_command(path: &Path, force: bool) -> Result<Command> {
     let program = program_path(ZYPPER_CANDIDATES, "zypper");
     let parent = path
         .parent()
@@ -808,12 +861,15 @@ fn zypper_install_command(path: &Path) -> Result<Command> {
     let mut command = Command::new(program);
     command
         .current_dir(parent)
-        .args(["--non-interactive", "install", "--allow-unsigned-rpm", "-y"])
-        .arg(format!("./{file_name}"));
+        .args(["--non-interactive", "install", "--allow-unsigned-rpm"]);
+    if force {
+        command.arg("--force");
+    }
+    command.arg("-y").arg(format!("./{file_name}"));
     Ok(command)
 }
 
-fn install_command_in_parent(program: &Path, path: &Path) -> Result<Command> {
+fn install_command_in_parent(program: &Path, path: &Path, reinstall: bool) -> Result<Command> {
     let program_name = program
         .file_name()
         .and_then(|name| name.to_str())
@@ -830,15 +886,21 @@ fn install_command_in_parent(program: &Path, path: &Path) -> Result<Command> {
     let mut command = Command::new(program);
     command
         .current_dir(parent)
-        .arg("install")
-        .arg("-y")
-        .arg(format!("./{file_name}"));
+        .arg(if reinstall { "reinstall" } else { "install" });
+    if program_name == "apt" && reinstall {
+        command.arg("--reinstall");
+    }
+    command.arg("-y").arg(format!("./{file_name}"));
     Ok(command)
 }
 
-fn rpm_install_command(path: &Path) -> Command {
+fn rpm_install_command(path: &Path, replace_package: bool) -> Command {
     let mut command = Command::new(program_path(RPM_CANDIDATES, "rpm"));
-    command.args(["-Uvh", "--"]).arg(path.as_os_str());
+    command.arg("-Uvh");
+    if replace_package {
+        command.arg("--replacepkgs");
+    }
+    command.arg("--").arg(path.as_os_str());
     command
 }
 
@@ -1012,6 +1074,14 @@ fn is_version_newer(candidate: &str, installed: &str) -> Result<bool> {
     Ok(status.success())
 }
 
+fn is_version_newer_or_same(candidate: &str, installed: &str) -> Result<bool> {
+    let status = Command::new(program_path(DPKG_CANDIDATES, "dpkg"))
+        .args(["--compare-versions", candidate, "ge", installed])
+        .status()
+        .context("Failed to compare Debian package versions")?;
+    Ok(status.success())
+}
+
 fn pacman_package_version(path: &Path) -> Result<String> {
     let file_name = path
         .file_name()
@@ -1035,6 +1105,14 @@ fn pacman_package_version(path: &Path) -> Result<String> {
 }
 
 fn is_version_newer_pacman(candidate: &str, installed: &str) -> Result<bool> {
+    Ok(compare_pacman_versions(candidate, installed)? > 0)
+}
+
+fn is_version_newer_or_same_pacman(candidate: &str, installed: &str) -> Result<bool> {
+    Ok(compare_pacman_versions(candidate, installed)? >= 0)
+}
+
+fn compare_pacman_versions(candidate: &str, installed: &str) -> Result<i32> {
     let output = Command::new(program_path(VERCMP_CANDIDATES, "vercmp"))
         .args([candidate, installed])
         .output()
@@ -1050,9 +1128,10 @@ fn is_version_newer_pacman(candidate: &str, installed: &str) -> Result<bool> {
         .trim()
         .parse::<i32>()
         .context("vercmp returned an invalid comparison value")?;
-    Ok(comparison > 0)
+    Ok(comparison)
 }
 
+#[cfg(test)]
 fn generated_package_version_is_newer(candidate: &str, installed: &str) -> bool {
     matches!(
         compare_generated_package_versions(candidate, installed),
@@ -1138,6 +1217,7 @@ mod tests {
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.deb"),
             None,
+            false,
         );
         let args: Vec<_> = command
             .get_args()
@@ -1161,6 +1241,7 @@ mod tests {
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.rpm"),
             None,
+            false,
         );
         let args: Vec<_> = command
             .get_args()
@@ -1189,6 +1270,7 @@ mod tests {
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.deb"),
             Some(&expected),
+            false,
         );
         let args: Vec<_> = command
             .get_args()
@@ -1214,6 +1296,34 @@ mod tests {
     }
 
     #[test]
+    fn same_version_wrapper_install_is_explicitly_flagged() -> Result<()> {
+        let expected = ExpectedPackage::new(
+            "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a",
+            "codex-app",
+            "26.429.20946",
+        )?;
+        let command = pkexec_command_with_updater_binary(
+            Path::new("/usr/bin/codex-app-updater"),
+            Path::new("/tmp/update.deb"),
+            Some(&expected),
+            true,
+        );
+        let args: Vec<_> = command
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.contains(&"--allow-same-version".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn same_version_install_requires_expected_package_binding() {
+        let error = InstallOptions::new(true, None)
+            .expect_err("same-version installs must be package-bound");
+        assert!(error.to_string().contains("expected package verification"));
+    }
+
+    #[test]
     fn rejects_uninstalled_updater_path_for_pkexec() {
         let temp = tempfile::tempdir().expect("tempdir");
         let missing = temp.path().join("missing-codex-app-updater");
@@ -1226,7 +1336,7 @@ mod tests {
 
     #[test]
     fn builds_local_apt_install_command() -> Result<()> {
-        let command = apt_install_command(Path::new("/tmp/build/codex.deb"))?;
+        let command = apt_install_command(Path::new("/tmp/build/codex.deb"), false)?;
         assert!(command.get_program().to_string_lossy().ends_with("apt"));
         assert_eq!(
             command
@@ -1240,7 +1350,7 @@ mod tests {
 
     #[test]
     fn builds_local_dnf_install_command() -> Result<()> {
-        let command = dnf_install_command(Path::new("/tmp/build/codex.rpm"))?;
+        let command = dnf_install_command(Path::new("/tmp/build/codex.rpm"), false)?;
         let program = command.get_program().to_string_lossy();
         assert!(program.ends_with("dnf") || program.ends_with("dnf5"));
         assert_eq!(
@@ -1255,7 +1365,7 @@ mod tests {
 
     #[test]
     fn builds_local_zypper_install_command() -> Result<()> {
-        let command = zypper_install_command(Path::new("/tmp/build/codex.rpm"))?;
+        let command = zypper_install_command(Path::new("/tmp/build/codex.rpm"), false)?;
         assert!(command.get_program().to_string_lossy().ends_with("zypper"));
         assert_eq!(
             command
@@ -1269,6 +1379,50 @@ mod tests {
                 "-y",
                 "./codex.rpm"
             ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn same_version_installs_use_reinstall_command_shapes() -> Result<()> {
+        let apt = apt_install_command(Path::new("/tmp/build/codex.deb"), true)?;
+        assert_eq!(
+            apt.get_args()
+                .map(|value| value.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            vec!["reinstall", "--reinstall", "-y", "./codex.deb"]
+        );
+
+        let dnf = dnf_install_command(Path::new("/tmp/build/codex.rpm"), true)?;
+        assert_eq!(
+            dnf.get_args()
+                .map(|value| value.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            vec!["reinstall", "-y", "./codex.rpm"]
+        );
+
+        let zypper = zypper_install_command(Path::new("/tmp/build/codex.rpm"), true)?;
+        assert_eq!(
+            zypper
+                .get_args()
+                .map(|value| value.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            vec![
+                "--non-interactive",
+                "install",
+                "--allow-unsigned-rpm",
+                "--force",
+                "-y",
+                "./codex.rpm"
+            ]
+        );
+
+        let rpm = rpm_install_command(Path::new("/tmp/build/codex.rpm"), true);
+        assert_eq!(
+            rpm.get_args()
+                .map(|value| value.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            vec!["-Uvh", "--replacepkgs", "--", "/tmp/build/codex.rpm"]
         );
         Ok(())
     }
@@ -1438,6 +1592,7 @@ mod tests {
             Path::new("/usr/bin/codex-app-updater"),
             Path::new("/tmp/update.pkg.tar.zst"),
             None,
+            false,
         );
         let args: Vec<_> = command
             .get_args()
@@ -1463,6 +1618,10 @@ mod tests {
 
         assert!(is_version_newer(
             "2026.03.24.220000+88f07cd3",
+            "2026.03.24.120000+afed8a8e"
+        )?);
+        assert!(is_version_newer_or_same(
+            "2026.03.24.120000+afed8a8e",
             "2026.03.24.120000+afed8a8e"
         )?);
         assert!(!is_version_newer(
@@ -1502,10 +1661,12 @@ mod tests {
 
     #[test]
     fn install_commands_require_a_file_name() {
-        let deb_error = apt_install_command(Path::new("/")).expect_err("root is not a package");
-        let rpm_error = dnf_install_command(Path::new("/")).expect_err("root is not a package");
+        let deb_error =
+            apt_install_command(Path::new("/"), false).expect_err("root is not a package");
+        let rpm_error =
+            dnf_install_command(Path::new("/"), false).expect_err("root is not a package");
         let zypper_error =
-            zypper_install_command(Path::new("/")).expect_err("root is not a package");
+            zypper_install_command(Path::new("/"), false).expect_err("root is not a package");
 
         assert!(deb_error.to_string().contains("apt package path has no"));
         assert!(rpm_error.to_string().contains("dnf package path has no"));

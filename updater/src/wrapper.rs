@@ -175,7 +175,15 @@ fn parse_wrapper_version(content: &str) -> Option<String> {
         if let Some(rest) = trimmed.strip_prefix("version") {
             let rest = rest.trim_start();
             if let Some(rest) = rest.strip_prefix('=') {
-                let value = rest.trim().trim_matches('"');
+                let raw_value = rest.trim();
+                let value = if let Some(value) = raw_value
+                    .strip_prefix('"')
+                    .and_then(|value| value.strip_suffix('"'))
+                {
+                    value
+                } else {
+                    continue;
+                };
                 if !value.is_empty() {
                     return Some(value.to_string());
                 }
@@ -202,6 +210,7 @@ fn metadata_source(value: &Value) -> Option<&Value> {
 }
 
 fn string_field<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    // Ignore bytes after an embedded NUL so malformed metadata cannot smuggle suffixes.
     value.get(key)?.as_str()?.trim().split('\0').next()
 }
 

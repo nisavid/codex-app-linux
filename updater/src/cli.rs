@@ -67,6 +67,8 @@ pub enum Commands {
         expected_package_name: Option<String>,
         #[arg(long, hide = true)]
         expected_package_version: Option<String>,
+        #[arg(long, hide = true)]
+        allow_same_version: bool,
     },
     /// Install an RPM package (.rpm) with elevated privileges.
     InstallRpm {
@@ -78,6 +80,8 @@ pub enum Commands {
         expected_package_name: Option<String>,
         #[arg(long, hide = true)]
         expected_package_version: Option<String>,
+        #[arg(long, hide = true)]
+        allow_same_version: bool,
     },
     /// Install a pacman package (.pkg.tar.zst) with elevated privileges.
     InstallPacman {
@@ -89,6 +93,8 @@ pub enum Commands {
         expected_package_name: Option<String>,
         #[arg(long, hide = true)]
         expected_package_version: Option<String>,
+        #[arg(long, hide = true)]
+        allow_same_version: bool,
     },
     /// Install a Debian package as an explicit rollback with elevated privileges.
     InstallRollbackDeb {

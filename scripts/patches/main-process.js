@@ -591,8 +591,8 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
     `openNativeTrayMenu(){this.updateChronicleTrayIcon();let e=${electronVar}.Menu.buildFromTemplate(this.getNativeTrayMenuItems());`;
   const trayMenuBuildExistingPatch =
     `openNativeTrayMenu(){this.updateChronicleTrayIcon();let e=process.platform===\`linux\`&&this.setLinuxTrayContextMenu?this.setLinuxTrayContextMenu():${electronVar}.Menu.buildFromTemplate(this.getNativeTrayMenuItems());`;
-  const trayMenuBuildPatch =
-    `openNativeTrayMenu(){if(process.platform===\`linux\`&&(typeof codexLinuxIsQuitInProgress===\`function\`&&codexLinuxIsQuitInProgress()))return;this.updateChronicleTrayIcon();let e=process.platform===\`linux\`&&this.setLinuxTrayContextMenu?this.setLinuxTrayContextMenu():${electronVar}.Menu.buildFromTemplate(this.getNativeTrayMenuItems());`;
+  const trayMenuBuildPatch = (menuVar) =>
+    `openNativeTrayMenu(){if(process.platform===\`linux\`&&(typeof codexLinuxIsQuitInProgress===\`function\`&&codexLinuxIsQuitInProgress()))return;this.updateChronicleTrayIcon();let e=process.platform===\`linux\`&&this.setLinuxTrayContextMenu?this.setLinuxTrayContextMenu():${menuVar}.Menu.buildFromTemplate(this.getNativeTrayMenuItems());`;
   const trayMenuBuildAnyAliasRegex =
     /openNativeTrayMenu\(\)\{this\.updateChronicleTrayIcon\(\);let e=([A-Za-z_$][\w$]*)\.Menu\.buildFromTemplate\(this\.getNativeTrayMenuItems\(\)\);/;
   const trayMenuBuildExistingAnyAliasRegex =
@@ -600,13 +600,17 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
   if (patchedSource.includes("openNativeTrayMenu(){if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress()))return;")) {
     // Already patched.
   } else if (patchedSource.includes(trayMenuBuildExistingPatch)) {
-    patchedSource = patchedSource.replace(trayMenuBuildExistingPatch, trayMenuBuildPatch);
+    patchedSource = patchedSource.replace(trayMenuBuildExistingPatch, trayMenuBuildPatch(electronVar));
   } else if (trayMenuBuildExistingAnyAliasRegex.test(patchedSource)) {
-    patchedSource = patchedSource.replace(trayMenuBuildExistingAnyAliasRegex, trayMenuBuildPatch);
+    patchedSource = patchedSource.replace(trayMenuBuildExistingAnyAliasRegex, (_match, menuVar) =>
+      trayMenuBuildPatch(menuVar),
+    );
   } else if (patchedSource.includes(trayMenuBuildNeedle)) {
-    patchedSource = patchedSource.replace(trayMenuBuildNeedle, trayMenuBuildPatch);
+    patchedSource = patchedSource.replace(trayMenuBuildNeedle, trayMenuBuildPatch(electronVar));
   } else if (trayMenuBuildAnyAliasRegex.test(patchedSource)) {
-    patchedSource = patchedSource.replace(trayMenuBuildAnyAliasRegex, trayMenuBuildPatch);
+    patchedSource = patchedSource.replace(trayMenuBuildAnyAliasRegex, (_match, menuVar) =>
+      trayMenuBuildPatch(menuVar),
+    );
   } else {
     console.warn("WARN: Could not find tray native menu builder — skipping Linux tray context menu builder patch");
   }

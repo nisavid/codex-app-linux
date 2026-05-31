@@ -286,8 +286,14 @@ test("build info captures official DMG hash, port integrations, distro profile, 
     );
 
     const integrationsRoot = path.join(tempRoot, "port-integrations");
+    fs.mkdirSync(path.join(tempRoot, "updater"), { recursive: true });
     fs.mkdirSync(path.join(integrationsRoot, "read-aloud"), { recursive: true });
     fs.mkdirSync(path.join(integrationsRoot, "zed-opener"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempRoot, "updater", "Cargo.toml"),
+      "[workspace]\n[workspace.package]\nversion = \"9.9.9-wrong\"\n\n[package]\nname = \"codex-app-updater\"\nversion = \"1.2.3-wrapper\"\n",
+      "utf8",
+    );
     fs.writeFileSync(path.join(integrationsRoot, "integrations.example.json"), "{\"enabled\":[]}\n", "utf8");
     fs.writeFileSync(path.join(integrationsRoot, "port-integrations.json"), "{\"enabled\":[\"zed-opener\"]}\n", "utf8");
     fs.writeFileSync(
@@ -339,6 +345,7 @@ test("build info captures official DMG hash, port integrations, distro profile, 
     assert.equal(info.officialDmg.appVersion, "1.2.3");
     assert.equal(info.source.shortCommit, "abcdef123456");
     assert.equal(info.source.remote, "https://example.com/org/codex-app-linux.git");
+    assert.equal(info.source.version, "1.2.3-wrapper");
     assert.equal(info.packageProfile.id, "debian-family");
     assert.equal(info.packageProfile.packageManager, "apt");
     assert.deepEqual(info.portIntegrations.enabled, ["read-aloud", "zed-opener"]);

@@ -922,6 +922,14 @@ function applyLinuxRemoteMobileConversationHydrationPatch(source) {
   const unsafeQueuedHydration =
     "this.readThread(r,{includeTurns:!1}).then(e=>{let t=e?.thread??e;if(t){this.upsertConversationFromThread(t);let e=this.codexLinuxRemoteMobilePendingNotifications?.get(r)??[];this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let t of e)this.onNotification(t.method,t.params)}}).catch";
   if (patched.includes(unsafeQueuedHydration)) {
+    const queuedHydrationLoggerMatch =
+      patched.match(/([A-Za-z_$][\w$]*)\.warning\(`Queueing turn\/completed for hydrating conversation`/u) ??
+      patched.match(/([A-Za-z_$][\w$]*)\.warning\(`Queueing item\/completed for hydrating conversation`/u);
+    if (queuedHydrationLoggerMatch == null) {
+      console.warn("WARN: Could not resolve queued hydration logger - skipping safe queued hydration patch");
+      return patched;
+    }
+    const hydrationLoggerVar = queuedHydrationLoggerMatch[1];
     const completionCleanup = [
       "this.browserUseTurnRouteIdsByConversationId.get(r)?.has(t.id)===!0&&this.releaseBrowserUseTurnRoute(r,t.id)",
       patched.includes("releaseComputerUseTurnRoute")
@@ -932,7 +940,7 @@ function applyLinuxRemoteMobileConversationHydrationPatch(source) {
       ? `for(let e of c)if(e.method===\`turn/completed\`){let{turn:t}=e.params;${completionCleanup}}`
       : "";
     const safeQueuedHydration =
-      `this.readThread(r,{includeTurns:!1}).then(e=>{let t=e?.thread??e,c=this.codexLinuxRemoteMobilePendingNotifications?.get(r)??[];if(!(typeof t?.path==\`string\`&&t.path.endsWith(\`.jsonl\`))){if(s<12){R.warning(\`Retrying hydration for non-persisted conversation\`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:c.length,attempt:s+1},sensitive:{}}),setTimeout(()=>o(s+1),250);return}this.codexLinuxRemoteMobilePendingNotifications?.delete(r);${safeQueuedCompletionCleanup}R.warning(\`Skipping hydration for non-persisted conversation\`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:c.length},sensitive:{}});return}this.upsertConversationFromThread(t),this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let e of c)this.onNotification(e.method,e.params)}).catch`;
+      `this.readThread(r,{includeTurns:!1}).then(e=>{let t=e?.thread??e,c=this.codexLinuxRemoteMobilePendingNotifications?.get(r)??[];if(!(typeof t?.path==\`string\`&&t.path.endsWith(\`.jsonl\`))){if(s<12){${hydrationLoggerVar}.warning(\`Retrying hydration for non-persisted conversation\`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:c.length,attempt:s+1},sensitive:{}}),setTimeout(()=>o(s+1),250);return}this.codexLinuxRemoteMobilePendingNotifications?.delete(r);${safeQueuedCompletionCleanup}${hydrationLoggerVar}.warning(\`Skipping hydration for non-persisted conversation\`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:c.length},sensitive:{}});return}this.upsertConversationFromThread(t),this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let e of c)this.onNotification(e.method,e.params)}).catch`;
     patched = patched.replace(unsafeQueuedHydration, safeQueuedHydration);
   }
 

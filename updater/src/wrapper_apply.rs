@@ -157,6 +157,11 @@ async fn apply_user_local(
         info!(helper = %helper.display(), "applying wrapper update via user-local helper");
         let mut cmd = Command::new(&helper);
         cmd.arg("--quiet");
+        if let Some(app_dir) = user_local_app_dir() {
+            if let Some(install_root) = app_dir.parent() {
+                cmd.env("CODEX_USER_INSTALL_ROOT", install_root);
+            }
+        }
         // The contrib helper honors a caller-set CODEX_PORT_INTEGRATIONS_CONFIG over
         // its repo-local default, so the in-app picker's selection wins.
         if let Some(config_path) = &integration_config {
@@ -254,30 +259,38 @@ async fn apply_packaged(
     seed_packaged_builder_payload(config, &wrapper_src)?;
     let dmg_path = cached_or_downloaded_dmg(config, state, paths).await?;
 
-    // The package version must remain monotonic (timestamp+dmghash), so derive
-    // it from the cached DMG the same way the DMG path does.
-    let candidate_version = derive_package_version(&dmg_path)?;
+    // Keep wrapper rebuild workspaces unique even when the official app version
+    // is unchanged; the produced package still uses the official app version.
+    let workspace_version = derive_workspace_version(&dmg_path)?;
 
     let artifacts = builder::build_update_from(
         &wrapper_src,
         config,
         state,
         paths,
-        &candidate_version,
+        &workspace_version,
         &dmg_path,
     )
     .await
     .context("wrapper package rebuild failed")?;
 
+    let package_candidate_version = state
+        .candidate_version
+        .as_deref()
+        .context("wrapper rebuild did not record a package candidate version")?;
     let expected_package = expected_package_for_wrapper_install(
         config,
         state,
         &artifacts.package_path,
-        &candidate_version,
+        package_candidate_version,
     )?;
-    let output = install::pkexec_command(&artifacts.package_path, Some(&expected_package))?
-        .output()
-        .context("Failed to launch pkexec for wrapper update installation")?;
+    let output = install::pkexec_command_with_options(
+        &artifacts.package_path,
+        Some(&expected_package),
+        true,
+    )?
+    .output()
+    .context("Failed to launch pkexec for wrapper update installation")?;
     if !output.status.success() {
         anyhow::bail!(
             "privileged wrapper install exited with status {}",
@@ -336,6 +349,18 @@ pub(crate) fn ensure_wrapper_source(
             &remote,
             branch,
         ])?;
+        if let Some(commit) = candidate_commit {
+            run_git(&[
+                "-C",
+                &dest.to_string_lossy(),
+                "fetch",
+                "--depth",
+                "1",
+                "--quiet",
+                &remote,
+                commit,
+            ])?;
+        }
         run_git(&[
             "-C",
             &dest.to_string_lossy(),
@@ -361,6 +386,16 @@ pub(crate) fn ensure_wrapper_source(
             &dest.to_string_lossy(),
         ])?;
         if let Some(commit) = candidate_commit {
+            run_git(&[
+                "-C",
+                &dest.to_string_lossy(),
+                "fetch",
+                "--depth",
+                "1",
+                "--quiet",
+                &remote,
+                commit,
+            ])?;
             run_git(&[
                 "-C",
                 &dest.to_string_lossy(),
@@ -512,9 +547,9 @@ fn trust_dmg_for_wrapper_rebuild(
     }
 }
 
-/// Derives a monotonic package version (`YYYY.MM.DD.HHMMSS+<sha8>`) from the DMG
-/// contents, matching the DMG update path's scheme.
-fn derive_package_version(dmg_path: &Path) -> Result<String> {
+/// Derives a monotonic workspace key (`YYYY.MM.DD.HHMMSS+<sha8>`) from the DMG
+/// contents, matching the DMG update path's workspace naming scheme.
+fn derive_workspace_version(dmg_path: &Path) -> Result<String> {
     use sha2::{Digest, Sha256};
     let bytes = std::fs::read(dmg_path)
         .with_context(|| format!("Failed to read {}", dmg_path.display()))?;
@@ -637,6 +672,64 @@ mod tests {
             std::fs::read(wrapper_src.join("node-runtime/bin/node"))?,
             b"managed node"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn wrapper_source_fetches_pinned_candidate_commit_for_shallow_clone() -> Result<()> {
+        let _g = env_lock();
+        let root = tempdir()?;
+        let paths = test_paths(root.path());
+        let mut config = test_config(root.path());
+        config.wrapper_remote = "https://example.com/codex-app-linux.git".to_string();
+        let bin_dir = root.path().join("bin");
+        std::fs::create_dir_all(&bin_dir)?;
+        let fake_git = bin_dir.join("git");
+        let log_path = root.path().join("git-args.log");
+        std::fs::write(
+            &fake_git,
+            r#"#!/bin/sh
+printf '%s\n' "$*" >> "$CODEX_TEST_GIT_ARGS_LOG"
+if [ "$1" = "clone" ]; then
+  dest=""
+  for arg in "$@"; do dest="$arg"; done
+  mkdir -p "$dest/.git"
+fi
+exit 0
+"#,
+        )?;
+        let mut permissions = std::fs::metadata(&fake_git)?.permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&fake_git, permissions)?;
+
+        let old_path = std::env::var_os("PATH");
+        let old_log = std::env::var_os("CODEX_TEST_GIT_ARGS_LOG");
+        let mut path_entries = vec![bin_dir];
+        if let Some(path) = old_path.as_ref() {
+            path_entries.extend(std::env::split_paths(path));
+        }
+        std::env::set_var("PATH", std::env::join_paths(path_entries)?);
+        std::env::set_var("CODEX_TEST_GIT_ARGS_LOG", &log_path);
+
+        let result = ensure_wrapper_source(&config, &paths, Some("abc123def456"));
+
+        if let Some(path) = old_path {
+            std::env::set_var("PATH", path);
+        } else {
+            std::env::remove_var("PATH");
+        }
+        if let Some(value) = old_log {
+            std::env::set_var("CODEX_TEST_GIT_ARGS_LOG", value);
+        } else {
+            std::env::remove_var("CODEX_TEST_GIT_ARGS_LOG");
+        }
+
+        result?;
+        let log = std::fs::read_to_string(log_path)?;
+        assert!(log.contains(
+            "fetch --depth 1 --quiet https://example.com/codex-app-linux.git abc123def456"
+        ));
+        assert!(log.contains("reset --hard --quiet abc123def456"));
         Ok(())
     }
 

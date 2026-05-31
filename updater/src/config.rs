@@ -247,7 +247,12 @@ fn app_settings_path() -> Option<PathBuf> {
     let config_home = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .filter(|path| !path.as_os_str().is_empty())
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .filter(|home| !home.as_os_str().is_empty())
+                .map(|home| home.join(".config"))
+        })?;
 
     Some(config_home.join(resolve_app_id()).join(APP_SETTINGS_FILE))
 }

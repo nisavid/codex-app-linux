@@ -589,11 +589,12 @@ run_feature_prelaunch_hooks() {
     [ -n "${FEATURE_PRELAUNCH_HOOK_DIR:-}" ] || return 0
     [ -d "$FEATURE_PRELAUNCH_HOOK_DIR" ] || return 0
 
-    local hook
+    local hook hook_status
     for hook in "$FEATURE_PRELAUNCH_HOOK_DIR"/*; do
         [ -f "$hook" ] || continue
         [ -x "$hook" ] || continue
         echo "Running port integration prelaunch hook: $hook"
+        set +e
         CODEX_HOME="$CODEX_HOME" \
         CODEX_LINUX_APP_DIR="$SCRIPT_DIR" \
         CODEX_LINUX_APP_STATE_DIR="$APP_STATE_DIR" \
@@ -605,6 +606,11 @@ run_feature_prelaunch_hooks() {
         CODEX_PORT_INTEGRATION_HOOK_PHASE="prelaunch" \
         CODEX_APP_UPDATER_PATH="${CODEX_APP_UPDATER_PATH:-}" \
             "$hook" "$SCRIPT_DIR" "$APP_STATE_DIR" "$LOG_DIR"
+        hook_status=$?
+        set -e
+        if [ "$hook_status" -ne 0 ]; then
+            echo "Port integration prelaunch hook failed with status $hook_status: $hook"
+        fi
     done
 }
 

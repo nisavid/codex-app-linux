@@ -254,12 +254,16 @@ function resolvedPortIntegrationsConfig(options = {}) {
   return { enabled, disabled };
 }
 
-function isDirectory(filePath) {
+function lstatPath(filePath) {
   try {
-    return fs.statSync(filePath).isDirectory();
+    return fs.lstatSync(filePath);
   } catch {
-    return false;
+    return null;
   }
+}
+
+function isDirectory(filePath) {
+  return lstatPath(filePath)?.isDirectory() === true;
 }
 
 function integrationManifestCandidates(integrationsRoot) {
@@ -693,7 +697,11 @@ function enabledPortIntegrationInstallPlan(options = {}) {
 }
 
 function chmodRecursive(target, mode) {
-  const directory = isDirectory(target);
+  const stats = lstatPath(target);
+  if (stats == null || stats.isSymbolicLink()) {
+    return;
+  }
+  const directory = stats.isDirectory();
   const targetMode = directory
     ? mode |
       ((mode & 0o400) ? 0o100 : 0) |
@@ -711,7 +719,7 @@ function chmodRecursive(target, mode) {
 
 function copyInstallFile(source, target, mode) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.cpSync(source, target, { recursive: true, force: true });
+  fs.cpSync(source, target, { recursive: true, force: true, dereference: false });
   if (mode != null) {
     chmodRecursive(target, mode);
   }

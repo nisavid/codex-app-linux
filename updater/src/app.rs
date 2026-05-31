@@ -86,39 +86,54 @@ pub async fn run(cli: Cli) -> Result<()> {
             expected_sha256,
             expected_package_name,
             expected_package_version,
+            allow_same_version,
         } => {
             let expected = install::expected_package_from_args(
                 expected_sha256,
                 expected_package_name,
                 expected_package_version,
             )?;
-            install::install_deb(&path, expected.as_ref())
+            install::install_deb_with_options(
+                &path,
+                expected.as_ref(),
+                install::InstallOptions::new(allow_same_version, expected.as_ref())?,
+            )
         }
         Commands::InstallRpm {
             path,
             expected_sha256,
             expected_package_name,
             expected_package_version,
+            allow_same_version,
         } => {
             let expected = install::expected_package_from_args(
                 expected_sha256,
                 expected_package_name,
                 expected_package_version,
             )?;
-            install::install_rpm(&path, expected.as_ref())
+            install::install_rpm_with_options(
+                &path,
+                expected.as_ref(),
+                install::InstallOptions::new(allow_same_version, expected.as_ref())?,
+            )
         }
         Commands::InstallPacman {
             path,
             expected_sha256,
             expected_package_name,
             expected_package_version,
+            allow_same_version,
         } => {
             let expected = install::expected_package_from_args(
                 expected_sha256,
                 expected_package_name,
                 expected_package_version,
             )?;
-            install::install_pacman(&path, expected.as_ref())
+            install::install_pacman_with_options(
+                &path,
+                expected.as_ref(),
+                install::InstallOptions::new(allow_same_version, expected.as_ref())?,
+            )
         }
         Commands::InstallRollbackDeb {
             path,
@@ -3596,12 +3611,12 @@ mod tests {
         let original_nvm_dir = std::env::var_os("NVM_DIR");
         let original_codex_cli_path = std::env::var_os("CODEX_CLI_PATH");
         let original_skip_system_cli_lookup =
-            std::env::var_os("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP");
+            std::env::var_os("CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP");
         std::env::set_var("HOME", temp.path());
         std::env::set_var("PATH", temp.path().join("missing-bin"));
         std::env::remove_var("NVM_DIR");
         std::env::remove_var("CODEX_CLI_PATH");
-        std::env::set_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+        std::env::set_var("CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP", "1");
 
         let config = test_config(temp.path());
         let result = run_status(&config, &mut state, &paths, true);
@@ -3627,9 +3642,9 @@ mod tests {
             std::env::remove_var("CODEX_CLI_PATH");
         }
         if let Some(value) = original_skip_system_cli_lookup {
-            std::env::set_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP", value);
+            std::env::set_var("CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP", value);
         } else {
-            std::env::remove_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP");
+            std::env::remove_var("CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP");
         }
 
         result?;
@@ -3680,12 +3695,12 @@ mod tests {
         let original_nvm_dir = std::env::var_os("NVM_DIR");
         let original_codex_cli_path = std::env::var_os("CODEX_CLI_PATH");
         let original_skip_system_cli_lookup =
-            std::env::var_os("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP");
+            std::env::var_os("CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP");
         std::env::set_var("HOME", temp.path());
         std::env::set_var("PATH", std::env::join_paths([bin_dir])?);
         std::env::remove_var("NVM_DIR");
         std::env::remove_var("CODEX_CLI_PATH");
-        std::env::set_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+        std::env::set_var("CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP", "1");
 
         let config = test_config(temp.path());
         let mut state = PersistedState::new(true);
@@ -3713,9 +3728,9 @@ mod tests {
             std::env::remove_var("CODEX_CLI_PATH");
         }
         if let Some(value) = original_skip_system_cli_lookup {
-            std::env::set_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP", value);
+            std::env::set_var("CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP", value);
         } else {
-            std::env::remove_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP");
+            std::env::remove_var("CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP");
         }
 
         result?;

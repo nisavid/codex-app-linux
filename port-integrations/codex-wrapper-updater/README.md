@@ -96,7 +96,7 @@ Add the integration id to the local integration config:
 }
 ```
 
-The file is `port-integrations/integrations.json`, and it is intentionally gitignored.
+The file is `port-integrations.json`, and it is intentionally gitignored.
 After changing it, rebuild the app or package.
 
 When enabled, the integration contributes three patch descriptors:

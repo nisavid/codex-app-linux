@@ -1,8 +1,8 @@
-# Linux Integrations Architecture
+# Port Integrations Architecture
 
-`port-integrations/` is the extension boundary for optional Linux integrations.
-Core keeps a small generic loader; integration-specific behavior lives in integration
-directories and is disabled by default.
+`port-integrations/` is the extension boundary for optional port integrations.
+Core keeps a small generic loader; integration-specific behavior lives in port
+integration directories and is disabled by default.
 
 ## Layout
 
@@ -22,7 +22,7 @@ support risks.
 {
   "id": "my-integration",
   "title": "My Integration",
-  "description": "Optional Linux integration.",
+  "description": "Optional port integration.",
   "defaultEnabled": false
 }
 ```
@@ -30,7 +30,7 @@ support risks.
 Integration ids must match `^[a-z0-9][a-z0-9-]*$`. Repository and local integrations
 share one id namespace; local integrations cannot shadow repository integrations.
 `defaultEnabled: true` is rejected. Enabling always happens through the
-git-ignored `port-integrations/integrations.json` file:
+git-ignored `port-integrations.json` file:
 
 ```json
 {
@@ -54,8 +54,8 @@ The build pipeline loads enabled integrations in these phases:
 
 Native packages copy the configured integration root into the packaged
 `update-builder` bundle, including `port-integrations/local/`, and write a
-sanitized `integrations.json` containing only the enabled ids. Local auto-updates
-therefore rebuild with the same opt-in integrations.
+sanitized `port-integrations.json` containing only the enabled ids. Local
+auto-updates therefore rebuild with the same opt-in integrations.
 
 Declarative staged files are tracked in
 `.codex-linux/port-integrations-staged.json`. On the next install, the framework
@@ -149,15 +149,16 @@ The runtime hook types map to:
   Electron's original exit status.
 
 Runtime hooks receive `CODEX_HOME`, `CODEX_LINUX_APP_DIR`,
-`CODEX_LINUX_APP_STATE_DIR`, `CODEX_LINUX_FEATURES_DIR`, and
+`CODEX_LINUX_APP_STATE_DIR`, `CODEX_PORT_INTEGRATIONS_DIR`, and
 `CODEX_LINUX_LAUNCHER_LOG`. Executable hooks also receive
-`CODEX_LINUX_FEATURE_HOOK_PHASE`; `afterExit` additionally receives
+`CODEX_PORT_INTEGRATION_HOOK_PHASE`; `afterExit` additionally receives
 `CODEX_LINUX_ELECTRON_EXIT_STATUS`. Use this pattern for user-home artifacts
 such as Codex skills: stage the source file with `resources` under
 `.codex-linux/integrations/<integration-id>/...`, then copy it from
-`$CODEX_LINUX_FEATURES_DIR/<integration-id>/...` to `$CODEX_HOME/skills/...` in a
-`runtimeHooks.prelaunch` script. Do not write user-home files from `stage.sh`;
-install, package, and updater rebuilds may run outside the real user's session.
+`$CODEX_PORT_INTEGRATIONS_DIR/<integration-id>/...` to `$CODEX_HOME/skills/...`
+in a `runtimeHooks.prelaunch` script. Do not write user-home files from
+`stage.sh`; install, package, and updater rebuilds may run outside the real
+user's session.
 
 ## Package Hooks
 
@@ -197,8 +198,8 @@ $EDITOR port-integrations/local/my-integration/integration.json
 Then enable it:
 
 ```bash
-cp port-integrations/integrations.example.json port-integrations/integrations.json
-$EDITOR port-integrations/integrations.json
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/codex-app"
+$EDITOR "${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/port-integrations.json"
 make install-native
 ```
 

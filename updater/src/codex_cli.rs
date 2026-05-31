@@ -971,7 +971,7 @@ mod tests {
         let _cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
         let _skip_system_cli_guard = EnvVarGuard::set(
             &_env_guard,
-            "CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP",
+            "CODEX_APP_UPDATER_TEST_SKIP_SYSTEM_CLI_LOOKUP",
             "1",
         );
 

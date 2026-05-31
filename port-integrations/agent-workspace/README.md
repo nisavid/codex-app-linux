@@ -1,9 +1,9 @@
-# Agent Workspaces Linux Integration
+# Agent Workspaces port integration
 
-`agent-workspace` is an opt-in Codex Desktop for port integration that adds the
+`agent-workspace` is an opt-in Codex Desktop port integration that adds the
 `agent-workspace-linux` control surface to the app settings UI.
 
-Enable it in `port-integrations/integrations.json` before running the install/build
+Enable it in `port-integrations.json` before running the install/build
 pipeline:
 
 ```json

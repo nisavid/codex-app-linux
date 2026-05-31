@@ -101,8 +101,8 @@ function applyLinuxAvatarOverlayMousePassthroughPatch(currentSource) {
     "startDrag(e,{pointerWindowX:t,pointerWindowY:r}){let i=this.window;if(i==null||i.isDestroyed()||i.webContents.id!==e)return;this.cancelMomentum();";
   const startDragNeedle =
     "displayBounds:n.screen.getDisplayNearestPoint(n.screen.getCursorScreenPoint()).bounds}}moveDrag(e){";
-  const startDragPatch =
-    `displayBounds:${electronVar}.screen.getDisplayNearestPoint(${electronVar}.screen.getCursorScreenPoint()).bounds},process.platform===\`linux\`&&(this.pointerInteractive=!0,this.applyPointerInteractivityPolicy())}moveDrag(e){`;
+  const startDragPatch = (screenVar) =>
+    `displayBounds:${screenVar}.screen.getDisplayNearestPoint(${screenVar}.screen.getCursorScreenPoint()).bounds},process.platform===\`linux\`&&(this.pointerInteractive=!0,this.applyPointerInteractivityPolicy())}moveDrag(e){`;
   const previousStartDragAfterStatePatch =
     "displayBounds:n.screen.getDisplayNearestPoint(n.screen.getCursorScreenPoint()).bounds},this.pointerInteractive=!0,this.applyPointerInteractivityPolicy()}moveDrag(e){";
   const startDragRegex =
@@ -113,16 +113,18 @@ function applyLinuxAvatarOverlayMousePassthroughPatch(currentSource) {
     patchedSource = patchedSource.replace(previousStartDragPatch, originalStartDragPrefix);
   }
   if (previousStartDragAfterStateRegex.test(patchedSource)) {
-    patchedSource = patchedSource.replace(previousStartDragAfterStateRegex, startDragPatch);
+    patchedSource = patchedSource.replace(previousStartDragAfterStateRegex, (_match, screenVar) =>
+      startDragPatch(screenVar),
+    );
   } else if (patchedSource.includes(previousStartDragAfterStatePatch)) {
-    patchedSource = patchedSource.replace(previousStartDragAfterStatePatch, startDragPatch);
+    patchedSource = patchedSource.replace(previousStartDragAfterStatePatch, startDragPatch(electronVar));
   } else if (patchedSource.includes(startDragNeedle)) {
-    patchedSource = patchedSource.replace(startDragNeedle, startDragPatch);
+    patchedSource = patchedSource.replace(startDragNeedle, startDragPatch(electronVar));
   } else if (startDragRegex.test(patchedSource)) {
-    patchedSource = patchedSource.replace(startDragRegex, startDragPatch);
+    patchedSource = patchedSource.replace(startDragRegex, (_match, screenVar) => startDragPatch(screenVar));
   } else if (
     patchedSource.includes("avatar-overlay") &&
-    !patchedSource.includes(startDragPatch)
+    !patchedSource.includes(startDragPatch(electronVar))
   ) {
     console.warn(
       "WARN: Could not find avatar overlay drag start — skipping Linux avatar overlay drag interactivity patch",
