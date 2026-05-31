@@ -9,7 +9,7 @@ use crate::{
 use anyhow::{Context, Result};
 use std::{
     ffi::OsString,
-    fs,
+    fs, io,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
@@ -58,6 +58,7 @@ const OPTIONAL_BUNDLE_FILES: [(&str, &str); 5] = [
         "scripts/rebuild-candidate.sh",
     ),
 ];
+const BUILDER_ONLY_PAYLOAD_FILES: [(&str, &str); 1] = [("node-runtime", "node-runtime")];
 const PACMAN_PACKAGE_SUFFIXES: &[&str] = &[
     ".pkg.tar.zst",
     ".pkg.tar.xz",
@@ -274,6 +275,38 @@ fn copy_builder_bundle(source_root: &Path, destination_root: &Path) -> Result<()
     }
 
     Ok(())
+}
+
+/// Seeds generated files that exist only in an installed update-builder bundle.
+///
+/// A fresh wrapper checkout has source files but not the managed Node.js runtime
+/// generated during app packaging. Packaged wrapper updates overlay this payload
+/// before calling [`build_update_from`] so the normal builder-bundle copy sees a
+/// complete source tree without reusing installed source metadata.
+pub fn seed_builder_only_payload(source_root: &Path, destination_root: &Path) -> Result<()> {
+    for (source, destination) in BUILDER_ONLY_PAYLOAD_FILES {
+        let destination = destination_root.join(destination);
+        remove_existing_payload_path(&destination)?;
+        copy_entry(&source_root.join(source), &destination, false)?;
+    }
+
+    Ok(())
+}
+
+fn remove_existing_payload_path(path: &Path) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(error).with_context(|| format!("Failed to stat {}", path.display()));
+        }
+    };
+
+    if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(path).with_context(|| format!("Failed to remove {}", path.display()))
+    } else {
+        fs::remove_file(path).with_context(|| format!("Failed to remove {}", path.display()))
+    }
 }
 
 fn copy_entry(source: &Path, destination: &Path, optional: bool) -> Result<()> {

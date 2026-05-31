@@ -237,6 +237,7 @@ async fn apply_packaged(
     }
 
     let wrapper_src = ensure_wrapper_source(config, paths, candidate_commit)?;
+    seed_packaged_builder_payload(config, &wrapper_src)?;
     let dmg_path = cached_or_downloaded_dmg(config, state, paths).await?;
 
     // The package version must remain monotonic (timestamp+dmghash), so derive
@@ -273,6 +274,11 @@ async fn apply_packaged(
     state.installed_version = install::installed_package_version();
     let _ = state.save(&paths.state_file);
     Ok(())
+}
+
+fn seed_packaged_builder_payload(config: &RuntimeConfig, wrapper_src: &Path) -> Result<()> {
+    builder::seed_builder_only_payload(&config.builder_bundle_root, wrapper_src)
+        .context("failed to seed generated builder payload for wrapper rebuild")
 }
 
 fn expected_package_for_wrapper_install(
@@ -545,6 +551,26 @@ mod tests {
             Some(expected_commit.as_str())
         );
         assert_eq!(state.candidate_wrapper_version.as_deref(), Some("0.9.0"));
+    }
+
+    #[test]
+    fn packaged_wrapper_source_inherits_generated_builder_payload() -> Result<()> {
+        let root = tempdir()?;
+        let config = test_config(root.path());
+        let source_node = config.builder_bundle_root.join("node-runtime/bin/node");
+        std::fs::create_dir_all(source_node.parent().unwrap())?;
+        std::fs::write(&source_node, b"managed node")?;
+
+        let wrapper_src = root.path().join("wrapper-src");
+        std::fs::create_dir_all(&wrapper_src)?;
+
+        seed_packaged_builder_payload(&config, &wrapper_src)?;
+
+        assert_eq!(
+            std::fs::read(wrapper_src.join("node-runtime/bin/node"))?,
+            b"managed node"
+        );
+        Ok(())
     }
 
     #[test]

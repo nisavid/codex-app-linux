@@ -3,15 +3,12 @@
 //! Beyond tracking the official OpenAI Codex DMG, the updater can detect when the
 //! *wrapper* itself (this repository — new port integrations, patches, fixes) has
 //! advanced. Detection is git-based and leaves the user's working tree and
-//! current branch untouched: it inspects the builder bundle checkout, queries
-//! the remote head with `git ls-remote`, and may fetch candidate objects into
-//! the local object store / `FETCH_HEAD` so ancestry and changelog data can be
-//! read. The actual rebuild reuses the existing DMG rebuild path against the
-//! refreshed checkout.
-//!
-//! When the builder bundle is a frozen packaged copy (no `.git`), the wrapper
-//! axis degrades gracefully: detection reports "not a git checkout" and the
-//! caller leaves wrapper updates to a normal package upgrade.
+//! current branch untouched: it inspects the builder bundle checkout, or the
+//! packaged `source-info.json` metadata when the bundle has no `.git`, and
+//! queries the remote head with `git ls-remote`. Git checkouts may also fetch
+//! candidate objects into the local object store / `FETCH_HEAD` so ancestry and
+//! changelog data can be read. The actual rebuild reuses the existing DMG
+//! rebuild path against the refreshed checkout.
 
 use anyhow::Result;
 use serde_json::Value;
@@ -208,6 +205,19 @@ fn string_field<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key)?.as_str()?.trim().split('\0').next()
 }
 
+fn source_info_path(bundle_root: &Path) -> PathBuf {
+    bundle_root.join(".codex-linux/source-info.json")
+}
+
+fn source_info_field(bundle_root: &Path, key: &str) -> Option<String> {
+    let content = std::fs::read_to_string(source_info_path(bundle_root)).ok()?;
+    let value = serde_json::from_str::<Value>(&content).ok()?;
+    let source = metadata_source(&value)?;
+    string_field(source, key)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
 fn wrapper_version_from_metadata_file(path: &Path) -> Option<WrapperVersion> {
     let content = std::fs::read_to_string(path).ok()?;
     let value = serde_json::from_str::<Value>(&content).ok()?;
@@ -239,7 +249,7 @@ fn installed_metadata_paths(
         paths.push(app_root.join("resources/codex-linux-build-info.json"));
         paths.push(app_root.join(".codex-linux/source-info.json"));
     }
-    paths.push(builder_bundle_root.join(".codex-linux/source-info.json"));
+    paths.push(source_info_path(builder_bundle_root));
     paths
 }
 
@@ -276,14 +286,18 @@ fn origin_url(repo: &Path) -> Option<String> {
     git_capture(repo, &["remote", "get-url", "origin"])
 }
 
+fn configured_or_known_remote(config_remote: &str, bundle_root: &Path) -> Option<String> {
+    let trimmed = config_remote.trim();
+    if !trimmed.is_empty() {
+        return Some(trimmed.to_string());
+    }
+    origin_url(bundle_root).or_else(|| source_info_field(bundle_root, "remote"))
+}
+
 /// Resolves the configured wrapper remote into either an explicit URL/name or
 /// the builder checkout's origin URL.
 pub fn resolve_remote(config_remote: &str, bundle_root: &Path) -> String {
-    let trimmed = config_remote.trim();
-    if !trimmed.is_empty() {
-        return trimmed.to_string();
-    }
-    origin_url(bundle_root).unwrap_or_else(|| "origin".to_string())
+    configured_or_known_remote(config_remote, bundle_root).unwrap_or_else(|| "origin".to_string())
 }
 
 /// Queries the remote head commit for `branch` via `git ls-remote`.
@@ -291,11 +305,7 @@ pub fn resolve_remote(config_remote: &str, bundle_root: &Path) -> String {
 /// `remote` may be a configured remote name (`origin`) or an explicit URL. When
 /// no remote is configured this falls back to the checkout's origin URL.
 pub fn fetch_remote_head(repo: &Path, remote: &str, branch: &str) -> Option<String> {
-    let resolved_remote = if remote.is_empty() {
-        origin_url(repo)?
-    } else {
-        remote.to_string()
-    };
+    let resolved_remote = configured_or_known_remote(remote, repo)?;
     let output = git_capture(repo, &["ls-remote", &resolved_remote, branch])?;
     // ls-remote prints "<sha>\t<ref>"; take the first whitespace-delimited field.
     output
@@ -310,13 +320,8 @@ pub fn fetch_remote_head(repo: &Path, remote: &str, branch: &str) -> Option<Stri
 /// `CHANGELOG.md` blob available to `git show` / `git log`. Read-only with
 /// respect to the user's checked-out files.
 fn fetch_objects(repo: &Path, remote: &str, branch: &str) -> bool {
-    let resolved_remote = if remote.is_empty() {
-        match origin_url(repo) {
-            Some(url) => url,
-            None => return false,
-        }
-    } else {
-        remote.to_string()
+    let Some(resolved_remote) = configured_or_known_remote(remote, repo) else {
+        return false;
     };
     // `git fetch <remote> <branch>` updates FETCH_HEAD and objects only.
     git_status(repo, &["fetch", "--quiet", &resolved_remote, branch])
@@ -417,16 +422,25 @@ pub fn detect_wrapper_update_state_for_installed(
         return Ok((UnknownOffline, None));
     }
 
-    if !is_git_checkout(repo) {
-        return Ok((UnknownOffline, None));
-    }
-
     let Some(candidate_commit) = fetch_remote_head(repo, remote, branch) else {
         return Ok((UnknownOffline, None));
     };
 
     if candidate_commit == installed.commit {
         return Ok((Aligned, None));
+    }
+
+    if !is_git_checkout(repo) {
+        return Ok((
+            UpdateAvailable,
+            Some(WrapperUpdate {
+                installed_commit: installed.commit.clone(),
+                installed_version: installed.version.clone(),
+                candidate_commit,
+                candidate_version: None,
+                changelog: "Wrapper updated (no changelog details available).".to_string(),
+            }),
+        ));
     }
 
     // Bring the candidate commit + metadata blobs into the local object store
@@ -792,7 +806,7 @@ exit 0
     }
 
     #[test]
-    fn packaged_builder_without_git_uses_source_info_but_reports_no_update() {
+    fn packaged_builder_without_git_without_remote_is_unknown_offline() {
         let temp = tempdir().unwrap();
         let builder = temp.path().join("update-builder");
         std::fs::create_dir_all(builder.join(".codex-linux")).unwrap();
@@ -819,5 +833,57 @@ exit 0
             detect_state_from_bundle_root(&builder, &installed, "origin", "main").unwrap();
         assert_eq!(state, WrapperDetectionState::UnknownOffline);
         assert_eq!(update, None);
+    }
+
+    #[test]
+    fn packaged_builder_without_git_detects_remote_update_from_source_info() {
+        let _g = env_lock();
+        let temp = tempdir().unwrap();
+        let origin = tempdir().unwrap();
+        init_repo(origin.path());
+        let installed = installed_wrapper(origin.path()).expect("installed");
+
+        let builder = temp.path().join("update-builder");
+        std::fs::create_dir_all(builder.join(".codex-linux")).unwrap();
+        std::fs::write(
+            builder.join(".codex-linux/source-info.json"),
+            format!(
+                r#"{{
+  "commit": "{}",
+  "version": "0.8.1",
+  "remote": "{}",
+  "provenance": "packaged-update-builder"
+}}
+"#,
+                installed.commit,
+                origin.path().display()
+            ),
+        )
+        .unwrap();
+
+        let metadata_identity =
+            installed_wrapper_from_metadata(&temp.path().join("app/electron"), &builder)
+                .expect("source-info identity");
+        let (aligned_state, aligned_update) =
+            detect_state_from_bundle_root(&builder, &metadata_identity, "", "main").unwrap();
+        assert_eq!(aligned_state, WrapperDetectionState::Aligned);
+        assert_eq!(aligned_update, None);
+
+        std::fs::write(
+            origin.path().join("updater/Cargo.toml"),
+            "[package]\nname = \"codex-app-updater\"\nversion = \"0.9.0\"\n",
+        )
+        .unwrap();
+        git(origin.path(), &["add", "-A"]);
+        git(origin.path(), &["commit", "-q", "-m", "remote bump"]);
+
+        let (state, update) =
+            detect_state_from_bundle_root(&builder, &metadata_identity, "", "main").unwrap();
+        let update = update.expect("packaged source-info remote update");
+        assert_eq!(state, WrapperDetectionState::UpdateAvailable);
+        assert_eq!(update.installed_commit, installed.commit);
+        assert_eq!(update.installed_version.as_deref(), Some("0.8.1"));
+        assert_ne!(update.candidate_commit, update.installed_commit);
+        assert_eq!(update.candidate_version, None);
     }
 }
