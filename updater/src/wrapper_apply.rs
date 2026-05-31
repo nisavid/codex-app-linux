@@ -254,7 +254,13 @@ async fn apply_packaged(
     .await
     .context("wrapper package rebuild failed")?;
 
-    let output = install::pkexec_command(&artifacts.package_path, None)?
+    let expected_package = expected_package_for_wrapper_install(
+        config,
+        state,
+        &artifacts.package_path,
+        &candidate_version,
+    )?;
+    let output = install::pkexec_command(&artifacts.package_path, Some(&expected_package))?
         .output()
         .context("Failed to launch pkexec for wrapper update installation")?;
     if !output.status.success() {
@@ -267,6 +273,21 @@ async fn apply_packaged(
     state.installed_version = install::installed_package_version();
     let _ = state.save(&paths.state_file);
     Ok(())
+}
+
+fn expected_package_for_wrapper_install(
+    config: &RuntimeConfig,
+    state: &PersistedState,
+    package_path: &Path,
+    candidate_version: &str,
+) -> Result<install::ExpectedPackage> {
+    package_verification::expected_package_for_ready_install(
+        package_path,
+        &config.workspace_root,
+        Some(candidate_version),
+        state.dmg_sha256.as_deref(),
+        state.package_verification.as_ref(),
+    )
 }
 
 /// Clones or refreshes a managed wrapper checkout under the workspace cache and
@@ -470,6 +491,7 @@ fn which(tool: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::PackageVerification;
     use tempfile::tempdir;
 
     fn test_paths(root: &Path) -> RuntimePaths {
@@ -556,6 +578,44 @@ mod tests {
         );
         let persisted = PersistedState::load_or_default(&paths.state_file, true)?;
         assert_eq!(persisted.dmg_sha256.as_deref(), Some(dmg_sha256.as_str()));
+        Ok(())
+    }
+
+    #[test]
+    fn wrapper_install_uses_recorded_package_verification() -> Result<()> {
+        let root = tempdir()?;
+        let config = test_config(root.path());
+        let mut state = PersistedState::new(true);
+        let candidate_version = "2026.05.31.225946+abcdef12";
+        let dmg_sha256 = "a".repeat(64);
+        let workspace_dir = config.workspace_root.join("workspaces/test");
+        let package_path = workspace_dir.join("dist/codex-app_26.527.31326_amd64.deb");
+        std::fs::create_dir_all(package_path.parent().unwrap())?;
+        std::fs::write(&package_path, b"wrapper package")?;
+        let package_sha256 = package_verification::file_sha256(&package_path)?;
+        state.dmg_sha256 = Some(dmg_sha256.clone());
+        state.package_verification = Some(PackageVerification {
+            package_kind: "deb".to_string(),
+            package_path: std::fs::canonicalize(&package_path)?,
+            workspace_dir: std::fs::canonicalize(&workspace_dir)?,
+            package_name: "codex-app".to_string(),
+            package_version: "26.527.31326".to_string(),
+            sha256: package_sha256.clone(),
+            candidate_version: candidate_version.to_string(),
+            dmg_sha256,
+            verified_at: chrono::Utc::now(),
+        });
+
+        let expected = expected_package_for_wrapper_install(
+            &config,
+            &state,
+            &package_path,
+            candidate_version,
+        )?;
+
+        assert_eq!(expected.sha256(), package_sha256);
+        assert_eq!(expected.package_name(), "codex-app");
+        assert_eq!(expected.package_version(), "26.527.31326");
         Ok(())
     }
 }
