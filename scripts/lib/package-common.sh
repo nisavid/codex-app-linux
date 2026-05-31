@@ -626,7 +626,7 @@ function sanitizeGitRemoteUrl(remote) {
     if (url.protocol === "file:") {
       return null;
     }
-    if (url.protocol === "http:" || url.protocol === "https:") {
+    if (url.username || url.password) {
       url.username = "";
       url.password = "";
       return url.toString();

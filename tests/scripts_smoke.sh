@@ -2927,8 +2927,10 @@ PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" 'curl --disable --noproxy 127.0.0.1,localhost --silent --show-error --fail --max-time 2'
     assert_contains "$REPO_DIR/launcher/start.sh.template" "verify_webview_origin_with_python"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "urllib.request.ProxyHandler({})"
-    assert_contains "$REPO_DIR/launcher/start.sh.template" "for attempt in \$(seq 1 250)"
-    assert_contains "$REPO_DIR/launcher/start.sh.template" "sleep 0.02"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "for attempt in \$(seq 1 20)"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "webview_origin_is_reachable_fast"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "if webview_origin_is_reachable; then"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "sleep 0.05"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "Webview origin verified."
     assert_contains "$REPO_DIR/launcher/start.sh.template" "hydrate_graphical_session_env"
     assert_not_contains "$REPO_DIR/install.sh" "pkill -f \"http.server 5175\""
@@ -3121,7 +3123,7 @@ test_side_by_side_launcher_identity() {
     assert_contains "$app_dir/start.sh" "CODEX_LINUX_APP_DISPLAY_NAME=Codex\\ CUA\\ Lab"
     assert_contains "$app_dir/start.sh" 'CODEX_LINUX_WEBVIEW_PORT=${CODEX_WEBVIEW_PORT:-5176}'
     assert_contains "$app_dir/start.sh" 'CODEX_LINUX_SETTINGS_FILE="$APP_SETTINGS_FILE"'
-    assert_contains "$app_dir/start.sh" 'export CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_WEBVIEW_PORT CODEX_LINUX_SETTINGS_FILE'
+    assert_contains "$app_dir/start.sh" 'export CODEX_HOME CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_WEBVIEW_PORT CODEX_LINUX_SETTINGS_FILE CODEX_PORT_INTEGRATIONS_DIR CODEX_LINUX_FEATURES_DIR'
     assert_contains "$app_dir/start.sh" 'WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"'
     assert_contains "$app_dir/start.sh" 'ELECTRON_RENDERER_URL="${ELECTRON_RENDERER_URL:-$WEBVIEW_ORIGIN/}"'
     assert_contains "$app_dir/start.sh" "resolve_script_dir"

@@ -163,10 +163,7 @@ function applyLinuxReadyToShowWindowStatePatch(currentSource) {
 }
 
 function applyLinuxOpaqueBackgroundPatch(currentSource) {
-  if (
-    currentSource.includes("===`linux`&&!OM(") ||
-    /===`linux`&&![A-Za-z_$][\w$]*\([A-Za-z_$][\w$]*\)\?\{backgroundColor:[^{}]+,backgroundMaterial:null\}/.test(currentSource)
-  ) {
+  if (/process\.platform===`linux`\?\{backgroundColor:[^{}]+,backgroundMaterial:null\}/.test(currentSource)) {
     return currentSource;
   }
 
@@ -222,12 +219,34 @@ function applyLinuxOpaqueBackgroundPatch(currentSource) {
     `backgroundMaterial:\`mica\`}:process.platform===\`linux\`?{backgroundColor:${darkColorsParam}?${darkVar}:${lightVar},backgroundMaterial:null}:{backgroundColor:${transparentVar},backgroundMaterial:null}}`;
   const bgReplacement =
     `backgroundMaterial:\`mica\`}:${platformParam}===\`linux\`&&!${transparentAppearancePredicate}(${appearanceParam})?{backgroundColor:${darkColorsParam}?${darkVar}:${lightVar},backgroundMaterial:null}:{backgroundColor:${transparentVar},backgroundMaterial:null}}`;
+  const driftedLinuxBgPatchRegex = new RegExp(
+    [
+      "backgroundMaterial:`mica`}:process\\.platform===`linux`&&!",
+      "[A-Za-z_$][\\w$]*\\(",
+      escapeRegExp(appearanceParam),
+      "\\)\\?\\{backgroundColor:",
+      escapeRegExp(darkColorsParam),
+      "\\?",
+      escapeRegExp(darkVar),
+      ":",
+      escapeRegExp(lightVar),
+      ",backgroundMaterial:null\\}:\\{backgroundColor:",
+      escapeRegExp(transparentVar),
+      ",backgroundMaterial:null\\}\\}",
+    ].join(""),
+  );
 
+  if (currentSource.includes(bgReplacement)) {
+    return currentSource;
+  }
   if (currentSource.includes(bgNeedle)) {
     return currentSource.replace(bgNeedle, bgReplacement);
   }
   if (currentSource.includes(oldLinuxBgPatch)) {
     return currentSource.replace(oldLinuxBgPatch, bgReplacement);
+  }
+  if (driftedLinuxBgPatchRegex.test(currentSource)) {
+    return currentSource.replace(driftedLinuxBgPatchRegex, bgReplacement);
   }
 
   console.warn("WARN: Could not find BrowserWindow background color needle — skipping background patch");
