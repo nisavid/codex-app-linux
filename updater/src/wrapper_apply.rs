@@ -24,9 +24,9 @@ use tracing::{info, warn};
 use crate::{
     builder,
     config::{RuntimeConfig, RuntimePaths},
-    dmg_source, install, notify,
-    state::{PersistedState, UpdateStatus},
-    wrapper,
+    dmg_source, install, notify, package_verification,
+    state::{DmgVerification, DmgVerificationResult, PersistedState, UpdateStatus},
+    trust, wrapper,
 };
 
 /// How the running app was installed, which determines how a wrapper update is
@@ -353,6 +353,7 @@ async fn cached_or_downloaded_dmg(
 ) -> Result<PathBuf> {
     if let Some(dmg) = state.artifact_paths.dmg_path.clone() {
         if dmg.exists() {
+            trust_dmg_for_wrapper_rebuild(config, state, paths, &dmg, None)?;
             return Ok(dmg);
         }
     }
@@ -363,9 +364,59 @@ async fn cached_or_downloaded_dmg(
         dmg_source::download_dmg(&client, &config.dmg_url, &downloads_dir, chrono::Utc::now())
             .await
             .context("Failed to download official DMG for wrapper rebuild")?;
+    trust_dmg_for_wrapper_rebuild(
+        config,
+        state,
+        paths,
+        &downloaded.path,
+        Some(downloaded.sha256.as_str()),
+    )?;
     state.artifact_paths.dmg_path = Some(downloaded.path.clone());
     let _ = state.save(&paths.state_file);
     Ok(downloaded.path)
+}
+
+fn trust_dmg_for_wrapper_rebuild(
+    config: &RuntimeConfig,
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    dmg_path: &Path,
+    known_sha256: Option<&str>,
+) -> Result<()> {
+    let dmg_sha256 = match known_sha256 {
+        Some(value) => value.to_string(),
+        None => package_verification::file_sha256(dmg_path)?,
+    };
+    let manifest_path = trust::trusted_dmg_manifest_path(&config.builder_bundle_root);
+    match trust::verify_downloaded_dmg_with_manifest(&manifest_path, &config.dmg_url, &dmg_sha256) {
+        Ok(verified) => {
+            state.dmg_sha256 = Some(verified.sha256.clone());
+            state.dmg_verification = Some(DmgVerification {
+                result: DmgVerificationResult::Verified,
+                version: Some(verified.version),
+                sha256: Some(verified.sha256),
+                manifest_path: Some(verified.manifest_path),
+                verified_at: Some(chrono::Utc::now()),
+                message: Some("Wrapper rebuild DMG matched repo-trusted metadata".to_string()),
+            });
+            state.artifact_paths.dmg_path = Some(dmg_path.to_path_buf());
+            state.save(&paths.state_file)?;
+            Ok(())
+        }
+        Err(error) => {
+            state.dmg_verification = Some(DmgVerification {
+                result: DmgVerificationResult::Failed,
+                version: None,
+                sha256: Some(dmg_sha256),
+                manifest_path: Some(manifest_path),
+                verified_at: Some(chrono::Utc::now()),
+                message: Some(error.to_string()),
+            });
+            state.artifact_paths.dmg_path = Some(dmg_path.to_path_buf());
+            let _ = state.save(&paths.state_file);
+            Err(error)
+        }
+    }
 }
 
 /// Derives a monotonic package version (`YYYY.MM.DD.HHMMSS+<sha8>`) from the DMG
@@ -472,5 +523,39 @@ mod tests {
             Some(expected_commit.as_str())
         );
         assert_eq!(state.candidate_wrapper_version.as_deref(), Some("0.9.0"));
+    }
+
+    #[test]
+    fn wrapper_rebuild_dmg_trust_populates_package_builder_digest() -> Result<()> {
+        let root = tempdir()?;
+        let config = test_config(root.path());
+        let paths = test_paths(root.path());
+        let mut state = PersistedState::new(true);
+        let dmg_path = root.path().join("Codex.dmg");
+        std::fs::write(&dmg_path, b"trusted wrapper rebuild dmg")?;
+        let dmg_sha256 = package_verification::file_sha256(&dmg_path)?;
+        let manifest_path = trust::trusted_dmg_manifest_path(&config.builder_bundle_root);
+        std::fs::create_dir_all(manifest_path.parent().unwrap())?;
+        std::fs::write(
+            &manifest_path,
+            format!(
+                "{{\"schema_version\":1,\"dmgs\":[{{\"url\":\"{}\",\"version\":\"26.527.31326\",\"sha256\":\"{}\"}}]}}\n",
+                config.dmg_url, dmg_sha256
+            ),
+        )?;
+
+        trust_dmg_for_wrapper_rebuild(&config, &mut state, &paths, &dmg_path, None)?;
+
+        assert_eq!(state.dmg_sha256.as_deref(), Some(dmg_sha256.as_str()));
+        let verification = state.dmg_verification.as_ref().unwrap();
+        assert_eq!(verification.result, DmgVerificationResult::Verified);
+        assert_eq!(verification.sha256.as_deref(), Some(dmg_sha256.as_str()));
+        assert_eq!(
+            verification.manifest_path.as_deref(),
+            Some(manifest_path.as_path())
+        );
+        let persisted = PersistedState::load_or_default(&paths.state_file, true)?;
+        assert_eq!(persisted.dmg_sha256.as_deref(), Some(dmg_sha256.as_str()));
+        Ok(())
     }
 }

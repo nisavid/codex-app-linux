@@ -178,7 +178,7 @@ main() {
     new_electron_version="$(read_flake_string electronVersion)"
     local new_codex_version
     new_codex_version="$(read_flake_string codexVersion)"
-    if [ -n "$appcast_latest_version" ] && [ "$new_codex_version" != "$appcast_latest_version" ]; then
+    if [ -n "${appcast_latest_version:-}" ] && [ "$new_codex_version" != "$appcast_latest_version" ]; then
         echo "WARN: Appcast latest version ($appcast_latest_version) differs from Codex.dmg version ($new_codex_version); proceeding with verified DMG pins." >&2
     fi
     if [ "$old_electron_version" != "$new_electron_version" ]; then
