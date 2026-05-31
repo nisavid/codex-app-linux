@@ -28,6 +28,20 @@ read_flake_string() {
     grep -m1 "$name = " "$FLAKE_FILE" | sed 's/.*"\(.*\)".*/\1/'
 }
 
+fetch_appcast_latest_version() {
+    local url="${1:-$APPCAST_URL}"
+    curl -fsSL --retry 3 "$url" | python3 -c '
+import re
+import sys
+
+xml = sys.stdin.read()
+match = re.search(r"<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>", xml)
+if not match:
+    sys.exit("Could not find sparkle:shortVersionString in appcast")
+sys.stdout.write(match.group(1).strip())
+'
+}
+
 prefetch_sri() {
     local url="$1"
     nix store prefetch-file --json --hash-type sha256 "$url" \
@@ -162,6 +176,11 @@ main() {
     # build does not fail on the new download URLs.
     local new_electron_version
     new_electron_version="$(read_flake_string electronVersion)"
+    local new_codex_version
+    new_codex_version="$(read_flake_string codexVersion)"
+    if [ -n "$appcast_latest_version" ] && [ "$new_codex_version" != "$appcast_latest_version" ]; then
+        echo "WARN: Appcast latest version ($appcast_latest_version) differs from Codex.dmg version ($new_codex_version); proceeding with verified DMG pins." >&2
+    fi
     if [ "$old_electron_version" != "$new_electron_version" ]; then
         echo "Electron pin: $old_electron_version -> $new_electron_version; refreshing electron hashes."
         refresh_electron_hashes "$new_electron_version"
@@ -194,6 +213,20 @@ case "${1:-}" in
             exit 2
         fi
         read_flake_hash "$2" "$3"
+        ;;
+    read-flake-string)
+        if [ "$#" -ne 2 ]; then
+            echo "usage: $0 read-flake-string <name>" >&2
+            exit 2
+        fi
+        read_flake_string "$2"
+        ;;
+    read-appcast-version)
+        if [ "$#" -gt 2 ]; then
+            echo "usage: $0 read-appcast-version [url]" >&2
+            exit 2
+        fi
+        fetch_appcast_latest_version "${2:-$APPCAST_URL}"
         ;;
     "")
         main

@@ -27,7 +27,13 @@ const {
   patchLinuxMultiInstanceBootstrap,
 } = require("./patches/bootstrap.js");
 const {
+  applyAutomationScheduleMultiTimePatch,
+  patchAutomationScheduleAssets,
+} = require("./patches/automation-schedule.js");
+const {
+  applyLinuxChromeNativeHostRuntimePatch,
   applyLinuxChromePluginAutoInstallPatch,
+  patchLinuxChromeNativeHostRuntimeAssets,
 } = require("./patches/chrome-plugin.js");
 const {
   COMPUTER_USE_UI_ENV_VAR,
@@ -93,7 +99,9 @@ const {
 const {
   applyBrowserAnnotationScreenshotPatch,
   applyLinuxAppSunsetPatch,
+  applyLinuxConfigWriteVersionConflictPatch,
   applyLinuxOpaqueWindowsDefaultPatch,
+  applyLinuxFastModeModelGuardPatch,
   applySubagentNicknameMetadataPatch,
   patchCommentPreloadBundle,
 } = require("./patches/webview-assets.js");
@@ -156,6 +164,7 @@ function applyLinuxBrowserUseIabVisibleOnCreatePatch(currentSource) {
 module.exports = {
   COMPUTER_USE_UI_ENV_VAR,
   COMPUTER_USE_UI_SETTINGS_KEY,
+  applyAutomationScheduleMultiTimePatch,
   applyBrowserAnnotationScreenshotPatch,
   applyBrowserUseNodeReplApprovalPatch,
   applyKeybindsSettingsIndexPatch,
@@ -168,7 +177,9 @@ module.exports = {
   applyLinuxBrowserUseIabVisibleOnCreatePatch,
   applyLinuxBuildInfoTrayPatch,
   applyLinuxChromeExtensionStatusPatch,
+  applyLinuxChromeNativeHostRuntimePatch,
   applyLinuxChromePluginAutoInstallPatch,
+  applyLinuxConfigWriteVersionConflictPatch,
   applyLinuxComputerUseFeaturePatch,
   applyLinuxComputerUseInstallFlowPatch,
   applyLinuxComputerUsePluginGatePatch,
@@ -185,6 +196,7 @@ module.exports = {
   applyLinuxMultiInstanceBootstrapPatch,
   applyLinuxOpaqueBackgroundPatch,
   applyLinuxOpaqueWindowsDefaultPatch,
+  applyLinuxFastModeModelGuardPatch,
   applyLinuxQuitGuardPatch,
   applyLinuxReadyToShowWindowStatePatch,
   applyLinuxRemoteControlConfigPreservationPatch,
@@ -212,10 +224,12 @@ module.exports = {
   normalizePatchDescriptors,
   parseOsRelease,
   patchCommentPreloadBundle,
+  patchAutomationScheduleAssets,
   patchExtractedApp,
   patchKeybindsSettingsAssets,
   patchLinuxMultiInstanceBootstrap,
   patchLinuxAppUpdaterBridge,
+  patchLinuxChromeNativeHostRuntimeAssets,
   patchMainBundleSource,
   patchPackageJson,
   resolveDesktopName,

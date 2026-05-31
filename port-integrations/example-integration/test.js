@@ -206,6 +206,7 @@ test("legacy Linux feature option and manifest names remain compatibility aliase
     const integrationDir = path.join(root, "example-integration");
     fs.mkdirSync(integrationDir, { recursive: true });
     fs.copyFileSync(path.join(__dirname, "integration.json"), path.join(integrationDir, "feature.json"));
+    fs.copyFileSync(path.join(__dirname, "README.md"), path.join(integrationDir, "README.md"));
     fs.writeFileSync(
       path.join(root, "features.json"),
       JSON.stringify({ enabled: ["example-integration"] }, null, 2),

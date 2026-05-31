@@ -88,6 +88,24 @@ function sanitizeSourceInfo(info) {
   return sanitized;
 }
 
+function parseWrapperVersion(content) {
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.trim().match(/^version\s*=\s*"([^"]+)"/);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+function readWrapperVersion(repoDir) {
+  try {
+    return parseWrapperVersion(fs.readFileSync(path.join(repoDir, "updater", "Cargo.toml"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 function shortSourceCommit(commit) {
   if (commit == null) {
     return null;
@@ -110,6 +128,7 @@ function sourceInfoFromGit(repoDir, env = process.env) {
   return {
     commit,
     shortCommit: shortSourceCommit(commit),
+    version: readWrapperVersion(repoDir),
     branch: env.CODEX_LINUX_SOURCE_BRANCH?.trim() || runGit(repoDir, ["branch", "--show-current"]),
     remote: sanitizeGitRemoteUrl(env.CODEX_LINUX_SOURCE_REMOTE?.trim() || runGit(repoDir, ["remote", "get-url", "origin"])),
     describe: env.CODEX_LINUX_SOURCE_DESCRIBE?.trim() || runGit(repoDir, ["describe", "--always", "--dirty", "--tags"]),
@@ -123,6 +142,7 @@ function sourceInfo(repoDir, env = process.env) {
   if (staged != null && typeof staged === "object" && !Array.isArray(staged)) {
     return {
       ...sanitizeSourceInfo(staged),
+      version: staged.version ?? readWrapperVersion(repoDir),
       provenance: staged.provenance ?? "packaged-update-builder",
     };
   }
@@ -133,6 +153,7 @@ function sourceInfo(repoDir, env = process.env) {
   return {
     commit: env.CODEX_LINUX_SOURCE_COMMIT?.trim() || null,
     shortCommit: shortSourceCommit(env.CODEX_LINUX_SOURCE_COMMIT?.trim()),
+    version: readWrapperVersion(repoDir),
     branch: env.CODEX_LINUX_SOURCE_BRANCH?.trim() || null,
     remote: sanitizeGitRemoteUrl(env.CODEX_LINUX_SOURCE_REMOTE?.trim() || null),
     describe: env.CODEX_LINUX_SOURCE_DESCRIBE?.trim() || null,

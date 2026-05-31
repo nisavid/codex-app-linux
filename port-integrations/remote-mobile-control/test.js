@@ -566,6 +566,7 @@ test("remote mobile control integration exposes default main-bundle and webview 
       "integration:remote-mobile-control:linux-remote-control-visibility",
       "integration:remote-mobile-control:linux-remote-control-copy",
       "integration:remote-mobile-control:linux-remote-control-settings-ux",
+      "integration:remote-mobile-control:linux-remote-control-selected-tab",
       "integration:remote-mobile-control:linux-remote-control-client-revoke-setup-reset",
       "integration:remote-mobile-control:linux-remote-connections-refresh",
       "integration:remote-mobile-control:linux-remote-mobile-conversation-hydration",
@@ -579,6 +580,7 @@ test("remote mobile control integration exposes default main-bundle and webview 
       "main-bundle",
       "main-bundle",
       "extracted-app",
+      "webview-asset",
       "webview-asset",
       "webview-asset",
       "webview-asset",
@@ -738,7 +740,7 @@ test("Linux remote-control enablement sync includes remote_control", () => {
   const patched = applyLinuxRemoteControlFeatureSyncPatch(source);
 
   assert.notEqual(patched, source);
-  assert.match(patched, /`tool_suggest`,`remote_control`\]/);
+  assert.match(patched, /\.remote_control=!0/);
   assert.match(patched, /codexLinuxRemoteControlFeatureSyncEnabled/);
   assert.equal(applyLinuxRemoteControlFeatureSyncPatch(patched), patched);
 });
@@ -964,13 +966,13 @@ test("Linux remote mobile conversation hydration patch handles stale refresh and
   assert.match(patched, /codexLinuxRemoteMobilePendingNotifications\?\?=new Map/);
   assert.match(patched, /this\.readThread\(r,\{includeTurns:!1\}\)/);
   assert.match(patched, /typeof t\?\.path==`string`&&t\.path\.endsWith\(`\.jsonl`\)/);
-  assert.match(patched, /if\(!\(typeof t\?\.path==`string`&&t\.path\.endsWith\(`\.jsonl`\)\)\)\{if\(a<12\)/);
+  assert.match(patched, /if\(!\(typeof t\?\.path==`string`&&t\.path\.endsWith\(`\.jsonl`\)\)\)\{if\(s<12\)/);
   assert.match(patched, /Retrying hydration for non-persisted conversation/);
-  assert.match(patched, /queuedNotificationCount:i\.length,attempt:a\+1/);
-  assert.match(patched, /setTimeout\(\(\)=>s\(a\+1\),250\)/);
+  assert.match(patched, /queuedNotificationCount:c\.length,attempt:s\+1/);
+  assert.match(patched, /setTimeout\(\(\)=>o\(s\+1\),250\)/);
   assert.match(patched, /Skipping hydration for non-persisted conversation/);
   assert.match(patched, /releaseBrowserUseTurnRoute\(r,t\.id\)/);
-  assert.match(patched, /for\(let e of i\)this\.onNotification\(e\.method,e\.params\)/);
+  assert.match(patched, /for\(let e of c\)this\.onNotification\(e\.method,e\.params\)/);
   assert.match(patched, /Queueing item\/started for hydrating conversation/);
   assert.match(patched, /Queueing item\/completed for hydrating conversation/);
   assert.match(patched, /Queueing turn\/completed for hydrating conversation/);
@@ -1001,8 +1003,8 @@ test("Linux remote mobile conversation hydration patch retries transient thread 
 
   assert.match(patched, /Retrying hydration for turn\/started/);
   assert.match(patched, /Retrying hydration for non-persisted conversation/);
-  assert.match(patched, /if\(a<12\)/);
-  assert.match(patched, /setTimeout\(\(\)=>s\(a\+1\),250\)/);
+  assert.match(patched, /if\(s<12\)/);
+  assert.match(patched, /setTimeout\(\(\)=>o\(s\+1\),250\)/);
   assert.match(patched, /Failed to hydrate conversation for turn\/started/);
 });
 
@@ -1010,7 +1012,7 @@ test("Linux remote mobile conversation hydration patch upgrades unsafe queued hy
   const source = syntheticAppServerManagerSignalsBundle();
   const patched = applyLinuxRemoteMobileConversationHydrationPatch(source);
   const safeRead =
-    "this.readThread(r,{includeTurns:!1}).then(e=>{let t=e?.thread??e,i=this.codexLinuxRemoteMobilePendingNotifications?.get(r)??[];if(!(typeof t?.path==`string`&&t.path.endsWith(`.jsonl`))){if(a<12){R.warning(`Retrying hydration for non-persisted conversation`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:i.length,attempt:a+1},sensitive:{}}),setTimeout(()=>s(a+1),250);return}this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let e of i)if(e.method===`turn/completed`){let{turn:t}=e.params;this.browserUseTurnRouteIdsByConversationId.get(r)?.has(t.id)===!0&&this.releaseBrowserUseTurnRoute(r,t.id),this.computerUseTurnRouteIdsByConversationId.get(r)?.has(t.id)===!0&&this.releaseComputerUseTurnRoute(r,t.id)}R.warning(`Skipping hydration for non-persisted conversation`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:i.length},sensitive:{}});return}this.upsertConversationFromThread(t);this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let e of i)this.onNotification(e.method,e.params)}).catch";
+    "this.readThread(r,{includeTurns:!1}).then(e=>{let t=e?.thread??e,c=this.codexLinuxRemoteMobilePendingNotifications?.get(r)??[];if(!(typeof t?.path==`string`&&t.path.endsWith(`.jsonl`))){if(s<12){R.warning(`Retrying hydration for non-persisted conversation`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:c.length,attempt:s+1},sensitive:{}}),setTimeout(()=>o(s+1),250);return}this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let e of c)if(e.method===`turn/completed`){let{turn:t}=e.params;this.browserUseTurnRouteIdsByConversationId.get(r)?.has(t.id)===!0&&this.releaseBrowserUseTurnRoute(r,t.id),this.computerUseTurnRouteIdsByConversationId.get(r)?.has(t.id)===!0&&this.releaseComputerUseTurnRoute(r,t.id)}R.warning(`Skipping hydration for non-persisted conversation`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:c.length},sensitive:{}});return}this.upsertConversationFromThread(t),this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let e of c)this.onNotification(e.method,e.params)}).catch";
   const unsafeRead =
     "this.readThread(r,{includeTurns:!1}).then(e=>{let t=e?.thread??e;if(t){this.upsertConversationFromThread(t);let e=this.codexLinuxRemoteMobilePendingNotifications?.get(r)??[];this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let t of e)this.onNotification(t.method,t.params)}}).catch";
   const unsafeQueued = patched.replace(safeRead, unsafeRead);
@@ -1030,7 +1032,7 @@ test("Linux remote mobile conversation hydration patch upgrades local-path guard
   const source = syntheticAppServerManagerSignalsBundle();
   const patched = applyLinuxRemoteMobileConversationHydrationPatch(source);
   const localPathGuardedRead =
-    "this.readThread(r,{includeTurns:!1}).then(e=>{let t=e?.thread??e,i=this.codexLinuxRemoteMobilePendingNotifications?.get(r)??[];if(!(typeof t?.path==`string`&&t.path.endsWith(`.jsonl`))){if(a<12){R.warning(`Retrying hydration for non-persisted conversation`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:i.length,attempt:a+1},sensitive:{}}),setTimeout(()=>s(a+1),250);return}this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let e of i)if(e.method===`turn/completed`){let{turn:t}=e.params;this.browserUseTurnRouteIdsByConversationId.get(r)?.has(t.id)===!0&&this.releaseBrowserUseTurnRoute(r,t.id),this.computerUseTurnRouteIdsByConversationId.get(r)?.has(t.id)===!0&&this.releaseComputerUseTurnRoute(r,t.id)}R.warning(`Skipping hydration for non-persisted conversation`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:i.length},sensitive:{}});return}this.upsertConversationFromThread(t);this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let e of i)this.onNotification(e.method,e.params)}).catch";
+    "this.readThread(r,{includeTurns:!1}).then(e=>{let t=e?.thread??e,c=this.codexLinuxRemoteMobilePendingNotifications?.get(r)??[];if(!(typeof t?.path==`string`&&t.path.endsWith(`.jsonl`))){if(s<12){R.warning(`Retrying hydration for non-persisted conversation`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:c.length,attempt:s+1},sensitive:{}}),setTimeout(()=>o(s+1),250);return}this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let e of c)if(e.method===`turn/completed`){let{turn:t}=e.params;this.browserUseTurnRouteIdsByConversationId.get(r)?.has(t.id)===!0&&this.releaseBrowserUseTurnRoute(r,t.id),this.computerUseTurnRouteIdsByConversationId.get(r)?.has(t.id)===!0&&this.releaseComputerUseTurnRoute(r,t.id)}R.warning(`Skipping hydration for non-persisted conversation`,{safe:{conversationId:r,path:t?.path??null,queuedNotificationCount:c.length},sensitive:{}});return}this.upsertConversationFromThread(t),this.codexLinuxRemoteMobilePendingNotifications?.delete(r);for(let e of c)this.onNotification(e.method,e.params)}).catch";
   const oldGuarded = patched.replace(localPathGuardedRead, localPathGuardedRead);
 
   assert.equal(oldGuarded, patched);
@@ -1334,7 +1336,7 @@ test("remote mobile control integration participates in ASAR patching and report
         assert.match(patchedAppServerLaunchFile, /codexLinuxRemoteMobileAppServerArgs/);
         assert.match(patchedAppServerLaunchFile, /`--remote-control`/);
         assert.match(patchedRemoteConnectionVisibilityFile, /codexLinuxRemoteControlLoadGateEnabled/);
-        assert.match(patchedAppMainFile, /`remote_control`/);
+        assert.match(patchedAppMainFile, /\.remote_control=!0/);
         assert.match(patchedVisibilityFile, /navigator\.userAgent\.includes\(`Linux`\)/);
         assert.match(patchedRemoteConnectionsSettingsFile, /codexLinuxRemoteControlSettingsTabs/);
         assert.match(patchedRemoteConnectionsSettingsFile, /codexLinuxRemoteControlResetMobileSetupAfterRevoke/);

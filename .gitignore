@@ -12,9 +12,15 @@ dist/
 dist-next/
 port-integrations/integrations.json
 port-integrations/features.json
+port-integrations/local/
 linux-features/features.json
+linux-features/local/
 .idea/
 .claude/
 /.codex
 .firecrawl/
 .impeccable/
+
+# graphify
+graphify-out/
+.graphify_*

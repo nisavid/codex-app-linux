@@ -14,6 +14,9 @@ const linuxSettingsKeys = {
   promptWindow: "codex-linux-prompt-window-enabled",
   systemTray: "codex-linux-system-tray-enabled",
   warmStart: "codex-linux-warm-start-enabled",
+  autoUpdateOnExit: "codex-linux-auto-update-on-exit",
+  wrapperUpdates: "codex-linux-wrapper-updates-enabled",
+  integrationPickerOnUpdate: "codex-linux-integration-picker-on-update",
 };
 
 function readDirectoryNames(dir) {
@@ -118,6 +121,69 @@ function findRequiredWebviewAsset(webviewAssetsDir, filenamePattern, marker, des
   }
 
   return matches[0];
+}
+
+function findExportedAlias(source, localName) {
+  const exportList = source.match(/export\{([^}]*)\}/)?.[1];
+  if (exportList == null) {
+    return null;
+  }
+
+  for (const rawEntry of exportList.split(",")) {
+    const entry = rawEntry.trim();
+    const aliasMatch = entry.match(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/);
+    if (aliasMatch != null && aliasMatch[1] === localName) {
+      return aliasMatch[2];
+    }
+    if (entry === localName) {
+      return localName;
+    }
+  }
+
+  return null;
+}
+
+function findCodexRequestExportName(source) {
+  const match = source.match(
+    /async function\s+([A-Za-z_$][\w$]*)\(\.\.\.[^)]+\)\{let\[[^\]]+\]=[^;]+,\{params:[^}]+source:[^}]+\}=[^;]+;return\s+[A-Za-z_$][\w$]*\([^)]*\)\}/,
+  );
+  if (match == null) {
+    return null;
+  }
+
+  return findExportedAlias(source, match[1]);
+}
+
+function findCodexRequestWebviewAsset(webviewAssetsDir) {
+  if (!fs.existsSync(webviewAssetsDir)) {
+    throw new Error(`Required Keybinds settings patch failed: missing webview assets directory ${webviewAssetsDir}`);
+  }
+
+  const legacyAsset = fs
+    .readdirSync(webviewAssetsDir)
+    .filter((name) => regexpTest(/^vscode-api-.*\.js$/, name))
+    .sort()
+    .find((name) => readWebviewAsset(webviewAssetsDir, name).includes("vscode://codex"));
+  if (legacyAsset != null) {
+    return { assetName: legacyAsset, exportName: "n" };
+  }
+
+  const modernCandidates = fs
+    .readdirSync(webviewAssetsDir)
+    .filter((name) => regexpTest(/^setting-storage-.*\.js$/, name))
+    .sort();
+  for (const candidate of modernCandidates) {
+    const source = readWebviewAsset(webviewAssetsDir, candidate);
+    if (!source.includes("vscode://codex/")) {
+      continue;
+    }
+    const exportName = findCodexRequestExportName(source);
+    if (exportName != null) {
+      return { assetName: candidate, exportName };
+    }
+  }
+
+  throw new Error("Required Keybinds settings patch failed: could not find Codex request API asset");
 }
 
 function findImportedAsset(webviewAssetsDir, importerAsset, description) {
@@ -278,7 +344,9 @@ module.exports = {
   TRAY_GUARD_LOOKAHEAD,
   escapeRegExp,
   findCallBlock,
+  findCodexRequestWebviewAsset,
   findDisposableVar,
+  findExportedAlias,
   findIconAsset,
   findImportedAsset,
   findLastRegexMatch,

@@ -39,6 +39,7 @@ ICON_SOURCE="$SCRIPT_DIR/assets/codex.png"
 . "$SCRIPT_DIR/scripts/lib/port-integrations.sh"
 . "$SCRIPT_DIR/scripts/lib/build-info.sh"
 . "$SCRIPT_DIR/scripts/lib/rebuild-report.sh"
+. "$SCRIPT_DIR/scripts/lib/build-info.sh"
 
 # ---- Create start script ----
 create_start_script() {

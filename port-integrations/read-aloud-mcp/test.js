@@ -40,12 +40,16 @@ function applyPatchTwice(patchFn, source) {
 
 test("read-aloud-mcp stages by default", () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "read-aloud-mcp-integration-"));
-    const integrationsRoot = path.join(tempDir, "integrations");
+  const integrationsRoot = path.join(tempDir, "integrations");
   try {
     fs.mkdirSync(path.join(integrationsRoot, "read-aloud-mcp"), { recursive: true });
     fs.copyFileSync(
       path.join(__dirname, "integration.json"),
       path.join(integrationsRoot, "read-aloud-mcp", "integration.json"),
+    );
+    fs.copyFileSync(
+      path.join(__dirname, "README.md"),
+      path.join(integrationsRoot, "read-aloud-mcp", "README.md"),
     );
     fs.copyFileSync(
       path.join(__dirname, "stage.sh"),

@@ -300,7 +300,7 @@ install_dnf5() {
     # Node.js is provided by install.sh's managed runtime on Fedora 41+.
     sudo dnf5 install -y \
         python3 p7zip p7zip-plugins curl unzip \
-        gcc-c++ make \
+        rpm-build gcc-c++ make \
         @development-tools
 }
 
@@ -309,7 +309,7 @@ install_dnf() {
     # Older dnf: 7z comes from p7zip + p7zip-plugins
     sudo dnf install -y \
         nodejs npm python3 \
-        p7zip p7zip-plugins curl unzip
+        p7zip p7zip-plugins curl unzip rpm-build
     sudo dnf groupinstall -y 'Development Tools'
 }
 
@@ -485,8 +485,8 @@ case "$DISTRO" in
         error "Unsupported package manager. Install manually:
   # Debian/Ubuntu: install Node.js 20+ with npm/npx from NodeSource, nvm, or another compatible source, then:
   sudo apt install python3 p7zip-full curl unzip coreutils tar build-essential       # Debian/Ubuntu
-  sudo dnf5 install python3 p7zip p7zip-plugins curl unzip coreutils tar gcc-c++ make @development-tools # Fedora 41+ (dnf5; install.sh provides managed Node.js)
-  sudo dnf install nodejs npm python3 p7zip p7zip-plugins curl unzip coreutils tar   # Fedora <41 (dnf)
+  sudo dnf5 install python3 p7zip p7zip-plugins curl unzip coreutils tar rpm-build gcc-c++ make @development-tools # Fedora 41+ (dnf5; install.sh provides managed Node.js)
+  sudo dnf install nodejs npm python3 p7zip p7zip-plugins curl unzip coreutils tar rpm-build # Fedora <41 (dnf)
   sudo dnf groupinstall 'Development Tools'                                          # Fedora <41 (dnf)
   sudo pacman -S nodejs npm python p7zip curl unzip coreutils tar zstd base-devel    # Arch
   sudo zypper install nodejs-default npm-default python3 p7zip-full curl unzip coreutils tar # openSUSE

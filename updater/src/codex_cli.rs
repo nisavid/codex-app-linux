@@ -410,19 +410,9 @@ fn resolve_runtime_cli_path_after_install(
 fn known_cli_locations() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        candidates.push(home.join(".nvm/versions/node/current/bin/codex"));
-        let versions_root = home.join(".nvm/versions/node");
-        if let Ok(entries) = fs::read_dir(versions_root) {
-            let mut versioned_paths = entries
-                .filter_map(|entry| {
-                    let path = entry.ok()?.path();
-                    let version = parse_node_version_dir(path.file_name()?.to_str()?)?;
-                    Some((version, path.join("bin/codex")))
-                })
-                .collect::<Vec<_>>();
-            versioned_paths.sort_by_key(|(version, _)| std::cmp::Reverse(*version));
-            candidates.extend(versioned_paths.into_iter().map(|(_, path)| path));
-        }
+        append_nvm_cli_locations(&mut candidates, xdg_nvm_root(&home));
+        append_nvm_cli_locations(&mut candidates, home.join(".nvm"));
+        candidates.push(home.join(".npm-global/bin/codex"));
         candidates.push(home.join(".volta/bin/codex"));
         candidates.push(home.join(".asdf/shims/codex"));
         candidates.push(home.join(".local/share/mise/shims/codex"));
@@ -436,6 +426,22 @@ fn known_cli_locations() -> Vec<PathBuf> {
         candidates.push(PathBuf::from("/usr/bin/codex"));
     }
     candidates
+}
+
+fn append_nvm_cli_locations(candidates: &mut Vec<PathBuf>, nvm_root: PathBuf) {
+    candidates.push(nvm_root.join("versions/node/current/bin/codex"));
+    let versions_root = nvm_root.join("versions/node");
+    if let Ok(entries) = fs::read_dir(versions_root) {
+        let mut versioned_paths = entries
+            .filter_map(|entry| {
+                let path = entry.ok()?.path();
+                let version = parse_node_version_dir(path.file_name()?.to_str()?)?;
+                Some((version, path.join("bin/codex")))
+            })
+            .collect::<Vec<_>>();
+        versioned_paths.sort_by_key(|(version, _)| std::cmp::Reverse(*version));
+        candidates.extend(versioned_paths.into_iter().map(|(_, path)| path));
+    }
 }
 
 fn parse_node_version_dir(name: &str) -> Option<(u64, u64, u64)> {
@@ -830,12 +836,29 @@ fn command_path_env() -> OsString {
     std::env::join_paths(entries).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
 }
 
-fn preferred_node_bin_dirs() -> Vec<PathBuf> {
-    let nvm_root = std::env::var_os("NVM_DIR")
+fn xdg_nvm_root(home: &Path) -> PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".nvm")));
+        .unwrap_or_else(|| home.join(".config"))
+        .join("nvm")
+}
 
-    let Some(nvm_root) = nvm_root else {
+fn default_nvm_root() -> Option<PathBuf> {
+    if let Some(nvm_dir) = std::env::var_os("NVM_DIR") {
+        return Some(PathBuf::from(nvm_dir));
+    }
+
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let xdg_root = xdg_nvm_root(&home);
+    if xdg_root.is_dir() {
+        Some(xdg_root)
+    } else {
+        Some(home.join(".nvm"))
+    }
+}
+
+fn preferred_node_bin_dirs() -> Vec<PathBuf> {
+    let Some(nvm_root) = default_nvm_root() else {
         return Vec::new();
     };
 
@@ -914,7 +937,48 @@ mod tests {
             builder_bundle_root: paths.cache_dir.join("builder"),
             app_executable_path: paths.cache_dir.join("electron"),
             cli_path: None,
+            enable_wrapper_updates: false,
+            wrapper_remote: String::new(),
+            wrapper_branch: "main".to_string(),
         }
+    }
+
+    #[test]
+    fn xdg_nvm_install_is_discovered_without_shell_env() -> Result<()> {
+        let _env_guard = env_lock();
+        let temp = tempdir()?;
+        let home = temp.path().join("home");
+        let nvm_bin = home.join(".config/nvm/versions/node/v22.17.1/bin");
+        fs::create_dir_all(&nvm_bin)?;
+
+        for binary in ["node", "npm", "npx"] {
+            fs::write(nvm_bin.join(binary), "")?;
+        }
+        let codex_path = nvm_bin.join("codex");
+        write_executable_script(
+            &codex_path,
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ] || [ \"$1\" = \"version\" ]; then\n  echo 'codex-cli v0.42.0'\n  exit 0\nfi\nexit 1\n",
+        )?;
+
+        let _home_guard = EnvVarGuard::set(&_env_guard, "HOME", home.as_os_str());
+        let _path_guard = EnvVarGuard::set(
+            &_env_guard,
+            "PATH",
+            temp.path().join("missing-bin").as_os_str(),
+        );
+        let _nvm_guard = EnvVarGuard::remove(&_env_guard, "NVM_DIR");
+        let _xdg_config_guard = EnvVarGuard::remove(&_env_guard, "XDG_CONFIG_HOME");
+        let _cli_path_guard = EnvVarGuard::remove(&_env_guard, "CODEX_CLI_PATH");
+        let _skip_system_cli_guard = EnvVarGuard::set(
+            &_env_guard,
+            "CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP",
+            "1",
+        );
+
+        let command_path = command_path_env();
+        assert!(std::env::split_paths(&command_path).any(|path| path == nvm_bin.as_path()));
+        assert_eq!(resolve_cli_path(None), Some(codex_path));
+        Ok(())
     }
 
     #[test]

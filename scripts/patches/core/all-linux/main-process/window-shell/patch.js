@@ -7,8 +7,8 @@ const {
   applyLinuxReadyToShowWindowStatePatch,
   applyLinuxOpaqueBackgroundPatch,
   applyLinuxFileManagerPatch,
-  applyLinuxTrayPatch,
   applyLinuxBuildInfoTrayPatch,
+  applyLinuxTrayPatch,
   applyLinuxSingleInstancePatch,
   applyLinuxGitOriginsSourceFallbackPatch,
 } = require("../../../../main-process.js");

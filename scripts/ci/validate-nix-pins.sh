@@ -203,6 +203,57 @@ json_file_field() {
     node -e "const value = require(process.argv[1]); process.stdout.write(String($expression ?? ''));" "$json_path"
 }
 
+sanitize_electron_version() {
+    local value="$1"
+    value="${value#v}"
+    value="${value#^}"
+    value="${value#~}"
+
+    if [[ "$value" =~ ^[0-9]+(\.[0-9]+){2}([.-][0-9A-Za-z]+)*$ ]]; then
+        echo "$value"
+        return 0
+    fi
+
+    return 1
+}
+
+read_plist_key() {
+    local plist_path="$1"
+    local key="$2"
+
+    python3 - "$plist_path" "$key" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    print(plistlib.load(handle).get(sys.argv[2], ""))
+PY
+}
+
+detect_dmg_electron_version() {
+    local app_dir="$1"
+    local asar_extract_dir="$2"
+    local detected=""
+    local detected_version=""
+    local plist_path="$app_dir/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/Info.plist"
+
+    if [ -f "$plist_path" ]; then
+        detected="$(read_plist_key "$plist_path" CFBundleVersion)"
+        if detected_version="$(sanitize_electron_version "$detected")"; then
+            echo "$detected_version"
+            return 0
+        fi
+    fi
+
+    detected="$(json_file_field "$asar_extract_dir/package.json" "(value.devDependencies?.electron || value.dependencies?.electron)")"
+    if detected_version="$(sanitize_electron_version "$detected")"; then
+        echo "$detected_version"
+        return 0
+    fi
+
+    fail "Could not find Electron version in DMG"
+}
+
 assert_equal() {
     local label="$1"
     local expected="$2"
