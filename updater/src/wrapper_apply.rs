@@ -16,8 +16,11 @@
 use anyhow::{Context, Result};
 use std::{
     os::unix::fs::PermissionsExt,
+    os::unix::process::CommandExt,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
 use tracing::{info, warn};
 
@@ -28,6 +31,17 @@ use crate::{
     state::{DmgVerification, DmgVerificationResult, PersistedState, UpdateStatus},
     trust, wrapper,
 };
+
+#[cfg(test)]
+const GIT_COMMAND_TIMEOUT: Duration = Duration::from_millis(200);
+#[cfg(not(test))]
+const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
+const GIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const SIGKILL: i32 = 9;
+
+unsafe extern "C" {
+    fn kill(pid: i32, sig: i32) -> i32;
+}
 
 /// How the running app was installed, which determines how a wrapper update is
 /// applied.
@@ -361,11 +375,63 @@ pub(crate) fn ensure_wrapper_source(
     Ok(dest)
 }
 
-fn run_git(args: &[&str]) -> Result<()> {
-    let status = Command::new("git")
+fn guarded_git_ssh_command() -> String {
+    let base = std::env::var("GIT_SSH_COMMAND")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "ssh".to_string());
+    format!("{base} -oBatchMode=yes -oStrictHostKeyChecking=yes")
+}
+
+fn git_command(args: &[&str]) -> Command {
+    let mut command = Command::new("git");
+    command
         .args(args)
-        .status()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_ASKPASS", "true")
+        .env("SSH_ASKPASS", "true")
+        .env("GCM_INTERACTIVE", "never")
+        .env("GIT_SSH_COMMAND", guarded_git_ssh_command());
+    command.process_group(0);
+    command
+}
+
+fn kill_child_process_group(child: &mut std::process::Child) {
+    let pgid = child.id() as i32;
+    // SAFETY: `git_command` starts git in its own process group, so a negative
+    // pgid targets only the subprocess tree we created for this git operation.
+    unsafe {
+        let _ = kill(-pgid, SIGKILL);
+    }
+    let _ = child.kill();
+}
+
+fn run_git(args: &[&str]) -> Result<()> {
+    let mut child = git_command(args)
+        .spawn()
         .context("Failed to run git for wrapper source")?;
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child
+            .try_wait()
+            .context("Failed to wait for git wrapper source command")?
+        {
+            break status;
+        }
+        if started.elapsed() >= GIT_COMMAND_TIMEOUT {
+            kill_child_process_group(&mut child);
+            let _ = child.wait();
+            anyhow::bail!(
+                "git {:?} timed out after {} seconds",
+                args,
+                GIT_COMMAND_TIMEOUT.as_secs_f64()
+            );
+        }
+        thread::sleep(GIT_POLL_INTERVAL);
+    };
     if !status.success() {
         anyhow::bail!("git {:?} exited with status {status}", args);
     }
@@ -498,6 +564,7 @@ fn which(tool: &str) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use crate::state::PackageVerification;
+    use crate::test_util::env_lock;
     use tempfile::tempdir;
 
     fn test_paths(root: &Path) -> RuntimePaths {
@@ -642,6 +709,97 @@ mod tests {
         assert_eq!(expected.sha256(), package_sha256);
         assert_eq!(expected.package_name(), "codex-app");
         assert_eq!(expected.package_version(), "26.527.31326");
+        Ok(())
+    }
+
+    #[test]
+    fn wrapper_source_git_uses_non_interactive_environment() -> Result<()> {
+        let _g = env_lock();
+        let root = tempdir()?;
+        let bin_dir = root.path().join("bin");
+        std::fs::create_dir_all(&bin_dir)?;
+        let fake_git = bin_dir.join("git");
+        let record = root.path().join("git-env.txt");
+        std::fs::write(
+            &fake_git,
+            r#"#!/bin/sh
+{
+  printf 'GIT_TERMINAL_PROMPT=%s\n' "$GIT_TERMINAL_PROMPT"
+  printf 'GIT_ASKPASS=%s\n' "$GIT_ASKPASS"
+  printf 'SSH_ASKPASS=%s\n' "$SSH_ASKPASS"
+  printf 'GCM_INTERACTIVE=%s\n' "$GCM_INTERACTIVE"
+  printf 'GIT_SSH_COMMAND=%s\n' "$GIT_SSH_COMMAND"
+} > "$CODEX_TEST_GIT_ENV_RECORD"
+exit 0
+"#,
+        )?;
+        let mut permissions = std::fs::metadata(&fake_git)?.permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&fake_git, permissions)?;
+
+        let old_path = std::env::var_os("PATH");
+        let old_record = std::env::var_os("CODEX_TEST_GIT_ENV_RECORD");
+        let mut path_entries = vec![bin_dir];
+        if let Some(path) = old_path.as_ref() {
+            path_entries.extend(std::env::split_paths(path));
+        }
+        std::env::set_var("PATH", std::env::join_paths(path_entries)?);
+        std::env::set_var("CODEX_TEST_GIT_ENV_RECORD", &record);
+
+        let result = run_git(&["status"]);
+
+        if let Some(path) = old_path {
+            std::env::set_var("PATH", path);
+        } else {
+            std::env::remove_var("PATH");
+        }
+        if let Some(value) = old_record {
+            std::env::set_var("CODEX_TEST_GIT_ENV_RECORD", value);
+        } else {
+            std::env::remove_var("CODEX_TEST_GIT_ENV_RECORD");
+        }
+
+        result?;
+        let env_record = std::fs::read_to_string(record)?;
+        assert!(env_record.contains("GIT_TERMINAL_PROMPT=0"));
+        assert!(env_record.contains("GIT_ASKPASS=true"));
+        assert!(env_record.contains("SSH_ASKPASS=true"));
+        assert!(env_record.contains("GCM_INTERACTIVE=never"));
+        assert!(env_record.contains("-oBatchMode=yes"));
+        Ok(())
+    }
+
+    #[test]
+    fn wrapper_source_git_times_out() -> Result<()> {
+        let _g = env_lock();
+        let root = tempdir()?;
+        let bin_dir = root.path().join("bin");
+        std::fs::create_dir_all(&bin_dir)?;
+        let fake_git = bin_dir.join("git");
+        std::fs::write(&fake_git, "#!/bin/sh\nsleep 60\n")?;
+        let mut permissions = std::fs::metadata(&fake_git)?.permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&fake_git, permissions)?;
+
+        let old_path = std::env::var_os("PATH");
+        let mut path_entries = vec![bin_dir];
+        if let Some(path) = old_path.as_ref() {
+            path_entries.extend(std::env::split_paths(path));
+        }
+        std::env::set_var("PATH", std::env::join_paths(path_entries)?);
+        let started = Instant::now();
+
+        let error = run_git(&["clone", "git@example.invalid:repo.git"])
+            .expect_err("prompting git command should time out");
+
+        if let Some(path) = old_path {
+            std::env::set_var("PATH", path);
+        } else {
+            std::env::remove_var("PATH");
+        }
+
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(error.to_string().contains("timed out"));
         Ok(())
     }
 }
