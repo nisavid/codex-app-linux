@@ -229,18 +229,22 @@ function exportedGeneralSettingsFunctionName(source) {
   return null;
 }
 
-function replaceExistingGeneralSettingsReadAloudRow(source) {
+function replaceExistingGeneralSettingsReadAloudRow(
+  source,
+  generalSettingsFunctionName = "Gn",
+  blockSource = generalSettingsReadAloudBlockSource(),
+) {
   const rowStart = source.indexOf("function codexLinuxReadAloudSettingsRow(){");
   if (rowStart === -1) {
     return source;
   }
   const paceStart = source.indexOf("function codexLinuxReadAloudPaceValue(");
   const start = paceStart !== -1 && paceStart < rowStart ? paceStart : rowStart;
-  const end = source.indexOf("function Gn(){", rowStart);
+  const end = source.indexOf(`function ${generalSettingsFunctionName}(){`, rowStart);
   if (end === -1) {
     return source;
   }
-  return `${source.slice(0, start)}${generalSettingsReadAloudBlockSource()}${source.slice(end)}`;
+  return `${source.slice(0, start)}${blockSource}${source.slice(end)}`;
 }
 
 function removeGeneralSettingsRowPlacement(source) {
@@ -269,7 +273,7 @@ function applyGeneralSettingsPatch(source) {
       !patched.includes("settings.general.readAloud.help") ||
       !patched.includes("function codexLinuxReadAloudSettingsPage")
     ) {
-      patched = replaceExistingGeneralSettingsReadAloudRow(patched);
+      patched = replaceExistingGeneralSettingsReadAloudRow(patched, functionName, blockSource);
     }
   } else {
     patched = patched.replace(functionNeedle, `${blockSource}${functionNeedle}`);

@@ -40,7 +40,7 @@ function applyMainBundlePatch(source) {
     `function codexLinuxWrapReadStatus(){try{let p=codexLinuxWrapStatePath();if(!p||!${fsVar}.existsSync(p))return null;return JSON.parse(${fsVar}.readFileSync(p,\`utf8\`))}catch{return null}}`,
     `function codexLinuxWrapShouldShow(s){return !!(s&&typeof s===\`object\`&&s.wrapper_dev_mode!==!0&&typeof s.candidate_wrapper_commit===\`string\`&&s.candidate_wrapper_commit.length>0)}`,
     `function codexLinuxWrapStatusPayload(){let s=codexLinuxWrapReadStatus();return{ok:!0,show:codexLinuxWrapShouldShow(s),dev_mode:!!(s&&s.wrapper_dev_mode===!0),changelog:s?s.wrapper_changelog||\`\`:\`\`,commit:s?s.candidate_wrapper_commit||\`\`:\`\`,installed_commit:s?s.installed_wrapper_commit||\`\`:\`\`}}`,
-    `function codexLinuxWrapManagerPath(){let e=process.env.CODEX_UPDATE_MANAGER_PATH;return typeof e===\`string\`&&e.trim().length>0?e:\`codex-app-updater\`}`,
+    `function codexLinuxWrapManagerPath(){for(let e of [process.env.CODEX_UPDATE_MANAGER_PATH,process.env.CODEX_APP_UPDATER_PATH])if(typeof e===\`string\`&&e.trim().length>0)return e;return\`codex-app-updater\`}`,
     `function codexLinuxWrapSpawnCheck(){try{let c=${childProcessVar}.spawn(codexLinuxWrapManagerPath(),[\`check-wrapper\`],{stdio:\`ignore\`,detached:!0,env:process.env});c.on(\`error\`,()=>{});c.unref()}catch{}}`,
     // Integration picker on update: resolve settings.json the same way the launcher
     // and launch-actions do, and gate the on-click picker on the

@@ -840,6 +840,27 @@ test("general settings patch exports read aloud from the current inner chunk", (
   assert.match(patched, /export\{ir as i,rr as n,\$n as r,Cr as t,codexLinuxReadAloudSettingsPage as ReadAloudSettings\}/);
 });
 
+test("general settings patch upgrades older current inner chunks", () => {
+  const source = [
+    "function codexLinuxReadAloudSettingsRow(){let e=L(\"codex-linux-read-aloud-enabled\");return (0,$.jsx)(J,{control:(0,$.jsx)(q,{checked:e===!0})})}",
+    "function $n(){return (0,$.jsxs)(vt,{children:[S,C,w,T,D,O,k,(0,$.jsx)(codexLinuxReadAloudSettingsRow,{}),A,j,M,N,P,L]})}",
+    "export{ir as i,rr as n,$n as r,Cr as t};",
+  ].join("");
+
+  const patched = twice(applyGeneralSettingsPatch, source);
+
+  assert.match(patched, /codex-linux-read-aloud-kokoro-speed/);
+  assert.match(patched, /settings\.general\.readAloud\.chooseFolder/);
+  assert.match(patched, /settings\.general\.readAloud\.help/);
+  assert.match(patched, /function codexLinuxReadAloudSettingsPage/);
+  assert.match(patched, /export\{ir as i,rr as n,\$n as r,Cr as t,codexLinuxReadAloudSettingsPage as ReadAloudSettings\}/);
+  assert.doesNotMatch(
+    patched,
+    /children:\[S,C,w,T,D,O,k,\(0,\$\.jsx\)\(codexLinuxReadAloudSettingsRow,\{\}\),A,j,M,N,P,L\]/,
+  );
+  assert.equal((patched.match(/function codexLinuxReadAloudSettingsRow/g) ?? []).length, 1);
+});
+
 test("general settings wrapper re-exports the read aloud settings page", () => {
   const source = 'import{r as e}from"./general-settings-Bvwhh0-i.js";export{e as GeneralSettings};';
   const patched = twice(applyGeneralSettingsWrapperPatch, source);

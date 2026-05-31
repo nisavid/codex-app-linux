@@ -26,8 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - The current supported port integrations now default on: remote-control UI,
   mobile-control host patches, Read Aloud, Read Aloud MCP, and conversation
-  mode. Local `port-integrations/integrations.json` and persisted package overrides can
-  still disable defaults or enable still-optional integrations.
+  mode. Local `port-integrations.json` and persisted package overrides can still
+  disable defaults or enable still-optional integrations.
 
 ### Fixed
 

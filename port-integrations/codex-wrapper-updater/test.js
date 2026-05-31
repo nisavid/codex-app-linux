@@ -76,6 +76,7 @@ test("main bundle patch writes app-state wrapper marker", () => {
   assert.match(patched, /codex-wrapper-updater/);
   assert.match(patched, /wrapper_dev_mode/);
   assert.match(patched, /installed_wrapper_commit/);
+  assert.match(patched, /CODEX_APP_UPDATER_PATH/);
   assert.doesNotMatch(patched, /wrapper-update-pending/);
   assert.doesNotMatch(patched, /wrapper_status/);
 });
