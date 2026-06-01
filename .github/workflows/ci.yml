@@ -135,6 +135,7 @@ jobs:
       NIX_CONFIG: |
         experimental-features = nix-command flakes
         max-jobs = 1
+        fallback = true
     steps:
       - uses: actions/checkout@v6
 
