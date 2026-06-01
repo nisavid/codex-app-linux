@@ -9,7 +9,7 @@ use crate::{
 use anyhow::{Context, Result};
 use std::{
     ffi::OsString,
-    fs,
+    fs, io,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
@@ -45,7 +45,12 @@ const REQUIRED_BUNDLE_FILES: [(&str, &str); 18] = [
     ("assets/codex.png", "assets/codex.png"),
     ("port-integrations", "port-integrations"),
 ];
-const OPTIONAL_BUNDLE_FILES: [(&str, &str); 3] = [
+const OPTIONAL_BUNDLE_FILES: [(&str, &str); 5] = [
+    ("CHANGELOG.md", "CHANGELOG.md"),
+    (
+        ".codex-linux/source-info.json",
+        ".codex-linux/source-info.json",
+    ),
     ("scripts/build-rpm.sh", "scripts/build-rpm.sh"),
     ("scripts/build-pacman.sh", "scripts/build-pacman.sh"),
     (
@@ -53,6 +58,7 @@ const OPTIONAL_BUNDLE_FILES: [(&str, &str); 3] = [
         "scripts/rebuild-candidate.sh",
     ),
 ];
+const BUILDER_ONLY_PAYLOAD_FILES: [(&str, &str); 1] = [("node-runtime", "node-runtime")];
 const PACMAN_PACKAGE_SUFFIXES: &[&str] = &[
     ".pkg.tar.zst",
     ".pkg.tar.xz",
@@ -78,6 +84,26 @@ pub async fn build_update(
     candidate_version: &str,
     dmg_path: &Path,
 ) -> Result<BuildArtifacts> {
+    build_update_from(
+        &config.builder_bundle_root,
+        config,
+        state,
+        paths,
+        candidate_version,
+        dmg_path,
+    )
+    .await
+}
+
+/// Rebuilds a Linux package using an explicit wrapper/builder source tree.
+pub async fn build_update_from(
+    bundle_source: &Path,
+    config: &RuntimeConfig,
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    candidate_version: &str,
+    dmg_path: &Path,
+) -> Result<BuildArtifacts> {
     let workspace = BuilderWorkspace::prepare(&config.workspace_root, candidate_version)?;
 
     state.status = UpdateStatus::PreparingWorkspace;
@@ -95,33 +121,41 @@ pub async fn build_update(
         "Downloaded DMG digest changed before package build"
     );
 
-    copy_builder_bundle(&config.builder_bundle_root, &workspace.bundle_dir)?;
+    copy_builder_bundle(bundle_source, &workspace.bundle_dir)?;
     let build_path = build_command_path(&workspace.bundle_dir);
+    let integration_config = crate::config::effective_integration_config_path(config);
 
     state.status = UpdateStatus::PatchingApp;
     state.save(&paths.state_file)?;
-    run_and_log(
-        Command::new(workspace.bundle_dir.join("install.sh"))
-            .arg(dmg_path)
-            .env("CODEX_INSTALL_DIR", &workspace.app_dir)
-            .env(
-                "CODEX_PATCH_REPORT_JSON",
-                workspace.reports_dir.join("patch-report.json"),
-            )
-            .env(
-                "CODEX_REBUILD_REPORT_JSON",
-                workspace.reports_dir.join("rebuild-report.json"),
-            )
-            .env(
-                "CODEX_MANAGED_NODE_SOURCE",
-                workspace.bundle_dir.join("node-runtime"),
-            )
-            .env("PATH", &build_path)
-            .current_dir(&workspace.bundle_dir),
-        &workspace.install_log,
-    )
-    .await
-    .context("install.sh failed during local rebuild")?;
+    let mut install = Command::new(workspace.bundle_dir.join("install.sh"));
+    install
+        .arg(dmg_path)
+        .env("CODEX_INSTALL_DIR", &workspace.app_dir)
+        .env(
+            "CODEX_PATCH_REPORT_JSON",
+            workspace.reports_dir.join("patch-report.json"),
+        )
+        .env(
+            "CODEX_REBUILD_REPORT_JSON",
+            workspace.reports_dir.join("rebuild-report.json"),
+        )
+        .env(
+            "CODEX_MANAGED_NODE_SOURCE",
+            workspace.bundle_dir.join("node-runtime"),
+        )
+        .env("PATH", &build_path)
+        .current_dir(&workspace.bundle_dir);
+    // Honor the user's saved integration selection (the in-app Update picker
+    // writes it to a stable per-user path) so the rebuild stages exactly those
+    // integrations. Only set it when the file actually exists; an absent path
+    // lets port-integrations.js use its bundled defaults.
+    if let Some(integration_config) = &integration_config {
+        install.env("CODEX_PORT_INTEGRATIONS_CONFIG", integration_config);
+        install.env("CODEX_LINUX_FEATURES_CONFIG", integration_config);
+    }
+    run_and_log(&mut install, &workspace.install_log)
+        .await
+        .context("install.sh failed during local rebuild")?;
 
     state.status = UpdateStatus::BuildingPackage;
     let package_version = read_app_package_version(&workspace.app_dir)?;
@@ -129,24 +163,27 @@ pub async fn build_update(
     state.save(&paths.state_file)?;
 
     let build_script = package_build_script(&workspace.bundle_dir);
-    run_and_log(
-        Command::new(&build_script)
-            .env("PACKAGE_VERSION", &package_version)
-            .env("APP_DIR_OVERRIDE", &workspace.app_dir)
-            .env("DIST_DIR_OVERRIDE", &workspace.dist_dir)
-            .env("UPDATER_BINARY_SOURCE", std::env::current_exe()?)
-            .env(
-                "UPDATER_SERVICE_SOURCE",
-                workspace
-                    .bundle_dir
-                    .join("packaging/linux/codex-app-updater.service"),
-            )
-            .env("PATH", &build_path)
-            .current_dir(&workspace.bundle_dir),
-        &workspace.build_log,
-    )
-    .await
-    .with_context(|| format!("{} failed during local rebuild", build_script.display()))?;
+    let mut package_build = Command::new(&build_script);
+    package_build
+        .env("PACKAGE_VERSION", &package_version)
+        .env("APP_DIR_OVERRIDE", &workspace.app_dir)
+        .env("DIST_DIR_OVERRIDE", &workspace.dist_dir)
+        .env("UPDATER_BINARY_SOURCE", std::env::current_exe()?)
+        .env(
+            "UPDATER_SERVICE_SOURCE",
+            workspace
+                .bundle_dir
+                .join("packaging/linux/codex-app-updater.service"),
+        )
+        .env("PATH", &build_path)
+        .current_dir(&workspace.bundle_dir);
+    if let Some(integration_config) = &integration_config {
+        package_build.env("CODEX_PORT_INTEGRATIONS_CONFIG", integration_config);
+        package_build.env("CODEX_LINUX_FEATURES_CONFIG", integration_config);
+    }
+    run_and_log(&mut package_build, &workspace.build_log)
+        .await
+        .with_context(|| format!("{} failed during local rebuild", build_script.display()))?;
 
     let package_path = find_package_in(&workspace.dist_dir)?;
     state.package_verification = Some(package_verification::record_built_package(
@@ -242,6 +279,38 @@ fn copy_builder_bundle(source_root: &Path, destination_root: &Path) -> Result<()
     }
 
     Ok(())
+}
+
+/// Seeds generated files that exist only in an installed update-builder bundle.
+///
+/// A fresh wrapper checkout has source files but not the managed Node.js runtime
+/// generated during app packaging. Packaged wrapper updates overlay this payload
+/// before calling [`build_update_from`] so the normal builder-bundle copy sees a
+/// complete source tree without reusing installed source metadata.
+pub fn seed_builder_only_payload(source_root: &Path, destination_root: &Path) -> Result<()> {
+    for (source, destination) in BUILDER_ONLY_PAYLOAD_FILES {
+        let destination = destination_root.join(destination);
+        remove_existing_payload_path(&destination)?;
+        copy_entry(&source_root.join(source), &destination, false)?;
+    }
+
+    Ok(())
+}
+
+fn remove_existing_payload_path(path: &Path) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(error).with_context(|| format!("Failed to stat {}", path.display()));
+        }
+    };
+
+    if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(path).with_context(|| format!("Failed to remove {}", path.display()))
+    } else {
+        fs::remove_file(path).with_context(|| format!("Failed to remove {}", path.display()))
+    }
 }
 
 fn copy_entry(source: &Path, destination: &Path, optional: bool) -> Result<()> {
@@ -515,24 +584,30 @@ mod tests {
         let script_body = match output {
             FakePackageOutput::Deb => {
                 r#"#!/bin/bash
-set -euo pipefail
-mkdir -p "${DIST_DIR_OVERRIDE}"
-touch "${DIST_DIR_OVERRIDE}/codex-app_${PACKAGE_VERSION}_amd64.deb"
-"#
+	set -euo pipefail
+	printf 'CODEX_PORT_INTEGRATIONS_CONFIG=%s\n' "${CODEX_PORT_INTEGRATIONS_CONFIG:-}"
+	printf 'CODEX_LINUX_FEATURES_CONFIG=%s\n' "${CODEX_LINUX_FEATURES_CONFIG:-}"
+	mkdir -p "${DIST_DIR_OVERRIDE}"
+	touch "${DIST_DIR_OVERRIDE}/codex-app_${PACKAGE_VERSION}_amd64.deb"
+	"#
             }
             FakePackageOutput::Rpm => {
                 r#"#!/bin/bash
-set -euo pipefail
-mkdir -p "${DIST_DIR_OVERRIDE}"
-touch "${DIST_DIR_OVERRIDE}/codex-app-${PACKAGE_VERSION}.x86_64.rpm"
-"#
+	set -euo pipefail
+	printf 'CODEX_PORT_INTEGRATIONS_CONFIG=%s\n' "${CODEX_PORT_INTEGRATIONS_CONFIG:-}"
+	printf 'CODEX_LINUX_FEATURES_CONFIG=%s\n' "${CODEX_LINUX_FEATURES_CONFIG:-}"
+	mkdir -p "${DIST_DIR_OVERRIDE}"
+	touch "${DIST_DIR_OVERRIDE}/codex-app-${PACKAGE_VERSION}.x86_64.rpm"
+	"#
             }
             FakePackageOutput::Pacman => {
                 r#"#!/bin/bash
-set -euo pipefail
-VER="${PACKAGE_VERSION%%+*}"
-mkdir -p "${DIST_DIR_OVERRIDE}"
-touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
+	set -euo pipefail
+	printf 'CODEX_PORT_INTEGRATIONS_CONFIG=%s\n' "${CODEX_PORT_INTEGRATIONS_CONFIG:-}"
+	printf 'CODEX_LINUX_FEATURES_CONFIG=%s\n' "${CODEX_LINUX_FEATURES_CONFIG:-}"
+	VER="${PACKAGE_VERSION%%+*}"
+	mkdir -p "${DIST_DIR_OVERRIDE}"
+	touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
 "#
             }
         };
@@ -639,6 +714,7 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
 
     #[tokio::test]
     async fn builds_update_with_package_verification_metadata() -> Result<()> {
+        let env_guard = crate::test_util::env_lock();
         let temp = tempdir()?;
         let bundle_root = temp.path().join("bundle");
         let state_root = temp.path().join("state");
@@ -649,8 +725,14 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
         fs::create_dir_all(bundle_root.join("packaging/linux"))?;
         fs::create_dir_all(bundle_root.join("assets"))?;
         fs::create_dir_all(bundle_root.join("node-runtime/bin"))?;
+        fs::create_dir_all(bundle_root.join(".codex-linux"))?;
         write_fake_computer_use_bundle(&bundle_root)?;
         write_fake_port_integrations_bundle(&bundle_root)?;
+        fs::write(bundle_root.join("CHANGELOG.md"), b"# Changelog\n")?;
+        fs::write(
+            bundle_root.join(".codex-linux/source-info.json"),
+            b"{\"commit\":\"0123456789012345678901234567890123456789\",\"version\":\"0.8.1\"}\n",
+        )?;
         fs::write(
             bundle_root.join("launcher/start.sh.template"),
             b"# fake launcher template\n",
@@ -769,6 +851,19 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
             config_dir: temp.path().join("config"),
         };
         paths.ensure_dirs()?;
+        let settings_dir = temp.path().join("settings");
+        let settings_file = settings_dir.join("settings.json");
+        let saved_integration_config = settings_dir.join("port-integrations.json");
+        fs::create_dir_all(&settings_dir)?;
+        fs::write(
+            &saved_integration_config,
+            b"{\"enabled\":[\"example-integration\"],\"disabled\":[]}\n",
+        )?;
+        let _settings_guard = crate::test_util::EnvVarGuard::set(
+            &env_guard,
+            "CODEX_LINUX_SETTINGS_FILE",
+            &settings_file,
+        );
 
         let config = RuntimeConfig {
             dmg_url: "https://example.com/Codex.dmg".to_string(),
@@ -781,6 +876,9 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
             builder_bundle_root: bundle_root,
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
             cli_path: None,
+            enable_wrapper_updates: false,
+            wrapper_remote: String::new(),
+            wrapper_branch: "main".to_string(),
         };
         let dmg_path = temp.path().join("Codex.dmg");
         fs::write(&dmg_path, b"dmg")?;
@@ -803,6 +901,14 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
         assert!(artifacts
             .workspace_dir
             .join("builder/scripts/rebuild-candidate.sh")
+            .exists());
+        assert!(artifacts
+            .workspace_dir
+            .join("builder/CHANGELOG.md")
+            .exists());
+        assert!(artifacts
+            .workspace_dir
+            .join("builder/.codex-linux/source-info.json")
             .exists());
         assert!(artifacts
             .workspace_dir
@@ -856,6 +962,16 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
             artifacts.workspace_dir.canonicalize()?
         );
         assert_eq!(verification.sha256.len(), 64);
+        let package_build_log =
+            fs::read_to_string(artifacts.workspace_dir.join("logs/build-package.log"))?;
+        assert!(package_build_log.contains(&format!(
+            "CODEX_PORT_INTEGRATIONS_CONFIG={}",
+            saved_integration_config.display()
+        )));
+        assert!(package_build_log.contains(&format!(
+            "CODEX_LINUX_FEATURES_CONFIG={}",
+            saved_integration_config.display()
+        )));
         Ok(())
     }
 
@@ -883,6 +999,9 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
             builder_bundle_root: temp.path().join("bundle"),
             app_executable_path: PathBuf::from("/opt/codex-app/electron"),
             cli_path: None,
+            enable_wrapper_updates: false,
+            wrapper_remote: String::new(),
+            wrapper_branch: "main".to_string(),
         };
         let dmg_path = temp.path().join("Codex.dmg");
         fs::write(&dmg_path, b"changed-dmg")?;

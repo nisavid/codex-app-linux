@@ -15,6 +15,13 @@ resolve_script_dir() {
 }
 
 SCRIPT_DIR="$(resolve_script_dir)"
+if [ -z "${CODEX_HOME:-}" ]; then
+    if [ -n "${HOME:-}" ]; then
+        CODEX_HOME="$HOME/.codex"
+    else
+        CODEX_HOME=""
+    fi
+fi
 WEBVIEW_DIR="$SCRIPT_DIR/content/webview"
 WEBVIEW_INTEGRITY_FILE="$SCRIPT_DIR/.codex-linux/webview-integrity.sha256"
 PACKAGED_RUNTIME_HELPER="/usr/lib/$CODEX_LINUX_APP_ID/packaged-runtime.sh"
@@ -26,7 +33,9 @@ LOG_FILE="$LOG_DIR/launcher.log"
 APP_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$CODEX_LINUX_APP_ID"
 APP_SETTINGS_FILE="$APP_CONFIG_DIR/settings.json"
 CODEX_LINUX_SETTINGS_FILE="$APP_SETTINGS_FILE"
-export CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_WEBVIEW_PORT CODEX_LINUX_SETTINGS_FILE
+CODEX_PORT_INTEGRATIONS_DIR="$SCRIPT_DIR/.codex-linux/port-integrations"
+CODEX_LINUX_FEATURES_DIR="$CODEX_PORT_INTEGRATIONS_DIR"
+export CODEX_HOME CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_WEBVIEW_PORT CODEX_LINUX_SETTINGS_FILE CODEX_PORT_INTEGRATIONS_DIR CODEX_LINUX_FEATURES_DIR
 APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_LINUX_APP_ID"
 APP_PID_FILE="$APP_STATE_DIR/app.pid"
 WEBVIEW_PID_FILE="$APP_STATE_DIR/webview.pid"
@@ -36,12 +45,16 @@ else
     LAUNCH_ACTION_RUNTIME_DIR="$APP_STATE_DIR"
 fi
 LAUNCH_ACTION_SOCKET="$LAUNCH_ACTION_RUNTIME_DIR/launch-action.sock"
+COLD_START_HOOK_DIR="$SCRIPT_DIR/.codex-linux/cold-start.d"
+FEATURE_ENV_DIR="$SCRIPT_DIR/.codex-linux/env.d"
+FEATURE_PRELAUNCH_HOOK_DIR="$SCRIPT_DIR/.codex-linux/prelaunch.d"
+FEATURE_ELECTRON_ARGS_DIR="$SCRIPT_DIR/.codex-linux/electron-args.d"
+FEATURE_AFTER_EXIT_HOOK_DIR="$SCRIPT_DIR/.codex-linux/after-exit.d"
 MANAGED_NODE_BIN_DIR="$SCRIPT_DIR/resources/node-runtime/bin"
 APP_NOTIFICATION_ICON_NAME="$CODEX_LINUX_APP_ID"
 APP_NOTIFICATION_ICON_BUNDLE="$SCRIPT_DIR/.codex-linux/$APP_NOTIFICATION_ICON_NAME.png"
 APP_NOTIFICATION_ICON_SYSTEM="/usr/share/icons/hicolor/256x256/apps/$APP_NOTIFICATION_ICON_NAME.png"
 APP_NOTIFICATION_ICON_REPO="$SCRIPT_DIR/../assets/codex.png"
-COLD_START_HOOK_DIR="$SCRIPT_DIR/.codex-linux/cold-start.d"
 MULTI_LAUNCH_REQUESTED=0
 MULTI_LAUNCH_ACTIVE=0
 CODEX_LINUX_INSTANCE_ID=""
@@ -270,12 +283,13 @@ Default launch keeps Electron GPU enabled and lets Electron choose the platform.
 Extra flags are passed directly to Electron.
 
 Environment:
-  CODEX_LINUX_RENDERING_MODE=auto|default|wslg
-                              Auto-detect WSLg, keep generic Linux defaults, or force the WSLg profile
+  CODEX_LINUX_RENDERING_MODE=auto|default|wslg|wayland-gpu
+                              Auto-detect WSLg, keep generic Linux defaults, force the WSLg profile,
+                              or force native Wayland with GPU compositing enabled
   CODEX_ELECTRON_DISABLE_GPU_COMPOSITING=0|1
                               Set to 1 to add --disable-gpu-compositing for flicker workarounds
   CODEX_FORCE_RENDERER_ACCESSIBILITY=auto|0|1
-                              Override --force-renderer-accessibility; auto skips it under WSLg
+                              Override --force-renderer-accessibility; auto skips it under WSLg and wayland-gpu
   CODEX_MULTI_LAUNCH=1        Treat normal launches like --new-instance
   CODEX_MULTI_LAUNCH_PORT_RANGE=START-END
                               Port allocation range for --new-instance (default: CODEX_LINUX_WEBVIEW_PORT through +4)
@@ -535,6 +549,69 @@ prepend_managed_node_runtime_to_path() {
         *) export PATH="$MANAGED_NODE_BIN_DIR:$PATH" ;;
     esac
     export CODEX_MANAGED_NODE_RUNTIME_DIR="$SCRIPT_DIR/resources/node-runtime"
+}
+
+source_feature_env_files() {
+    [ -n "${FEATURE_ENV_DIR:-}" ] || return 0
+    [ -d "$FEATURE_ENV_DIR" ] || return 0
+
+    local env_file
+    local line
+    local name
+    local value
+    for env_file in "$FEATURE_ENV_DIR"/*; do
+        [ -f "$env_file" ] || continue
+        echo "Loading Linux feature environment: $env_file"
+        while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%$'\r'}"
+            case "$line" in
+                ""|\#*) continue ;;
+                *=*) ;;
+                *)
+                    echo "Ignoring Linux feature env line without KEY=VALUE in $env_file"
+                    continue
+                    ;;
+            esac
+            name="${line%%=*}"
+            value="${line#*=}"
+            case "$name" in
+                ""|[!A-Za-z_]*|*[!A-Za-z0-9_]*)
+                    echo "Ignoring Linux feature env line with invalid key '$name' in $env_file"
+                    continue
+                    ;;
+            esac
+            export "$name=$value"
+        done < "$env_file"
+    done
+}
+
+run_feature_prelaunch_hooks() {
+    [ -n "${FEATURE_PRELAUNCH_HOOK_DIR:-}" ] || return 0
+    [ -d "$FEATURE_PRELAUNCH_HOOK_DIR" ] || return 0
+
+    local hook hook_status
+    for hook in "$FEATURE_PRELAUNCH_HOOK_DIR"/*; do
+        [ -f "$hook" ] || continue
+        [ -x "$hook" ] || continue
+        echo "Running port integration prelaunch hook: $hook"
+        set +e
+        CODEX_HOME="$CODEX_HOME" \
+        CODEX_LINUX_APP_DIR="$SCRIPT_DIR" \
+        CODEX_LINUX_APP_STATE_DIR="$APP_STATE_DIR" \
+        CODEX_LINUX_FEATURES_DIR="$CODEX_LINUX_FEATURES_DIR" \
+        CODEX_PORT_INTEGRATIONS_DIR="$CODEX_PORT_INTEGRATIONS_DIR" \
+        CODEX_LINUX_LAUNCHER_LOG="$LOG_FILE" \
+        CODEX_LINUX_LAUNCHER_CMD="${CODEX_LINUX_LAUNCHER_CMD:-$SCRIPT_DIR/start.sh}" \
+        CODEX_LINUX_FEATURE_HOOK_PHASE="prelaunch" \
+        CODEX_PORT_INTEGRATION_HOOK_PHASE="prelaunch" \
+        CODEX_APP_UPDATER_PATH="${CODEX_APP_UPDATER_PATH:-}" \
+            "$hook" "$SCRIPT_DIR" "$APP_STATE_DIR" "$LOG_DIR"
+        hook_status=$?
+        set -e
+        if [ "$hook_status" -ne 0 ]; then
+            echo "Port integration prelaunch hook failed with status $hook_status: $hook"
+        fi
+    done
 }
 
 bundled_plugin_version() {
@@ -1091,11 +1168,49 @@ run_cold_start_hooks() {
         [ -x "$hook" ] || continue
         echo "Starting cold-start hook: $hook"
         (
+            CODEX_HOME="$CODEX_HOME" \
             CODEX_LINUX_APP_DIR="$SCRIPT_DIR" \
             CODEX_LINUX_APP_STATE_DIR="$APP_STATE_DIR" \
+            CODEX_LINUX_FEATURES_DIR="$CODEX_LINUX_FEATURES_DIR" \
+            CODEX_PORT_INTEGRATIONS_DIR="$CODEX_PORT_INTEGRATIONS_DIR" \
             CODEX_LINUX_LAUNCHER_LOG="$LOG_FILE" \
+            CODEX_LINUX_LAUNCHER_CMD="${CODEX_LINUX_LAUNCHER_CMD:-$SCRIPT_DIR/start.sh}" \
+            CODEX_LINUX_FEATURE_HOOK_PHASE="cold-start" \
+            CODEX_PORT_INTEGRATION_HOOK_PHASE="cold-start" \
+            CODEX_APP_UPDATER_PATH="${CODEX_APP_UPDATER_PATH:-}" \
             "$hook" "$SCRIPT_DIR" "$APP_STATE_DIR" "$LOG_DIR"
         ) >>"$LOG_FILE" 2>&1 &
+    done
+}
+
+run_feature_after_exit_hooks() {
+    [ -n "${FEATURE_AFTER_EXIT_HOOK_DIR:-}" ] || return 0
+    [ -d "$FEATURE_AFTER_EXIT_HOOK_DIR" ] || return 0
+
+    local electron_status="${1:-0}"
+    local hook hook_status
+    for hook in "$FEATURE_AFTER_EXIT_HOOK_DIR"/*; do
+        [ -f "$hook" ] || continue
+        [ -x "$hook" ] || continue
+        echo "Running port integration after-exit hook: $hook"
+        set +e
+        CODEX_HOME="$CODEX_HOME" \
+        CODEX_LINUX_APP_DIR="$SCRIPT_DIR" \
+        CODEX_LINUX_APP_STATE_DIR="$APP_STATE_DIR" \
+        CODEX_LINUX_FEATURES_DIR="$CODEX_LINUX_FEATURES_DIR" \
+        CODEX_PORT_INTEGRATIONS_DIR="$CODEX_PORT_INTEGRATIONS_DIR" \
+        CODEX_LINUX_LAUNCHER_LOG="$LOG_FILE" \
+        CODEX_LINUX_LAUNCHER_CMD="${CODEX_LINUX_LAUNCHER_CMD:-$SCRIPT_DIR/start.sh}" \
+        CODEX_LINUX_FEATURE_HOOK_PHASE="after-exit" \
+        CODEX_PORT_INTEGRATION_HOOK_PHASE="after-exit" \
+        CODEX_LINUX_ELECTRON_EXIT_STATUS="$electron_status" \
+        CODEX_APP_UPDATER_PATH="${CODEX_APP_UPDATER_PATH:-}" \
+            "$hook" "$SCRIPT_DIR" "$APP_STATE_DIR" "$LOG_DIR" "$electron_status"
+        hook_status=$?
+        set -e
+        if [ "$hook_status" -ne 0 ]; then
+            echo "Linux feature after-exit hook failed with status $hook_status: $hook"
+        fi
     done
 }
 
@@ -1231,8 +1346,16 @@ find_codex_cli() {
         return 0
     fi
 
-    if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then
-        export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    local nvm_dir="${NVM_DIR:-}"
+    if [ -z "$nvm_dir" ]; then
+        if [ -s "${XDG_CONFIG_HOME:-$HOME/.config}/nvm/nvm.sh" ]; then
+            nvm_dir="${XDG_CONFIG_HOME:-$HOME/.config}/nvm"
+        else
+            nvm_dir="$HOME/.nvm"
+        fi
+    fi
+    if [ -s "$nvm_dir/nvm.sh" ]; then
+        export NVM_DIR="$nvm_dir"
         # shellcheck disable=SC1090
         . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true
         if command -v codex >/dev/null 2>&1; then
@@ -1245,6 +1368,8 @@ find_codex_cli() {
     for candidate in \
         "$HOME/.bun/bin/codex" \
         "$HOME/.npm-global/bin/codex" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/nvm/versions/node/current/bin/codex" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/nvm/versions/node"/*/bin/codex \
         "$HOME/.nvm/versions/node/current/bin/codex" \
         "$HOME/.nvm/versions/node"/*/bin/codex \
         "$HOME/.local/share/pnpm/codex" \
@@ -1315,6 +1440,16 @@ has_app_updater() {
 run_app_updater() {
     resolve_app_updater_path || return 127
     "$CODEX_APP_UPDATER_PATH" "$@"
+}
+
+export_feature_runtime_env() {
+    CODEX_LINUX_APP_DIR="$SCRIPT_DIR"
+    CODEX_LINUX_APP_STATE_DIR="$APP_STATE_DIR"
+    CODEX_LINUX_LAUNCHER_CMD="$SCRIPT_DIR/start.sh"
+    CODEX_PORT_INTEGRATIONS_DIR="$CODEX_PORT_INTEGRATIONS_DIR"
+    CODEX_LINUX_FEATURES_DIR="$CODEX_LINUX_FEATURES_DIR"
+    export CODEX_LINUX_APP_DIR CODEX_LINUX_APP_STATE_DIR CODEX_LINUX_LAUNCHER_CMD CODEX_PORT_INTEGRATIONS_DIR CODEX_LINUX_FEATURES_DIR
+    resolve_app_updater_path >/dev/null 2>&1 || true
 }
 
 pid_is_current_user() {
@@ -1435,6 +1570,21 @@ webview_origin_is_reachable() {
     verify_webview_origin "$WEBVIEW_ORIGIN/index.html" >/dev/null 2>&1
 }
 
+webview_origin_is_reachable_fast() {
+    local url="$WEBVIEW_ORIGIN/index.html"
+    local body err
+
+    err=$(mktemp 2>/dev/null) || err="${TMPDIR:-/tmp}/codex-curl-err.$$"
+    if ! body="$(curl --disable --noproxy 127.0.0.1,localhost --silent --show-error --fail --max-time 0.2 "$url" 2>"$err")"; then
+        rm -f "$err"
+        return 1
+    fi
+    rm -f "$err"
+
+    [[ "$body" == *"<title>Codex</title>"* ]] || return 1
+    [[ "$body" == *"startup-loader"* ]] || return 1
+}
+
 webview_port_is_open() {
     # bash /dev/tcp connect, capped at 0.2 s by a watchdog kill.
     # Replaces python3 socket.connect heredoc (~3 ms vs 13–60 ms here).
@@ -1443,7 +1593,9 @@ webview_port_is_open() {
     # the 200 ms cap it would enforce.
     local probe_pid kill_pid rc=1 self_pid=$$
     ( trap - EXIT
-      exec 3<>/dev/tcp/127.0.0.1/"$CODEX_LINUX_WEBVIEW_PORT" ) 2>/dev/null &
+      exec 3<>/dev/tcp/127.0.0.1/"$CODEX_LINUX_WEBVIEW_PORT" || exit 1
+      exec 3>&- 3<&-
+      exit 0 ) 2>/dev/null &
     probe_pid=$!
     # Watchdog: before SIGKILL, verify /proc/<probe>/stat still reports us as
     # the parent. Guards against PID reuse: if the probe has already exited
@@ -1472,17 +1624,24 @@ webview_port_is_open() {
 wait_for_webview_server() {
     echo "Waiting for webview server on :$CODEX_LINUX_WEBVIEW_PORT"
 
-    # 250 × 20 ms = same 5 s overall budget as 50 × 100 ms, but with 5× tighter
-    # polling cadence so the typical case detects readiness within one cycle
-    # of the server actually binding instead of within the next 100 ms tick.
+    # Treat the actual localhost webview response as the readiness signal.
+    # Under cold-login load the shell /dev/tcp probe can be a little too brittle,
+    # while a short curl against index.html matches what Electron needs next.
     local attempt
-    for attempt in $(seq 1 250); do
-        if webview_port_is_open; then
+    for attempt in $(seq 1 20); do
+        if webview_origin_is_reachable_fast; then
             echo "Webview server is ready"
             return 0
         fi
-        sleep 0.02
+        sleep 0.05
     done
+
+    # The fast probe caps curl at 0.2s; a valid local webview can answer a little
+    # slower during cold start. Confirm with the full 2s origin check before failing.
+    if webview_origin_is_reachable; then
+        echo "Webview server is ready"
+        return 0
+    fi
 
     return 1
 }
@@ -1932,6 +2091,12 @@ ensure_webview_server() {
     fi
 
     if ! kill -0 "$STARTED_WEBVIEW_PID" 2>/dev/null; then
+        if webview_origin_is_reachable && adopt_discovered_webview_server; then
+            echo "Adopted concurrently-started verified webview server on :$CODEX_LINUX_WEBVIEW_PORT"
+            log_phase "webview_reused"
+            return 0
+        fi
+
         notify_error "$CODEX_LINUX_APP_DISPLAY_NAME webview server exited before Electron launch. Another process may already be using port $CODEX_LINUX_WEBVIEW_PORT."
         exit 1
     fi
@@ -2002,7 +2167,7 @@ is_wslg_session() {
 
 normalize_linux_rendering_mode() {
     case "${CODEX_LINUX_RENDERING_MODE:-auto}" in
-        auto|default|wslg)
+        auto|default|wslg|wayland-gpu)
             echo "${CODEX_LINUX_RENDERING_MODE:-auto}"
             ;;
         *)
@@ -2028,7 +2193,11 @@ falsey_env_value() {
 
 scan_electron_rendering_arg() {
     case "$1" in
-        --ozone-platform|--ozone-platform=*|--ozone-platform-hint|--ozone-platform-hint=*)
+        --ozone-platform=*)
+            ELECTRON_OZONE_SWITCH_IN_ARGS=1
+            ELECTRON_OZONE_PLATFORM_ARG="${1#--ozone-platform=}"
+            ;;
+        --ozone-platform|--ozone-platform-hint|--ozone-platform-hint=*)
             ELECTRON_OZONE_SWITCH_IN_ARGS=1
             ;;
         --use-gl|--use-gl=*|--use-angle|--use-angle=*)
@@ -2062,6 +2231,13 @@ apply_electron_rendering_profile() {
             fi
             ;;
         default)
+            return 0
+            ;;
+        wayland-gpu)
+            if [ "$ELECTRON_PLATFORM_EXPLICIT" -eq 0 ] && [ "$ELECTRON_OZONE_SWITCH_IN_ARGS" -eq 0 ]; then
+                ELECTRON_OZONE_PLATFORM="wayland"
+                ELECTRON_OZONE_HINT=""
+            fi
             return 0
             ;;
     esac
@@ -2098,7 +2274,20 @@ should_disable_gpu_compositing() {
     return 1
 }
 
+effective_electron_ozone_platform() {
+    if [ -n "$ELECTRON_OZONE_PLATFORM" ]; then
+        echo "$ELECTRON_OZONE_PLATFORM"
+        return 0
+    fi
+
+    if [ -n "$ELECTRON_OZONE_PLATFORM_ARG" ]; then
+        echo "$ELECTRON_OZONE_PLATFORM_ARG"
+    fi
+}
+
 should_force_renderer_accessibility() {
+    local effective_platform
+
     if [ -n "${CODEX_FORCE_RENDERER_ACCESSIBILITY:-}" ]; then
         if truthy_env_value "$CODEX_FORCE_RENDERER_ACCESSIBILITY"; then
             return 0
@@ -2114,7 +2303,18 @@ should_force_renderer_accessibility() {
         esac
     fi
 
-    [ "$ELECTRON_RENDERING_MODE" != "wslg" ]
+    case "$ELECTRON_RENDERING_MODE" in
+        wslg)
+            return 1
+            ;;
+        wayland-gpu)
+            effective_platform="$(effective_electron_ozone_platform)"
+            [ "$effective_platform" = "wayland" ] && return 1
+            return 0
+            ;;
+    esac
+
+    return 0
 }
 
 set_electron_defaults() {
@@ -2125,6 +2325,7 @@ set_electron_defaults() {
     ELECTRON_WSLG_DETECTED=0
     ELECTRON_PLATFORM_EXPLICIT=0
     ELECTRON_OZONE_SWITCH_IN_ARGS=0
+    ELECTRON_OZONE_PLATFORM_ARG=""
     ELECTRON_GL_SWITCH_PROVIDED=0
     ELECTRON_GL_SWITCH_ADDED=0
     ELECTRON_GPU_DISABLE_SWITCH_IN_ARGS=0
@@ -2210,6 +2411,25 @@ set_electron_defaults() {
     apply_electron_rendering_profile
 }
 
+append_feature_electron_args() {
+    [ -n "${FEATURE_ELECTRON_ARGS_DIR:-}" ] || return 0
+    [ -d "$FEATURE_ELECTRON_ARGS_DIR" ] || return 0
+
+    local args_file
+    local line
+    for args_file in "$FEATURE_ELECTRON_ARGS_DIR"/*; do
+        [ -f "$args_file" ] || continue
+        echo "Loading Linux feature Electron args: $args_file"
+        while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%$'\r'}"
+            case "$line" in
+                ""|\#*) continue ;;
+            esac
+            ELECTRON_LAUNCH_ARGS+=("$line")
+        done < "$args_file"
+    done
+}
+
 build_electron_launch_args() {
     ELECTRON_LAUNCH_ARGS=(
         --class="$CODEX_LINUX_APP_ID"
@@ -2255,6 +2475,8 @@ build_electron_launch_args() {
     if [ "$ELECTRON_OZONE_PLATFORM" = "wayland" ]; then
         ELECTRON_LAUNCH_ARGS+=(--enable-features=WaylandWindowDecorations)
     fi
+
+    append_feature_electron_args
 }
 
 configure_side_by_side_app_env() {
@@ -2313,6 +2535,7 @@ launch_electron() {
     wait "$ELECTRON_PID"
     local status=$?
     set -e
+    run_feature_after_exit_hooks "$status"
     return "$status"
 }
 
@@ -2329,8 +2552,10 @@ if [ "$MULTI_LAUNCH_ACTIVE" -eq 1 ]; then
     echo "Multi-launch instance: id=$CODEX_LINUX_INSTANCE_ID webview_port=$CODEX_LINUX_WEBVIEW_PORT state_dir=$APP_STATE_DIR user_data_dir=$CODEX_ELECTRON_USER_DATA_DIR"
 fi
 
+export_feature_runtime_env
 load_packaged_runtime_helper
 prepend_managed_node_runtime_to_path
+source_feature_env_files
 register_url_scheme_handlers
 reconcile_runtime_state
 detect_warm_start
@@ -2348,6 +2573,8 @@ if using_second_instance_handoff; then
     echo "Detected running Codex App pid=$RUNNING_APP_PID; using Electron second-instance handoff"
     log_phase "second_instance_handoff_ready"
 elif needs_cold_start; then
+    run_feature_prelaunch_hooks
+    log_phase "feature_prelaunch"
     run_packaged_runtime_prelaunch
     log_phase "packaged_prelaunch"
     ensure_webview_server
@@ -2362,7 +2589,14 @@ if needs_cold_start && [ -z "${CODEX_CLI_PATH:-}" ]; then
     log_phase "cli_lookup"
 fi
 export CHROME_DESKTOP="${CHROME_DESKTOP:-$CODEX_LINUX_APP_ID.desktop}"
-export ELECTRON_RENDERER_URL="${ELECTRON_RENDERER_URL:-$WEBVIEW_ORIGIN/}"
+if truthy_env_value "${CODEX_LINUX_PIN_RENDERER_URL:-}" && ! truthy_env_value "${CODEX_LINUX_ALLOW_RENDERER_URL_OVERRIDE:-}"; then
+    if [ -n "${ELECTRON_RENDERER_URL:-}" ] && [ "$ELECTRON_RENDERER_URL" != "$WEBVIEW_ORIGIN/" ]; then
+        echo "Ignoring inherited ELECTRON_RENDERER_URL; set CODEX_LINUX_ALLOW_RENDERER_URL_OVERRIDE=1 to allow overrides"
+    fi
+    export ELECTRON_RENDERER_URL="$WEBVIEW_ORIGIN/"
+else
+    export ELECTRON_RENDERER_URL="${ELECTRON_RENDERER_URL:-$WEBVIEW_ORIGIN/}"
+fi
 
 if needs_cold_start && [ -z "$CODEX_CLI_PATH" ]; then
     if is_interactive_terminal; then

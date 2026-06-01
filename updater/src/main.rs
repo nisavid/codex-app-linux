@@ -7,6 +7,7 @@ mod builder;
 #[cfg(unix)]
 mod cache_cleanup;
 #[cfg(unix)]
+mod changelog;
 mod cli;
 #[cfg(unix)]
 mod codex_cli;
@@ -15,6 +16,7 @@ mod config;
 #[cfg(unix)]
 mod dmg_source;
 #[cfg(unix)]
+mod feature_picker;
 mod install;
 #[cfg(unix)]
 mod install_rollback;
@@ -36,6 +38,10 @@ mod state;
 mod test_util;
 #[cfg(unix)]
 mod trust;
+#[cfg(unix)]
+mod wrapper;
+#[cfg(unix)]
+mod wrapper_apply;
 
 #[cfg(unix)]
 use anyhow::Result;

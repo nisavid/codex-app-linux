@@ -19,6 +19,22 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         if_stale: bool,
     },
+    /// Check whether a newer codex-app wrapper release is available, and record
+    /// its changelog.
+    CheckWrapper {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Apply the recorded wrapper update candidate for the running install.
+    ApplyWrapperUpdate,
+    /// Show a GUI checklist of optional port integrations and save the
+    /// selection so the next wrapper rebuild honors it.
+    /// Invoked by the in-app Update button at click time (display still alive).
+    #[command(name = "pick-integrations", alias = "pick-features")]
+    PickFeatures {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     CliPreflight {
         #[arg(long)]
         cli_path: Option<PathBuf>,
@@ -51,6 +67,8 @@ pub enum Commands {
         expected_package_name: Option<String>,
         #[arg(long, hide = true)]
         expected_package_version: Option<String>,
+        #[arg(long, hide = true)]
+        allow_same_version: bool,
     },
     /// Install an RPM package (.rpm) with elevated privileges.
     InstallRpm {
@@ -62,6 +80,8 @@ pub enum Commands {
         expected_package_name: Option<String>,
         #[arg(long, hide = true)]
         expected_package_version: Option<String>,
+        #[arg(long, hide = true)]
+        allow_same_version: bool,
     },
     /// Install a pacman package (.pkg.tar.zst) with elevated privileges.
     InstallPacman {
@@ -73,6 +93,8 @@ pub enum Commands {
         expected_package_name: Option<String>,
         #[arg(long, hide = true)]
         expected_package_version: Option<String>,
+        #[arg(long, hide = true)]
+        allow_same_version: bool,
     },
     /// Install a Debian package as an explicit rollback with elevated privileges.
     InstallRollbackDeb {

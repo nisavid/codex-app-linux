@@ -609,6 +609,7 @@ stage_chrome_plugin_from_official_app() {
     remove_macos_sidecar_files "$target_plugin"
     patch_chrome_plugin_for_linux "$target_plugin"
     patch_browser_use_node_repl_env_guard "$target_plugin/scripts/browser-client.mjs"
+    patch_browser_use_native_pipe_import_meta_bridge "$target_plugin/scripts/browser-client.mjs"
     patch_browser_use_site_status_allowlist_fallback "$target_plugin/scripts/browser-client.mjs"
     if ! install_chrome_extension_host_resource "$target_plugin"; then
         rm -rf "$target_plugin"
@@ -670,29 +671,148 @@ path.write_text(source[:match.start()] + replacement + source[match.end():], enc
 PY
 }
 
-patch_browser_use_node_repl_env_guard() {
+patch_browser_use_file_url_policy() {
     local client="$1"
 
-    if grep -Fq 'globalThis.nodeRepl?.env?.[e]' "$client"; then
+    if grep -q "codexLinuxFileUrlPolicy" "$client"; then
         return 0
     fi
 
     python3 - "$client" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 path = Path(sys.argv[1])
 source = path.read_text(encoding="utf-8")
-old = 'function lu(e){let t=globalThis.nodeRepl?.env[e];return typeof t=="string"?t:void 0}'
-new = 'function lu(e){let t=globalThis.nodeRepl?.env?.[e];return typeof t=="string"?t:void 0}'
-if old not in source:
+patterns = [
+    re.compile(
+        r'function\s+(?P<helper>[A-Za-z_$][\w$]*)\((?P<url>[A-Za-z_$][\w$]*)\)\{'
+        r'if\((?P<allowlist>[A-Za-z_$][\w$]*)\.has\((?P=url)\)\)return\s*(?:true|!0);'
+        r'let\s+(?P<parsed>[A-Za-z_$][\w$]*);'
+        r'try\{\s*(?P=parsed)\s*=\s*new URL\((?P=url)\);?\s*\}'
+        r'catch\{\s*return\s*(?:false|!1);?\s*\}'
+        r'return\s+(?P=parsed)\.protocol\s*===\s*"http:"\s*\|\|\s*'
+        r'(?P=parsed)\.protocol\s*===\s*"https:"(?P<semicolon>;?)\}'
+    ),
+    re.compile(
+        r'function\s+(?P<helper>[A-Za-z_$][\w$]*)\((?P<url>[A-Za-z_$][\w$]*)\)\{'
+        r'if\((?P<allowlist>[A-Za-z_$][\w$]*)\.has\((?P=url)\)\)return\s*(?:true|!0);'
+        r'(?:const|let|var)\s+(?P<parsed>[A-Za-z_$][\w$]*)\s*=\s*new URL\((?P=url)\);'
+        r'return\s+(?P=parsed)\.protocol\s*===\s*"http:"\s*\|\|\s*'
+        r'(?P=parsed)\.protocol\s*===\s*"https:"(?P<semicolon>;?)\}'
+    ),
+]
+
+for pattern in patterns:
+    match = pattern.search(source)
+    if match is None:
+        continue
+
+    parsed = match.group("parsed")
+    semicolon = match.group("semicolon")
+    old_body = match.group(0)
+    old_return = re.compile(
+        rf'return\s+{re.escape(parsed)}\.protocol\s*===\s*"http:"\s*\|\|\s*'
+        rf'{re.escape(parsed)}\.protocol\s*===\s*"https:"{re.escape(semicolon)}'
+    )
+    file_policy = (
+        f'{parsed}.protocol==="file:"&&'
+        f'({parsed}.hostname===""||{parsed}.hostname==="localhost")'
+        f'/*codexLinuxFileUrlPolicy*/'
+    )
+    new_return = (
+        f'return {parsed}.protocol==="http:"||{parsed}.protocol==="https:"||'
+        f'{file_policy}{semicolon}'
+    )
+    new_body, count = old_return.subn(new_return, old_body, count=1)
+    if count != 1:
+        continue
+
+    path.write_text(source[:match.start()] + new_body + source[match.end():], encoding="utf-8")
+    raise SystemExit(0)
+
+print(
+    "WARN: Could not find Browser Use URL policy insertion point — leaving browser-client.mjs unchanged",
+    file=sys.stderr,
+)
+PY
+}
+
+patch_browser_use_node_repl_env_guard() {
+    local client="$1"
+
+    if grep -Eq 'globalThis\.nodeRepl\?\.env\?\.\[[^]]+\]' "$client"; then
+        return 0
+    fi
+
+    python3 - "$client" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text(encoding="utf-8")
+pattern = re.compile(
+    r'function (?P<helper>[A-Za-z_$][\w$]*)\((?P<key>[A-Za-z_$][\w$]*)\)\{'
+    r'let (?P<value>[A-Za-z_$][\w$]*)=globalThis\.nodeRepl\?\.env\[(?P=key)\];'
+    r'return typeof (?P=value)=="string"\?(?P=value):void 0\}'
+)
+match = pattern.search(source)
+if match is None:
     print(
         "WARN: Could not find Browser Use nodeRepl env guard insertion point — leaving browser-client.mjs unchanged",
         file=sys.stderr,
     )
     raise SystemExit(0)
 
-path.write_text(source.replace(old, new, 1), encoding="utf-8")
+helper = match.group("helper")
+key = match.group("key")
+value = match.group("value")
+replacement = (
+    f'function {helper}({key}){{'
+    f'let {value}=globalThis.nodeRepl?.env?.[{key}];'
+    f'return typeof {value}=="string"?{value}:void 0}}'
+)
+path.write_text(source[:match.start()] + replacement + source[match.end():], encoding="utf-8")
+PY
+}
+
+patch_browser_use_native_pipe_import_meta_bridge() {
+    local client="$1"
+
+    if grep -Fq "globalThis.nodeRepl?.nativePipe??import.meta.__codexNativePipe" "$client"; then
+        return 0
+    fi
+
+    python3 - "$client" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text(encoding="utf-8")
+pattern = re.compile(
+    r'function (?P<helper>[A-Za-z_$][\w$]*)\(\)\{'
+    r'let (?P<bridge>[A-Za-z_$][\w$]*)='
+    r'(?:globalThis\.nodeRepl\?\.nativePipe|import\.meta\.__codexNativePipe);'
+    r'return (?P=bridge)==null\|\|typeof (?P=bridge)\.createConnection!="function"\?null:(?P=bridge)\}'
+)
+match = pattern.search(source)
+if match is None:
+    print(
+        "WARN: Could not find Browser Use nativePipe bridge helper — leaving browser-client.mjs unchanged",
+        file=sys.stderr,
+    )
+    raise SystemExit(0)
+
+helper = match.group("helper")
+bridge = match.group("bridge")
+replacement = (
+    f'function {helper}(){{let {bridge}=globalThis.nodeRepl?.nativePipe??import.meta.__codexNativePipe;'
+    f'return {bridge}==null||typeof {bridge}.createConnection!="function"?null:{bridge}}}'
+)
+path.write_text(source[:match.start()] + replacement + source[match.end():], encoding="utf-8")
 PY
 }
 
@@ -785,7 +905,9 @@ stage_browser_plugin_from_official_app() {
     cp -R "$source_plugin" "$target_plugin"
     remove_macos_sidecar_files "$target_plugin"
     patch_browser_use_node_repl_env_guard "$target_client"
+    patch_browser_use_native_pipe_import_meta_bridge "$target_client"
     patch_browser_use_site_status_allowlist_fallback "$target_client"
+    patch_browser_use_file_url_policy "$target_client"
 
     info "Browser plugin staged from official OpenAI DMG"
     return 0

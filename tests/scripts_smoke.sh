@@ -270,6 +270,7 @@ SCRIPT
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/port-integrations/README.md"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/port-integrations/example-integration/integration.json"
     assert_file_not_exists "$pkg_root/usr/lib/codex-app/update-builder/port-integrations/integrations.json"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/.codex-linux/port-integrations.json"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/node-runtime/bin/node"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/computer-use-linux/Cargo.toml"
@@ -288,6 +289,7 @@ test_update_builder_omits_build_time_port_integrations_config() {
     local app_dir="$workspace/app"
     local staged_config="$root/usr/lib/codex-app/update-builder/port-integrations/integrations.json"
     local staged_legacy_config="$root/usr/lib/codex-app/update-builder/port-integrations/features.json"
+    local staged_resolved_config="$root/usr/lib/codex-app/update-builder/.codex-linux/port-integrations.json"
     local source_info="$root/usr/lib/codex-app/update-builder/.codex-linux/source-info.json"
     local local_remote_update_builder="$workspace/local-remote-update-builder"
     local local_remote_source_info="$local_remote_update_builder/.codex-linux/source-info.json"
@@ -342,6 +344,7 @@ JSON
         export PACKAGE_NAME="codex-app"
         export UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service"
         export CODEX_LINUX_SOURCE_REMOTE="ssh://builder:secret-token@example.com/org/repo.git"
+        export CODEX_PORT_INTEGRATIONS_CONFIG="$source_config"
         export SOURCE_DATE_EPOCH="1710000000"
 
         # shellcheck disable=SC1091
@@ -351,8 +354,27 @@ JSON
 
     assert_file_not_exists "$staged_config"
     assert_file_not_exists "$staged_legacy_config"
+    assert_file_exists "$staged_resolved_config"
     assert_file_exists "$root/usr/lib/codex-app/update-builder/port-integrations/integrations.example.json"
     assert_file_exists "$source_info"
+
+    node - "$staged_resolved_config" <<'NODE' || fail "Expected staged resolved port integrations config"
+const fs = require("node:fs");
+const resolvedConfigPath = process.argv[2];
+const config = JSON.parse(fs.readFileSync(resolvedConfigPath, "utf8"));
+if (!Array.isArray(config.enabled) || !config.enabled.includes("example-integration")) {
+  throw new Error(`unexpected enabled config: ${JSON.stringify(config.enabled)}`);
+}
+if (JSON.stringify(config.disabled) !== JSON.stringify(["open-target-discovery"])) {
+  throw new Error(`unexpected disabled config: ${JSON.stringify(config.disabled)}`);
+}
+if (config.enabled.includes("open-target-discovery")) {
+  throw new Error("disabled integration must not be enabled");
+}
+if ("localComment" in config) {
+  throw new Error("resolved config must not package local comments");
+}
+NODE
 
     node - "$source_info" <<'NODE' || fail "Expected staged source info to be sanitized and reproducible"
 const fs = require("node:fs");
@@ -2927,8 +2949,10 @@ PY
     assert_contains "$REPO_DIR/launcher/start.sh.template" 'curl --disable --noproxy 127.0.0.1,localhost --silent --show-error --fail --max-time 2'
     assert_contains "$REPO_DIR/launcher/start.sh.template" "verify_webview_origin_with_python"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "urllib.request.ProxyHandler({})"
-    assert_contains "$REPO_DIR/launcher/start.sh.template" "for attempt in \$(seq 1 250)"
-    assert_contains "$REPO_DIR/launcher/start.sh.template" "sleep 0.02"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "for attempt in \$(seq 1 20)"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "webview_origin_is_reachable_fast"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "if webview_origin_is_reachable; then"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "sleep 0.05"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "Webview origin verified."
     assert_contains "$REPO_DIR/launcher/start.sh.template" "hydrate_graphical_session_env"
     assert_not_contains "$REPO_DIR/install.sh" "pkill -f \"http.server 5175\""
@@ -3013,6 +3037,7 @@ PY
     assert_contains "$REPO_DIR/updater/src/builder.rs" "managed_node_bin_dirs"
     assert_contains "$REPO_DIR/scripts/build-rpm.sh" "stage_common_package_files"
     assert_contains "$REPO_DIR/scripts/build-rpm.sh" "PACKAGED_RUNTIME_SOURCE"
+    assert_contains "$REPO_DIR/scripts/lib/package-common.sh" 'inPackage = trimmed === "[package]"'
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "env -u BASH_FUNC_ml%%%% -u BASH_FUNC_module%%%%"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app %u"
@@ -3029,6 +3054,7 @@ PY
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" 'exec "${APP_DIR}/start.sh" --x11 "$@"'
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" 'exec "${APP_DIR}/start.sh" --wayland "$@"'
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "CODEX_PORT_INTEGRATIONS_CONFIG"
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "CODEX_LINUX_FEATURES_CONFIG"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "port-integrations/integrations.json"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "port-integrations/features.json"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "--force-x11"
@@ -3121,7 +3147,7 @@ test_side_by_side_launcher_identity() {
     assert_contains "$app_dir/start.sh" "CODEX_LINUX_APP_DISPLAY_NAME=Codex\\ CUA\\ Lab"
     assert_contains "$app_dir/start.sh" 'CODEX_LINUX_WEBVIEW_PORT=${CODEX_WEBVIEW_PORT:-5176}'
     assert_contains "$app_dir/start.sh" 'CODEX_LINUX_SETTINGS_FILE="$APP_SETTINGS_FILE"'
-    assert_contains "$app_dir/start.sh" 'export CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_WEBVIEW_PORT CODEX_LINUX_SETTINGS_FILE'
+    assert_contains "$app_dir/start.sh" 'export CODEX_HOME CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_WEBVIEW_PORT CODEX_LINUX_SETTINGS_FILE CODEX_PORT_INTEGRATIONS_DIR CODEX_LINUX_FEATURES_DIR'
     assert_contains "$app_dir/start.sh" 'WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"'
     assert_contains "$app_dir/start.sh" 'ELECTRON_RENDERER_URL="${ELECTRON_RENDERER_URL:-$WEBVIEW_ORIGIN/}"'
     assert_contains "$app_dir/start.sh" "resolve_script_dir"

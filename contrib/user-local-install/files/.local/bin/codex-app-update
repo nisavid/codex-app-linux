@@ -118,14 +118,21 @@ log "Rebuilding wrapper..."
 (
     cd "$BUILD_REPO_DIR"
     mkdir -p "$STATE_DIR/tmp"
-    unset CODEX_PORT_INTEGRATIONS_CONFIG CODEX_LINUX_FEATURES_CONFIG
-    if [ -f "$SOURCE_REPO_DIR/port-integrations/integrations.json" ]; then
+    # Honor a caller-provided integration config, such as the in-app Update
+    # picker, over the repo-local default so a picked selection wins.
+    if [ -n "${CODEX_PORT_INTEGRATIONS_CONFIG:-}" ]; then
+        export CODEX_LINUX_FEATURES_CONFIG="${CODEX_LINUX_FEATURES_CONFIG:-$CODEX_PORT_INTEGRATIONS_CONFIG}"
+    elif [ -n "${CODEX_LINUX_FEATURES_CONFIG:-}" ]; then
+        export CODEX_PORT_INTEGRATIONS_CONFIG="$CODEX_LINUX_FEATURES_CONFIG"
+    elif [ -f "$SOURCE_REPO_DIR/port-integrations/integrations.json" ]; then
         export CODEX_PORT_INTEGRATIONS_CONFIG="$SOURCE_REPO_DIR/port-integrations/integrations.json"
     elif [ -f "$SOURCE_REPO_DIR/port-integrations/features.json" ]; then
         export CODEX_PORT_INTEGRATIONS_CONFIG="$SOURCE_REPO_DIR/port-integrations/features.json"
     elif [ -f "$SOURCE_REPO_DIR/linux-features/features.json" ]; then
         export CODEX_PORT_INTEGRATIONS_CONFIG="$SOURCE_REPO_DIR/linux-features/features.json"
-        export CODEX_LINUX_FEATURES_CONFIG="$SOURCE_REPO_DIR/linux-features/features.json"
+    fi
+    if [ -n "${CODEX_PORT_INTEGRATIONS_CONFIG:-}" ] && [ -z "${CODEX_LINUX_FEATURES_CONFIG:-}" ]; then
+        export CODEX_LINUX_FEATURES_CONFIG="$CODEX_PORT_INTEGRATIONS_CONFIG"
     fi
     TMPDIR="$STATE_DIR/tmp" \
     CODEX_INSTALL_ALLOW_RUNNING=1 \

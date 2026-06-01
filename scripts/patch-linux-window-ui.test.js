@@ -286,8 +286,14 @@ test("build info captures official DMG hash, port integrations, distro profile, 
     );
 
     const integrationsRoot = path.join(tempRoot, "port-integrations");
+    fs.mkdirSync(path.join(tempRoot, "updater"), { recursive: true });
     fs.mkdirSync(path.join(integrationsRoot, "read-aloud"), { recursive: true });
     fs.mkdirSync(path.join(integrationsRoot, "zed-opener"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempRoot, "updater", "Cargo.toml"),
+      "[workspace]\n[workspace.package]\nversion = \"9.9.9-wrong\"\n\n[package]\nname = \"codex-app-updater\"\nversion = \"1.2.3-wrapper\"\n",
+      "utf8",
+    );
     fs.writeFileSync(path.join(integrationsRoot, "integrations.example.json"), "{\"enabled\":[]}\n", "utf8");
     fs.writeFileSync(path.join(integrationsRoot, "port-integrations.json"), "{\"enabled\":[\"zed-opener\"]}\n", "utf8");
     fs.writeFileSync(
@@ -295,11 +301,13 @@ test("build info captures official DMG hash, port integrations, distro profile, 
       "{\"id\":\"read-aloud\",\"defaultEnabled\":true}\n",
       "utf8",
     );
+    fs.writeFileSync(path.join(integrationsRoot, "read-aloud", "README.md"), "# Read Aloud\n", "utf8");
     fs.writeFileSync(
       path.join(integrationsRoot, "zed-opener", "integration.json"),
       "{\"id\":\"zed-opener\"}\n",
       "utf8",
     );
+    fs.writeFileSync(path.join(integrationsRoot, "zed-opener", "README.md"), "# Zed Opener\n", "utf8");
     process.env.CODEX_PORT_INTEGRATIONS_CONFIG = path.join(integrationsRoot, "port-integrations.json");
 
     const target = detectLinuxTargetContext({
@@ -337,6 +345,7 @@ test("build info captures official DMG hash, port integrations, distro profile, 
     assert.equal(info.officialDmg.appVersion, "1.2.3");
     assert.equal(info.source.shortCommit, "abcdef123456");
     assert.equal(info.source.remote, "https://example.com/org/codex-app-linux.git");
+    assert.equal(info.source.version, "1.2.3-wrapper");
     assert.equal(info.packageProfile.id, "debian-family");
     assert.equal(info.packageProfile.packageManager, "apt");
     assert.deepEqual(info.portIntegrations.enabled, ["read-aloud", "zed-opener"]);
@@ -574,6 +583,11 @@ test("default core patch descriptors are grouped and unique", () => {
     "opaque-window-default-webview-index",
     "opaque-window-default-resolved-theme",
     "subagent-nickname-metadata-shape",
+    "automation-schedule-multi-time-rrule",
+    "linux-chrome-native-host-runtime",
+    "linux-config-write-version-conflict",
+    "linux-fast-mode-model-guard",
+    "local-environment-action-modal-draft",
     "linux-computer-use-ui-availability",
     "linux-computer-use-install-flow",
     "linux-app-updater-bridge",
@@ -1408,7 +1422,7 @@ test("adds Linux build information to the tray menu", () => {
   assert.match(patched, /Linux source revision:/);
   assert.match(patched, /dirty===null/);
   assert.match(patched, /dirty state unknown/);
-  assert.match(patched, /Codex App Linux build information/);
+  assert.match(patched, /Codex App build information/);
 });
 
 test("build information tray detail prefers readable dirty-unknown revisions", () => {
@@ -2790,14 +2804,14 @@ test("detects Chrome extension installation from Linux browser profiles", () => 
   assert.match(patched, /`google-chrome-unstable`/);
   assert.match(
     patched,
-    /if\(a===`linux`\)return codexLinuxChromeHasExtension\(\{extensionId:e,homeDir:t,platform:a\}\)/,
+    /if\(__codexPlatform===`linux`\)return codexLinuxChromeHasExtension\(\{extensionId:__codexExtensionId,homeDir:__codexHomeDir,platform:__codexPlatform\}\)/,
   );
   assert.match(
     patched,
-    /if\(t===`linux`\)\{let o=codexLinuxChromeExtensionCommands\(\{extensionId:e,homeDir:process\.env\.HOME\?\?``,platform:t\}\),t=codexLinuxChromeCommand\(o\)\?\?n\(\);if\(t==null\)throw Error\(`Google Chrome, Brave, or Chromium is not installed`\);await r\(t,\[cm\(e\)\]\);return\}/,
+    /if\(__codexPlatform===`linux`\)\{let __codexChromeCommand=codexLinuxChromeCommand\(\)\?\?__codexDetectChromeCommand\(\);if\(__codexChromeCommand==null\)throw Error\(`Google Chrome, Brave, or Chromium is not installed`\);await __codexRunCommand\(__codexChromeCommand,\[cm\(__codexExtensionId\)\]\);return\}/,
   );
   assert.match(patched, /process\.env\.PATH\?\?``/);
-  assert.match(patched, /commands:\[`google-chrome-beta`,`google-chrome`,`google-chrome-stable`\]/);
+  assert.match(patched, /`brave-browser`,`brave`,`google-chrome`,`google-chrome-stable`,`chromium-browser`,`chromium`/);
   assert.doesNotMatch(patched, /function codexLinuxChromeCommand\(\)\{for\(let e of\[[^\]]+\]\)\{let t=Rp/);
 });
 
@@ -2808,18 +2822,18 @@ test("detects Chrome extension installation after official app minifier renames"
   );
 
   assert.match(patched, /function codexLinuxChromeProfileRoots/);
-  assert.match(patched, /let r=um\(e\);for\(let e of codexLinuxChromeProfileRoots/);
-  assert.match(patched, /function codexLinuxChromeExtensionCommands/);
-  assert.match(patched, /function om\(\{extensionId:e,homeDir:t=\(0,r\.homedir\)\(\)/);
-  assert.match(patched, /c=dm\(\{homeDir:t,localAppDataDir:n,platform:a\}\)/);
+  assert.match(patched, /let __codexValidatedExtensionId=um\(__codexExtensionId\);for\(let __codexProfileRoot of codexLinuxChromeProfileRoots/);
+  assert.match(patched, /function codexLinuxChromeCommand/);
+  assert.match(patched, /function om\(\{extensionId:__codexExtensionId,homeDir:__codexHomeDir=\(0,r\.homedir\)\(\)/);
+  assert.match(patched, /__codexProfileDir=dm\(\{homeDir:__codexHomeDir,localAppDataDir:__codexLocalAppDataDir,platform:__codexPlatform\}\)/);
   assert.match(
     patched,
-    /async function sm\(\{extensionId:e,platform:t=process\.platform,detectChromeCommand:n=cm,runCommand:r=zp\}\)/,
+    /async function sm\(\{extensionId:__codexExtensionId,platform:__codexPlatform=process\.platform,detectChromeCommand:__codexDetectChromeCommand=cm,runCommand:__codexRunCommand=zp\}\)/,
   );
-  assert.match(patched, /await r\(rm,\[`-b`,nm,am\(e\)\]\)/);
+  assert.match(patched, /await __codexRunCommand\(rm,\[`-b`,nm,am\(__codexExtensionId\)\]\)/);
   assert.match(
     patched,
-    /if\(t===`linux`\)\{let o=codexLinuxChromeExtensionCommands\(\{extensionId:e,homeDir:process\.env\.HOME\?\?``,platform:t\}\),t=codexLinuxChromeCommand\(o\)\?\?n\(\);if\(t==null\)throw Error\(`Google Chrome, Brave, or Chromium is not installed`\);await r\(t,\[am\(e\)\]\);return\}/,
+    /if\(__codexPlatform===`linux`\)\{let __codexChromeCommand=codexLinuxChromeCommand\(\)\?\?__codexDetectChromeCommand\(\);if\(__codexChromeCommand==null\)throw Error\(`Google Chrome, Brave, or Chromium is not installed`\);await __codexRunCommand\(__codexChromeCommand,\[am\(__codexExtensionId\)\]\);return\}/,
   );
 });
 

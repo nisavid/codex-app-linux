@@ -7,7 +7,7 @@
 run_port_integration_stage_hooks() {
     local app_dir="${1:-}"
     local integration_helper="$SCRIPT_DIR/scripts/lib/port-integrations.js"
-    local hooks_output=""
+    local hooks_output
     local integration_id
     local hook_path
 
@@ -16,8 +16,14 @@ run_port_integration_stage_hooks() {
         return 0
     }
 
+    info "Staging declarative port integration resources and runtime hooks"
+    if ! SCRIPT_DIR="$SCRIPT_DIR" INSTALL_DIR="$INSTALL_DIR" WORK_DIR="$WORK_DIR" ARCH="$ARCH" CODEX_OFFICIAL_APP_DIR="$app_dir" CODEX_UPSTREAM_APP_DIR="$app_dir" node "$integration_helper" --stage-install "$INSTALL_DIR"; then
+        warn "port integration declarative staging failed"
+        return 1
+    fi
+
     if ! hooks_output="$(node "$integration_helper" --stage-hooks)"; then
-        warn "port integration stage hook enumeration failed"
+        warn "port integration stage hook discovery failed"
         return 1
     fi
 
@@ -29,5 +35,5 @@ run_port_integration_stage_hooks() {
             warn "port integration stage hook failed: $integration_id"
             return 1
         fi
-    done <<<"$hooks_output"
+    done <<< "$hooks_output"
 }

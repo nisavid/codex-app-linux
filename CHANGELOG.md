@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
-
+- Optional port integrations for Agent Workspaces, AppShots, and Codex App
+  wrapper update controls were imported from the Linux-port upstream under this
+  fork's `port-integrations/` contract.
+- The opt-in wrapper updater can show installed wrapper commit state and ask
+  which optional port integrations to enable before a rebuild.
+- Launcher rendering mode `CODEX_LINUX_RENDERING_MODE=wayland-gpu` forces native
+  Wayland with GPU compositing enabled for desktops where XWayland or software
+  rendering is unstable.
 - New default port integration `read-aloud-mcp` that stages a standalone Rust Read
   Aloud MCP plugin with `doctor`, `read_aloud`, and `stop` tools. The MCP server
   reuses the Kokoro runner/model configuration from the Read Aloud UI integration.
@@ -19,11 +26,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - The current supported port integrations now default on: remote-control UI,
   mobile-control host patches, Read Aloud, Read Aloud MCP, and conversation
-  mode. Local `port-integrations/integrations.json` and persisted package overrides can
-  still disable defaults or enable still-optional integrations.
+  mode. Local `port-integrations.json` and persisted package overrides can still
+  disable defaults or enable still-optional port integrations.
 
 ### Fixed
 
+- Patcher anchors were refreshed for official app bundle 26.527.x webview,
+  remote mobile control, AppShots, read-aloud settings, and current keybind
+  defaults.
+- Nix builds now use refreshed pins for the current official DMG bundle and
+  static crates.io downloads.
 - Nix builds, installer apps, and dev shells now use modern `7zz`, and the installer dependency check accepts `7zz` without requiring a separate legacy `7z` binary.
 - Codex App no longer removes user-enabled `remote_control = true` from the local Linux config before starting the app server.
 

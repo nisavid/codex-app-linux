@@ -123,6 +123,80 @@ clear_update_builder_port_integration_config() {
         "$update_builder_root/port-integrations/features.json"
 }
 
+stage_update_builder_resolved_port_integration_config() {
+    local update_builder_root="$1"
+    local helper="$REPO_DIR/scripts/lib/port-integrations.js"
+    local node_bin
+    local config_dir="$update_builder_root/.codex-linux"
+    local config_path="$config_dir/port-integrations.json"
+
+    [ -f "$helper" ] || error "Missing port integrations helper: $helper"
+
+    mkdir -p "$config_dir"
+    node_bin="$(package_node_binary)"
+    "$node_bin" "$helper" --resolved-config-json > "$config_path"
+}
+
+port_integrations_root_path() {
+    local helper="$REPO_DIR/scripts/lib/port-integrations.js"
+    local node_bin
+
+    [ -f "$helper" ] || error "Missing port integrations helper: $helper"
+
+    node_bin="$(package_node_binary)"
+    "$node_bin" "$helper" --integrations-root
+}
+
+stage_update_builder_port_integrations_tree() {
+    local update_builder_root="$1"
+    local source_root
+    local target="$update_builder_root/port-integrations"
+
+    source_root="$(port_integrations_root_path)"
+    [ -d "$source_root" ] || error "Missing port integrations root: $source_root"
+
+    mkdir -p "$target"
+    cp -a "$source_root/." "$target/"
+    stage_update_builder_resolved_port_integration_config "$update_builder_root"
+    clear_update_builder_port_integration_config "$update_builder_root"
+}
+
+run_port_integration_package_hooks() {
+    local staging_root="$1"
+    local package_format="$2"
+    local helper="$REPO_DIR/scripts/lib/port-integrations.js"
+    local node_bin
+    local integration_id
+    local hook_path
+    local hooks_output
+    local app_dir="$staging_root/opt/$PACKAGE_NAME"
+
+    [ -d "$staging_root" ] || error "Missing package staging root: $staging_root"
+    [ -f "$helper" ] || error "Missing port integrations helper: $helper"
+
+    node_bin="$(package_node_binary)"
+    if ! hooks_output="$("$node_bin" "$helper" --package-hooks "$package_format")"; then
+        error "Failed to discover port integration package hooks for $package_format"
+    fi
+
+    while IFS=$'\t' read -r integration_id hook_path; do
+        [ -n "${integration_id:-}" ] || continue
+        [ -f "$hook_path" ] || error "Missing port integration package hook for $integration_id: $hook_path"
+
+        info "Running port integration package hook ($package_format): $integration_id"
+        REPO_DIR="$REPO_DIR" \
+            SCRIPT_DIR="$REPO_DIR" \
+            APP_DIR="$app_dir" \
+            PACKAGE_APP_DIR="$app_dir" \
+            PACKAGE_NAME="$PACKAGE_NAME" \
+            PACKAGE_VERSION="$PACKAGE_VERSION" \
+            PACKAGE_FORMAT="$package_format" \
+            PACKAGE_ROOT="$staging_root" \
+            PACKAGE_STAGING_ROOT="$staging_root" \
+            bash "$hook_path"
+    done <<< "$hooks_output"
+}
+
 render_desktop_entry() {
     local target="$1"
     local package_name
@@ -591,18 +665,68 @@ function shortSourceCommit(commit) {
   return `${revision.slice(0, 12)}${suffix}`;
 }
 
+function readJsonFile(filePath) {
+  try {
+    const value = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return value != null && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseWrapperVersion(content) {
+  let inPackage = false;
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      inPackage = trimmed === "[package]";
+      continue;
+    }
+    if (!inPackage) {
+      continue;
+    }
+    const match = trimmed.match(/^version\s*=\s*"([^"]+)"/);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+function readWrapperVersion(repoDir) {
+  try {
+    return parseWrapperVersion(fs.readFileSync(path.join(repoDir, "updater", "Cargo.toml"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeSourceInfo(info) {
+  return {
+    ...info,
+    version: info.version ?? readWrapperVersion(repoDir),
+    remote: sanitizeGitRemoteUrl(info.remote),
+    provenance: info.provenance ?? "packaged-update-builder",
+    recapturedAt: isoTimestamp(),
+  };
+}
+
+const stagedInfo = readJsonFile(path.join(repoDir, ".codex-linux", "source-info.json"));
 const commit = process.env.CODEX_LINUX_SOURCE_COMMIT?.trim() || git(["rev-parse", "HEAD"]);
 const status = git(["status", "--porcelain"]);
-const info = {
-  commit,
-  shortCommit: shortSourceCommit(commit),
-  branch: process.env.CODEX_LINUX_SOURCE_BRANCH?.trim() || git(["branch", "--show-current"]),
-  remote: sanitizeGitRemoteUrl(process.env.CODEX_LINUX_SOURCE_REMOTE?.trim() || git(["remote", "get-url", "origin"])),
-  describe: process.env.CODEX_LINUX_SOURCE_DESCRIBE?.trim() || git(["describe", "--always", "--dirty", "--tags"]),
-  dirty: status == null ? null : status.length > 0,
-  provenance: "packaged-update-builder",
-  capturedAt: isoTimestamp(),
-};
+const info = stagedInfo?.commit
+  ? sanitizeSourceInfo(stagedInfo)
+  : {
+      commit,
+      shortCommit: shortSourceCommit(commit),
+      version: readWrapperVersion(repoDir),
+      branch: process.env.CODEX_LINUX_SOURCE_BRANCH?.trim() || git(["branch", "--show-current"]),
+      remote: sanitizeGitRemoteUrl(process.env.CODEX_LINUX_SOURCE_REMOTE?.trim() || git(["remote", "get-url", "origin"])),
+      describe: process.env.CODEX_LINUX_SOURCE_DESCRIBE?.trim() || git(["describe", "--always", "--dirty", "--tags"]),
+      dirty: status == null ? null : status.length > 0,
+      provenance: "packaged-update-builder",
+      capturedAt: isoTimestamp(),
+    };
 
 fs.mkdirSync(path.dirname(infoFile), { recursive: true });
 fs.writeFileSync(infoFile, `${JSON.stringify(info, null, 2)}\n`, "utf8");
@@ -670,6 +794,7 @@ stage_update_builder_bundle() {
         "$update_builder_root/assets"
 
     cp "$REPO_DIR/install.sh" "$update_builder_root/install.sh"
+    cp "$REPO_DIR/CHANGELOG.md" "$update_builder_root/CHANGELOG.md"
     cp "$REPO_DIR/launcher/start.sh.template" "$update_builder_root/launcher/start.sh.template"
     cp "$REPO_DIR/launcher/webview-server.py" "$update_builder_root/launcher/webview-server.py"
     cp "$REPO_DIR/Cargo.toml" "$update_builder_root/Cargo.toml"
@@ -721,8 +846,7 @@ stage_update_builder_bundle() {
     cp "$UPDATER_SERVICE_SOURCE" "$update_builder_root/packaging/linux/codex-app-updater.service"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postinst" "$update_builder_root/packaging/linux/codex-app-updater.postinst"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.prerm" "$update_builder_root/packaging/linux/codex-app-updater.prerm"
-    cp -r "$REPO_DIR/port-integrations/." "$update_builder_root/port-integrations/"
-    clear_update_builder_port_integration_config "$update_builder_root"
+    stage_update_builder_port_integrations_tree "$update_builder_root"
     cp "$REPO_DIR/packaging/linux/codex-app-updater.postrm" "$update_builder_root/packaging/linux/codex-app-updater.postrm"
     cp "$REPO_DIR/assets/codex.png" "$update_builder_root/assets/codex.png"
     stage_update_builder_source_info "$update_builder_root"
@@ -739,6 +863,77 @@ stage_optional_update_builder_bundle() {
     else
         info "Skipping update-builder bundle (PACKAGE_WITH_UPDATER=0)"
     fi
+}
+
+restore_port_integration_payload_permissions() {
+    local root="$1"
+    local helper="$REPO_DIR/scripts/lib/port-integrations.js"
+    local app_root="$root/opt/$PACKAGE_NAME"
+    local node_bin
+    local staged_files_json
+
+    [ -d "$root" ] || error "Missing package root: $root"
+    [ -d "$app_root" ] || error "Missing package app root: $app_root"
+    [ -f "$helper" ] || error "Missing port integrations helper: $helper"
+
+    node_bin="$(package_node_binary)"
+    if ! staged_files_json="$("$node_bin" "$helper" --staged-files-json "$app_root")"; then
+        error "Failed to read port integration staged file manifest"
+    fi
+
+    if ! "$node_bin" - "$app_root" "$staged_files_json" <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+
+const [appRoot, rawJson] = process.argv.slice(2);
+const entries = JSON.parse(rawJson);
+
+if (!Array.isArray(entries)) {
+  throw new Error("port integration staged files payload must be an array");
+}
+
+function assertRelativeTarget(target) {
+  if (typeof target !== "string" || target.length === 0) {
+    throw new Error("port integration staged file target must be a relative path");
+  }
+  const parts = target.split(/[\\/]+/).filter(Boolean);
+  if (path.isAbsolute(target) || parts.includes("..")) {
+    throw new Error(`Unsafe port integration staged file target: ${target}`);
+  }
+  const resolved = path.resolve(appRoot, ...parts);
+  const relative = path.relative(appRoot, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Unsafe port integration staged file target: ${target}`);
+  }
+  return resolved;
+}
+
+for (const entry of entries) {
+  if (entry == null || typeof entry !== "object") {
+    throw new Error("port integration staged file entry must be an object");
+  }
+  if (typeof entry.mode !== "string" || !/^[0-7]{3,4}$/.test(entry.mode)) {
+    throw new Error(`Invalid port integration staged file mode for ${entry.target}: ${entry.mode}`);
+  }
+  const target = assertRelativeTarget(entry.target);
+  if (!fs.existsSync(target)) {
+    throw new Error(`port integration staged file is missing from package payload: ${entry.target}`);
+  }
+  fs.chmodSync(target, Number.parseInt(entry.mode, 8));
+}
+NODE
+    then
+        error "Failed to restore port integration staged file permissions"
+    fi
+}
+
+normalize_package_payload_permissions() {
+    local root="$1"
+
+    [ -d "$root" ] || error "Missing package root: $root"
+    find "$root" -type d -exec chmod 0755 {} +
+    find "$root" -type f \( -perm /u=x -o -perm /g=x -o -perm /o=x \) -exec chmod 0755 {} +
+    find "$root" -type f ! \( -perm /u=x -o -perm /g=x -o -perm /o=x \) -exec chmod 0644 {} +
 }
 
 write_launcher_stub() {

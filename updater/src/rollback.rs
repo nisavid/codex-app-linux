@@ -362,6 +362,9 @@ mod tests {
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("codex-app"),
             cli_path: None,
+            enable_wrapper_updates: false,
+            wrapper_remote: String::new(),
+            wrapper_branch: "main".to_string(),
         };
         let missing = temp.path().join("missing.deb");
         let mut state = PersistedState::new(true);
@@ -414,6 +417,9 @@ mod tests {
             builder_bundle_root: temp.path().join("builder"),
             app_executable_path: temp.path().join("not-running-electron"),
             cli_path: None,
+            enable_wrapper_updates: false,
+            wrapper_remote: String::new(),
+            wrapper_branch: "main".to_string(),
         };
 
         let mut state = PersistedState::new(false);
