@@ -887,9 +887,6 @@ fn install_command_in_parent(program: &Path, path: &Path, reinstall: bool) -> Re
     command
         .current_dir(parent)
         .arg(if reinstall { "reinstall" } else { "install" });
-    if program_name == "apt" && reinstall {
-        command.arg("--reinstall");
-    }
     command.arg("-y").arg(format!("./{file_name}"));
     Ok(command)
 }
@@ -1390,7 +1387,7 @@ mod tests {
             apt.get_args()
                 .map(|value| value.to_string_lossy().into_owned())
                 .collect::<Vec<_>>(),
-            vec!["reinstall", "--reinstall", "-y", "./codex.deb"]
+            vec!["reinstall", "-y", "./codex.deb"]
         );
 
         let dnf = dnf_install_command(Path::new("/tmp/build/codex.rpm"), true)?;
