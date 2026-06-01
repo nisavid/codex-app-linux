@@ -19,6 +19,13 @@ user. It does not run commands through a shell, and it strips app-internal
 Electron, Node, Codex, and wrapper environment variables before launching
 desktop targets.
 
+Target paths are validated before launch. The integration rejects empty or
+non-string targets, C0/DEL control characters, URL-like schemes such as
+`https:` or `file:`, and raw values beginning with `-` before passing a target
+to terminal, IDE, file-manager, `.desktop`, or Electron shell launch paths.
+Normal local paths remain valid, including absolute paths with spaces or `:`
+inside path components.
+
 Disable it for checkout builds by copying
 `port-integrations/integrations.example.json` to `port-integrations/integrations.json` and
 listing:
