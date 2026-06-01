@@ -660,8 +660,17 @@ function readJsonFile(filePath) {
 }
 
 function parseWrapperVersion(content) {
+  let inPackage = false;
   for (const line of content.split(/\r?\n/)) {
-    const match = line.trim().match(/^version\s*=\s*"([^"]+)"/);
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      inPackage = trimmed === "[package]";
+      continue;
+    }
+    if (!inPackage) {
+      continue;
+    }
+    const match = trimmed.match(/^version\s*=\s*"([^"]+)"/);
     if (match) {
       return match[1];
     }

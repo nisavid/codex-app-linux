@@ -3015,6 +3015,7 @@ PY
     assert_contains "$REPO_DIR/updater/src/builder.rs" "managed_node_bin_dirs"
     assert_contains "$REPO_DIR/scripts/build-rpm.sh" "stage_common_package_files"
     assert_contains "$REPO_DIR/scripts/build-rpm.sh" "PACKAGED_RUNTIME_SOURCE"
+    assert_contains "$REPO_DIR/scripts/lib/package-common.sh" 'inPackage = trimmed === "[package]"'
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "BAMF_DESKTOP_FILE_HINT"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "env -u BASH_FUNC_ml%%%% -u BASH_FUNC_module%%%%"
     assert_contains "$REPO_DIR/packaging/linux/codex-app.desktop" "/usr/bin/codex-app %u"
@@ -3031,6 +3032,7 @@ PY
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" 'exec "${APP_DIR}/start.sh" --x11 "$@"'
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app" 'exec "${APP_DIR}/start.sh" --wayland "$@"'
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "CODEX_PORT_INTEGRATIONS_CONFIG"
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "CODEX_LINUX_FEATURES_CONFIG"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "port-integrations/integrations.json"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "port-integrations/features.json"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "--force-x11"

@@ -5,14 +5,27 @@ warn() {
     echo "WARN: $*" >&2
 }
 
-if [ -z "${CODEX_PORT_INTEGRATIONS_DIR:-}" ]; then
-    warn "CODEX_PORT_INTEGRATIONS_DIR is not set; skipping Agent Workspaces skill install"
-    exit 0
+candidate_skill_sources=()
+
+app_dir="${CODEX_LINUX_APP_DIR:-${1:-}}"
+if [ -n "$app_dir" ]; then
+    candidate_skill_sources+=("$app_dir/.codex-linux/integrations/agent-workspace/skills/agent-workspace-linux/SKILL.md")
 fi
 
-skill_source="$CODEX_PORT_INTEGRATIONS_DIR/agent-workspace/skills/agent-workspace-linux/SKILL.md"
-if [ ! -f "$skill_source" ]; then
-    warn "Agent Workspaces skill source not found at $skill_source; skipping skill install"
+if [ -n "${CODEX_PORT_INTEGRATIONS_DIR:-}" ]; then
+    candidate_skill_sources+=("$CODEX_PORT_INTEGRATIONS_DIR/agent-workspace/skills/agent-workspace-linux/SKILL.md")
+fi
+
+skill_source=""
+for candidate in "${candidate_skill_sources[@]}"; do
+    if [ -f "$candidate" ]; then
+        skill_source="$candidate"
+        break
+    fi
+done
+
+if [ -z "$skill_source" ]; then
+    warn "Agent Workspaces skill source not found in staged app resources; skipping skill install"
     exit 0
 fi
 

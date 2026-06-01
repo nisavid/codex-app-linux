@@ -122,6 +122,8 @@ log "Rebuilding wrapper..."
     # picker, over the repo-local default so a picked selection wins.
     if [ -n "${CODEX_PORT_INTEGRATIONS_CONFIG:-}" ]; then
         export CODEX_LINUX_FEATURES_CONFIG="${CODEX_LINUX_FEATURES_CONFIG:-$CODEX_PORT_INTEGRATIONS_CONFIG}"
+    elif [ -n "${CODEX_LINUX_FEATURES_CONFIG:-}" ]; then
+        export CODEX_PORT_INTEGRATIONS_CONFIG="$CODEX_LINUX_FEATURES_CONFIG"
     elif [ -f "$SOURCE_REPO_DIR/port-integrations/integrations.json" ]; then
         export CODEX_PORT_INTEGRATIONS_CONFIG="$SOURCE_REPO_DIR/port-integrations/integrations.json"
     elif [ -f "$SOURCE_REPO_DIR/port-integrations/features.json" ]; then

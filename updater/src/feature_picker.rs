@@ -15,9 +15,9 @@
 //!    (the saved `port-integrations.json`, else `--enabled`).
 //! 3. Shows a zenity/kdialog checklist pre-checked with the enabled set, plus a
 //!    sentinel "(Don't ask again …)" row.
-//! 4. Writes the chosen `{"enabled":[…]}` to the user integration config so the
-//!    rebuild (which points `CODEX_PORT_INTEGRATIONS_CONFIG` at that path) uses
-//!    the selection. If the sentinel row was checked, persists
+//! 4. Writes the chosen `{"enabled":[…],"disabled":[…]}` to the user integration
+//!    config so the rebuild (which points `CODEX_PORT_INTEGRATIONS_CONFIG` at
+//!    that path) uses the selection. If the sentinel row was checked, persists
 //!    `codex-linux-integration-picker-on-update=false` so future updates skip the
 //!    prompt.
 //!
@@ -48,6 +48,7 @@ const DONT_ASK_LABEL: &str = "(Don't ask again on future updates)";
 struct CatalogEntry {
     id: String,
     title: String,
+    default_enabled: bool,
 }
 
 /// Outcome of `run_pick_integrations`, surfaced as JSON when `--json` is passed.
@@ -110,7 +111,7 @@ fn pick(config: &RuntimeConfig, paths: &RuntimePaths) -> Result<PickOutcome> {
     let Some((source, catalog)) = chosen else {
         return Ok(PickOutcome::Skipped("no-catalog"));
     };
-    let enabled = read_enabled(config, &source);
+    let enabled = read_enabled(config, &source, &catalog);
 
     match show_picker(&tool, &catalog, &enabled)? {
         None => {
@@ -135,7 +136,15 @@ fn pick(config: &RuntimeConfig, paths: &RuntimePaths) -> Result<PickOutcome> {
             picked.sort();
             picked.dedup();
 
-            write_integration_config(&picked)?;
+            let picked_ids: std::collections::HashSet<&str> =
+                picked.iter().map(String::as_str).collect();
+            let disabled: Vec<String> = catalog
+                .iter()
+                .filter(|entry| entry.default_enabled && !picked_ids.contains(entry.id.as_str()))
+                .map(|entry| entry.id.clone())
+                .collect();
+
+            write_integration_config(&picked, &disabled)?;
             if dont_ask {
                 if let Err(error) = config::write_integration_picker_on_update(false) {
                     warn!(?error, "could not persist don't-ask-again preference");
@@ -252,6 +261,10 @@ fn read_catalog(config: &RuntimeConfig, source: &Path) -> Result<Vec<CatalogEntr
         entries.push(CatalogEntry {
             id: id.to_string(),
             title: sanitize_label(&title),
+            default_enabled: item
+                .get("defaultEnabled")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false),
         });
     }
     Ok(entries)
@@ -261,16 +274,37 @@ fn read_catalog(config: &RuntimeConfig, source: &Path) -> Result<Vec<CatalogEntr
 /// then the installed builder bundle's preserved integration config, then
 /// `port-integrations.js --enabled` from the selected source. Errors degrade to an
 /// empty set.
-fn read_enabled(config: &RuntimeConfig, source: &Path) -> std::collections::HashSet<String> {
+fn read_enabled(
+    config: &RuntimeConfig,
+    source: &Path,
+    catalog: &[CatalogEntry],
+) -> std::collections::HashSet<String> {
     if let Some(path) = config::effective_integration_config_path(config) {
         if let Ok(content) = std::fs::read_to_string(&path) {
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(array) = value.get("enabled").and_then(|v| v.as_array()) {
-                    return array
-                        .iter()
+                let disabled: std::collections::HashSet<String> = value
+                    .get("disabled")
+                    .and_then(|v| v.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|item| item.as_str())
+                    .map(|s| s.to_string())
+                    .collect();
+                if value.get("enabled").is_some() || value.get("disabled").is_some() {
+                    let mut enabled: std::collections::HashSet<String> = value
+                        .get("enabled")
+                        .and_then(|v| v.as_array())
+                        .into_iter()
+                        .flatten()
                         .filter_map(|item| item.as_str())
                         .map(|s| s.to_string())
                         .collect();
+                    for entry in catalog {
+                        if entry.default_enabled && !disabled.contains(&entry.id) {
+                            enabled.insert(entry.id.clone());
+                        }
+                    }
+                    return enabled;
                 }
             }
         }
@@ -374,14 +408,17 @@ fn show_picker(
 }
 
 /// Writes the chosen enabled set to the stable integration-config path.
-fn write_integration_config(enabled: &[String]) -> Result<()> {
+fn write_integration_config(enabled: &[String], disabled: &[String]) -> Result<()> {
     let path =
         config::integration_config_path().context("could not resolve integration config path")?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("Failed to create {}", dir.display()))?;
     }
-    let value = serde_json::json!({ "enabled": enabled });
+    let value = serde_json::json!({
+        "enabled": enabled,
+        "disabled": disabled,
+    });
     let serialized =
         serde_json::to_string_pretty(&value).context("Failed to serialize integration config")?;
     std::fs::write(&path, format!("{serialized}\n"))
@@ -453,8 +490,8 @@ mod tests {
 const arg = process.argv[2];
 if (arg === "--integrations-json") {
   process.stdout.write(JSON.stringify([
-    {"id":"alpha","title":"Alpha Integration"},
-    {"id":"beta","title":"Beta Integration"}
+    {"id":"alpha","title":"Alpha Integration","defaultEnabled":true},
+    {"id":"beta","title":"Beta Integration","defaultEnabled":false}
   ]));
 } else if (arg === "--enabled") {
   process.stdout.write("alpha\n");
@@ -606,8 +643,65 @@ if (arg === "--integrations-json") {
         let config = base_config(root.path());
 
         assert_eq!(
-            read_enabled(&config, root.path()),
+            read_enabled(
+                &config,
+                root.path(),
+                &[
+                    CatalogEntry {
+                        id: "alpha".to_string(),
+                        title: "Alpha Integration".to_string(),
+                        default_enabled: true,
+                    },
+                    CatalogEntry {
+                        id: "beta".to_string(),
+                        title: "Beta Integration".to_string(),
+                        default_enabled: false,
+                    },
+                ],
+            ),
             std::collections::HashSet::from(["alpha".to_string()])
+        );
+
+        std::env::remove_var("CODEX_LINUX_SETTINGS_FILE");
+    }
+
+    #[test]
+    fn enabled_config_honors_disabled_default_integrations() {
+        let _g = env_lock();
+        let root = tempdir().unwrap();
+        let settings = tempdir().unwrap();
+        let settings_file = settings.path().join("settings.json");
+        let integration_config = settings.path().join("port-integrations.json");
+        std::fs::write(
+            &integration_config,
+            r#"{
+  "enabled": ["beta"],
+  "disabled": ["alpha"]
+}
+"#,
+        )
+        .unwrap();
+        std::env::set_var("CODEX_LINUX_SETTINGS_FILE", &settings_file);
+        let config = base_config(root.path());
+
+        assert_eq!(
+            read_enabled(
+                &config,
+                root.path(),
+                &[
+                    CatalogEntry {
+                        id: "alpha".to_string(),
+                        title: "Alpha Integration".to_string(),
+                        default_enabled: true,
+                    },
+                    CatalogEntry {
+                        id: "beta".to_string(),
+                        title: "Beta Integration".to_string(),
+                        default_enabled: false,
+                    },
+                ],
+            ),
+            std::collections::HashSet::from(["beta".to_string()])
         );
 
         std::env::remove_var("CODEX_LINUX_SETTINGS_FILE");
@@ -653,6 +747,10 @@ if (arg === "--integrations-json") {
             .map(|v| v.as_str().unwrap().to_string())
             .collect();
         assert_eq!(enabled, vec!["alpha".to_string(), "beta".to_string()]);
+        assert_eq!(
+            value["disabled"].as_array().unwrap(),
+            &Vec::<serde_json::Value>::new()
+        );
         // Picker-on-update setting untouched (no sentinel selected).
         let settings_json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings_file).unwrap_or_default())
@@ -714,6 +812,13 @@ if (arg === "--integrations-json") {
             enabled,
             vec!["beta".to_string(), "private-local-integration".to_string()]
         );
+        let disabled: Vec<String> = value["disabled"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(disabled, vec!["alpha".to_string()]);
 
         if let Some(prev) = prev_path {
             std::env::set_var("PATH", prev);
@@ -759,6 +864,10 @@ if (arg === "--integrations-json") {
             .collect();
         // Sentinel stripped, only real integration id remains.
         assert_eq!(enabled, vec!["alpha".to_string()]);
+        assert_eq!(
+            value["disabled"].as_array().unwrap(),
+            &Vec::<serde_json::Value>::new()
+        );
         let settings_json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings_file).unwrap()).unwrap();
         assert_eq!(
@@ -840,6 +949,7 @@ if (arg === "--integrations-json") {
         let catalog = vec![CatalogEntry {
             id: "alpha".to_string(),
             title: "Alpha".to_string(),
+            default_enabled: false,
         }];
         let enabled = std::collections::HashSet::new();
         let result = show_picker(&DialogTool::Zenity, &catalog, &enabled).unwrap();

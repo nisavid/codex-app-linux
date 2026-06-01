@@ -451,8 +451,10 @@ test("agent-workspace prelaunch hook installs the staged bundled Codex skill onl
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-agent-workspace-prelaunch-"));
   const codexHome = path.join(tempDir, "codex-home");
-  const integrationsDir = path.join(tempDir, "app", ".codex-linux", "integrations");
-  const stagedSkill = path.join(integrationsDir, "agent-workspace", "skills", "agent-workspace-linux", "SKILL.md");
+  const appDir = path.join(tempDir, "app");
+  const stagedIntegrationsDir = path.join(appDir, ".codex-linux", "integrations");
+  const portIntegrationsDir = path.join(appDir, ".codex-linux", "port-integrations");
+  const stagedSkill = path.join(stagedIntegrationsDir, "agent-workspace", "skills", "agent-workspace-linux", "SKILL.md");
   try {
     fs.mkdirSync(path.dirname(stagedSkill), { recursive: true });
     fs.copyFileSync(skillSource, stagedSkill);
@@ -463,7 +465,8 @@ test("agent-workspace prelaunch hook installs the staged bundled Codex skill onl
       env: {
         ...process.env,
         CODEX_HOME: codexHome,
-        CODEX_PORT_INTEGRATIONS_DIR: integrationsDir,
+        CODEX_LINUX_APP_DIR: appDir,
+        CODEX_PORT_INTEGRATIONS_DIR: portIntegrationsDir,
         HOME: "",
       },
     });
@@ -481,12 +484,13 @@ test("agent-workspace prelaunch hook installs the staged bundled Codex skill onl
       env: {
         ...process.env,
         CODEX_HOME: codexHome,
-        CODEX_PORT_INTEGRATIONS_DIR: path.join(tempDir, "missing-integrations"),
+        CODEX_LINUX_APP_DIR: path.join(tempDir, "missing-app"),
+        CODEX_PORT_INTEGRATIONS_DIR: path.join(tempDir, "missing-port-integrations"),
         HOME: "",
       },
     });
     assert.equal(missingResult.status, 0, `${missingResult.stderr}\n${missingResult.stdout}`);
-    assert.match(missingResult.stderr, /WARN: Agent Workspaces skill source not found/);
+    assert.match(missingResult.stderr, /WARN: Agent Workspaces skill source not found in staged app resources/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
