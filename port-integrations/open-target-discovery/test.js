@@ -158,6 +158,14 @@ function downgradeOpenTargetGuard(source) {
     "async function codexLinuxLaunchDesktopEntry(e,t,n,r){t=codexLinuxOpenTargetPath(t);let i=codexLinuxFindExecutable(`gio`),a=codexLinuxDesktopLaunchOptions();if(i)try{await codexLinuxLaunchDetached(i,[`launch`,e,t],a);return}catch{}let o=codexLinuxFindExecutable(`gtk-launch`);if(o)try{await codexLinuxLaunchDetached(o,[codexLinuxDesktopEntryLaunchId(e),codexLinuxPathToFileUri(t)],a);return}catch{}await codexLinuxLaunchDetached(n,codexLinuxDesktopArgs(r,t),a)}";
   const legacyLaunchDesktopEntry =
     "async function codexLinuxLaunchDesktopEntry(e,t,n,r){let i=codexLinuxFindExecutable(`gio`),a=codexLinuxDesktopLaunchOptions();if(i)try{await codexLinuxLaunchDetached(i,[`launch`,e,t],a);return}catch{}let o=codexLinuxFindExecutable(`gtk-launch`);if(o)try{await codexLinuxLaunchDetached(o,[codexLinuxDesktopEntryLaunchId(e),codexLinuxPathToFileUri(t)],a);return}catch{}await codexLinuxLaunchDetached(n,codexLinuxDesktopArgs(r,t),a)}";
+  const guardedIdePlatform =
+    "function codexLinuxIdePlatform(e,t,n,r,i){let a=codexLinuxIdeCommand(e);return a?{label:t,icon:n,kind:`editor`,hidden:r,detect:()=>a,args:(...e)=>i(codexLinuxOpenTargetPath(e[0]),...e.slice(1)),supportsSsh:!0}:void 0}";
+  const legacyIdePlatform =
+    "function codexLinuxIdePlatform(e,t,n,r,i){let a=codexLinuxIdeCommand(e);return a?{label:t,icon:n,kind:`editor`,hidden:r,detect:()=>a,args:i,supportsSsh:!0}:void 0}";
+  const guardedJetBrainsIdePlatform =
+    "function codexLinuxJetBrainsIdePlatform(e,t,n,r){let i=codexLinuxIdeCommand(e);return i?{label:t,icon:n,kind:`editor`,detect:()=>i,args:(...e)=>r(codexLinuxOpenTargetPath(e[0]),...e.slice(1))}:void 0}";
+  const legacyJetBrainsIdePlatform =
+    "function codexLinuxJetBrainsIdePlatform(e,t,n,r){let i=codexLinuxIdeCommand(e);return i?{label:t,icon:n,kind:`editor`,detect:()=>i,args:r}:void 0}";
 
   return source
     .replace(guard, "")
@@ -165,7 +173,13 @@ function downgradeOpenTargetGuard(source) {
     .replace("args:e=>[codexLinuxOpenTargetPath(e)],open:async({path:e})=>{e=codexLinuxOpenTargetPath(e);await", "args:e=>[e],open:async({path:e})=>{await")
     .replace(guardedTerminalCwd, legacyTerminalCwd)
     .replace(guardedDesktopArgs, legacyDesktopArgs)
-    .replace(guardedLaunchDesktopEntry, legacyLaunchDesktopEntry);
+    .replace(guardedLaunchDesktopEntry, legacyLaunchDesktopEntry)
+    .replace(guardedIdePlatform, legacyIdePlatform)
+    .replace(guardedJetBrainsIdePlatform, legacyJetBrainsIdePlatform)
+    .replace(
+      "linux:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:()=>codexLinuxIdeCommand(`zed`),args:(...e)=>hg(codexLinuxOpenTargetPath(e[0]),...e.slice(1))}",
+      "linux:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:()=>codexLinuxIdeCommand(`zed`),args:hg}",
+    );
 }
 
 function withTempIntegrationConfig(config, fn) {
@@ -640,7 +654,9 @@ test("open-target discovery rejects unsafe target paths before launch sinks", as
     const binDir = path.join(tmp, "bin");
     const xdgOpen = makeExecutable(binDir, "xdg-open");
     const terminal = makeExecutable(binDir, "x-terminal-emulator");
-    const gio = makeExecutable(binDir, "gio");
+    makeExecutable(binDir, "code");
+    makeExecutable(binDir, "zed");
+    makeExecutable(binDir, "idea");
     const editorCommand = makeExecutable(path.join(tmp, "toolbox", "bin"), "workspace-agent");
     const desktopFile = path.join(appsDir, "workspace-agent.desktop");
     const spawnRecorder = createSpawnRecorder();
@@ -666,7 +682,7 @@ test("open-target discovery rejects unsafe target paths before launch sinks", as
         XDG_DATA_HOME: dataHome,
         XDG_DATA_DIRS: path.join(tmp, "empty"),
       },
-      "({fileManager:lu.platforms?.linux??lu.linux,terminal:uh.platforms.linux,agent:Xg.find((target)=>target.platforms.linux?.label===`Workspace Agent`).platforms.linux})",
+      "({fileManager:lu.platforms?.linux??lu.linux,terminal:uh.platforms.linux,agent:Xg.find((target)=>target.platforms.linux?.label===`Workspace Agent`).platforms.linux,vscode:Xg.find((target)=>target.platforms.linux?.label===`VS Code`).platforms.linux,zed:Xg.find((target)=>target.platforms.linux?.label===`Zed`).platforms.linux,intellij:Xg.find((target)=>target.platforms.linux?.label===`IntelliJ IDEA`).platforms.linux})",
       spawnRecorder,
       openPathCalls,
     );
@@ -683,6 +699,9 @@ test("open-target discovery rejects unsafe target paths before launch sinks", as
       assert.throws(() => targets.fileManager.args(unsafeTarget), /Unsafe Linux open target/);
       assert.throws(() => targets.terminal.args(unsafeTarget), /Unsafe Linux open target/);
       assert.throws(() => targets.agent.args(unsafeTarget), /Unsafe Linux open target/);
+      assert.throws(() => targets.vscode.args(unsafeTarget), /Unsafe Linux open target/);
+      assert.throws(() => targets.zed.args(unsafeTarget), /Unsafe Linux open target/);
+      assert.throws(() => targets.intellij.args(unsafeTarget), /Unsafe Linux open target/);
       await assert.rejects(() => targets.fileManager.open({ path: unsafeTarget }), /Unsafe Linux open target/);
       await assert.rejects(
         () => targets.terminal.open({ command: terminal, path: unsafeTarget }),
@@ -707,6 +726,9 @@ test("open-target discovery upgrades previously patched target paths", async () 
     const appsDir = path.join(dataHome, "applications");
     const binDir = path.join(tmp, "bin");
     const terminal = makeExecutable(binDir, "x-terminal-emulator");
+    makeExecutable(binDir, "code");
+    makeExecutable(binDir, "zed");
+    makeExecutable(binDir, "idea");
     const editorCommand = makeExecutable(path.join(tmp, "toolbox", "bin"), "workspace-agent");
     const desktopFile = path.join(appsDir, "workspace-agent.desktop");
     const spawnRecorder = createSpawnRecorder();
@@ -735,7 +757,7 @@ test("open-target discovery upgrades previously patched target paths", async () 
         XDG_DATA_HOME: dataHome,
         XDG_DATA_DIRS: path.join(tmp, "empty"),
       },
-      "({fileManager:lu.platforms?.linux??lu.linux,terminal:uh.platforms.linux,agent:Xg.find((target)=>target.platforms.linux?.label===`Workspace Agent`).platforms.linux})",
+      "({fileManager:lu.platforms?.linux??lu.linux,terminal:uh.platforms.linux,agent:Xg.find((target)=>target.platforms.linux?.label===`Workspace Agent`).platforms.linux,vscode:Xg.find((target)=>target.platforms.linux?.label===`VS Code`).platforms.linux,zed:Xg.find((target)=>target.platforms.linux?.label===`Zed`).platforms.linux,intellij:Xg.find((target)=>target.platforms.linux?.label===`IntelliJ IDEA`).platforms.linux})",
       spawnRecorder,
       openPathCalls,
     );
@@ -743,6 +765,9 @@ test("open-target discovery upgrades previously patched target paths", async () 
     assert.throws(() => targets.fileManager.args("--help"), /Unsafe Linux open target/);
     assert.throws(() => targets.terminal.args("file:///tmp/workspace"), /Unsafe Linux open target/);
     assert.throws(() => targets.agent.args("https://example.test/workspace"), /Unsafe Linux open target/);
+    assert.throws(() => targets.vscode.args("--help"), /Unsafe Linux open target/);
+    assert.throws(() => targets.zed.args("file:///tmp/workspace"), /Unsafe Linux open target/);
+    assert.throws(() => targets.intellij.args("https://example.test/workspace"), /Unsafe Linux open target/);
     await assert.rejects(() => targets.fileManager.open({ path: "--help" }), /Unsafe Linux open target/);
     await assert.rejects(
       () => targets.terminal.open({ command: terminal, path: "file:///tmp/workspace" }),
@@ -768,6 +793,9 @@ test("open-target discovery preserves local paths with spaces and colons", async
     const xdgOpen = makeExecutable(binDir, "xdg-open");
     const terminal = makeExecutable(binDir, "x-terminal-emulator");
     const gio = makeExecutable(binDir, "gio");
+    makeExecutable(binDir, "code");
+    makeExecutable(binDir, "zed");
+    makeExecutable(binDir, "idea");
     const editorCommand = makeExecutable(path.join(tmp, "toolbox", "bin"), "workspace-agent");
     const desktopFile = path.join(appsDir, "workspace-agent.desktop");
     const targetPath = path.join(tmp, "workspace:alpha", "path with spaces");
@@ -794,13 +822,16 @@ test("open-target discovery preserves local paths with spaces and colons", async
         XDG_DATA_HOME: dataHome,
         XDG_DATA_DIRS: path.join(tmp, "empty"),
       },
-      "({fileManager:lu.platforms?.linux??lu.linux,terminal:uh.platforms.linux,agent:Xg.find((target)=>target.platforms.linux?.label===`Workspace Agent`).platforms.linux})",
+      "({fileManager:lu.platforms?.linux??lu.linux,terminal:uh.platforms.linux,agent:Xg.find((target)=>target.platforms.linux?.label===`Workspace Agent`).platforms.linux,vscode:Xg.find((target)=>target.platforms.linux?.label===`VS Code`).platforms.linux,zed:Xg.find((target)=>target.platforms.linux?.label===`Zed`).platforms.linux,intellij:Xg.find((target)=>target.platforms.linux?.label===`IntelliJ IDEA`).platforms.linux})",
       spawnRecorder,
     );
 
     assert.deepEqual(targets.fileManager.args(targetPath), [targetPath]);
     assert.deepEqual(targets.terminal.args(targetPath), []);
     assert.deepEqual(targets.agent.args(targetPath), ["--open", pathToFileURL(targetPath).toString()]);
+    assert.deepEqual(targets.vscode.args(targetPath), [targetPath]);
+    assert.deepEqual(targets.zed.args(targetPath), [targetPath]);
+    assert.deepEqual(targets.intellij.args(targetPath), [targetPath]);
 
     await targets.fileManager.open({ path: targetPath });
     await targets.terminal.open({ command: terminal, path: targetPath });
