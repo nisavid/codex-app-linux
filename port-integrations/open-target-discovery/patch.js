@@ -180,6 +180,33 @@ function legacyLaunchDesktopEntrySource() {
   return `async function codexLinuxLaunchDesktopEntry(e,t,n,r){let i=codexLinuxFindExecutable(\`gio\`),a=codexLinuxDesktopLaunchOptions();if(i)try{await codexLinuxLaunchDetached(i,[\`launch\`,e,t],a);return}catch{}let o=codexLinuxFindExecutable(\`gtk-launch\`);if(o)try{await codexLinuxLaunchDetached(o,[codexLinuxDesktopEntryLaunchId(e),codexLinuxPathToFileUri(t)],a);return}catch{}await codexLinuxLaunchDetached(n,codexLinuxDesktopArgs(r,t),a)}`;
 }
 
+function guardedIdePlatformSource() {
+  return `function codexLinuxIdePlatform(e,t,n,r,i){let a=codexLinuxIdeCommand(e);return a?{label:t,icon:n,kind:\`editor\`,hidden:r,detect:()=>a,args:(...e)=>i(codexLinuxOpenTargetPath(e[0]),...e.slice(1)),supportsSsh:!0}:void 0}`;
+}
+
+function legacyIdePlatformSource() {
+  return `function codexLinuxIdePlatform(e,t,n,r,i){let a=codexLinuxIdeCommand(e);return a?{label:t,icon:n,kind:\`editor\`,hidden:r,detect:()=>a,args:i,supportsSsh:!0}:void 0}`;
+}
+
+function guardedJetBrainsIdePlatformSource() {
+  return `function codexLinuxJetBrainsIdePlatform(e,t,n,r){let i=codexLinuxIdeCommand(e);return i?{label:t,icon:n,kind:\`editor\`,detect:()=>i,args:(...e)=>r(codexLinuxOpenTargetPath(e[0]),...e.slice(1))}:void 0}`;
+}
+
+function legacyJetBrainsIdePlatformSource() {
+  return `function codexLinuxJetBrainsIdePlatform(e,t,n,r){let i=codexLinuxIdeCommand(e);return i?{label:t,icon:n,kind:\`editor\`,detect:()=>i,args:r}:void 0}`;
+}
+
+function replaceLegacyOpenTargetHelper(currentSource, helperName, legacySource, guardedSource) {
+  if (currentSource.includes(guardedSource)) {
+    return currentSource;
+  }
+  if (!currentSource.includes(legacySource)) {
+    warn(`Could not fully upgrade ${helperName} guard`);
+    return currentSource;
+  }
+  return currentSource.replace(legacySource, guardedSource);
+}
+
 function upgradeOpenTargetPathGuard(currentSource, deps) {
   if (!currentSource.includes("function codexLinuxFindExecutable(")) {
     return currentSource;
@@ -196,11 +223,32 @@ function upgradeOpenTargetPathGuard(currentSource, deps) {
       patchedSource.slice(insertionIndex);
   }
 
-  return patchedSource
-    .replace(legacyResolveExistingTargetSource(deps), guardedResolveExistingTargetSource(deps))
-    .replace(legacyTerminalCwdSource(deps), guardedTerminalCwdSource(deps))
-    .replace(legacyDesktopArgsSource(deps), guardedDesktopArgsSource(deps))
-    .replace(legacyLaunchDesktopEntrySource(), guardedLaunchDesktopEntrySource());
+  for (const [helperName, legacySource, guardedSource] of [
+    ["codexLinuxResolveExistingTarget", legacyResolveExistingTargetSource(deps), guardedResolveExistingTargetSource(deps)],
+    ["codexLinuxTerminalCwd", legacyTerminalCwdSource(deps), guardedTerminalCwdSource(deps)],
+    ["codexLinuxDesktopArgs", legacyDesktopArgsSource(deps), guardedDesktopArgsSource(deps)],
+    ["codexLinuxLaunchDesktopEntry", legacyLaunchDesktopEntrySource(), guardedLaunchDesktopEntrySource()],
+    ["codexLinuxIdePlatform", legacyIdePlatformSource(), guardedIdePlatformSource()],
+    ["codexLinuxJetBrainsIdePlatform", legacyJetBrainsIdePlatformSource(), guardedJetBrainsIdePlatformSource()],
+  ]) {
+    if (patchedSource.includes(legacySource) || patchedSource.includes(guardedSource)) {
+      patchedSource = replaceLegacyOpenTargetHelper(patchedSource, helperName, legacySource, guardedSource);
+    }
+  }
+  const legacyZedTargetPattern = /linux:\{label:`Zed`,icon:`apps\/zed\.png`,kind:`editor`,detect:\(\)=>codexLinuxIdeCommand\(`zed`\),args:([A-Za-z_$][\w$]*)\}/u;
+  if (legacyZedTargetPattern.test(patchedSource)) {
+    patchedSource = patchedSource.replace(
+      legacyZedTargetPattern,
+      "linux:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:()=>codexLinuxIdeCommand(`zed`),args:(...e)=>$1(codexLinuxOpenTargetPath(e[0]),...e.slice(1))}",
+    );
+  } else if (
+    patchedSource.includes("linux:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:()=>codexLinuxIdeCommand(`zed`)") &&
+    !patchedSource.includes("linux:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:()=>codexLinuxIdeCommand(`zed`),args:(...e)=>")
+  ) {
+    warn("Could not fully upgrade Zed open-target guard");
+  }
+
+  return patchedSource;
 }
 
 function applyFileManagerDiscoveryPatch(currentSource, deps) {
@@ -358,8 +406,8 @@ function applyIdeDiscoveryPatch(currentSource, deps) {
   const ideCoreHelpers = patchedSource.includes("function codexLinuxIdeCommand(")
     ? ""
     : `function codexLinuxIdeCommand(e){let t={cursor:[\`cursor\`],vscode:[\`code\`,\`codium\`],vscodeInsiders:[\`code-insiders\`],windsurf:[\`windsurf\`],antigravity:[\`antigravity\`],zed:[\`zed\`,\`zeditor\`,\`zedit\`,\`zed-cli\`],intellij:[\`idea\`],webstorm:[\`webstorm\`],pycharm:[\`pycharm\`],goland:[\`goland\`],clion:[\`clion\`],rustrover:[\`rustrover\`],rider:[\`rider\`],phpstorm:[\`phpstorm\`],androidStudio:[\`studio\`,\`studio.sh\`]}[e]??[];for(let e of t){let t=codexLinuxFindExecutable(e);if(t)return t}return null}` +
-      `function codexLinuxIdePlatform(e,t,n,r,i){let a=codexLinuxIdeCommand(e);return a?{label:t,icon:n,kind:\`editor\`,hidden:r,detect:()=>a,args:i,supportsSsh:!0}:void 0}` +
-      `function codexLinuxJetBrainsIdePlatform(e,t,n,r){let i=codexLinuxIdeCommand(e);return i?{label:t,icon:n,kind:\`editor\`,detect:()=>i,args:r}:void 0}`;
+      guardedIdePlatformSource() +
+      guardedJetBrainsIdePlatformSource();
   const dynamicDiscoveryHelpers = patchedSource.includes("function codexLinuxDiscoveredIdeTargets(")
     ? ""
     : `function codexLinuxSplitDesktopExec(e){let t=[],n=\`\`,r=null,i=!1;for(let a=0;a<e.length;a++){let o=e[a];if(i){n+=o,i=!1;continue}if(o===\`\\\\\`){r&&(n+=o);i=!0;continue}if(r){o===r?r=null:n+=o;continue}if(o===\`"\`||o===\`'\`){r=o;continue}if(/\\s/u.test(o)){n&&(t.push(n),n=\`\`);continue}n+=o}return n&&t.push(n),t}` +
@@ -425,7 +473,7 @@ function applyIdeDiscoveryPatch(currentSource, deps) {
     if (zedPlatformsBlock != null && !zedPlatformsBlock.text.includes("linux:{")) {
       const argsVar = zedPlatformsBlock.text.match(/win32:\{[^}]*args:([A-Za-z_$][\w$]*)/u)?.[1];
       if (argsVar != null) {
-        const linuxZed = `,linux:{label:\`Zed\`,icon:\`apps/zed.png\`,kind:\`editor\`,detect:()=>codexLinuxIdeCommand(\`zed\`),args:${argsVar}}`;
+        const linuxZed = `,linux:{label:\`Zed\`,icon:\`apps/zed.png\`,kind:\`editor\`,detect:()=>codexLinuxIdeCommand(\`zed\`),args:(...e)=>${argsVar}(codexLinuxOpenTargetPath(e[0]),...e.slice(1))}`;
         patchedSource =
           patchedSource.slice(0, zedPlatformsBlock.end - 1) +
           linuxZed +
