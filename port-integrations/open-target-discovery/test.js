@@ -137,6 +137,37 @@ function evaluatePatched(source, env, expression, spawnRecorder, openPathCalls) 
   );
 }
 
+function downgradeOpenTargetGuard(source) {
+  const fsVar = "codexLinuxNodeFs()";
+  const pathVar = "codexLinuxNodePath()";
+  const guard =
+    "function codexLinuxOpenTargetPath(e){if(typeof e!==`string`||e.trim().length===0||e.startsWith(`-`)||/[\\x00-\\x1F\\x7F]/u.test(e)||/^[A-Za-z][A-Za-z0-9+.-]*:/u.test(e))throw Error(`Unsafe Linux open target`);return e}";
+  const guardedResolve =
+    `function codexLinuxResolveExistingTarget(e){e=codexLinuxOpenTargetPath(e);let t=e;for(;;){try{if((0,${fsVar}.existsSync)(t))return t}catch{}let n=(0,${pathVar}.dirname)(t);if(n===t)return null;t=n}}`;
+  const legacyResolve =
+    `function codexLinuxResolveExistingTarget(e){if(typeof e!==\`string\`||e.length===0)return null;let t=e;for(;;){try{if((0,${fsVar}.existsSync)(t))return t}catch{}let n=(0,${pathVar}.dirname)(t);if(n===t)return null;t=n}}`;
+  const guardedTerminalCwd =
+    `function codexLinuxTerminalCwd(e){let t=codexLinuxResolveExistingTarget(e)??codexLinuxOpenTargetPath(e);try{if((0,${fsVar}.existsSync)(t)){let e=(0,${fsVar}.statSync)(t);if(e.isDirectory())return t;if(e.isFile())return(0,${pathVar}.dirname)(t)}}catch{}return(0,${pathVar}.dirname)(t)}`;
+  const legacyTerminalCwd =
+    `function codexLinuxTerminalCwd(e){let t=codexLinuxResolveExistingTarget(e)??e;if(typeof t!==\`string\`||t.length===0)return process.env.HOME||\`/\`;try{if((0,${fsVar}.existsSync)(t)){let e=(0,${fsVar}.statSync)(t);if(e.isDirectory())return t;if(e.isFile())return(0,${pathVar}.dirname)(t)}}catch{}return(0,${pathVar}.dirname)(t)}`;
+  const guardedDesktopArgs =
+    `function codexLinuxDesktopArgs(e,t){t=codexLinuxOpenTargetPath(t);let n=[],r=codexLinuxPathToFileUri(t);for(let a of e){if(a===\`%%\`){n.push(\`%\`);continue}if(/^%[fF]$/u.test(a)){n.push(t);continue}if(/^%[uU]$/u.test(a)){n.push(r);continue}if(/^%[dD]$/u.test(a)){n.push((0,${pathVar}.dirname)(t));continue}if(/^%[nN]$/u.test(a)){n.push((0,${pathVar}.basename)(t));continue}if(/^%[ickvm]$/u.test(a))continue;let o=a.replace(/%[fF]/gu,t).replace(/%[uU]/gu,r).replace(/%[dD]/gu,(0,${pathVar}.dirname)(t)).replace(/%[nN]/gu,(0,${pathVar}.basename)(t)).replace(/%%/gu,\`%\`).replace(/%[A-Za-z]/gu,\`\`);o&&n.push(o)}return n}`;
+  const legacyDesktopArgs =
+    `function codexLinuxDesktopArgs(e,t){let n=[],r=codexLinuxPathToFileUri(t);for(let a of e){if(a===\`%%\`){n.push(\`%\`);continue}if(/^%[fF]$/u.test(a)){n.push(t);continue}if(/^%[uU]$/u.test(a)){n.push(r);continue}if(/^%[dD]$/u.test(a)){n.push((0,${pathVar}.dirname)(t));continue}if(/^%[nN]$/u.test(a)){n.push((0,${pathVar}.basename)(t));continue}if(/^%[ickvm]$/u.test(a))continue;let o=a.replace(/%[fF]/gu,t).replace(/%[uU]/gu,r).replace(/%[dD]/gu,(0,${pathVar}.dirname)(t)).replace(/%[nN]/gu,(0,${pathVar}.basename)(t)).replace(/%%/gu,\`%\`).replace(/%[A-Za-z]/gu,\`\`);o&&n.push(o)}return n}`;
+  const guardedLaunchDesktopEntry =
+    "async function codexLinuxLaunchDesktopEntry(e,t,n,r){t=codexLinuxOpenTargetPath(t);let i=codexLinuxFindExecutable(`gio`),a=codexLinuxDesktopLaunchOptions();if(i)try{await codexLinuxLaunchDetached(i,[`launch`,e,t],a);return}catch{}let o=codexLinuxFindExecutable(`gtk-launch`);if(o)try{await codexLinuxLaunchDetached(o,[codexLinuxDesktopEntryLaunchId(e),codexLinuxPathToFileUri(t)],a);return}catch{}await codexLinuxLaunchDetached(n,codexLinuxDesktopArgs(r,t),a)}";
+  const legacyLaunchDesktopEntry =
+    "async function codexLinuxLaunchDesktopEntry(e,t,n,r){let i=codexLinuxFindExecutable(`gio`),a=codexLinuxDesktopLaunchOptions();if(i)try{await codexLinuxLaunchDetached(i,[`launch`,e,t],a);return}catch{}let o=codexLinuxFindExecutable(`gtk-launch`);if(o)try{await codexLinuxLaunchDetached(o,[codexLinuxDesktopEntryLaunchId(e),codexLinuxPathToFileUri(t)],a);return}catch{}await codexLinuxLaunchDetached(n,codexLinuxDesktopArgs(r,t),a)}";
+
+  return source
+    .replace(guard, "")
+    .replace(guardedResolve, legacyResolve)
+    .replace("args:e=>[codexLinuxOpenTargetPath(e)],open:async({path:e})=>{e=codexLinuxOpenTargetPath(e);await", "args:e=>[e],open:async({path:e})=>{await")
+    .replace(guardedTerminalCwd, legacyTerminalCwd)
+    .replace(guardedDesktopArgs, legacyDesktopArgs)
+    .replace(guardedLaunchDesktopEntry, legacyLaunchDesktopEntry);
+}
+
 function withTempIntegrationConfig(config, fn) {
   const originalConfig = process.env.CODEX_PORT_INTEGRATIONS_CONFIG;
   const root = path.resolve(__dirname, "..");
@@ -599,6 +630,191 @@ test("open-target discovery sanitizes desktop launch environment", async () => {
     assert.equal(spawnRecorder.calls[0].options.env.CODEX_ELECTRON_USER_DATA_DIR, undefined);
     assert.equal(spawnRecorder.calls[0].options.env.CODEX_LINUX_APP_ID, undefined);
     assert.equal(spawnRecorder.calls[0].options.env.XDG_CONFIG_HOME, undefined);
+  });
+});
+
+test("open-target discovery rejects unsafe target paths before launch sinks", async () => {
+  await withTempDir(async (tmp) => {
+    const dataHome = path.join(tmp, "share");
+    const appsDir = path.join(dataHome, "applications");
+    const binDir = path.join(tmp, "bin");
+    const xdgOpen = makeExecutable(binDir, "xdg-open");
+    const terminal = makeExecutable(binDir, "x-terminal-emulator");
+    const gio = makeExecutable(binDir, "gio");
+    const editorCommand = makeExecutable(path.join(tmp, "toolbox", "bin"), "workspace-agent");
+    const desktopFile = path.join(appsDir, "workspace-agent.desktop");
+    const spawnRecorder = createSpawnRecorder();
+    const openPathCalls = [];
+    fs.mkdirSync(appsDir, { recursive: true });
+    fs.writeFileSync(
+      desktopFile,
+      [
+        "[Desktop Entry]",
+        "Type=Application",
+        "Name=Workspace Agent",
+        `Exec=${editorCommand} %U`,
+        "Categories=Development;",
+        "Comment=Coordinate coding agents across workspaces",
+      ].join("\n"),
+    );
+
+    const targets = evaluatePatched(
+      openTargetsBundle,
+      {
+        HOME: tmp,
+        PATH: `${binDir}:${path.dirname(editorCommand)}`,
+        XDG_DATA_HOME: dataHome,
+        XDG_DATA_DIRS: path.join(tmp, "empty"),
+      },
+      "({fileManager:lu.platforms?.linux??lu.linux,terminal:uh.platforms.linux,agent:Xg.find((target)=>target.platforms.linux?.label===`Workspace Agent`).platforms.linux})",
+      spawnRecorder,
+      openPathCalls,
+    );
+
+    const unsafeTargets = [
+      "",
+      "--help",
+      "https://example.test/workspace",
+      "file:///tmp/workspace",
+      path.join(tmp, "workspace\nname"),
+      null,
+    ];
+    for (const unsafeTarget of unsafeTargets) {
+      assert.throws(() => targets.fileManager.args(unsafeTarget), /Unsafe Linux open target/);
+      assert.throws(() => targets.terminal.args(unsafeTarget), /Unsafe Linux open target/);
+      assert.throws(() => targets.agent.args(unsafeTarget), /Unsafe Linux open target/);
+      await assert.rejects(() => targets.fileManager.open({ path: unsafeTarget }), /Unsafe Linux open target/);
+      await assert.rejects(
+        () => targets.terminal.open({ command: terminal, path: unsafeTarget }),
+        /Unsafe Linux open target/,
+      );
+      await assert.rejects(
+        () => targets.agent.open({ command: editorCommand, path: unsafeTarget }),
+        /Unsafe Linux open target/,
+      );
+    }
+
+    assert.equal(targets.fileManager.detect(), xdgOpen);
+    assert.equal(targets.terminal.detect(), terminal);
+    assert.deepEqual(spawnRecorder.calls, []);
+    assert.deepEqual(openPathCalls, []);
+  });
+});
+
+test("open-target discovery upgrades previously patched target paths", async () => {
+  await withTempDir(async (tmp) => {
+    const dataHome = path.join(tmp, "share");
+    const appsDir = path.join(dataHome, "applications");
+    const binDir = path.join(tmp, "bin");
+    const terminal = makeExecutable(binDir, "x-terminal-emulator");
+    const editorCommand = makeExecutable(path.join(tmp, "toolbox", "bin"), "workspace-agent");
+    const desktopFile = path.join(appsDir, "workspace-agent.desktop");
+    const spawnRecorder = createSpawnRecorder();
+    const openPathCalls = [];
+    fs.mkdirSync(appsDir, { recursive: true });
+    fs.writeFileSync(
+      desktopFile,
+      [
+        "[Desktop Entry]",
+        "Type=Application",
+        "Name=Workspace Agent",
+        `Exec=${editorCommand} %U`,
+        "Categories=Development;",
+        "Comment=Coordinate coding agents across workspaces",
+      ].join("\n"),
+    );
+
+    const legacySource = downgradeOpenTargetGuard(applyMainBundlePatch(openTargetsBundle));
+    assert.doesNotMatch(legacySource, /codexLinuxOpenTargetPath/);
+
+    const targets = evaluatePatched(
+      legacySource,
+      {
+        HOME: tmp,
+        PATH: `${binDir}:${path.dirname(editorCommand)}`,
+        XDG_DATA_HOME: dataHome,
+        XDG_DATA_DIRS: path.join(tmp, "empty"),
+      },
+      "({fileManager:lu.platforms?.linux??lu.linux,terminal:uh.platforms.linux,agent:Xg.find((target)=>target.platforms.linux?.label===`Workspace Agent`).platforms.linux})",
+      spawnRecorder,
+      openPathCalls,
+    );
+
+    assert.throws(() => targets.fileManager.args("--help"), /Unsafe Linux open target/);
+    assert.throws(() => targets.terminal.args("file:///tmp/workspace"), /Unsafe Linux open target/);
+    assert.throws(() => targets.agent.args("https://example.test/workspace"), /Unsafe Linux open target/);
+    await assert.rejects(() => targets.fileManager.open({ path: "--help" }), /Unsafe Linux open target/);
+    await assert.rejects(
+      () => targets.terminal.open({ command: terminal, path: "file:///tmp/workspace" }),
+      /Unsafe Linux open target/,
+    );
+    await assert.rejects(
+      () => targets.agent.open({ command: editorCommand, path: "https://example.test/workspace" }),
+      /Unsafe Linux open target/,
+    );
+
+    assert.equal(targets.terminal.detect(), terminal);
+    assert.equal(targets.agent.detect(), editorCommand);
+    assert.deepEqual(spawnRecorder.calls, []);
+    assert.deepEqual(openPathCalls, []);
+  });
+});
+
+test("open-target discovery preserves local paths with spaces and colons", async () => {
+  await withTempDir(async (tmp) => {
+    const dataHome = path.join(tmp, "share");
+    const appsDir = path.join(dataHome, "applications");
+    const binDir = path.join(tmp, "bin");
+    const xdgOpen = makeExecutable(binDir, "xdg-open");
+    const terminal = makeExecutable(binDir, "x-terminal-emulator");
+    const gio = makeExecutable(binDir, "gio");
+    const editorCommand = makeExecutable(path.join(tmp, "toolbox", "bin"), "workspace-agent");
+    const desktopFile = path.join(appsDir, "workspace-agent.desktop");
+    const targetPath = path.join(tmp, "workspace:alpha", "path with spaces");
+    const spawnRecorder = createSpawnRecorder({ recordOptions: true });
+    fs.mkdirSync(appsDir, { recursive: true });
+    fs.mkdirSync(targetPath, { recursive: true });
+    fs.writeFileSync(
+      desktopFile,
+      [
+        "[Desktop Entry]",
+        "Type=Application",
+        "Name=Workspace Agent",
+        `Exec=${editorCommand} --open %U`,
+        "Categories=Development;",
+        "Comment=Coordinate coding agents across workspaces",
+      ].join("\n"),
+    );
+
+    const targets = evaluatePatched(
+      openTargetsBundle,
+      {
+        HOME: tmp,
+        PATH: `${binDir}:${path.dirname(editorCommand)}`,
+        XDG_DATA_HOME: dataHome,
+        XDG_DATA_DIRS: path.join(tmp, "empty"),
+      },
+      "({fileManager:lu.platforms?.linux??lu.linux,terminal:uh.platforms.linux,agent:Xg.find((target)=>target.platforms.linux?.label===`Workspace Agent`).platforms.linux})",
+      spawnRecorder,
+    );
+
+    assert.deepEqual(targets.fileManager.args(targetPath), [targetPath]);
+    assert.deepEqual(targets.terminal.args(targetPath), []);
+    assert.deepEqual(targets.agent.args(targetPath), ["--open", pathToFileURL(targetPath).toString()]);
+
+    await targets.fileManager.open({ path: targetPath });
+    await targets.terminal.open({ command: terminal, path: targetPath });
+    await targets.agent.open({ command: editorCommand, path: targetPath });
+
+    assert.deepEqual(spawnRecorder.calls.map(({ command, args, options }) => ({
+      command,
+      args,
+      cwd: options.cwd,
+    })), [
+      { command: xdgOpen, args: [targetPath], cwd: undefined },
+      { command: terminal, args: [], cwd: targetPath },
+      { command: gio, args: ["launch", desktopFile, targetPath], cwd: tmp },
+    ]);
   });
 });
 

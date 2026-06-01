@@ -126,14 +126,15 @@ function findPropertyBlock(source, propertyName) {
 
 function insertOpenTargetHelpers(currentSource, insertionIndex, { fsVar, pathVar }) {
   if (currentSource.includes("function codexLinuxFindExecutable(")) {
-    return currentSource;
+    return upgradeOpenTargetPathGuard(currentSource, { fsVar, pathVar });
   }
 
   const helpers =
     `function codexLinuxNodeFs(){return require(\`node:fs\`)}` +
     `function codexLinuxNodePath(){return require(\`node:path\`)}` +
     `function codexLinuxFindExecutable(e){if(process.platform!==\`linux\`||!e)return null;let t=process.env.PATH||\`\`;for(let n of t.split(\`:\`)){if(!n||!${pathVar}.isAbsolute(n))continue;let r=(0,${pathVar}.join)(n,e);try{if((0,${fsVar}.existsSync)(r)){let e=(0,${fsVar}.statSync)(r);if(e.isFile())try{(0,${fsVar}.accessSync)(r,${fsVar}.constants.X_OK);return r}catch{}}}catch{}}return null}` +
-    `function codexLinuxResolveExistingTarget(e){if(typeof e!==\`string\`||e.length===0)return null;let t=e;for(;;){try{if((0,${fsVar}.existsSync)(t))return t}catch{}let n=(0,${pathVar}.dirname)(t);if(n===t)return null;t=n}}` +
+    openTargetPathGuardSource() +
+    guardedResolveExistingTargetSource({ fsVar, pathVar }) +
     `function codexLinuxShouldDropXdgConfigHome(e){let t=e.XDG_CONFIG_HOME,n=e.CODEX_ELECTRON_USER_DATA_DIR;if(typeof t!==\`string\`)return!1;if(typeof n===\`string\`&&t===(0,${pathVar}.join)((0,${pathVar}.dirname)(n),\`xdg-config\`))return!0;let r=e.CODEX_LINUX_APP_ID;return!!(r&&t.endsWith(\`/\${r}/xdg-config\`))}` +
     `function codexLinuxOpenTargetEnv(){let e={...process.env};codexLinuxShouldDropXdgConfigHome(e)&&delete e.XDG_CONFIG_HOME;for(let t of [\`NODE_OPTIONS\`,\`NODE_PATH\`,\`NODE_REPL_EXTERNAL_MODULE\`,\`ELECTRON_RUN_AS_NODE\`,\`ELECTRON_NO_ASAR\`,\`ELECTRON_ENABLE_LOGGING\`,\`VSCODE_NODE_OPTIONS\`,\`VSCODE_NODE_REPL_EXTERNAL_MODULE\`,\`npm_config_node_options\`,\`NPM_CONFIG_NODE_OPTIONS\`,\`CHROME_DESKTOP\`,\`ELECTRON_RENDERER_URL\`,\`CODEX_ELECTRON_RESOURCES_PATH\`,\`CODEX_ELECTRON_USER_DATA_DIR\`,\`CODEX_LINUX_APP_ID\`,\`CODEX_LINUX_APP_DISPLAY_NAME\`,\`CODEX_LINUX_WEBVIEW_PORT\`])delete e[t];return e}` +
     `function codexLinuxLaunchDetached(e,t,n={}){return new Promise((r,i)=>{let a=!1,o;try{let s=require(\`node:child_process\`).spawn(e,t,{detached:!0,stdio:\`ignore\`,windowsHide:!0,cwd:n.cwd,env:codexLinuxOpenTargetEnv()});o=setTimeout(()=>{a=!0,s.unref?.(),r()},400),o.unref?.(),s.on(\`error\`,e=>{a||(clearTimeout(o),i(e))}),s.on(\`close\`,e=>{a||(clearTimeout(o),e===0?r():i(Error(\`Linux open target launch failed\`)))})}catch(e){clearTimeout(o),i(e)}})}` +
@@ -143,13 +144,72 @@ function insertOpenTargetHelpers(currentSource, insertionIndex, { fsVar, pathVar
   return currentSource.slice(0, insertionIndex) + helpers + currentSource.slice(insertionIndex);
 }
 
+function openTargetPathGuardSource() {
+  return `function codexLinuxOpenTargetPath(e){if(typeof e!==\`string\`||e.trim().length===0||e.startsWith(\`-\`)||/[\\x00-\\x1F\\x7F]/u.test(e)||/^[A-Za-z][A-Za-z0-9+.-]*:/u.test(e))throw Error(\`Unsafe Linux open target\`);return e}`;
+}
+
+function guardedResolveExistingTargetSource({ fsVar, pathVar }) {
+  return `function codexLinuxResolveExistingTarget(e){e=codexLinuxOpenTargetPath(e);let t=e;for(;;){try{if((0,${fsVar}.existsSync)(t))return t}catch{}let n=(0,${pathVar}.dirname)(t);if(n===t)return null;t=n}}`;
+}
+
+function legacyResolveExistingTargetSource({ fsVar, pathVar }) {
+  return `function codexLinuxResolveExistingTarget(e){if(typeof e!==\`string\`||e.length===0)return null;let t=e;for(;;){try{if((0,${fsVar}.existsSync)(t))return t}catch{}let n=(0,${pathVar}.dirname)(t);if(n===t)return null;t=n}}`;
+}
+
+function guardedTerminalCwdSource({ fsVar, pathVar }) {
+  return `function codexLinuxTerminalCwd(e){let t=codexLinuxResolveExistingTarget(e)??codexLinuxOpenTargetPath(e);try{if((0,${fsVar}.existsSync)(t)){let e=(0,${fsVar}.statSync)(t);if(e.isDirectory())return t;if(e.isFile())return(0,${pathVar}.dirname)(t)}}catch{}return(0,${pathVar}.dirname)(t)}`;
+}
+
+function legacyTerminalCwdSource({ fsVar, pathVar }) {
+  return `function codexLinuxTerminalCwd(e){let t=codexLinuxResolveExistingTarget(e)??e;if(typeof t!==\`string\`||t.length===0)return process.env.HOME||\`/\`;try{if((0,${fsVar}.existsSync)(t)){let e=(0,${fsVar}.statSync)(t);if(e.isDirectory())return t;if(e.isFile())return(0,${pathVar}.dirname)(t)}}catch{}return(0,${pathVar}.dirname)(t)}`;
+}
+
+function guardedDesktopArgsSource({ pathVar }) {
+  return `function codexLinuxDesktopArgs(e,t){t=codexLinuxOpenTargetPath(t);let n=[],r=codexLinuxPathToFileUri(t);for(let a of e){if(a===\`%%\`){n.push(\`%\`);continue}if(/^%[fF]$/u.test(a)){n.push(t);continue}if(/^%[uU]$/u.test(a)){n.push(r);continue}if(/^%[dD]$/u.test(a)){n.push((0,${pathVar}.dirname)(t));continue}if(/^%[nN]$/u.test(a)){n.push((0,${pathVar}.basename)(t));continue}if(/^%[ickvm]$/u.test(a))continue;let o=a.replace(/%[fF]/gu,t).replace(/%[uU]/gu,r).replace(/%[dD]/gu,(0,${pathVar}.dirname)(t)).replace(/%[nN]/gu,(0,${pathVar}.basename)(t)).replace(/%%/gu,\`%\`).replace(/%[A-Za-z]/gu,\`\`);o&&n.push(o)}return n}`;
+}
+
+function legacyDesktopArgsSource({ pathVar }) {
+  return `function codexLinuxDesktopArgs(e,t){let n=[],r=codexLinuxPathToFileUri(t);for(let a of e){if(a===\`%%\`){n.push(\`%\`);continue}if(/^%[fF]$/u.test(a)){n.push(t);continue}if(/^%[uU]$/u.test(a)){n.push(r);continue}if(/^%[dD]$/u.test(a)){n.push((0,${pathVar}.dirname)(t));continue}if(/^%[nN]$/u.test(a)){n.push((0,${pathVar}.basename)(t));continue}if(/^%[ickvm]$/u.test(a))continue;let o=a.replace(/%[fF]/gu,t).replace(/%[uU]/gu,r).replace(/%[dD]/gu,(0,${pathVar}.dirname)(t)).replace(/%[nN]/gu,(0,${pathVar}.basename)(t)).replace(/%%/gu,\`%\`).replace(/%[A-Za-z]/gu,\`\`);o&&n.push(o)}return n}`;
+}
+
+function guardedLaunchDesktopEntrySource() {
+  return `async function codexLinuxLaunchDesktopEntry(e,t,n,r){t=codexLinuxOpenTargetPath(t);let i=codexLinuxFindExecutable(\`gio\`),a=codexLinuxDesktopLaunchOptions();if(i)try{await codexLinuxLaunchDetached(i,[\`launch\`,e,t],a);return}catch{}let o=codexLinuxFindExecutable(\`gtk-launch\`);if(o)try{await codexLinuxLaunchDetached(o,[codexLinuxDesktopEntryLaunchId(e),codexLinuxPathToFileUri(t)],a);return}catch{}await codexLinuxLaunchDetached(n,codexLinuxDesktopArgs(r,t),a)}`;
+}
+
+function legacyLaunchDesktopEntrySource() {
+  return `async function codexLinuxLaunchDesktopEntry(e,t,n,r){let i=codexLinuxFindExecutable(\`gio\`),a=codexLinuxDesktopLaunchOptions();if(i)try{await codexLinuxLaunchDetached(i,[\`launch\`,e,t],a);return}catch{}let o=codexLinuxFindExecutable(\`gtk-launch\`);if(o)try{await codexLinuxLaunchDetached(o,[codexLinuxDesktopEntryLaunchId(e),codexLinuxPathToFileUri(t)],a);return}catch{}await codexLinuxLaunchDetached(n,codexLinuxDesktopArgs(r,t),a)}`;
+}
+
+function upgradeOpenTargetPathGuard(currentSource, deps) {
+  if (!currentSource.includes("function codexLinuxFindExecutable(")) {
+    return currentSource;
+  }
+
+  let patchedSource = currentSource;
+  if (!patchedSource.includes("function codexLinuxOpenTargetPath(")) {
+    const insertionIndex = patchedSource.includes("function codexLinuxResolveExistingTarget(")
+      ? patchedSource.indexOf("function codexLinuxResolveExistingTarget(")
+      : patchedSource.indexOf("function codexLinuxFindExecutable(");
+    patchedSource =
+      patchedSource.slice(0, insertionIndex) +
+      openTargetPathGuardSource() +
+      patchedSource.slice(insertionIndex);
+  }
+
+  return patchedSource
+    .replace(legacyResolveExistingTargetSource(deps), guardedResolveExistingTargetSource(deps))
+    .replace(legacyTerminalCwdSource(deps), guardedTerminalCwdSource(deps))
+    .replace(legacyDesktopArgsSource(deps), guardedDesktopArgsSource(deps))
+    .replace(legacyLaunchDesktopEntrySource(), guardedLaunchDesktopEntrySource());
+}
+
 function applyFileManagerDiscoveryPatch(currentSource, deps) {
   let block = findDeclarationBlock(currentSource, "id:`fileManager`");
   if (block == null) {
     warn("Could not find file manager open target");
     return currentSource;
   }
-  if (block.text.includes("codexLinuxOpenFileManager(e)")) {
+  if (block.text.includes("codexLinuxOpenTargetPath(e)")) {
     return currentSource;
   }
 
@@ -170,7 +230,7 @@ function applyFileManagerDiscoveryPatch(currentSource, deps) {
 
   const { electronVar, fsVar, pathVar } = deps;
   const linuxFileManager =
-    `,linux:{label:\`File Manager\`,icon:\`apps/file-explorer.png\`,detect:()=>codexLinuxFindExecutable(\`dolphin\`)??codexLinuxFindExecutable(\`nautilus\`)??codexLinuxFindExecutable(\`nemo\`)??codexLinuxFindExecutable(\`thunar\`)??codexLinuxFindExecutable(\`pcmanfm\`)??codexLinuxFindExecutable(\`caja\`)??codexLinuxFindExecutable(\`xdg-open\`)??\`linux-file-manager\`,args:e=>[e],open:async({path:e})=>{await codexLinuxOpenFileManager(e).catch(async()=>{let t=codexLinuxResolveExistingTarget(e)??e;try{(0,${fsVar}.existsSync)(t)&&(0,${fsVar}.statSync)(t).isFile()&&(t=(0,${pathVar}.dirname)(t))}catch{}let r=await ${electronVar}.shell.openPath(t);if(r)throw Error(r)})}}`;
+    `,linux:{label:\`File Manager\`,icon:\`apps/file-explorer.png\`,detect:()=>codexLinuxFindExecutable(\`dolphin\`)??codexLinuxFindExecutable(\`nautilus\`)??codexLinuxFindExecutable(\`nemo\`)??codexLinuxFindExecutable(\`thunar\`)??codexLinuxFindExecutable(\`pcmanfm\`)??codexLinuxFindExecutable(\`caja\`)??codexLinuxFindExecutable(\`xdg-open\`)??\`linux-file-manager\`,args:e=>[codexLinuxOpenTargetPath(e)],open:async({path:e})=>{e=codexLinuxOpenTargetPath(e);await codexLinuxOpenFileManager(e).catch(async()=>{let t=codexLinuxResolveExistingTarget(e)??e;try{(0,${fsVar}.existsSync)(t)&&(0,${fsVar}.statSync)(t).isFile()&&(t=(0,${pathVar}.dirname)(t))}catch{}let r=await ${electronVar}.shell.openPath(t);if(r)throw Error(r)})}}`;
 
   const existingLinuxBlock = findPropertyBlock(block.text, "linux");
   const patchedBlock =
@@ -215,7 +275,7 @@ function insertTerminalHelpers(currentSource, { fsVar, pathVar }) {
     `function codexLinuxTerminalTryExecAvailable(e){let t=codexLinuxTerminalSplitDesktopExec(e),n=!1,skipControls=new Set([\`&&\`,\`||\`,\`;\`,\`|\`,\`!\`,\`then\`,\`fi\`,\`do\`,\`done\`]),skipCommands=new Set([\`env\`,\`test\`,\`[\`,\`]\`,\`exec\`,\`command\`,\`which\`,\`type\`,\`hash\`]),shells=new Set([\`sh\`,\`bash\`,\`dash\`,\`zsh\`,\`fish\`]),q=codexLinuxTerminalFlatpakInfoAvailable(e);if(q!=null)return q;q=codexLinuxTerminalFlatpakInfoTokensAvailable(t);if(q!=null)return q;let r=codexLinuxTerminalFlatpakShellAvailable(t,shells);if(r!=null)return r;for(var f=0;;){let e=t[f];if((0,${pathVar}.basename)(e||\`\`)===\`env\`||e&&/^[A-Za-z_][A-Za-z0-9_]*=/u.test(e)||e===\`-i\`||e===\`--ignore-environment\`||e?.startsWith(\`--unset=\`)){f++;continue}if(e===\`-u\`||e===\`--unset\`){f+=2;continue}break}if((0,${pathVar}.basename)(t[f]||\`\`)===\`flatpak\`&&f===t.length-1)return codexLinuxTerminalExecutablePath(t[f])!=null;for(let e=0;e<t.length-1;e++){let n=(0,${pathVar}.basename)(t[e]);if(shells.has(n)){var a=!0;for(var o=0;o<e;o++){var s=(0,${pathVar}.basename)(t[o]);if(t[o]===\`-u\`||t[o]===\`--unset\`){o++;continue}if(t[o].includes(\`=\`)&&!(0,${pathVar}.isAbsolute)(t[o])||t[o].startsWith(\`-\`)||skipControls.has(t[o])||s===\`env\`)continue;if(s===\`flatpak\`){a=codexLinuxTerminalExecutablePath(t[o])!=null;break}if(!codexLinuxTerminalExecutablePath(t[o])){a=!1;break}}var l=codexLinuxTerminalShellCommandIndex(t.slice(e));if(l>0)return a&&codexLinuxTerminalExecutablePath(t[e])?codexLinuxTerminalTryExecShellAvailable(t[e],t[e+l-1],t[e+l]??\`\`):!1}}for(let e=0;e<t.length;e++){let r=t[e],a=(0,${pathVar}.basename)(r);if(r===\`-u\`||r===\`--unset\`){e++;continue}if(r.includes(\`=\`)&&!(0,${pathVar}.isAbsolute)(r))continue;if(a===\`flatpak\`){n=!0;continue}if(r.startsWith(\`-\`)||skipControls.has(r)||skipCommands.has(a))continue;n=!0;if(codexLinuxTerminalExecutablePath(r))return!0}return!n}` +
     `function codexLinuxDiscoveredTerminalInfo(){for(let e of codexLinuxTerminalDesktopDirs())for(let t of codexLinuxTerminalDesktopEntryFiles(e)){let e=codexLinuxParseTerminalDesktopEntry(t);if(!e||!codexLinuxLooksLikeTerminal(e))continue;if(e.TryExec&&!codexLinuxTerminalTryExecAvailable(e.TryExec))continue;let n=codexLinuxResolveTerminalDesktopExec(e.Exec);if(!n)continue;return{command:n.command,args:n.args,dirArg:e[\`X-TerminalArgDir\`]||null}}return null}` +
     `function codexLinuxTerminalInfo(){let e=codexLinuxFindExecutable(\`xdg-terminal-exec\`);if(e)return{command:e,args:[],xdg:!0};let t=codexLinuxTerminalCommand();return t?{command:t,args:[]}:codexLinuxDiscoveredTerminalInfo()}` +
-    `function codexLinuxTerminalCwd(e){let t=codexLinuxResolveExistingTarget(e)??e;if(typeof t!==\`string\`||t.length===0)return process.env.HOME||\`/\`;try{if((0,${fsVar}.existsSync)(t)){let e=(0,${fsVar}.statSync)(t);if(e.isDirectory())return t;if(e.isFile())return(0,${pathVar}.dirname)(t)}}catch{}return(0,${pathVar}.dirname)(t)}` +
+    `function codexLinuxTerminalCwd(e){let t=codexLinuxResolveExistingTarget(e)??codexLinuxOpenTargetPath(e);try{if((0,${fsVar}.existsSync)(t)){let e=(0,${fsVar}.statSync)(t);if(e.isDirectory())return t;if(e.isFile())return(0,${pathVar}.dirname)(t)}}catch{}return(0,${pathVar}.dirname)(t)}` +
     `function codexLinuxTerminalArgs(e,t){let n=typeof e===\`string\`?{command:e,args:[]}:e??codexLinuxTerminalInfo(),r=codexLinuxTerminalCwd(t),a=(0,${pathVar}.basename)(n?.command||\`\`).toLowerCase();if(n?.dirArg)return n.dirArg.endsWith(\`=\`)?[...n.args??[],\`\${n.dirArg}\${r}\`]:[...n.args??[],n.dirArg,r];if(n?.args?.length)return n.args;if(n?.xdg)return[];if(a===\`wezterm\`)return[\`start\`,\`--cwd\`,r];if(a===\`konsole\`)return[\`--workdir\`,r];if(a===\`kitty\`)return[\`--directory\`,r];if(a===\`terminology\`)return[\`--workdir\`,r];return[\`gnome-terminal\`,\`kgx\`,\`xfce4-terminal\`,\`mate-terminal\`,\`lxterminal\`,\`tilix\`,\`alacritty\`,\`ghostty\`,\`foot\`].includes(a)?[\`--working-directory\`,r]:[]}`;
   const helperInsertionIndex = currentSource.includes("async function codexLinuxOpenFileManager(")
     ? currentSource.indexOf("async function codexLinuxOpenFileManager(")
@@ -226,10 +286,6 @@ function insertTerminalHelpers(currentSource, { fsVar, pathVar }) {
 }
 
 function applyTerminalDiscoveryPatch(currentSource, deps) {
-  if (currentSource.includes("linux:{label:`Terminal`")) {
-    return currentSource;
-  }
-
   const terminalIndex = currentSource.indexOf("id:`terminal`");
   if (terminalIndex === -1) {
     warn("Could not find terminal open target");
@@ -252,9 +308,12 @@ function applyTerminalDiscoveryPatch(currentSource, deps) {
   const platformsIndex = patchedSource.indexOf("platforms:{", patchedTerminalIndex);
   const platformsBlock =
     platformsIndex === -1 ? null : findBalancedBlock(patchedSource, patchedSource.indexOf("{", platformsIndex));
-  if (platformsBlock == null || platformsBlock.text.includes("linux:{")) {
+  if (platformsBlock == null) {
     warn("Could not apply terminal open-target patch");
     return currentSource;
+  }
+  if (platformsBlock.text.includes("linux:{")) {
+    return patchedSource;
   }
 
   const linuxTerminal =
@@ -263,11 +322,11 @@ function applyTerminalDiscoveryPatch(currentSource, deps) {
 }
 
 function applyIdeDiscoveryPatch(currentSource, deps) {
+  const { fsVar, pathVar } = deps;
   if (currentSource.includes("...codexLinuxDiscoveredIdeTargets()")) {
-    return currentSource;
+    return upgradeOpenTargetPathGuard(currentSource, deps);
   }
 
-  const { fsVar, pathVar } = deps;
   const editorFactoryIndex = currentSource.search(/function\s+[A-Za-z_$][\w$]*\(\{id:[A-Za-z_$][\w$]*,label:[A-Za-z_$][\w$]*,icon:[A-Za-z_$][\w$]*,darwinDetect:/u);
   const jetBrainsFactoryIndex = currentSource.search(/function\s+[A-Za-z_$][\w$]*\(\{id:[A-Za-z_$][\w$]*,label:[A-Za-z_$][\w$]*,icon:[A-Za-z_$][\w$]*,toolboxTarget:/u);
   const hasEditorFactory = editorFactoryIndex !== -1;
@@ -326,10 +385,10 @@ function applyIdeDiscoveryPatch(currentSource, deps) {
     `function codexLinuxDesktopFlatpakShellAvailable(e,t){let _codexStart=0;for(;;){let _codexHead=e[_codexStart];if((0,${pathVar}.basename)(_codexHead||\`\`)===\`env\`){if(codexLinuxExecutablePath(_codexHead)==null)return!1;_codexStart++;continue}if(_codexHead&&/^[A-Za-z_][A-Za-z0-9_]*=/u.test(_codexHead)){_codexStart++;continue}if(_codexHead===\`-i\`||_codexHead===\`--ignore-environment\`||_codexHead?.startsWith(\`--unset=\`)){_codexStart++;continue}if(_codexHead===\`-u\`||_codexHead===\`--unset\`){_codexStart+=2;continue}break}if((0,${pathVar}.basename)(e[_codexStart]||\`\`)!==\`flatpak\`)return null;let _codexRun=_codexStart+1,_codexScope=null;for(;e[_codexRun]===\`--user\`||e[_codexRun]===\`--system\`||e[_codexRun]?.startsWith(\`--installation=\`)||e[_codexRun]===\`--installation\`;){let _codexOpt=e[_codexRun];_codexScope=_codexOpt===\`--user\`?{scope:\`user\`}:_codexOpt===\`--system\`?{scope:\`system\`}:_codexOpt===\`--installation\`?{scope:\`installation\`,name:e[_codexRun+1]}:{scope:\`installation\`,name:_codexOpt.slice(15)};_codexRun+=_codexOpt===\`--installation\`?2:1}if(e[_codexRun]!==\`run\`)return null;if(codexLinuxExecutablePath(e[_codexStart])==null)return!1;let _codexCommand=null,_codexApp=null,_codexIndex=_codexRun+1,_codexValueOptions=new Set([\`--branch\`,\`--arch\`,\`--env\`,\`--unset-env\`,\`--cwd\`,\`--filesystem\`,\`--socket\`,\`--device\`,\`--share\`,\`--talk-name\`,\`--own-name\`,\`--add-policy\`,\`--remove-policy\`]);for(;_codexIndex<e.length;_codexIndex++){let _codexToken=e[_codexIndex];if(_codexToken.startsWith(\`--command=\`)){_codexCommand=_codexToken.slice(10);continue}if(_codexToken===\`--command\`){_codexCommand=e[++_codexIndex];continue}if(_codexValueOptions.has(_codexToken)){_codexIndex++;continue}if(_codexToken.startsWith(\`-\`))continue;_codexApp=_codexToken,_codexIndex++;break}if(!_codexApp||!codexLinuxDesktopFlatpakAvailable(_codexApp,_codexScope))return!1;if(!_codexCommand)return!0;let _codexShell=(0,${pathVar}.basename)(_codexCommand);if(_codexShell!==\`sh\`||!t.has(_codexShell))return!1;let _codexArgs=[_codexCommand,...e.slice(_codexIndex)],_codexShellIndex=codexLinuxDesktopShellCommandIndex(_codexArgs);return _codexShellIndex>0?codexLinuxDesktopFlatpakTryExecShellAvailable(_codexArgs[_codexShellIndex]??\`\`):!1}` +
     `function codexLinuxDesktopTryExecAvailable(e){let t=codexLinuxSplitDesktopExec(e),n=!1,skipControls=new Set([\`&&\`,\`||\`,\`;\`,\`|\`,\`!\`,\`then\`,\`fi\`,\`do\`,\`done\`]),skipCommands=new Set([\`env\`,\`test\`,\`[\`,\`]\`,\`exec\`,\`command\`,\`which\`,\`type\`,\`hash\`]),shells=new Set([\`sh\`,\`bash\`,\`dash\`,\`zsh\`,\`fish\`]),q=codexLinuxDesktopFlatpakInfoAvailable(e);if(q!=null)return q;q=codexLinuxDesktopFlatpakInfoTokensAvailable(t);if(q!=null)return q;let r=codexLinuxDesktopFlatpakShellAvailable(t,shells);if(r!=null)return r;for(var f=0;;){let e=t[f];if((0,${pathVar}.basename)(e||\`\`)===\`env\`||e&&/^[A-Za-z_][A-Za-z0-9_]*=/u.test(e)||e===\`-i\`||e===\`--ignore-environment\`||e?.startsWith(\`--unset=\`)){f++;continue}if(e===\`-u\`||e===\`--unset\`){f+=2;continue}break}if((0,${pathVar}.basename)(t[f]||\`\`)===\`flatpak\`&&f===t.length-1)return codexLinuxExecutablePath(t[f])!=null;for(let e=0;e<t.length-1;e++){let n=(0,${pathVar}.basename)(t[e]);if(shells.has(n)){var a=!0;for(var o=0;o<e;o++){var s=(0,${pathVar}.basename)(t[o]);if(t[o]===\`-u\`||t[o]===\`--unset\`){o++;continue}if(t[o].includes(\`=\`)&&!(0,${pathVar}.isAbsolute)(t[o])||t[o].startsWith(\`-\`)||skipControls.has(t[o])||s===\`env\`)continue;if(s===\`flatpak\`){a=codexLinuxExecutablePath(t[o])!=null;break}if(!codexLinuxExecutablePath(t[o])){a=!1;break}}var l=codexLinuxDesktopShellCommandIndex(t.slice(e));if(l>0)return a&&codexLinuxExecutablePath(t[e])?codexLinuxDesktopTryExecShellAvailable(t[e],t[e+l-1],t[e+l]??\`\`):!1}}for(let e=0;e<t.length;e++){let r=t[e],a=(0,${pathVar}.basename)(r);if(r===\`-u\`||r===\`--unset\`){e++;continue}if(r.includes(\`=\`)&&!(0,${pathVar}.isAbsolute)(r))continue;if(a===\`flatpak\`){n=!0;continue}if(r.startsWith(\`-\`)||skipControls.has(r)||skipCommands.has(a))continue;n=!0;if(codexLinuxExecutablePath(r))return!0}return!n}` +
     `function codexLinuxPathToFileUri(e){try{return require(\`node:url\`).pathToFileURL(e).toString()}catch{return e}}` +
-    `function codexLinuxDesktopArgs(e,t){let n=[],r=codexLinuxPathToFileUri(t);for(let a of e){if(a===\`%%\`){n.push(\`%\`);continue}if(/^%[fF]$/u.test(a)){n.push(t);continue}if(/^%[uU]$/u.test(a)){n.push(r);continue}if(/^%[dD]$/u.test(a)){n.push((0,${pathVar}.dirname)(t));continue}if(/^%[nN]$/u.test(a)){n.push((0,${pathVar}.basename)(t));continue}if(/^%[ickvm]$/u.test(a))continue;let o=a.replace(/%[fF]/gu,t).replace(/%[uU]/gu,r).replace(/%[dD]/gu,(0,${pathVar}.dirname)(t)).replace(/%[nN]/gu,(0,${pathVar}.basename)(t)).replace(/%%/gu,\`%\`).replace(/%[A-Za-z]/gu,\`\`);o&&n.push(o)}return n}` +
+    `function codexLinuxDesktopArgs(e,t){t=codexLinuxOpenTargetPath(t);let n=[],r=codexLinuxPathToFileUri(t);for(let a of e){if(a===\`%%\`){n.push(\`%\`);continue}if(/^%[fF]$/u.test(a)){n.push(t);continue}if(/^%[uU]$/u.test(a)){n.push(r);continue}if(/^%[dD]$/u.test(a)){n.push((0,${pathVar}.dirname)(t));continue}if(/^%[nN]$/u.test(a)){n.push((0,${pathVar}.basename)(t));continue}if(/^%[ickvm]$/u.test(a))continue;let o=a.replace(/%[fF]/gu,t).replace(/%[uU]/gu,r).replace(/%[dD]/gu,(0,${pathVar}.dirname)(t)).replace(/%[nN]/gu,(0,${pathVar}.basename)(t)).replace(/%%/gu,\`%\`).replace(/%[A-Za-z]/gu,\`\`);o&&n.push(o)}return n}` +
     `function codexLinuxDesktopEntryLaunchId(e){return(0,${pathVar}.basename)(e).replace(/\\.desktop$/u,\`\`)}` +
     `function codexLinuxDesktopLaunchOptions(){return{cwd:process.env.HOME||void 0}}` +
-    `async function codexLinuxLaunchDesktopEntry(e,t,n,r){let i=codexLinuxFindExecutable(\`gio\`),a=codexLinuxDesktopLaunchOptions();if(i)try{await codexLinuxLaunchDetached(i,[\`launch\`,e,t],a);return}catch{}let o=codexLinuxFindExecutable(\`gtk-launch\`);if(o)try{await codexLinuxLaunchDetached(o,[codexLinuxDesktopEntryLaunchId(e),codexLinuxPathToFileUri(t)],a);return}catch{}await codexLinuxLaunchDetached(n,codexLinuxDesktopArgs(r,t),a)}` +
+    `async function codexLinuxLaunchDesktopEntry(e,t,n,r){t=codexLinuxOpenTargetPath(t);let i=codexLinuxFindExecutable(\`gio\`),a=codexLinuxDesktopLaunchOptions();if(i)try{await codexLinuxLaunchDetached(i,[\`launch\`,e,t],a);return}catch{}let o=codexLinuxFindExecutable(\`gtk-launch\`);if(o)try{await codexLinuxLaunchDetached(o,[codexLinuxDesktopEntryLaunchId(e),codexLinuxPathToFileUri(t)],a);return}catch{}await codexLinuxLaunchDetached(n,codexLinuxDesktopArgs(r,t),a)}` +
     `function codexLinuxKnownIdeDesktopDuplicate(e){let t=new Set([\`cursor\`,\`code\`,\`codium\`,\`code-insiders\`,\`windsurf\`,\`antigravity\`,\`zed\`,\`zeditor\`,\`zedit\`,\`zed-cli\`,\`idea\`,\`webstorm\`,\`pycharm\`,\`goland\`,\`clion\`,\`rustrover\`,\`rider\`,\`phpstorm\`,\`studio\`,\`studio.sh\`]);return t.has(e.base)&&codexLinuxFindExecutable(e.base)!=null}` +
     `function codexLinuxDesktopIdeIcon(e,t){let n=\`\${e.Name||\`\`} \${e.Id||\`\`} \${t.base||\`\`}\`.toLowerCase();for(let[e,t]of [[\`cursor\`,\`apps/cursor.png\`],[\`code-insiders\`,\`apps/vscode-insiders.png\`],[\`vscode\`,\`apps/vscode.png\`],[\`visual studio code\`,\`apps/vscode.png\`],[\`codium\`,\`apps/vscode.png\`],[\`zed\`,\`apps/zed.png\`],[\`sublime\`,\`apps/sublime-text.png\`],[\`emacs\`,\`apps/emacs.png\`],[\`intellij\`,\`apps/intellij.png\`],[\`webstorm\`,\`apps/webstorm.svg\`],[\`pycharm\`,\`apps/pycharm.png\`],[\`goland\`,\`apps/goland.png\`],[\`clion\`,\`apps/clion.png\`],[\`rustrover\`,\`apps/rustrover.png\`],[\`rider\`,\`apps/rider.png\`],[\`phpstorm\`,\`apps/phpstorm.png\`],[\`android studio\`,\`apps/android-studio.png\`],[\`windsurf\`,\`apps/windsurf.png\`],[\`antigravity\`,\`apps/antigravity.png\`]])if(n.includes(e))return t;return\`apps/terminal.png\`}` +
     `function codexLinuxIconSearchRoots(){let e=process.env.HOME||\`/nonexistent\`,t=process.env.XDG_DATA_HOME&&(0,${pathVar}.isAbsolute)(process.env.XDG_DATA_HOME)?process.env.XDG_DATA_HOME:(0,${pathVar}.join)(e,\`.local/share\`),n=(process.env.XDG_DATA_DIRS&&process.env.XDG_DATA_DIRS.length>0?process.env.XDG_DATA_DIRS:\`/usr/local/share:/usr/share\`).split(\`:\`).filter(Boolean),r=[(0,${pathVar}.join)(t,\`icons\`),(0,${pathVar}.join)(e,\`.icons\`),...n.map(e=>(0,${pathVar}.join)(e,\`icons\`)),(0,${pathVar}.join)(t,\`pixmaps\`),...n.map(e=>(0,${pathVar}.join)(e,\`pixmaps\`)),(0,${pathVar}.join)(e,\`.local/share/flatpak/exports/share/icons\`),(0,${pathVar}.join)(e,\`.local/share/flatpak/exports/share/pixmaps\`),\`/var/lib/flatpak/exports/share/icons\`,\`/var/lib/flatpak/exports/share/pixmaps\`,\`/var/lib/snapd/desktop/icons\`],a=new Set;return r.filter(e=>e&&(0,${pathVar}.isAbsolute)(e)&&!a.has(e)&&(a.add(e),!0))}` +
@@ -471,6 +530,7 @@ function applyMainBundlePatch(currentSource) {
   }
   patchedSource = applyTerminalDiscoveryPatch(patchedSource, deps);
   patchedSource = applyIdeDiscoveryPatch(patchedSource, deps);
+  patchedSource = upgradeOpenTargetPathGuard(patchedSource, deps);
   patchedSource = applyLinuxIconPathResolutionPatch(patchedSource);
   return patchedSource;
 }

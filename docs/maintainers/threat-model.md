@@ -271,8 +271,9 @@ flowchart LR
 - Required generated-app patches must be marked as required failures when
   official app bundle drift prevents application.
 - Desktop target discovery must use argument-vector process launches, sanitize
-  app-internal environment variables, and treat user-local `.desktop` entries
-  as same-user trust inputs.
+  app-internal environment variables, reject unsafe open-target values before
+  launch sinks, and treat user-local `.desktop` entries as same-user trust
+  inputs.
 - Computer Use must remain locally scoped, account/host-gated, and bound to
   user-consented desktop-control semantics.
 - Remote-control/mobile patches must not fabricate connected clients, MFA,
@@ -421,9 +422,11 @@ state leaks into child desktop processes.
 
 **Existing mitigations:** executable discovery requires executable files,
 desktop-entry parsing filters hidden/non-application/broad non-IDE entries,
-launches use argument vectors instead of a shell, file manager reveal paths
-fall back to Electron `shell.openPath`, and launch environment sanitization
-removes app-internal Electron, Node, Codex, and wrapper variables.
+launches use argument vectors instead of a shell, open-target path validation
+rejects URLs, control characters, empty targets, and option-shaped raw targets
+before launch sinks, file manager reveal paths fall back to Electron
+`shell.openPath`, and launch environment sanitization removes app-internal
+Electron, Node, Codex, and wrapper variables.
 
 **Gaps:** user-local `.desktop` entries remain same-user trust inputs by design;
 the allowlist and heuristic matching need review when new launcher families are
