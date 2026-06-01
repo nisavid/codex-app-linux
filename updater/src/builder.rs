@@ -123,6 +123,7 @@ pub async fn build_update_from(
 
     copy_builder_bundle(bundle_source, &workspace.bundle_dir)?;
     let build_path = build_command_path(&workspace.bundle_dir);
+    let integration_config = crate::config::effective_integration_config_path(config);
 
     state.status = UpdateStatus::PatchingApp;
     state.save(&paths.state_file)?;
@@ -148,9 +149,9 @@ pub async fn build_update_from(
     // writes it to a stable per-user path) so the rebuild stages exactly those
     // integrations. Only set it when the file actually exists; an absent path
     // lets port-integrations.js use its bundled defaults.
-    if let Some(integration_config) = crate::config::effective_integration_config_path(config) {
-        install.env("CODEX_PORT_INTEGRATIONS_CONFIG", &integration_config);
-        install.env("CODEX_LINUX_FEATURES_CONFIG", &integration_config);
+    if let Some(integration_config) = &integration_config {
+        install.env("CODEX_PORT_INTEGRATIONS_CONFIG", integration_config);
+        install.env("CODEX_LINUX_FEATURES_CONFIG", integration_config);
     }
     run_and_log(&mut install, &workspace.install_log)
         .await
@@ -162,24 +163,27 @@ pub async fn build_update_from(
     state.save(&paths.state_file)?;
 
     let build_script = package_build_script(&workspace.bundle_dir);
-    run_and_log(
-        Command::new(&build_script)
-            .env("PACKAGE_VERSION", &package_version)
-            .env("APP_DIR_OVERRIDE", &workspace.app_dir)
-            .env("DIST_DIR_OVERRIDE", &workspace.dist_dir)
-            .env("UPDATER_BINARY_SOURCE", std::env::current_exe()?)
-            .env(
-                "UPDATER_SERVICE_SOURCE",
-                workspace
-                    .bundle_dir
-                    .join("packaging/linux/codex-app-updater.service"),
-            )
-            .env("PATH", &build_path)
-            .current_dir(&workspace.bundle_dir),
-        &workspace.build_log,
-    )
-    .await
-    .with_context(|| format!("{} failed during local rebuild", build_script.display()))?;
+    let mut package_build = Command::new(&build_script);
+    package_build
+        .env("PACKAGE_VERSION", &package_version)
+        .env("APP_DIR_OVERRIDE", &workspace.app_dir)
+        .env("DIST_DIR_OVERRIDE", &workspace.dist_dir)
+        .env("UPDATER_BINARY_SOURCE", std::env::current_exe()?)
+        .env(
+            "UPDATER_SERVICE_SOURCE",
+            workspace
+                .bundle_dir
+                .join("packaging/linux/codex-app-updater.service"),
+        )
+        .env("PATH", &build_path)
+        .current_dir(&workspace.bundle_dir);
+    if let Some(integration_config) = &integration_config {
+        package_build.env("CODEX_PORT_INTEGRATIONS_CONFIG", integration_config);
+        package_build.env("CODEX_LINUX_FEATURES_CONFIG", integration_config);
+    }
+    run_and_log(&mut package_build, &workspace.build_log)
+        .await
+        .with_context(|| format!("{} failed during local rebuild", build_script.display()))?;
 
     let package_path = find_package_in(&workspace.dist_dir)?;
     state.package_verification = Some(package_verification::record_built_package(
@@ -580,24 +584,30 @@ mod tests {
         let script_body = match output {
             FakePackageOutput::Deb => {
                 r#"#!/bin/bash
-set -euo pipefail
-mkdir -p "${DIST_DIR_OVERRIDE}"
-touch "${DIST_DIR_OVERRIDE}/codex-app_${PACKAGE_VERSION}_amd64.deb"
-"#
+	set -euo pipefail
+	printf 'CODEX_PORT_INTEGRATIONS_CONFIG=%s\n' "${CODEX_PORT_INTEGRATIONS_CONFIG:-}"
+	printf 'CODEX_LINUX_FEATURES_CONFIG=%s\n' "${CODEX_LINUX_FEATURES_CONFIG:-}"
+	mkdir -p "${DIST_DIR_OVERRIDE}"
+	touch "${DIST_DIR_OVERRIDE}/codex-app_${PACKAGE_VERSION}_amd64.deb"
+	"#
             }
             FakePackageOutput::Rpm => {
                 r#"#!/bin/bash
-set -euo pipefail
-mkdir -p "${DIST_DIR_OVERRIDE}"
-touch "${DIST_DIR_OVERRIDE}/codex-app-${PACKAGE_VERSION}.x86_64.rpm"
-"#
+	set -euo pipefail
+	printf 'CODEX_PORT_INTEGRATIONS_CONFIG=%s\n' "${CODEX_PORT_INTEGRATIONS_CONFIG:-}"
+	printf 'CODEX_LINUX_FEATURES_CONFIG=%s\n' "${CODEX_LINUX_FEATURES_CONFIG:-}"
+	mkdir -p "${DIST_DIR_OVERRIDE}"
+	touch "${DIST_DIR_OVERRIDE}/codex-app-${PACKAGE_VERSION}.x86_64.rpm"
+	"#
             }
             FakePackageOutput::Pacman => {
                 r#"#!/bin/bash
-set -euo pipefail
-VER="${PACKAGE_VERSION%%+*}"
-mkdir -p "${DIST_DIR_OVERRIDE}"
-touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
+	set -euo pipefail
+	printf 'CODEX_PORT_INTEGRATIONS_CONFIG=%s\n' "${CODEX_PORT_INTEGRATIONS_CONFIG:-}"
+	printf 'CODEX_LINUX_FEATURES_CONFIG=%s\n' "${CODEX_LINUX_FEATURES_CONFIG:-}"
+	VER="${PACKAGE_VERSION%%+*}"
+	mkdir -p "${DIST_DIR_OVERRIDE}"
+	touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
 "#
             }
         };
@@ -704,6 +714,7 @@ touch "${DIST_DIR_OVERRIDE}/codex-app-${VER}-1-x86_64.pkg.tar.zst"
 
     #[tokio::test]
     async fn builds_update_with_package_verification_metadata() -> Result<()> {
+        let env_guard = crate::test_util::env_lock();
         let temp = tempdir()?;
         let bundle_root = temp.path().join("bundle");
         let state_root = temp.path().join("state");
@@ -840,6 +851,19 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
             config_dir: temp.path().join("config"),
         };
         paths.ensure_dirs()?;
+        let settings_dir = temp.path().join("settings");
+        let settings_file = settings_dir.join("settings.json");
+        let saved_integration_config = settings_dir.join("port-integrations.json");
+        fs::create_dir_all(&settings_dir)?;
+        fs::write(
+            &saved_integration_config,
+            b"{\"enabled\":[\"example-integration\"],\"disabled\":[]}\n",
+        )?;
+        let _settings_guard = crate::test_util::EnvVarGuard::set(
+            &env_guard,
+            "CODEX_LINUX_SETTINGS_FILE",
+            &settings_file,
+        );
 
         let config = RuntimeConfig {
             dmg_url: "https://example.com/Codex.dmg".to_string(),
@@ -938,6 +962,16 @@ echo '{}' > "${CODEX_REBUILD_REPORT_JSON}"
             artifacts.workspace_dir.canonicalize()?
         );
         assert_eq!(verification.sha256.len(), 64);
+        let package_build_log =
+            fs::read_to_string(artifacts.workspace_dir.join("logs/build-package.log"))?;
+        assert!(package_build_log.contains(&format!(
+            "CODEX_PORT_INTEGRATIONS_CONFIG={}",
+            saved_integration_config.display()
+        )));
+        assert!(package_build_log.contains(&format!(
+            "CODEX_LINUX_FEATURES_CONFIG={}",
+            saved_integration_config.display()
+        )));
         Ok(())
     }
 

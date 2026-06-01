@@ -4,8 +4,11 @@ use anyhow::{Context, Result};
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
+    fs::{self, OpenOptions},
+    io::Write,
     path::{Path, PathBuf},
+    process,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const SERVICE_NAME: &str = "codex-app-updater";
@@ -353,9 +356,58 @@ fn write_settings_bool(key: &str, value: bool) -> Result<()> {
     object.insert(key.to_string(), serde_json::Value::Bool(value));
     let serialized = serde_json::to_string_pretty(&serde_json::Value::Object(object))
         .context("Failed to serialize settings.json")?;
-    fs::write(&path, format!("{serialized}\n"))
-        .with_context(|| format!("Failed to write {}", path.display()))?;
+    atomic_write(&path, format!("{serialized}\n").as_bytes())?;
     Ok(())
+}
+
+fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .with_context(|| format!("{} has no parent directory", path.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("Failed to create {}", parent.display()))?;
+
+    let temp_path = atomic_temp_path(path);
+    let mut temp_file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp_path)
+        .with_context(|| format!("Failed to create {}", temp_path.display()))?;
+
+    let write_result = (|| -> Result<()> {
+        temp_file
+            .write_all(contents)
+            .with_context(|| format!("Failed to write {}", temp_path.display()))?;
+        temp_file
+            .sync_all()
+            .with_context(|| format!("Failed to sync {}", temp_path.display()))?;
+        Ok(())
+    })();
+
+    if let Err(error) = write_result {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error);
+    }
+
+    fs::rename(&temp_path, path).with_context(|| {
+        format!(
+            "Failed to atomically replace {} with {}",
+            path.display(),
+            temp_path.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn atomic_temp_path(path: &Path) -> PathBuf {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("settings.json");
+    path.with_file_name(format!(".{file_name}.tmp.{}.{}", process::id(), timestamp))
 }
 
 #[cfg(test)]
@@ -464,6 +516,41 @@ mod tests {
             ),
             Some(false)
         );
+    }
+
+    #[test]
+    fn writes_integration_picker_setting_without_clobbering_other_settings() -> Result<()> {
+        let _guard = crate::test_util::env_lock();
+        let temp = tempdir()?;
+        let settings_path = temp.path().join("settings.json");
+        fs::write(&settings_path, r#"{"theme":"dark"}"#)?;
+        let _settings_guard = crate::test_util::EnvVarGuard::set(
+            &_guard,
+            "CODEX_LINUX_SETTINGS_FILE",
+            &settings_path,
+        );
+
+        write_integration_picker_on_update(false)?;
+
+        let settings = fs::read_to_string(&settings_path)?;
+        let value = serde_json::from_str::<serde_json::Value>(&settings)?;
+        assert_eq!(value["theme"], serde_json::Value::String("dark".into()));
+        assert_eq!(
+            value["codex-linux-integration-picker-on-update"],
+            serde_json::Value::Bool(false)
+        );
+        let temp_entries = fs::read_dir(temp.path())?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".settings.json.tmp.")
+            })
+            .count();
+        assert_eq!(temp_entries, 0);
+
+        Ok(())
     }
 
     #[test]
