@@ -166,8 +166,12 @@ function downgradeOpenTargetGuard(source) {
     "function codexLinuxJetBrainsIdePlatform(e,t,n,r){let i=codexLinuxIdeCommand(e);return i?{label:t,icon:n,kind:`editor`,detect:()=>i,args:(...e)=>r(codexLinuxOpenTargetPath(e[0]),...e.slice(1))}:void 0}";
   const legacyJetBrainsIdePlatform =
     "function codexLinuxJetBrainsIdePlatform(e,t,n,r){let i=codexLinuxIdeCommand(e);return i?{label:t,icon:n,kind:`editor`,detect:()=>i,args:r}:void 0}";
+  const guardedZed =
+    "linux:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:()=>codexLinuxIdeCommand(`zed`),args:(...e)=>hg(codexLinuxOpenTargetPath(e[0]),...e.slice(1))}";
+  const legacyZed =
+    "linux:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:()=>codexLinuxIdeCommand(`zed`),args:hg}";
 
-  return source
+  const downgraded = source
     .replace(guard, "")
     .replace(guardedResolve, legacyResolve)
     .replace("args:e=>[codexLinuxOpenTargetPath(e)],open:async({path:e})=>{e=codexLinuxOpenTargetPath(e);await", "args:e=>[e],open:async({path:e})=>{await")
@@ -177,9 +181,33 @@ function downgradeOpenTargetGuard(source) {
     .replace(guardedIdePlatform, legacyIdePlatform)
     .replace(guardedJetBrainsIdePlatform, legacyJetBrainsIdePlatform)
     .replace(
-      "linux:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:()=>codexLinuxIdeCommand(`zed`),args:(...e)=>hg(codexLinuxOpenTargetPath(e[0]),...e.slice(1))}",
-      "linux:{label:`Zed`,icon:`apps/zed.png`,kind:`editor`,detect:()=>codexLinuxIdeCommand(`zed`),args:hg}",
+      guardedZed,
+      legacyZed,
     );
+  for (const guardedSnippet of [
+    guard,
+    guardedResolve,
+    guardedTerminalCwd,
+    guardedDesktopArgs,
+    guardedLaunchDesktopEntry,
+    guardedIdePlatform,
+    guardedJetBrainsIdePlatform,
+    guardedZed,
+  ]) {
+    assert.ok(!downgraded.includes(guardedSnippet), "downgradeOpenTargetGuard left a guarded snippet");
+  }
+  for (const legacySnippet of [
+    legacyResolve,
+    legacyTerminalCwd,
+    legacyDesktopArgs,
+    legacyLaunchDesktopEntry,
+    legacyIdePlatform,
+    legacyJetBrainsIdePlatform,
+    legacyZed,
+  ]) {
+    assert.ok(downgraded.includes(legacySnippet), "downgradeOpenTargetGuard missed a legacy snippet");
+  }
+  return downgraded;
 }
 
 function withTempIntegrationConfig(config, fn) {
