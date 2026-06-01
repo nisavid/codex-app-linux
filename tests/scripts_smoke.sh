@@ -270,6 +270,7 @@ SCRIPT
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/port-integrations/README.md"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/port-integrations/example-integration/integration.json"
     assert_file_not_exists "$pkg_root/usr/lib/codex-app/update-builder/port-integrations/integrations.json"
+    assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/.codex-linux/port-integrations.json"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/node-runtime/bin/node"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/Cargo.toml"
     assert_file_exists "$pkg_root/usr/lib/codex-app/update-builder/computer-use-linux/Cargo.toml"
@@ -288,6 +289,7 @@ test_update_builder_omits_build_time_port_integrations_config() {
     local app_dir="$workspace/app"
     local staged_config="$root/usr/lib/codex-app/update-builder/port-integrations/integrations.json"
     local staged_legacy_config="$root/usr/lib/codex-app/update-builder/port-integrations/features.json"
+    local staged_resolved_config="$root/usr/lib/codex-app/update-builder/.codex-linux/port-integrations.json"
     local source_info="$root/usr/lib/codex-app/update-builder/.codex-linux/source-info.json"
     local local_remote_update_builder="$workspace/local-remote-update-builder"
     local local_remote_source_info="$local_remote_update_builder/.codex-linux/source-info.json"
@@ -342,6 +344,7 @@ JSON
         export PACKAGE_NAME="codex-app"
         export UPDATER_SERVICE_SOURCE="$REPO_DIR/packaging/linux/codex-app-updater.service"
         export CODEX_LINUX_SOURCE_REMOTE="ssh://builder:secret-token@example.com/org/repo.git"
+        export CODEX_PORT_INTEGRATIONS_CONFIG="$source_config"
         export SOURCE_DATE_EPOCH="1710000000"
 
         # shellcheck disable=SC1091
@@ -351,8 +354,27 @@ JSON
 
     assert_file_not_exists "$staged_config"
     assert_file_not_exists "$staged_legacy_config"
+    assert_file_exists "$staged_resolved_config"
     assert_file_exists "$root/usr/lib/codex-app/update-builder/port-integrations/integrations.example.json"
     assert_file_exists "$source_info"
+
+    node - "$staged_resolved_config" <<'NODE' || fail "Expected staged resolved port integrations config"
+const fs = require("node:fs");
+const resolvedConfigPath = process.argv[2];
+const config = JSON.parse(fs.readFileSync(resolvedConfigPath, "utf8"));
+if (!Array.isArray(config.enabled) || !config.enabled.includes("example-integration")) {
+  throw new Error(`unexpected enabled config: ${JSON.stringify(config.enabled)}`);
+}
+if (JSON.stringify(config.disabled) !== JSON.stringify(["open-target-discovery"])) {
+  throw new Error(`unexpected disabled config: ${JSON.stringify(config.disabled)}`);
+}
+if (config.enabled.includes("open-target-discovery")) {
+  throw new Error("disabled integration must not be enabled");
+}
+if ("localComment" in config) {
+  throw new Error("resolved config must not package local comments");
+}
+NODE
 
     node - "$source_info" <<'NODE' || fail "Expected staged source info to be sanitized and reproducible"
 const fs = require("node:fs");

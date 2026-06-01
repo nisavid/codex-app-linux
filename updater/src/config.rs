@@ -297,6 +297,7 @@ pub fn settings_wrapper_updates_override() -> Option<bool> {
 }
 
 const FEATURE_CONFIG_FILE: &str = "port-integrations.json";
+const PACKAGED_FEATURE_CONFIG_DIR: &str = ".codex-linux";
 const BUNDLED_FEATURE_CONFIG_FILE: &str = "integrations.json";
 const FEATURE_PICKER_ON_UPDATE_SETTING_KEY: &str = "codex-linux-integration-picker-on-update";
 
@@ -317,6 +318,13 @@ pub fn integration_config_path() -> Option<PathBuf> {
 pub fn effective_integration_config_path(config: &RuntimeConfig) -> Option<PathBuf> {
     integration_config_path()
         .filter(|path| path.is_file())
+        .or_else(|| {
+            let packaged = config
+                .builder_bundle_root
+                .join(PACKAGED_FEATURE_CONFIG_DIR)
+                .join(FEATURE_CONFIG_FILE);
+            packaged.is_file().then_some(packaged)
+        })
         .or_else(|| {
             let bundled = config
                 .builder_bundle_root
@@ -360,7 +368,7 @@ fn write_settings_bool(key: &str, value: bool) -> Result<()> {
     Ok(())
 }
 
-fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
+pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     let parent = path
         .parent()
         .with_context(|| format!("{} has no parent directory", path.display()))?;
@@ -554,18 +562,26 @@ mod tests {
     }
 
     #[test]
-    fn effective_integration_config_prefers_saved_picker_config_then_builder_config() -> Result<()>
-    {
+    fn effective_integration_config_prefers_saved_picker_then_packaged_then_legacy_builder_config(
+    ) -> Result<()> {
         let _guard = crate::test_util::env_lock();
         let temp = tempdir()?;
         let settings_dir = temp.path().join("settings");
         let settings_file = settings_dir.join("settings.json");
         let saved_integration_config = settings_dir.join("port-integrations.json");
+        let packaged_integration_config = temp
+            .path()
+            .join("builder/.codex-linux/port-integrations.json");
         let builder_integration_config = temp
             .path()
             .join("builder/port-integrations/integrations.json");
 
         fs::create_dir_all(builder_integration_config.parent().unwrap())?;
+        fs::create_dir_all(packaged_integration_config.parent().unwrap())?;
+        fs::write(
+            &packaged_integration_config,
+            r#"{"enabled":["conversation-mode"],"disabled":["open-target-discovery"]}"#,
+        )?;
         fs::write(
             &builder_integration_config,
             r#"{"enabled":["codex-wrapper-updater"]}"#,
@@ -585,8 +601,19 @@ mod tests {
 
         assert_eq!(
             effective_integration_config_path(&config),
-            Some(builder_integration_config.clone())
+            Some(packaged_integration_config.clone())
         );
+
+        fs::remove_file(&packaged_integration_config)?;
+        assert_eq!(
+            effective_integration_config_path(&config),
+            Some(builder_integration_config)
+        );
+
+        fs::write(
+            &packaged_integration_config,
+            r#"{"enabled":["conversation-mode"],"disabled":["open-target-discovery"]}"#,
+        )?;
 
         fs::create_dir_all(&settings_dir)?;
         fs::write(&saved_integration_config, r#"{"enabled":["read-aloud"]}"#)?;

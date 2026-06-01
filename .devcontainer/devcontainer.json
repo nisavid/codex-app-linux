@@ -5,7 +5,7 @@
     "context": ".."
   },
   "remoteUser": "vscode",
-  "workspaceFolder": "/workspaces/codex-desktop-linux",
+  "workspaceFolder": "/workspaces/codex-app-linux",
   "customizations": {
     "vscode": {
       "extensions": [

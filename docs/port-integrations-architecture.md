@@ -60,7 +60,7 @@ auto-updates therefore rebuild with the same opt-in integrations.
 Declarative staged files are tracked in
 `.codex-linux/port-integrations-staged.json`. On the next install, the framework
 removes the previously tracked declarative resources and runtime hooks before
-staging the currently enabled set, so disabling a integration removes its
+staging the currently enabled set, so disabling an integration removes its
 framework-owned runtime hooks. Legacy `stage.sh` hooks are not tracked by this
 manifest and must clean up any integration-owned files themselves.
 

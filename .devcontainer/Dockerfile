@@ -60,4 +60,4 @@ RUN rustup component add rustfmt clippy
 RUN printf '%s\n' 'export PATH="/usr/local/cargo/bin:${PATH}"' > /etc/profile.d/rust-cargo-path.sh
 
 USER $USERNAME
-WORKDIR /workspaces/codex-desktop-linux
+WORKDIR /workspaces/codex-app-linux

@@ -123,6 +123,20 @@ clear_update_builder_port_integration_config() {
         "$update_builder_root/port-integrations/features.json"
 }
 
+stage_update_builder_resolved_port_integration_config() {
+    local update_builder_root="$1"
+    local helper="$REPO_DIR/scripts/lib/port-integrations.js"
+    local node_bin
+    local config_dir="$update_builder_root/.codex-linux"
+    local config_path="$config_dir/port-integrations.json"
+
+    [ -f "$helper" ] || error "Missing port integrations helper: $helper"
+
+    mkdir -p "$config_dir"
+    node_bin="$(package_node_binary)"
+    "$node_bin" "$helper" --resolved-config-json > "$config_path"
+}
+
 port_integrations_root_path() {
     local helper="$REPO_DIR/scripts/lib/port-integrations.js"
     local node_bin
@@ -143,6 +157,7 @@ stage_update_builder_port_integrations_tree() {
 
     mkdir -p "$target"
     cp -a "$source_root/." "$target/"
+    stage_update_builder_resolved_port_integration_config "$update_builder_root"
     clear_update_builder_port_integration_config "$update_builder_root"
 }
 

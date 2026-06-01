@@ -930,11 +930,15 @@ function main() {
     process.stdout.write(`${JSON.stringify(integrationsJsonSummary(), null, 2)}\n`);
     return;
   }
+  if (command === "--resolved-config-json") {
+    process.stdout.write(`${JSON.stringify(resolvedPortIntegrationsConfig(), null, 2)}\n`);
+    return;
+  }
   if (command === "--integrations-root" || command === "--features-root") {
     process.stdout.write(`${portIntegrationsRoot()}\n`);
     return;
   }
-  console.error("Usage: port-integrations.js --enabled | --integrations-json | --features-json | --integrations-root | --features-root | --stage-install <install-dir> | --staged-files-json <install-dir> | --stage-hooks | --package-hooks <format>");
+  console.error("Usage: port-integrations.js --enabled | --integrations-json | --features-json | --resolved-config-json | --integrations-root | --features-root | --stage-install <install-dir> | --staged-files-json <install-dir> | --stage-hooks | --package-hooks <format>");
   process.exit(1);
 }
 

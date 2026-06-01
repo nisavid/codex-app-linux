@@ -421,7 +421,7 @@ fn write_integration_config(enabled: &[String], disabled: &[String]) -> Result<(
     });
     let serialized =
         serde_json::to_string_pretty(&value).context("Failed to serialize integration config")?;
-    std::fs::write(&path, format!("{serialized}\n"))
+    config::atomic_write(&path, format!("{serialized}\n").as_bytes())
         .with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
 }
@@ -661,6 +661,35 @@ if (arg === "--integrations-json") {
             ),
             std::collections::HashSet::from(["alpha".to_string()])
         );
+
+        std::env::remove_var("CODEX_LINUX_SETTINGS_FILE");
+    }
+
+    #[test]
+    fn write_integration_config_uses_atomic_write() {
+        let _g = env_lock();
+        let settings = tempdir().unwrap();
+        let settings_file = settings.path().join("settings.json");
+        std::env::set_var("CODEX_LINUX_SETTINGS_FILE", &settings_file);
+
+        write_integration_config(&["alpha".to_string()], &["beta".to_string()]).unwrap();
+
+        let integration_config = settings.path().join("port-integrations.json");
+        let content = std::fs::read_to_string(&integration_config).unwrap();
+        let value = serde_json::from_str::<serde_json::Value>(&content).unwrap();
+        assert_eq!(value["enabled"], serde_json::json!(["alpha"]));
+        assert_eq!(value["disabled"], serde_json::json!(["beta"]));
+        let temp_entries = std::fs::read_dir(settings.path())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".port-integrations.json.tmp.")
+            })
+            .count();
+        assert_eq!(temp_entries, 0);
 
         std::env::remove_var("CODEX_LINUX_SETTINGS_FILE");
     }
