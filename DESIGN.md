@@ -5,11 +5,11 @@ description: "Codex-native visual guidance for a local hardening and finishing f
 colors:
   primary: "#1E1E1E"
   on-primary: "#FFFFFF"
-  success: "#3A7D44"
-  success-border: "#4A9D54"
-  warning: "#6B5300"
-  warning-border: "#A07C00"
-  on-warning: "#FFE9A8"
+  updater-available: "#3A7D44"
+  updater-available-border: "#4A9D54"
+  updater-devmode: "#6B5300"
+  updater-devmode-border: "#A07C00"
+  updater-devmode-text: "#FFE9A8"
   outline: "#9AA0A6"
 typography:
   body-md:
@@ -105,9 +105,12 @@ remain prose-only evidence so agents do not turn them into a default UI palette.
 ### Functional States
 
 - **Updater Available Green** (`#3A7D44`, border `#4A9D54`) - Fork-authored
-  updater button state for an available Codex App update.
+  updater button state for an available Codex App update. Frontmatter token
+  keys: `updater-available`, `updater-available-border`.
 - **Updater Dev-Mode Amber** (`#6B5300`, border `#A07C00`, text `#FFE9A8`) -
   Fork-authored updater button state for a local build ahead of upstream.
+  Frontmatter token keys: `updater-devmode`, `updater-devmode-border`,
+  `updater-devmode-text`.
 - **Updater SHA Muted Gray** (`#9AA0A6`, `rgba(120,120,120,0.16)`,
   `rgba(120,120,120,0.28)`) - Fork-authored installed-build chip styling for
   compact metadata. The rgba values are prose-only evidence because DESIGN.md
@@ -373,23 +376,7 @@ mobile setup, Computer Use, or connected-host state must be backed by real
 account, host, app-server, device key, and thread/session evidence. A
 connected-looking state is not enough by itself.
 
-## Do's and Don'ts
-
-### Do
-
-- Do preserve the official Codex app's product feel, interaction density, and
-  practical tone unless this fork owns the surface being changed.
-- Do expose package, updater, desktop, and port integration details only when
-  they help users make correct local decisions.
-- Do use real generated app output, real source patches, real screenshots, and
-  reproducible visual-capture pipelines.
-- Do model future settings, side panels, command palettes, and extension
-  directories on the official Codex app patterns observed in live inspection.
-- Do target WCAG 2.2 AA for fork-authored UI overlays, docs screenshots, and
-  visual acceptance criteria.
-- Do use color-independent labels, icons, or text for status changes.
-
-### Evidence Gaps
+## Evidence Gaps
 
 - No generated `codex-app/` tree is present in this checkout, so official
   generated bundle tokens, exact app CSS variables, and generated settings
@@ -406,6 +393,22 @@ connected-looking state is not enough by itself.
 - This task observed Settings category structure, component vocabulary, and
   side-panel behavior. It did not record private account values, device names,
   local paths, chat titles, or Usage & billing details as durable evidence.
+
+## Do's and Don'ts
+
+### Do
+
+- Do preserve the official Codex app's product feel, interaction density, and
+  practical tone unless this fork owns the surface being changed.
+- Do expose package, updater, desktop, and port integration details only when
+  they help users make correct local decisions.
+- Do use real generated app output, real source patches, real screenshots, and
+  reproducible visual-capture pipelines.
+- Do model future settings, side panels, command palettes, and extension
+  directories on the official Codex app patterns observed in live inspection.
+- Do target WCAG 2.2 AA for fork-authored UI overlays, docs screenshots, and
+  visual acceptance criteria.
+- Do use color-independent labels, icons, or text for status changes.
 
 ### Don't
 
