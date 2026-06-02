@@ -1280,6 +1280,8 @@ test("Linux remote-control enablement bridge refreshes empty connection snapshot
   assert.equal(calls[0].method, "set-remote-control-connections-enabled");
   assert.equal(calls[0].params.enabled, true);
   assert.equal(calls[1].method, "refresh-remote-control-connections");
+  assert.equal(calls[1].params != null, true);
+  assert.equal(Object.keys(calls[1].params).length, 0);
   assert.equal(calls[2].method, "set-remote-connection-auto-connect");
   assert.equal(calls[2].params.hostId, "remote-control:env_local");
   assert.equal(calls[2].params.autoConnect, true);
