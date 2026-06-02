@@ -45,7 +45,9 @@ Medium priority:
 
 - [Review generated-app Electron IPC and file-manager handling](https://github.com/nisavid/codex-app-linux/issues/57)
 - [Review Linux Computer Use desktop-control boundary](https://github.com/nisavid/codex-app-linux/issues/58)
-- [Review experimental remote-control and Codex mobile host boundary](https://github.com/nisavid/codex-app-linux/issues/59)
+- [Review experimental remote-control and Codex mobile host boundary](https://github.com/nisavid/codex-app-linux/issues/59):
+  see [Remote Mobile Host Boundary Review](remote-mobile-host-boundary-review.md)
+  for the host-state matrix and repo-local evidence.
 - [Review bundled browser and Chrome native-host boundary](https://github.com/nisavid/codex-app-linux/issues/60)
 - [Require trusted metadata for non-default DMG sources](https://github.com/nisavid/codex-app-linux/issues/61)
 - [Pin executable build inputs outside the Nix path](https://github.com/nisavid/codex-app-linux/issues/62)

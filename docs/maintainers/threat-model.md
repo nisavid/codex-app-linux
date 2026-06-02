@@ -456,12 +456,17 @@ end-to-end authorization path.
 plumbing without fabricating OpenAI enrollment, connected-client, or MFA
 state; patches are descriptor-scoped and fail soft; Linux device keys are stored
 in a per-user XDG config file with `0600` mode; and tests cover key creation,
-signing, deletion, visibility gating, and Linux-specific copy.
+signing, deletion, visibility gating, local host auto-connect selection,
+missing local host identity, refreshed connection snapshots, and Linux-specific
+copy.
 
 **Gaps:** Linux keys are software-only and same-user readable; fork-side tests
-cannot prove OpenAI account/mobile authorization semantics; remote-control
-patches need fresh security review before being treated as general-ready
-functionality.
+cannot prove OpenAI account/mobile authorization semantics; connected-looking
+UI is not proof that the intended live host, app-server or managed daemon, and
+thread/session are current, reachable, and authorized; remote-control patches
+need fresh security review and the host-state matrix in
+[Remote Mobile Host Boundary Review](remote-mobile-host-boundary-review.md)
+before being treated as general-ready functionality.
 
 **Priority:** High when touching remote-control/mobile behavior; Medium
 otherwise.
@@ -584,7 +589,9 @@ still contain arbitrary sensitive values.
 - `port-integrations/remote-control-ui/` and
   `port-integrations/remote-mobile-control/`: port integrations for
   remote-control/mobile UI gates, app-server config preservation, Linux
-  device-key storage, and generated-copy patches.
+  device-key storage, generated-copy patches, and host-state evidence. See
+  [Remote Mobile Host Boundary Review](remote-mobile-host-boundary-review.md)
+  for the host-state matrix.
 - `scripts/lib/dmg.sh`: installer DMG download and version extraction.
 - `scripts/lib/native-modules.sh`: native dependency version floors and
   Electron-specific temporary source compatibility patches.

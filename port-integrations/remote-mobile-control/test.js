@@ -1188,6 +1188,103 @@ test("Linux remote-control enablement bridge auto-connects only this Desktop hos
   assert.equal(calls[3].params.autoConnect, false);
 });
 
+test("Linux remote-control enablement bridge leaves remote hosts disconnected without a local host identity", async () => {
+  const source = syntheticAppMainEnablementBridgeBundle();
+  const patched = applyLinuxRemoteControlEnablementBridgePatch(source);
+
+  const calls = [];
+  const context = {
+    DF: "[remote-connections/slingshot-gate-bridge]",
+    navigator: { userAgent: "X11; Linux x86_64" },
+    Promise,
+    q: { warning() {} },
+    Q: {
+      useEffect(callback) {
+        callback();
+      },
+    },
+    sc: () => false,
+    Z: { c: () => [] },
+    $o: (method, { params }) => {
+      calls.push({ method, params });
+      if (method === "set-remote-control-connections-enabled") {
+        return Promise.resolve({
+          remoteControlConnections: [
+            { hostId: "remote-control:env_one", installationId: "install_one" },
+            { hostId: "remote-control:env_two", installationId: "install_two" },
+          ],
+        });
+      }
+      if (method === "get-global-state") {
+        return Promise.resolve({ value: null });
+      }
+      return Promise.resolve({});
+    },
+  };
+  vm.runInNewContext(`${patched};OF();`, context);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0].method, "set-remote-control-connections-enabled");
+  assert.equal(calls[1].method, "get-global-state");
+  assert.equal(calls[2].method, "set-remote-connection-auto-connect");
+  assert.equal(calls[2].params.hostId, "remote-control:env_one");
+  assert.equal(calls[2].params.autoConnect, false);
+  assert.equal(calls[3].method, "set-remote-connection-auto-connect");
+  assert.equal(calls[3].params.hostId, "remote-control:env_two");
+  assert.equal(calls[3].params.autoConnect, false);
+});
+
+test("Linux remote-control enablement bridge refreshes empty connection snapshots before auto-connect", async () => {
+  const source = syntheticAppMainEnablementBridgeBundle();
+  const patched = applyLinuxRemoteControlEnablementBridgePatch(source);
+
+  const calls = [];
+  const context = {
+    DF: "[remote-connections/slingshot-gate-bridge]",
+    navigator: { userAgent: "X11; Linux x86_64" },
+    Promise,
+    q: { warning() {} },
+    Q: {
+      useEffect(callback) {
+        callback();
+      },
+    },
+    sc: () => false,
+    Z: { c: () => [] },
+    $o: (method, { params }) => {
+      calls.push({ method, params });
+      if (method === "set-remote-control-connections-enabled") {
+        return Promise.resolve({ remoteControlConnections: [] });
+      }
+      if (method === "refresh-remote-control-connections") {
+        return Promise.resolve({
+          sharedObjects: {
+            local_remote_control_installation_id: "install_local",
+            remote_control_connections: [
+              { hostId: "remote-control:env_local", installation_id: "install_local" },
+              { hostId: "remote-control:env_stale", installation_id: "install_stale" },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({});
+    },
+  };
+  vm.runInNewContext(`${patched};OF();`, context);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0].method, "set-remote-control-connections-enabled");
+  assert.equal(calls[1].method, "refresh-remote-control-connections");
+  assert.equal(calls[2].method, "set-remote-connection-auto-connect");
+  assert.equal(calls[2].params.hostId, "remote-control:env_local");
+  assert.equal(calls[2].params.autoConnect, true);
+  assert.equal(calls[3].method, "set-remote-connection-auto-connect");
+  assert.equal(calls[3].params.hostId, "remote-control:env_stale");
+  assert.equal(calls[3].params.autoConnect, false);
+});
+
 test("patched Linux device-key provider can create, sign with, and delete a key", async () => {
   const configHome = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-key-store-"));
   try {

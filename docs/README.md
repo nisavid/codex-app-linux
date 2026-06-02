@@ -51,6 +51,8 @@ Use this index to choose the smallest document that matches your goal.
   model for scans and reviews.
 - [Security Backlog](maintainers/security-backlog.md) points to security
   backlog issues and routes supply-chain review through `@codex-security`.
+- [Remote Mobile Host Boundary Review](maintainers/remote-mobile-host-boundary-review.md)
+  records the host-state matrix for remote-control and Codex mobile review.
 - [Agentic Maintenance Policy](policies/agentic-maintenance.md) explains what
   belongs in tracked docs, what belongs in agent policy, and what should remain
   local session evidence.
