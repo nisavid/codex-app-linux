@@ -28,4 +28,4 @@ tokio = { version = "1.52.3", features = ["macros", "rt", "time"] }
 wayland-client = "0.31.11"
 wayland-protocols = { version = "0.32.9", features = ["client", "staging"] }
 xkeysym = "0.2.1"
-zbus = "5.15.0"
+zbus = "5.16.0"
