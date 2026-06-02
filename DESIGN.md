@@ -10,7 +10,7 @@ colors:
   updater-devmode: "#6B5300"
   updater-devmode-border: "#A07C00"
   updater-devmode-text: "#FFE9A8"
-  outline: "#9AA0A6"
+  sha-chip-outline: "#9AA0A6"
 typography:
   body-md:
     fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"
@@ -113,8 +113,9 @@ remain prose-only evidence so agents do not turn them into a default UI palette.
   keys: `updater-devmode`, `updater-devmode-border`, `updater-devmode-text`.
 - **Updater SHA Muted Gray** (`#9AA0A6`, `rgba(120,120,120,0.16)`,
   `rgba(120,120,120,0.28)`) - Fork-authored installed-build chip styling for
-  compact metadata. The rgba values are prose-only evidence because DESIGN.md
-  frontmatter colors must stay hex sRGB.
+  compact metadata. Frontmatter token key: `sha-chip-outline`. The rgba values
+  are prose-only evidence because DESIGN.md frontmatter colors must stay hex
+  sRGB.
 
 ### Evidence-Only Brand Asset Colors
 
