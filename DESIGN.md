@@ -108,9 +108,9 @@ remain prose-only evidence so agents do not turn them into a default UI palette.
   updater button state for an available Codex App update. Frontmatter token
   keys: `updater-available`, `updater-available-border`.
 - **Updater Dev-Mode Amber** (`#6B5300`, border `#A07C00`, text `#FFE9A8`) -
-  Fork-authored updater button state for a local build ahead of upstream.
-  Frontmatter token keys: `updater-devmode`, `updater-devmode-border`,
-  `updater-devmode-text`.
+  Fork-authored updater button state for a local build ahead of the official
+  OpenAI app bundle version being compared by the updater. Frontmatter token
+  keys: `updater-devmode`, `updater-devmode-border`, `updater-devmode-text`.
 - **Updater SHA Muted Gray** (`#9AA0A6`, `rgba(120,120,120,0.16)`,
   `rgba(120,120,120,0.28)`) - Fork-authored installed-build chip styling for
   compact metadata. The rgba values are prose-only evidence because DESIGN.md
