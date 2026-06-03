@@ -36,6 +36,8 @@ Use this index to choose the smallest document that matches your goal.
 - [Fork Sync Policy](maintainers/fork-sync-policy.md) defines the current
   upstream sync workflow, renamed-path reconciliation, sync ledger, local
   gates, and uncertainty triage.
+- [Fork Sync Ledger](maintainers/fork-sync-ledger/) records durable summaries,
+  special-handling notes, and follow-up decisions for broad upstream syncs.
 - [Changelog](../CHANGELOG.md) tracks user-visible releases and packaging
   behavior changes.
 
