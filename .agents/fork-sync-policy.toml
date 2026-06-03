@@ -18,7 +18,9 @@ rename_map = "docs/maintainers/fork-divergences.md#current-local-rename-and-comp
 sync_procedure = "docs/maintainers/fork-sync-policy.md"
 sync_ledger = "docs/maintainers/fork-sync-ledger/"
 uncertainty_destination = "operator escalation or durable discoverable follow-up"
+# Any broad upstream sync must keep a sync ledger.
 sync_ledger_required = true
+# The durable ledger must be tracked under sync_ledger; PR-body notes are only a summary.
 in_tree_sync_ledger_required = true
 renamed_path_reconciliation_required = true
 policy_gap_closeout_required = true
