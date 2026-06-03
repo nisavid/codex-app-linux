@@ -682,11 +682,15 @@ function detectLatestComposerFooterControls(source) {
   };
 }
 
-function detectCurrentPermissionsRateLimitFooterSymbols(source) {
-  if (!source.includes("function Sm(e){") || !source.includes("function Rm(e){")) {
+function detectFunctionOpeningBeforeIndex(source, index) {
+  const functionStart = source.lastIndexOf("function ", index);
+  if (functionStart < 0) {
     return null;
   }
+  return source.slice(functionStart).match(/^function [A-Za-z_$][\w$]*\([A-Za-z_$][\w$]*\)\{/)?.[0] ?? null;
+}
 
+function detectCurrentPermissionsRateLimitFooterSymbols(source) {
   const jsxAlias =
     source.match(/var ([A-Za-z_$][\w$]*)=Hr\(\);/)?.[1] ??
     source.match(/import\{[^}]*\bt as ([A-Za-z_$][\w$]*)\}from"\.\/jsx-runtime-[^"]+"/)?.[1] ??
@@ -694,10 +698,18 @@ function detectCurrentPermissionsRateLimitFooterSymbols(source) {
   const rateLimitAliasMatch = source.match(
     /\{data:([A-Za-z_$][\w$]*)\}=([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\),[\s\S]{0,2000}?([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\(\1\),([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\(\1\),[A-Za-z_$][\w$]*=[A-Za-z_$][\w$]*\(\4,\{activeLimitName:\6,selectedModel:[A-Za-z_$][\w$]*\}\),([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\(\4,\{activeLimitName:\6,selectedModel:[A-Za-z_$][\w$]*\}\)/,
   );
-  const activeModeHook = source.match(
+  const activeModeHookMatch = source.match(
     /\{activeMode:[A-Za-z_$][\w$]*,modes:[A-Za-z_$][\w$]*,setSelectedMode:[A-Za-z_$][\w$]*\}=([A-Za-z_$][\w$]*)\([A-Za-z_$][\w$]*\)/,
-  )?.[1] ?? null;
-  if (jsxAlias == null || rateLimitAliasMatch == null || activeModeHook == null) {
+  );
+  if (jsxAlias == null || rateLimitAliasMatch == null || activeModeHookMatch == null) {
+    return null;
+  }
+
+  const insertionNeedle = detectFunctionOpeningBeforeIndex(source, activeModeHookMatch.index);
+  if (insertionNeedle == null) {
+    console.warn(
+      "WARN: Could not find Linux permissions rate limit footer insertion point — skipping footer helper patch",
+    );
     return null;
   }
 
@@ -708,8 +720,8 @@ function detectCurrentPermissionsRateLimitFooterSymbols(source) {
     entriesFn: rateLimitAliasMatch[5],
     activeLimitFn: rateLimitAliasMatch[7],
     summaryFn: rateLimitAliasMatch[9],
-    activeModeHook,
-    insertionNeedle: "function Sm(e){",
+    activeModeHook: activeModeHookMatch[1],
+    insertionNeedle,
   };
 }
 
@@ -767,7 +779,7 @@ function applyPersistentRateLimitFooterPatch(currentSource) {
     "function codexLinuxRateLimitFooter({conversationId:e}){try{let t=(0,$.c)(8),{activeMode:n}=or(e),r=n?.settings.model??null,{data:i}=St(ue),a=ma(i),o=la(i),s=da(a,{activeLimitName:o,selectedModel:r}).filter(og).slice(0,2);if(s.length===0)return null;let c=ht(),l;if(t[0]!==s||t[1]!==c){l=s.map(e=>`${Xh(e.bucket.windowDurationMins??null,c)} ${c.formatNumber(Sa(e.bucket.usedPercent??0),{maximumFractionDigits:0})}%`).join(` / `),t[0]=s,t[1]=c,t[2]=l}else l=t[2];let u;return t[3]!==l?(u=(0,Q.jsx)(`span`,{className:`composer-footer__label--sm inline-flex shrink-0 items-center gap-1.5 rounded-full border border-token-border-light bg-token-main-surface-primary/80 px-2 py-1 text-xs text-token-text-secondary shadow-sm dark:border-white/10`,children:l}),t[3]=l,t[4]=u):u=t[4],u}catch(e){return null}}";
   const currentPermissionsFooterFunction = currentPermissionsFooterSymbols == null
     ? null
-    : `function codexLinuxRateLimitFooter({conversationId:e}){try{let t=${currentPermissionsFooterSymbols.activeModeHook}(e)?.activeMode?.settings.model??null,{data:n}=${currentPermissionsFooterSymbols.queryHook}(${currentPermissionsFooterSymbols.queryKey}),r=${currentPermissionsFooterSymbols.entriesFn}(n),i=${currentPermissionsFooterSymbols.activeLimitFn}(n),a=${currentPermissionsFooterSymbols.summaryFn}(r,{activeLimitName:i,selectedModel:t});if(a==null)return null;let o=[];if(a.windowMinutes!=null){let e=a.windowMinutes;o.push(e>=1440?\`\${Math.ceil(e/1440)}d\`:e>=60?\`\${Math.ceil(e/60)}h\`:\`\${Math.ceil(e)}m\`)}a.remainingPercent!=null&&o.push(\`\${Math.round(a.remainingPercent)}%\`);if(o.length===0)return null;return(0,${currentPermissionsFooterSymbols.jsxAlias}.jsx)(\`span\`,{className:\`composer-footer__label--sm inline-flex shrink-0 items-center gap-1.5 rounded-full border border-token-border-light bg-token-main-surface-primary/80 px-2 py-1 text-xs text-token-text-secondary shadow-sm dark:border-white/10\`,children:o.join(\` \`)})}catch(e){return null}}`;
+    : `function codexLinuxRateLimitFooter({conversationId:e}){try{let t=${currentPermissionsFooterSymbols.activeModeHook}(e)?.activeMode?.settings.model??null,{data:n}=${currentPermissionsFooterSymbols.queryHook}(${currentPermissionsFooterSymbols.queryKey}),r=${currentPermissionsFooterSymbols.entriesFn}(n),i=${currentPermissionsFooterSymbols.activeLimitFn}(n),a=${currentPermissionsFooterSymbols.summaryFn}(r,{activeLimitName:i,selectedModel:t})??${currentPermissionsFooterSymbols.summaryFn}(r,{activeLimitName:i,selectedModel:null});if(a==null)return null;let o=[];if(a.windowMinutes!=null){let e=a.windowMinutes;o.push(e>=1440?\`\${Math.ceil(e/1440)}d\`:e>=60?\`\${Math.ceil(e/60)}h\`:\`\${Math.ceil(e)}m\`)}a.remainingPercent!=null&&o.push(\`\${Math.round(a.remainingPercent)}%\`);if(o.length===0)return null;return(0,${currentPermissionsFooterSymbols.jsxAlias}.jsx)(\`span\`,{className:\`composer-footer__label--sm inline-flex shrink-0 items-center gap-1.5 rounded-full border border-token-border-light bg-token-main-surface-primary/80 px-2 py-1 text-xs text-token-text-secondary shadow-sm dark:border-white/10\`,children:o.join(\` \`)})}catch(e){return null}}`;
 
   if (!patchedSource.includes("function codexLinuxRateLimitFooter(")) {
     const legacyInsertionNeedle = "function TF(e){";

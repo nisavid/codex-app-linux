@@ -145,8 +145,6 @@ Known risks:
 
 - This is not equivalent to macOS Secure Enclave-backed storage. Private key
   material is file-backed and protected by ordinary user file permissions.
-- OpenAI may still reject Linux host enrollment server-side. This integration only
-  removes local macOS-only blockers in the repackaged app.
 - OpenAI may still reject Linux host enrollment or outbound authorization
   server-side. This integration only removes local macOS-only blockers in the
   repackaged app.

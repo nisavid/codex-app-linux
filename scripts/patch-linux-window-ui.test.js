@@ -3607,11 +3607,33 @@ test("persistent rate limit footer adapts to current composer permissions footer
   assert.match(patched, /function codexLinuxRateLimitFooter\(\{conversationId:e\}\)/);
   assert.match(
     patched,
-    /\{data:n\}=Y\(de\),r=_a\(n\),i=da\(n\),a=ya\(r,\{activeLimitName:i,selectedModel:t\}\)/,
+    /\{data:n\}=Y\(de\),r=_a\(n\),i=da\(n\),a=ya\(r,\{activeLimitName:i,selectedModel:t\}\)\?\?ya\(r,\{activeLimitName:i,selectedModel:null\}\)/,
   );
   assert.match(
     patched,
     /\(0,Q\.jsx\)\(Sm,\{conversationId:f,hostId:C,cwdOverride:w\}\),f==null\?null:\(0,Q\.jsx\)\(codexLinuxRateLimitFooter,\{conversationId:f\}\),\(0,Q\.jsx\)\(Rm,\{conversationId:f,hasGoal:y,isGoalActionAvailable:b,onClearGoal:x,showDivider:!0\}\)/,
+  );
+});
+
+test("persistent rate limit footer does not depend on current permissions minified names", () => {
+  const source = [
+    "var $=qt();var Q=Hr();",
+    "function Xv({activeCollaborationMode:t}){let Te=t?.settings.model??null,{data:De}=Y(de),Ie=_a(De),ze=da(De),Be=ma(Ie,{activeLimitName:ze,selectedModel:Te}),Ue=ya(Ie,{activeLimitName:ze,selectedModel:Te});return Be??Ue}",
+    "function Ab(e){return e}",
+    "function Lm(e){let t=(0,$.c)(34),{composerMode:d,conversationId:f,hasGoal:y,isGoalActionAvailable:b,onClearGoal:x,permissionsHostId:C,permissionsCwdOverride:w,showPermissions:T}=e,E=T===void 0?!0:T,k=(0,Q.jsx)(Co,{conversationId:f}),A;t[22]!==d||t[23]!==f||t[24]!==y||t[25]!==b||t[26]!==x||t[27]!==w||t[28]!==C||t[29]!==E?(A=d===`cloud`?null:(0,Q.jsx)(Q.Fragment,{children:E?(0,Q.jsxs)(Q.Fragment,{children:[(0,Q.jsx)(Ab,{conversationId:f,hostId:C,cwdOverride:w}),(0,Q.jsx)(Zz,{conversationId:f,hasGoal:y,isGoalActionAvailable:b,onClearGoal:x,showDivider:!0})]}):null}),t[22]=d,t[23]=f,t[24]=y,t[25]=b,t[26]=x,t[27]=w,t[28]=C,t[29]=E,t[30]=A):A=t[30];let j;return t[31]!==k||t[32]!==A?(j=(0,Q.jsxs)(`div`,{className:`flex min-w-0 items-center gap-[5px]`,children:[k,A]}),t[31]=k,t[32]=A,t[33]=j):j=t[33],j}",
+    "function Zz(e){let t=(0,$.c)(16),{conversationId:n,hasGoal:r,isGoalActionAvailable:i,onClearGoal:a,showDivider:o}=e,{activeMode:s,modes:c,setSelectedMode:l}=cr(n);return l}",
+  ].join("");
+
+  const patched = applyPatchTwice(applyPersistentRateLimitFooterPatch, source);
+
+  assert.match(patched, /function codexLinuxRateLimitFooter\(\{conversationId:e\}\)/);
+  assert.match(
+    patched,
+    /\(0,Q\.jsx\)\(Ab,\{conversationId:f,hostId:C,cwdOverride:w\}\),f==null\?null:\(0,Q\.jsx\)\(codexLinuxRateLimitFooter,\{conversationId:f\}\),\(0,Q\.jsx\)\(Zz,\{conversationId:f,hasGoal:y,isGoalActionAvailable:b,onClearGoal:x,showDivider:!0\}\)/,
+  );
+  assert.match(
+    patched,
+    /selectedModel:t\}\)\?\?ya\(r,\{activeLimitName:i,selectedModel:null\}\)/,
   );
 });
 
