@@ -89,8 +89,10 @@ const {
   applyPersistentRateLimitFooterPatch,
   applyLinuxAppServerFeatureEnablementPatch,
   applyLinuxConfigWriteVersionConflictPatch,
+  applyLinuxFastModeModelGuardPatch,
   applyLinuxSafeMonospaceFontStackPatch,
 } = require("./patches/webview-assets.js");
+const fastModeGuardDescriptors = require("./patches/core/all-linux/webview/fast-mode-guard/patch.js");
 const { patchAssetFiles } = require("./patches/shared.js");
 
 const mainBundlePrefix =
@@ -660,6 +662,88 @@ test("default core patch descriptors are grouped and unique", () => {
     descriptors.find((descriptor) => descriptor.id === "linux-chrome-plugin-auto-install")?.sourcePath,
     /main-process[\\/]browser-integrations[\\/]patch\.js$/,
   );
+});
+
+test("guards fast-mode model tier lookup when serviceTiers is missing", () => {
+  const source = "function m(e){return e.serviceTiers.length>0||e.additionalSpeedTiers?.includes(u)===!0}";
+
+  const patched = applyPatchTwice(applyLinuxFastModeModelGuardPatch, source);
+
+  assert.match(
+    patched,
+    /function m\(e\)\{return\s+\(e\?\.serviceTiers\?\.length\?\?0\)>0\|\|e\?\.additionalSpeedTiers\?\.includes\(u\)===!0\}/,
+  );
+});
+
+test("guards drifted fast-mode tier lookup shapes", () => {
+  const source = [
+    "function y(t){return t.serviceTiers.length > 0 || t.additionalSpeedTiers?.includes(`fast`)}",
+    "const z=e=>e.serviceTiers.length>0||e.additionalSpeedTiers.includes(\"fast\")===!0;",
+  ].join(";");
+
+  const patched = applyPatchTwice(applyLinuxFastModeModelGuardPatch, source);
+
+  assert.match(patched, /\(t\?\.serviceTiers\?\.length\?\?0\)>0\|\|t\?\.additionalSpeedTiers\?\.includes\(`fast`\)===!0/);
+  assert.match(patched, /\(e\?\.serviceTiers\?\.length\?\?0\)>0\|\|e\?\.additionalSpeedTiers\?\.includes\("fast"\)===!0/);
+  assert.doesNotMatch(patched, /[te]\.serviceTiers\.length/);
+});
+
+test("warns when the fast-mode tier lookup is recognizable but unpatchable", () => {
+  const { value, warnings } = captureWarns(() =>
+    applyLinuxFastModeModelGuardPatch(
+      "function m(e){return currentModel().serviceTiers.length > 0 || e.additionalSpeedTiers?.includes(u)===!0}",
+    ),
+  );
+
+  assert.equal(
+    value,
+    "function m(e){return currentModel().serviceTiers.length > 0 || e.additionalSpeedTiers?.includes(u)===!0}",
+  );
+  assert.deepEqual(warnings, [
+    "WARN: Could not find fast-mode model guard insertion point — skipping fast-mode crash guard patch",
+  ]);
+});
+
+test("required fast-mode guard passes when current webview assets are already guarded", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-fast-mode-current-"));
+  try {
+    const assetsDir = path.join(tempRoot, "webview", "assets");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(assetsDir, "app-server-manager-signals.js"),
+      "function sA(e,t){return e?.serviceTiers?.find(e=>e.id===t)??null}function cA(e){return e?.additionalSpeedTiers??[]}",
+    );
+    const report = createPatchReport();
+
+    applyExtractedAppPatchDescriptors(tempRoot, fastModeGuardDescriptors, {}, report);
+
+    const patch = report.patches.find((entry) => entry.name === "linux-fast-mode-model-guard");
+    assert.equal(patch.status, "already-applied");
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("required fast-mode guard patches vulnerable webview assets", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-fast-mode-vulnerable-"));
+  try {
+    const assetsDir = path.join(tempRoot, "webview", "assets");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    const assetPath = path.join(assetsDir, "use-is-fast-mode-enabled.js");
+    fs.writeFileSync(
+      assetPath,
+      "function m(e){return e.serviceTiers.length>0||e.additionalSpeedTiers?.includes(u)===!0}",
+    );
+    const report = createPatchReport();
+
+    applyExtractedAppPatchDescriptors(tempRoot, fastModeGuardDescriptors, {}, report);
+
+    const patch = report.patches.find((entry) => entry.name === "linux-fast-mode-model-guard");
+    assert.equal(patch.status, "applied");
+    assert.match(fs.readFileSync(assetPath, "utf8"), /e\?\.serviceTiers\?\.length/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 function trayBundleFixture() {

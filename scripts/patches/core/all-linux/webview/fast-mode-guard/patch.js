@@ -1,16 +1,49 @@
 "use strict";
 
+const fs = require("node:fs");
+const path = require("node:path");
+
 const { applyLinuxFastModeModelGuardPatch } = require("../../../../webview-assets.js");
+
+function applyLinuxFastModeModelGuardPatchToExtractedApp(extractedDir) {
+  const webviewAssetsDir = path.join(extractedDir, "webview", "assets");
+  if (!fs.existsSync(webviewAssetsDir)) {
+    console.warn(
+      `WARN: Could not find webview assets directory in ${webviewAssetsDir} — skipping fast-mode model guard patch`,
+    );
+    return { changed: false, matched: 0 };
+  }
+
+  const candidates = fs
+    .readdirSync(webviewAssetsDir)
+    .filter((name) => /\.js$/u.test(name))
+    .sort();
+
+  let changed = 0;
+  let matched = 0;
+  for (const candidate of candidates) {
+    const filePath = path.join(webviewAssetsDir, candidate);
+    const source = fs.readFileSync(filePath, "utf8");
+    if (!source.includes("serviceTiers") || !source.includes("additionalSpeedTiers")) {
+      continue;
+    }
+    matched += 1;
+    const patched = applyLinuxFastModeModelGuardPatch(source);
+    if (patched !== source) {
+      fs.writeFileSync(filePath, patched, "utf8");
+      changed += 1;
+    }
+  }
+
+  return { changed, matched };
+}
 
 module.exports = [
   {
     id: "linux-fast-mode-model-guard",
-    phase: "webview-asset",
+    phase: "extracted-app",
     order: 1040,
     ciPolicy: "required-upstream",
-    pattern: /^use-is-fast-mode-enabled-.*\.js$/,
-    missingDescription: "fast-mode availability hook bundle",
-    skipDescription: "fast-mode model guard patch",
-    apply: applyLinuxFastModeModelGuardPatch,
+    apply: applyLinuxFastModeModelGuardPatchToExtractedApp,
   },
 ];
