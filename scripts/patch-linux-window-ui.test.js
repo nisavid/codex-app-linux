@@ -746,6 +746,44 @@ test("required fast-mode guard patches vulnerable webview assets", () => {
   }
 });
 
+test("required fast-mode guard continues after an unreadable webview asset", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-fast-mode-read-error-"));
+  const originalReadFileSync = fs.readFileSync;
+  try {
+    const assetsDir = path.join(tempRoot, "webview", "assets");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    const brokenAssetPath = path.join(assetsDir, "broken.js");
+    const patchedAssetPath = path.join(assetsDir, "use-is-fast-mode-enabled.js");
+    fs.writeFileSync(
+      brokenAssetPath,
+      "function b(e){return e.serviceTiers.length>0||e.additionalSpeedTiers?.includes(u)===!0}",
+    );
+    fs.writeFileSync(
+      patchedAssetPath,
+      "function m(e){return e.serviceTiers.length>0||e.additionalSpeedTiers?.includes(u)===!0}",
+    );
+    fs.readFileSync = (filePath, ...args) => {
+      if (filePath === brokenAssetPath) {
+        throw new Error("synthetic read failure");
+      }
+      return originalReadFileSync.call(fs, filePath, ...args);
+    };
+
+    const { value, warnings } = captureWarns(() =>
+      fastModeGuardDescriptors[0].apply(tempRoot),
+    );
+
+    assert.deepEqual(value, { changed: 1, matched: 1 });
+    assert.deepEqual(warnings, [
+      `WARN: Could not patch fast-mode model guard in ${brokenAssetPath}: synthetic read failure`,
+    ]);
+    assert.match(originalReadFileSync.call(fs, patchedAssetPath, "utf8"), /e\?\.serviceTiers\?\.length/);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 function trayBundleFixture() {
   return [
     "async function Hw(e){return process.platform!==`win32`&&process.platform!==`darwin`?null:(zw=!0,Lw??Rw??(Rw=(async()=>{let r=await Ww(e.buildFlavor,e.repoRoot),i=new n.Tray(r.defaultIcon);return i})()))}",

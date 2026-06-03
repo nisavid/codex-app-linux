@@ -11,7 +11,7 @@ function applyLinuxFastModeModelGuardPatchToExtractedApp(extractedDir) {
     console.warn(
       `WARN: Could not find webview assets directory in ${webviewAssetsDir} — skipping fast-mode model guard patch`,
     );
-    return { changed: false, matched: 0 };
+    return { changed: 0, matched: 0 };
   }
 
   const candidates = fs
@@ -23,15 +23,21 @@ function applyLinuxFastModeModelGuardPatchToExtractedApp(extractedDir) {
   let matched = 0;
   for (const candidate of candidates) {
     const filePath = path.join(webviewAssetsDir, candidate);
-    const source = fs.readFileSync(filePath, "utf8");
-    if (!source.includes("serviceTiers") || !source.includes("additionalSpeedTiers")) {
-      continue;
-    }
-    matched += 1;
-    const patched = applyLinuxFastModeModelGuardPatch(source);
-    if (patched !== source) {
-      fs.writeFileSync(filePath, patched, "utf8");
-      changed += 1;
+    try {
+      const source = fs.readFileSync(filePath, "utf8");
+      if (!source.includes("serviceTiers") || !source.includes("additionalSpeedTiers")) {
+        continue;
+      }
+      matched += 1;
+      const patched = applyLinuxFastModeModelGuardPatch(source);
+      if (patched !== source) {
+        fs.writeFileSync(filePath, patched, "utf8");
+        changed += 1;
+      }
+    } catch (error) {
+      console.warn(
+        `WARN: Could not patch fast-mode model guard in ${filePath}: ${error.message}`,
+      );
     }
   }
 
