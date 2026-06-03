@@ -711,11 +711,11 @@ test("required fast-mode guard passes when current webview assets are already gu
     fs.mkdirSync(assetsDir, { recursive: true });
     fs.writeFileSync(
       path.join(assetsDir, "app-server-manager-signals.js"),
-      "function sA(e,t){return e?.serviceTiers?.find(e=>e.id===t)??null}function cA(e){return e?.additionalSpeedTiers??[]}",
+      "var labels={fastLabel:{id:`serviceTier.fast.label`},ultrafastLabel:{id:`serviceTier.ultrafast.label`}};function sA(e,t){return t==null?null:e?.serviceTiers?.find(e=>e.id===t)??null}function mA(e,t){return t==null?e?.defaultServiceTier??null:t}",
     );
     const report = createPatchReport();
 
-    applyExtractedAppPatchDescriptors(tempRoot, fastModeGuardDescriptors, {}, report);
+    applyExtractedAppPatchDescriptors(tempRoot, normalizePatchDescriptors(fastModeGuardDescriptors), {}, report);
 
     const patch = report.patches.find((entry) => entry.name === "linux-fast-mode-model-guard");
     assert.equal(patch.status, "already-applied");
@@ -736,7 +736,7 @@ test("required fast-mode guard patches vulnerable webview assets", () => {
     );
     const report = createPatchReport();
 
-    applyExtractedAppPatchDescriptors(tempRoot, fastModeGuardDescriptors, {}, report);
+    applyExtractedAppPatchDescriptors(tempRoot, normalizePatchDescriptors(fastModeGuardDescriptors), {}, report);
 
     const patch = report.patches.find((entry) => entry.name === "linux-fast-mode-model-guard");
     assert.equal(patch.status, "applied");
@@ -780,6 +780,24 @@ test("required fast-mode guard continues after an unreadable webview asset", () 
     assert.match(originalReadFileSync.call(fs, patchedAssetPath, "utf8"), /e\?\.serviceTiers\?\.length/);
   } finally {
     fs.readFileSync = originalReadFileSync;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("required fast-mode guard fails when no webview asset matches", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-fast-mode-no-match-"));
+  try {
+    const assetsDir = path.join(tempRoot, "webview", "assets");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(path.join(assetsDir, "unrelated.js"), "console.log('no fast mode tier lookup');");
+    const report = createPatchReport();
+
+    applyExtractedAppPatchDescriptors(tempRoot, normalizePatchDescriptors(fastModeGuardDescriptors), {}, report);
+
+    const patch = report.patches.find((entry) => entry.name === "linux-fast-mode-model-guard");
+    assert.equal(patch.status, "failed-required");
+    assert.match(patch.reason, /Could not find fast-mode model guard candidate/);
+  } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });

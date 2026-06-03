@@ -5,6 +5,16 @@ const path = require("node:path");
 
 const { applyLinuxFastModeModelGuardPatch } = require("../../../../webview-assets.js");
 
+function hasFastModeModelGuardCandidate(source) {
+  if (!source.includes("serviceTiers")) {
+    return false;
+  }
+  return source.includes("additionalSpeedTiers") ||
+    source.includes("serviceTier.fast.label") ||
+    source.includes("serviceTier.ultrafast.label") ||
+    source.includes("defaultServiceTier");
+}
+
 function applyLinuxFastModeModelGuardPatchToExtractedApp(extractedDir) {
   const webviewAssetsDir = path.join(extractedDir, "webview", "assets");
   if (!fs.existsSync(webviewAssetsDir)) {
@@ -25,7 +35,7 @@ function applyLinuxFastModeModelGuardPatchToExtractedApp(extractedDir) {
     const filePath = path.join(webviewAssetsDir, candidate);
     try {
       const source = fs.readFileSync(filePath, "utf8");
-      if (!source.includes("serviceTiers") || !source.includes("additionalSpeedTiers")) {
+      if (!hasFastModeModelGuardCandidate(source)) {
         continue;
       }
       matched += 1;
@@ -39,6 +49,11 @@ function applyLinuxFastModeModelGuardPatchToExtractedApp(extractedDir) {
         `WARN: Could not patch fast-mode model guard in ${filePath}: ${error.message}`,
       );
     }
+  }
+  if (matched === 0) {
+    console.warn(
+      `WARN: Could not find fast-mode model guard candidate in ${webviewAssetsDir} — skipping fast-mode model guard patch`,
+    );
   }
 
   return { changed, matched };
