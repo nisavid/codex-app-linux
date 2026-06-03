@@ -37,10 +37,11 @@ Privacy and correctness constraints:
   AppShots settings. The dropdown mirrors upstream's bare-modifier choices where
   they are practical on Linux (`Alt + Alt` and `Shift + Shift`) and keeps
   `Ctrl+Super+A` as a non-bare fallback.
-- `Alt + Alt` and `Shift + Shift` are backed by an integration-local
-  `bare-modifier-monitor` helper staged into `resources/native/`. It uses
-  `xinput` and `xmodmap`, so it is expected to work on X11 sessions and fail
-  closed elsewhere.
+- `Alt + Alt` and `Shift + Shift` are backed by a port integration helper,
+  `bare-modifier-monitor`, staged into `resources/native/`. It requires
+  the left and right modifier keycodes, so tapping only one physical modifier
+  twice does not trigger AppShots. It uses `xinput` and `xmodmap`, so it is
+  expected to work on X11 sessions and fail closed elsewhere.
 
 Run the integration self-test:
 
