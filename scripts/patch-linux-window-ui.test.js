@@ -76,6 +76,7 @@ const {
 } = require("./ci/validate-patch-report.js");
 const {
   buildInfo,
+  githubCommitUrl,
   packageProfile,
   sanitizeGitRemoteUrl,
   sourceInfo,
@@ -87,6 +88,8 @@ const {
 const {
   applyPersistentRateLimitFooterPatch,
   applyLinuxAppServerFeatureEnablementPatch,
+  applyLinuxConfigWriteVersionConflictPatch,
+  applyLinuxSafeMonospaceFontStackPatch,
 } = require("./patches/webview-assets.js");
 const { patchAssetFiles } = require("./patches/shared.js");
 
@@ -144,6 +147,39 @@ test("asset patch helpers match every file when passed a global regex", () => {
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("Linux safe monospace font stack patch prioritizes Linux mono families", () => {
+  const source = "var e=`ui-monospace, \"SFMono-Regular\", Menlo, Consolas, monospace`;export{e as t};";
+  const patched = applyPatchTwice(applyLinuxSafeMonospaceFontStackPatch, source);
+
+  assert.match(
+    patched,
+    /`"Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono", "Ubuntu Mono", ui-monospace,/,
+  );
+  assert.doesNotMatch(patched, /var e=`ui-monospace, "SFMono-Regular"/);
+});
+
+test("Linux safe monospace font stack patch accepts upstream-safe stacks", () => {
+  const source =
+    "var e=`DejaVu Sans Mono, ui-monospace, \"SFMono-Regular\", Menlo, Consolas, monospace`;export{e as t};";
+  const { value, warnings } = captureWarns(() =>
+    applyLinuxSafeMonospaceFontStackPatch(source),
+  );
+
+  assert.equal(value, source);
+  assert.deepEqual(warnings, []);
+});
+
+test("Linux safe monospace font stack patch warns when the unsafe stack drifts", () => {
+  const source = "var e=buildFontStack(`ui-monospace`,`monospace`);export{e as t};";
+  const { value, warnings } = captureWarns(() =>
+    applyLinuxSafeMonospaceFontStackPatch(source),
+  );
+
+  assert.equal(value, source);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /Could not find Linux monospace font stack insertion point/);
 });
 
 test("subagent nickname metadata patch accepts session metadata shape", () => {
@@ -346,6 +382,7 @@ test("build info captures official DMG hash, port integrations, distro profile, 
     assert.equal(info.source.shortCommit, "abcdef123456");
     assert.equal(info.source.remote, "https://example.com/org/codex-app-linux.git");
     assert.equal(info.source.version, "1.2.3-wrapper");
+    assert.equal(info.source.commitUrl, null);
     assert.equal(info.packageProfile.id, "debian-family");
     assert.equal(info.packageProfile.packageManager, "apt");
     assert.deepEqual(info.portIntegrations.enabled, ["read-aloud", "zed-opener"]);
@@ -380,6 +417,7 @@ test("build info sanitizes staged source metadata from packaged update-builder",
 
     const info = sourceInfo(tempRoot, {});
     assert.equal(info.remote, "https://example.com/org/repo.git");
+    assert.equal(info.commitUrl, null);
     assert.equal(info.sourceInfoPath, undefined);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -427,6 +465,19 @@ test("build info strips credentials from URL-form source remotes", () => {
   assert.equal(sanitizeGitRemoteUrl("foo/bar.git"), null);
   assert.equal(sanitizeGitRemoteUrl("~/repo.git"), null);
   assert.equal(sanitizeGitRemoteUrl("git@github.com:org/repo.git"), "git@github.com:org/repo.git");
+});
+
+test("build info derives GitHub commit links from common remote forms", () => {
+  assert.equal(
+    githubCommitUrl("git@github.com:ilysenko/codex-desktop-linux.git", "0123456789abcdef"),
+    "https://github.com/ilysenko/codex-desktop-linux/commit/0123456789abcdef",
+  );
+  assert.equal(
+    githubCommitUrl("ssh://git@github.com/ilysenko/codex-desktop-linux.git", "fedcba9876543210"),
+    "https://github.com/ilysenko/codex-desktop-linux/commit/fedcba9876543210",
+  );
+  assert.equal(githubCommitUrl("https://example.com/org/repo.git", "0123456789abcdef"), null);
+  assert.equal(githubCommitUrl("https://github.com/org/repo.git", "not-a-sha"), null);
 });
 
 test("package profile distinguishes Fedora package managers by major version", () => {
@@ -582,6 +633,7 @@ test("default core patch descriptors are grouped and unique", () => {
     "opaque-window-default-general-settings",
     "opaque-window-default-webview-index",
     "opaque-window-default-resolved-theme",
+    "linux-safe-monospace-font-stack",
     "subagent-nickname-metadata-shape",
     "automation-schedule-multi-time-rrule",
     "linux-chrome-native-host-runtime",
@@ -1423,6 +1475,9 @@ test("adds Linux build information to the tray menu", () => {
   assert.match(patched, /dirty===null/);
   assert.match(patched, /dirty state unknown/);
   assert.match(patched, /Codex App build information/);
+  assert.match(patched, /Source commit URL:/);
+  assert.match(patched, /Open Commit/);
+  assert.match(patched, /shell\?\.openExternal/);
 });
 
 test("build information tray detail prefers readable dirty-unknown revisions", () => {
@@ -2195,6 +2250,26 @@ test("adds Linux package updater to current bootstrap updater wiring after callb
   assert.match(patched, /codexLinuxPackageUpdateBridge=process\.platform===`linux`/);
   assert.match(patched, /s=codexLinuxPackageUpdateBridge\.manager/);
   assert.match(patched, /ne=codexLinuxPackageUpdateBridge\.quitForUpdate/);
+  assert.match(patched, /send:e=>M\.sendMessageToAllRegisteredWindows\(e\)/);
+});
+
+test("adds Linux package updater to current bootstrap updater wiring when dispatcher is farther away", () => {
+  const source = [
+    "let n=require(`electron`),i=require(`node:path`),o=require(`node:fs`),u=require(`node:child_process`);",
+    "c({onUpdateReadyChanged:e=>{a.sendMessageToAllRegisteredWindows({type:`app-update-ready-changed`,isUpdateReady:e})}});",
+    "var rK={enabled:!1,running:!1,state:`disabled`};",
+    "async function iK(){",
+    "let{startedAtMs:r,buildFlavor:a,desktopSentry:o,sparkleManager:s,setSparkleBridgeHandlers:c,setSecondInstanceArgsHandler:l}=t.x(),d=t.T.shouldIncludeSparkle(a,process.platform,process.env);",
+    "let M=oG({});let ee=pB(),te=()=>{ee.allowQuitTemporarilyForUpdateInstall(),n.app.quit()};",
+    "c({onInstallProgressChanged:e=>{E&&M.sendMessageToAllRegisteredWindows({type:`app-update-install-progress-changed`,installProgressPercent:e})},onUpdateReadyChanged:e=>{M.sendMessageToAllRegisteredWindows({type:`app-update-ready-changed`,isUpdateReady:e})},onUpdateLifecycleStateChanged:e=>{M.sendMessageToAllRegisteredWindows({type:`app-update-lifecycle-state-changed`,lifecycleState:e})},",
+    "let codexLinuxPadding=`" + "x".repeat(2000) + "`;",
+    "onInstallUpdatesRequested:()=>{te()},isTrustedIpcEvent:N});",
+    "}",
+  ].join("");
+
+  const patched = applyPatchTwice(applyLinuxAppUpdaterBridgePatch, source);
+
+  assert.match(patched, /function codexLinuxCreatePackageAppUpdater\(/);
   assert.match(patched, /send:e=>M\.sendMessageToAllRegisteredWindows\(e\)/);
 });
 
@@ -3516,6 +3591,28 @@ test("persistent rate limit footer skips composer patch when helper cannot be in
 
   assert.equal(patched, source);
   assert.doesNotMatch(patched, /codexLinuxRateLimitFooter/);
+});
+
+test("persistent rate limit footer adapts to current composer permissions footer shape", () => {
+  const source = [
+    "var $=qt();var Q=Hr();",
+    "function Xv({activeCollaborationMode:t}){let Te=t?.settings.model??null,{data:De}=Y(de),Ie=_a(De),ze=da(De),Be=ma(Ie,{activeLimitName:ze,selectedModel:Te}),Ue=ya(Ie,{activeLimitName:ze,selectedModel:Te});return Be??Ue}",
+    "function Sm(e){return e}",
+    "function Lm(e){let t=(0,$.c)(34),{composerMode:d,conversationId:f,hasGoal:y,isGoalActionAvailable:b,onClearGoal:x,permissionsHostId:C,permissionsCwdOverride:w,showPermissions:T}=e,E=T===void 0?!0:T,k=(0,Q.jsx)(Co,{conversationId:f}),A;t[22]!==d||t[23]!==f||t[24]!==y||t[25]!==b||t[26]!==x||t[27]!==w||t[28]!==C||t[29]!==E?(A=d===`cloud`?null:(0,Q.jsx)(Q.Fragment,{children:E?(0,Q.jsxs)(Q.Fragment,{children:[(0,Q.jsx)(Sm,{conversationId:f,hostId:C,cwdOverride:w}),(0,Q.jsx)(Rm,{conversationId:f,hasGoal:y,isGoalActionAvailable:b,onClearGoal:x,showDivider:!0})]}):null}),t[22]=d,t[23]=f,t[24]=y,t[25]=b,t[26]=x,t[27]=w,t[28]=C,t[29]=E,t[30]=A):A=t[30];let j;return t[31]!==k||t[32]!==A?(j=(0,Q.jsxs)(`div`,{className:`flex min-w-0 items-center gap-[5px]`,children:[k,A]}),t[31]=k,t[32]=A,t[33]=j):j=t[33],j}",
+    "function Rm(e){let t=(0,$.c)(16),{conversationId:n,hasGoal:r,isGoalActionAvailable:i,onClearGoal:a,showDivider:o}=e,{activeMode:s,modes:c,setSelectedMode:l}=cr(n);return l}",
+  ].join("");
+
+  const patched = applyPatchTwice(applyPersistentRateLimitFooterPatch, source);
+
+  assert.match(patched, /function codexLinuxRateLimitFooter\(\{conversationId:e\}\)/);
+  assert.match(
+    patched,
+    /\{data:n\}=Y\(de\),r=_a\(n\),i=da\(n\),a=ya\(r,\{activeLimitName:i,selectedModel:t\}\)/,
+  );
+  assert.match(
+    patched,
+    /\(0,Q\.jsx\)\(Sm,\{conversationId:f,hostId:C,cwdOverride:w\}\),f==null\?null:\(0,Q\.jsx\)\(codexLinuxRateLimitFooter,\{conversationId:f\}\),\(0,Q\.jsx\)\(Rm,\{conversationId:f,hasGoal:y,isGoalActionAvailable:b,onClearGoal:x,showDivider:!0\}\)/,
+  );
 });
 
 test("patcher CLI writes --report-json output", () => {

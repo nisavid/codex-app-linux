@@ -1,8 +1,8 @@
 # Experimental Remote Mobile Control
 
 This default-on integration patches the official Codex app main bundle so Linux can
-try the mobile remote-control host flow that the official app currently limits
-to macOS.
+try the mobile remote-control host and outbound control flows that the official app
+currently limits to macOS.
 
 Disable it by adding the integration id to `port-integrations/integrations.json` before
 building:
@@ -36,6 +36,8 @@ What it changes:
 - Lets the remote-control Connections UI render on Linux when the official app
   marks the feature unavailable or withholds the remote-control visibility
   rollout.
+- Keeps the `Control other devices` settings tab reachable on Linux so this
+  desktop can authorize outbound control of another enrolled device.
 - Refreshes the remote Connections settings state every 5 seconds and
   immediately after focus, visibility, online, or resume signals.
 - Keeps Chrome Browser Use available to remote/mobile controlled sessions when
@@ -145,6 +147,9 @@ Known risks:
   material is file-backed and protected by ordinary user file permissions.
 - OpenAI may still reject Linux host enrollment server-side. This integration only
   removes local macOS-only blockers in the repackaged app.
+- OpenAI may still reject Linux host enrollment or outbound authorization
+  server-side. This integration only removes local macOS-only blockers in the
+  repackaged app.
 - Treat this as experimental account-level remote-control plumbing.
 
 Run the integration tests with:
