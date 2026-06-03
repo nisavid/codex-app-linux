@@ -44,8 +44,9 @@ behavior into the user-global `syncing-forks-with-upstream` skill.
 10. Close any reusable policy gap found during the sync. If the sync reveals a
    hazard that future agents could miss, update the narrowest durable policy
    surface before handoff.
-11. Keep a sync ledger in the PR body or a temporary working note until it is
-   copied into the PR.
+11. Create or update an in-tree sync ledger entry under
+   [Fork Sync Ledger](fork-sync-ledger/) before closeout. The PR body may carry
+   a concise summary, but the tracked ledger entry is the durable source.
 12. Run the required local gates before the first push that contains code
    changes covered by [Local Gates](#local-gates).
 13. On the first push of any task branch, create a draft PR in the same
@@ -61,7 +62,8 @@ behavior into the user-global `syncing-forks-with-upstream` skill.
 
 ## Sync Ledger
 
-Every broad upstream sync needs a ledger with:
+Every broad upstream sync needs a tracked ledger entry under
+[Fork Sync Ledger](fork-sync-ledger/) with:
 
 - upstream refs fetched and the baseline commit;
 - policy files read;
@@ -77,6 +79,9 @@ Every broad upstream sync needs a ledger with:
 - classification for each affected area: preserved, upstream now implements it,
   obsolete by policy, intentionally changed, or uncertain;
 - exact local verification commands and results;
+- special-handling highlights that future maintainers may need to review;
+- follow-up decisions for each special-handling item, including links to
+  existing issues, newly created issues, or a note that no issue is warranted;
 - unresolved uncertainties escalated to the operator, or linked to a durable,
   discoverable follow-up when escalation is unavailable.
 
