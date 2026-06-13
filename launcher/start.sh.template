@@ -32,6 +32,7 @@ LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$CODEX_LINUX_APP_ID"
 LOG_FILE="$LOG_DIR/launcher.log"
 APP_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$CODEX_LINUX_APP_ID"
 APP_SETTINGS_FILE="$APP_CONFIG_DIR/settings.json"
+USER_ELECTRON_FLAGS_FILE="$APP_CONFIG_DIR/electron-flags.conf"
 CODEX_LINUX_SETTINGS_FILE="$APP_SETTINGS_FILE"
 CODEX_PORT_INTEGRATIONS_DIR="$SCRIPT_DIR/.codex-linux/port-integrations"
 CODEX_LINUX_FEATURES_DIR="$CODEX_PORT_INTEGRATIONS_DIR"
@@ -281,6 +282,7 @@ Options:
 
 Default launch keeps Electron GPU enabled and lets Electron choose the platform.
 Extra flags are passed directly to Electron.
+Persistent launch flags: $USER_ELECTRON_FLAGS_FILE
 
 Environment:
   CODEX_LINUX_RENDERING_MODE=auto|default|wslg|wayland-gpu
@@ -297,6 +299,13 @@ Environment:
 Logs: $LOG_FILE
 HELP
     exit 0
+fi
+
+# Capture interactivity before stdout/stderr are redirected into the log;
+# [ -t 1 ] is always false after the exec below.
+LAUNCHER_INTERACTIVE_TERMINAL=0
+if [ -t 0 ] && [ -t 1 ]; then
+    LAUNCHER_INTERACTIVE_TERMINAL=1
 fi
 
 now_ms() {
@@ -338,6 +347,20 @@ remove_tree_if_exists() {
     [ -e "$path" ] || [ -L "$path" ] || return 0
     make_tree_owner_writable "$path"
     rm -rf "$path"
+}
+
+replace_symlink() {
+    local target="$1"
+    local link_path="$2"
+
+    if [ -e "$link_path" ] && [ ! -L "$link_path" ]; then
+        remove_tree_if_exists "$link_path"
+    fi
+
+    if ! ln -sfnT "$target" "$link_path" 2>/dev/null; then
+        remove_tree_if_exists "$link_path"
+        ln -sfnT "$target" "$link_path"
+    fi
 }
 
 fix_bundled_marketplace_tmp_permissions() {
@@ -753,16 +776,10 @@ sync_browser_use_bundled_plugin_cache() {
         fi
     fi
 
-    if [ -e "$cache_root/latest" ] && [ ! -L "$cache_root/latest" ]; then
-        remove_tree_if_exists "$cache_root/latest"
-    fi
-    ln -sfn "$version" "$cache_root/latest"
+    replace_symlink "$version" "$cache_root/latest"
 
     mkdir -p "$marketplace_root/plugins"
-    if [ -e "$marketplace_plugin_link" ] && [ ! -L "$marketplace_plugin_link" ]; then
-        remove_tree_if_exists "$marketplace_plugin_link"
-    fi
-    ln -sfn "$cache_root/latest" "$marketplace_plugin_link"
+    replace_symlink "$cache_root/latest" "$marketplace_plugin_link"
 }
 
 chrome_extension_host_arch() {
@@ -934,20 +951,14 @@ sync_chrome_bundled_plugin_cache() {
         fi
     fi
 
-    if [ -e "$cache_root/latest" ] && [ ! -L "$cache_root/latest" ]; then
-        remove_tree_if_exists "$cache_root/latest"
-    fi
-    ln -sfn "$version" "$cache_root/latest"
+    replace_symlink "$version" "$cache_root/latest"
 
     marketplace_root="$codex_home/.tmp/bundled-marketplaces/openai-bundled"
     marketplace_plugins_dir="$marketplace_root/.agents/plugins"
     marketplace_plugin_link="$marketplace_root/plugins/chrome"
     mkdir -p "$marketplace_plugins_dir" "$marketplace_root/plugins"
     sync_bundled_marketplace_cache "Chrome" "$source_marketplace" "$marketplace_plugins_dir"
-    if [ -e "$marketplace_plugin_link" ] && [ ! -L "$marketplace_plugin_link" ]; then
-        remove_tree_if_exists "$marketplace_plugin_link"
-    fi
-    ln -sfn "$cache_root/latest" "$marketplace_plugin_link"
+    replace_symlink "$cache_root/latest" "$marketplace_plugin_link"
 
     host_path="$cache_root/latest/extension-host/linux/$extension_arch/extension-host"
     [ -x "$host_path" ] || return 0
@@ -1019,16 +1030,10 @@ sync_computer_use_bundled_plugin_cache() {
         fi
     fi
 
-    if [ -e "$cache_root/latest" ] && [ ! -L "$cache_root/latest" ]; then
-        remove_tree_if_exists "$cache_root/latest"
-    fi
-    ln -sfn "$version" "$cache_root/latest"
+    replace_symlink "$version" "$cache_root/latest"
 
     mkdir -p "$marketplace_root/plugins"
-    if [ -e "$marketplace_plugin_link" ] && [ ! -L "$marketplace_plugin_link" ]; then
-        remove_tree_if_exists "$marketplace_plugin_link"
-    fi
-    ln -sfn "$cache_root/latest" "$marketplace_plugin_link"
+    replace_symlink "$cache_root/latest" "$marketplace_plugin_link"
 }
 
 sync_read_aloud_bundled_plugin_cache() {
@@ -1111,16 +1116,10 @@ sync_read_aloud_bundled_plugin_cache() {
         fi
     fi
 
-    if [ -e "$cache_root/latest" ] && [ ! -L "$cache_root/latest" ]; then
-        remove_tree_if_exists "$cache_root/latest"
-    fi
-    ln -sfn "$version" "$cache_root/latest"
+    replace_symlink "$version" "$cache_root/latest"
 
     mkdir -p "$marketplace_root/plugins"
-    if [ -e "$marketplace_plugin_link" ] && [ ! -L "$marketplace_plugin_link" ]; then
-        remove_tree_if_exists "$marketplace_plugin_link"
-    fi
-    ln -sfn "$cache_root/latest" "$marketplace_plugin_link"
+    replace_symlink "$cache_root/latest" "$marketplace_plugin_link"
 }
 
 resolve_browser_use_runtime_env() {
@@ -1270,7 +1269,7 @@ run_cli_preflight_background() {
 }
 
 is_interactive_terminal() {
-    [ -t 0 ] && [ -t 1 ]
+    [ "$LAUNCHER_INTERACTIVE_TERMINAL" -eq 1 ] && [ -r /dev/tty ] && [ -w /dev/tty ]
 }
 
 run_gui_cli_prompt() {
@@ -1309,6 +1308,7 @@ prompt_install_missing_cli() {
     fi
 
     local reply=""
+    # stdout is redirected into the launcher log, so prompt via the terminal.
     printf 'Codex CLI is not installed. Install it now? [Y/n] ' >/dev/tty
     if ! read -r reply </dev/tty; then
         return 1
@@ -1791,7 +1791,7 @@ verify_webview_origin() {
     # localhost NO_PROXY exemption.
     err=$(mktemp 2>/dev/null) || err="${TMPDIR:-/tmp}/codex-curl-err.$$"
     if ! body="$(curl --disable --noproxy 127.0.0.1,localhost --silent --show-error --fail --max-time 2 "$url" 2>"$err")"; then
-        detail=$(< "$err" 2>/dev/null)
+        detail=$(cat "$err" 2>/dev/null || true)
         rm -f "$err"
         echo "Webview origin validation failed for $url; ${detail:-curl exited non-zero with no diagnostic}" >&2
         return 1
@@ -2212,6 +2212,80 @@ scan_electron_rendering_arg() {
     esac
 }
 
+write_user_electron_flags_template() {
+    cat > "$USER_ELECTRON_FLAGS_FILE" <<'EOF'
+# Codex Desktop Linux launch flags.
+# Uncomment one flag per line. Existing files are never overwritten.
+# Lines starting with # and blank lines are ignored.
+# Shell syntax, quotes, variables, and inline comments are not evaluated.
+#
+# X11 / Wayland:
+# --x11
+# --wayland
+# --ozone-platform=x11
+# --ozone-platform=wayland
+# --ozone-platform-hint=auto
+#
+# Wayland / IME:
+# --enable-wayland-ime
+# --wayland-text-input-version=1
+#
+# GPU / rendering:
+# --safe-mode
+# --disable-gpu
+# --enable-gpu
+# --disable-gpu-compositing
+# --use-gl=angle
+# --use-gl=desktop
+# --use-angle=gl
+# --disable-features=Vulkan
+#
+# Accessibility:
+# --force-renderer-accessibility
+#
+# Wayland decorations:
+# --enable-features=WaylandWindowDecorations
+EOF
+}
+
+ensure_user_electron_flags_file() {
+    [ -n "${USER_ELECTRON_FLAGS_FILE:-}" ] || return 0
+    if [ -e "$USER_ELECTRON_FLAGS_FILE" ] || [ -L "$USER_ELECTRON_FLAGS_FILE" ]; then
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$USER_ELECTRON_FLAGS_FILE")"
+    if write_user_electron_flags_template; then
+        echo "Created persistent Electron flags template: $USER_ELECTRON_FLAGS_FILE"
+    else
+        echo "Could not create persistent Electron flags template: $USER_ELECTRON_FLAGS_FILE"
+        rm -f "$USER_ELECTRON_FLAGS_FILE" 2>/dev/null || true
+    fi
+}
+
+load_user_electron_flags() {
+    USER_ELECTRON_FLAGS=()
+    [ -n "${USER_ELECTRON_FLAGS_FILE:-}" ] || return 0
+    [ -f "$USER_ELECTRON_FLAGS_FILE" ] || return 0
+
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        case "$line" in
+            ""|\#*) continue ;;
+            --)
+                echo "Ignoring unsupported separator in Electron flags file: $USER_ELECTRON_FLAGS_FILE"
+                continue
+                ;;
+        esac
+        USER_ELECTRON_FLAGS+=("$line")
+    done < "$USER_ELECTRON_FLAGS_FILE"
+
+    if [ "${#USER_ELECTRON_FLAGS[@]}" -gt 0 ]; then
+        echo "Loaded ${#USER_ELECTRON_FLAGS[@]} persistent Electron flag(s): $USER_ELECTRON_FLAGS_FILE"
+    fi
+}
+
 apply_electron_rendering_profile() {
     local requested_mode
     requested_mode="$(normalize_linux_rendering_mode)"
@@ -2411,7 +2485,8 @@ set_electron_defaults() {
     apply_electron_rendering_profile
 }
 
-append_feature_electron_args() {
+load_feature_electron_args() {
+    FEATURE_ELECTRON_ARGS=()
     [ -n "${FEATURE_ELECTRON_ARGS_DIR:-}" ] || return 0
     [ -d "$FEATURE_ELECTRON_ARGS_DIR" ] || return 0
 
@@ -2425,7 +2500,7 @@ append_feature_electron_args() {
             case "$line" in
                 ""|\#*) continue ;;
             esac
-            ELECTRON_LAUNCH_ARGS+=("$line")
+            FEATURE_ELECTRON_ARGS+=("$line")
         done < "$args_file"
     done
 }
@@ -2476,7 +2551,6 @@ build_electron_launch_args() {
         ELECTRON_LAUNCH_ARGS+=(--enable-features=WaylandWindowDecorations)
     fi
 
-    append_feature_electron_args
 }
 
 configure_side_by_side_app_env() {
@@ -2510,7 +2584,10 @@ launch_electron() {
     cd "$SCRIPT_DIR"
     log_phase "electron_launch"
 
-    set_electron_defaults "$@"
+    ensure_user_electron_flags_file
+    load_feature_electron_args
+    load_user_electron_flags
+    set_electron_defaults "${FEATURE_ELECTRON_ARGS[@]}" "${USER_ELECTRON_FLAGS[@]}" "$@"
     build_electron_launch_args
 
     if [ "$WARM_START" -eq 1 ]; then

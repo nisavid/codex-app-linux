@@ -3,6 +3,7 @@
 
 const {
   createPatchReport,
+  criticalFailuresFromReport,
   writePatchReport,
 } = require("./lib/patch-report.js");
 const {
@@ -48,8 +49,12 @@ const {
   applyKeybindsSettingsIndexPatch,
   applyKeybindsSettingsSectionsPatch,
   applyKeybindsSettingsSharedPatch,
+  applyLinuxDesktopSettingsIndexPatch,
+  applyLinuxDesktopSettingsSectionsPatch,
+  applyLinuxDesktopSettingsSharedPatch,
   applyLinuxKeybindOverridesRuntimePatch,
   patchKeybindsSettingsAssets,
+  resolveLinuxDesktopSettingsAsset,
   resolveKeybindsSettingsAsset,
 } = require("./patches/keybinds-settings.js");
 const {
@@ -60,6 +65,8 @@ const {
 } = require("./patches/launch-actions.js");
 const {
   applyBrowserUseNodeReplApprovalPatch,
+  applyLinuxAboutDialogPatch,
+  applyLinuxBrowserUseRouteLivenessPatch,
   applyLinuxBuildInfoTrayPatch,
   applyLinuxChromeExtensionStatusPatch,
   applyLinuxExplicitIpcQuitPatch,
@@ -68,9 +75,11 @@ const {
   applyLinuxFileManagerPatch,
   applyLinuxGitOriginsSourceFallbackPatch,
   applyLinuxMenuPatch,
+  applyLinuxNativeTitlebarPatch,
   applyLinuxOpaqueBackgroundPatch,
   applyLinuxQuitGuardPatch,
   applyLinuxReadyToShowWindowStatePatch,
+  applyLinuxResizeRepaintPatch,
   applyLinuxRemoteControlConfigPreservationPatch,
   applyLinuxSetIconPatch,
   applyLinuxSingleInstancePatch,
@@ -99,16 +108,24 @@ const {
 const {
   applyBrowserAnnotationScreenshotPatch,
   applyLinuxAppSunsetPatch,
+  applyLinuxBrowserUseAvailabilityPatch,
+  applyLinuxBrowserUseExternalAvailabilityPatch,
+  applyLinuxBrowserUseNonLocalNavigationPatch,
   applyLinuxConfigWriteVersionConflictPatch,
+  applyLinuxI18nGatePatch,
+  applyLinuxProfileSettingsMenuPatch,
   applyLinuxOpaqueWindowsDefaultPatch,
   applyLinuxFastModeModelGuardPatch,
   applySubagentNicknameMetadataPatch,
   patchCommentPreloadBundle,
 } = require("./patches/webview-assets.js");
 
+const USAGE = "Usage: patch-linux-window-ui.js [--report-json path] [--enforce-critical] <extracted-app-asar-dir>";
+
 function main() {
   const args = process.argv.slice(2);
   let reportJson = null;
+  let enforceCritical = false;
   const positional = [];
 
   for (let index = 0; index < args.length; index += 1) {
@@ -116,12 +133,14 @@ function main() {
     if (arg === "--report-json") {
       reportJson = args[index + 1];
       if (!reportJson) {
-        console.error("Usage: patch-linux-window-ui.js [--report-json path] <extracted-app-asar-dir>");
+        console.error(USAGE);
         process.exit(1);
       }
       index += 1;
+    } else if (arg === "--enforce-critical") {
+      enforceCritical = true;
     } else if (arg === "--help" || arg === "-h") {
-      console.log("Usage: patch-linux-window-ui.js [--report-json path] <extracted-app-asar-dir>");
+      console.log(USAGE);
       process.exit(0);
     } else {
       positional.push(arg);
@@ -131,34 +150,34 @@ function main() {
   const extractedDir = positional[0];
 
   if (!extractedDir || positional.length > 1) {
-    console.error("Usage: patch-linux-window-ui.js [--report-json path] <extracted-app-asar-dir>");
+    console.error(USAGE);
     process.exit(1);
   }
 
-  const report = reportJson == null ? null : createPatchReport();
-  try {
-    patchExtractedApp(extractedDir, { report });
-  } catch (error) {
-    if (report != null) {
-      report.patches.push({
-        name: "patch-linux-window-ui",
-        status: "failed-required",
-        reason: error instanceof Error ? error.message : String(error),
-      });
-      writePatchReport(reportJson, report);
-    }
-    throw error;
-  }
+  // Enforcement needs the report data even when no --report-json was requested.
+  const report = reportJson == null && !enforceCritical ? null : createPatchReport();
+  patchExtractedApp(extractedDir, { report });
+  // Write the report before gating so CI artifact upload sees it even on failure.
   writePatchReport(reportJson, report);
+
+  if (enforceCritical) {
+    const failures = criticalFailuresFromReport(report);
+    if (failures.length > 0) {
+      console.error(`Critical patch failures (${failures.length}):`);
+      for (const failure of failures) {
+        console.error(`  - ${failure.name} (${failure.status})${failure.reason ? `: ${failure.reason}` : ""}`);
+      }
+      console.error(
+        "Aborting: these patches are required for a working Linux app. " +
+          "Set CODEX_ENFORCE_CRITICAL_PATCHES=0 to bypass (emergency builds only).",
+      );
+      process.exit(1);
+    }
+  }
 }
 
 if (require.main === module) {
   main();
-}
-
-function applyLinuxBrowserUseIabVisibleOnCreatePatch(currentSource) {
-  // Compatibility shim for old callers after the runtime patch was removed.
-  return currentSource;
 }
 
 module.exports = {
@@ -170,16 +189,25 @@ module.exports = {
   applyKeybindsSettingsIndexPatch,
   applyKeybindsSettingsSectionsPatch,
   applyKeybindsSettingsSharedPatch,
+  applyLinuxDesktopSettingsIndexPatch,
+  applyLinuxDesktopSettingsSectionsPatch,
+  applyLinuxDesktopSettingsSharedPatch,
+  applyLinuxAboutDialogPatch,
   applyLinuxAppSunsetPatch,
   applyLinuxAppUpdaterBridgePatch,
   applyLinuxAppUpdaterMenuPatch,
   applyLinuxAvatarOverlayMousePassthroughPatch,
-  applyLinuxBrowserUseIabVisibleOnCreatePatch,
+  applyLinuxBrowserUseAvailabilityPatch,
+  applyLinuxBrowserUseExternalAvailabilityPatch,
+  applyLinuxBrowserUseNonLocalNavigationPatch,
+  applyLinuxBrowserUseRouteLivenessPatch,
   applyLinuxBuildInfoTrayPatch,
   applyLinuxChromeExtensionStatusPatch,
   applyLinuxChromeNativeHostRuntimePatch,
   applyLinuxChromePluginAutoInstallPatch,
   applyLinuxConfigWriteVersionConflictPatch,
+  applyLinuxI18nGatePatch,
+  applyLinuxProfileSettingsMenuPatch,
   applyLinuxComputerUseFeaturePatch,
   applyLinuxComputerUseInstallFlowPatch,
   applyLinuxComputerUsePluginGatePatch,
@@ -193,12 +221,14 @@ module.exports = {
   applyLinuxKeybindOverridesRuntimePatch,
   applyLinuxLaunchActionArgsPatch,
   applyLinuxMenuPatch,
+  applyLinuxNativeTitlebarPatch,
   applyLinuxMultiInstanceBootstrapPatch,
   applyLinuxOpaqueBackgroundPatch,
   applyLinuxOpaqueWindowsDefaultPatch,
   applyLinuxFastModeModelGuardPatch,
   applyLinuxQuitGuardPatch,
   applyLinuxReadyToShowWindowStatePatch,
+  applyLinuxResizeRepaintPatch,
   applyLinuxRemoteControlConfigPreservationPatch,
   applyLinuxSetIconPatch,
   applyLinuxSettingsPersistencePatch,
@@ -233,5 +263,6 @@ module.exports = {
   patchMainBundleSource,
   patchPackageJson,
   resolveDesktopName,
+  resolveLinuxDesktopSettingsAsset,
   resolveKeybindsSettingsAsset,
 };
