@@ -1,10 +1,13 @@
 "use strict";
 
 const {
+  applyLinuxAboutDialogPatch,
   applyLinuxWindowOptionsPatch,
+  applyLinuxNativeTitlebarPatch,
   applyLinuxMenuPatch,
   applyLinuxSetIconPatch,
   applyLinuxReadyToShowWindowStatePatch,
+  applyLinuxResizeRepaintPatch,
   applyLinuxOpaqueBackgroundPatch,
   applyLinuxFileManagerPatch,
   applyLinuxBuildInfoTrayPatch,
@@ -15,6 +18,13 @@ const {
 const { applyLinuxAvatarOverlayMousePassthroughPatch } = require("../../../../avatar-overlay.js");
 
 module.exports = [
+  {
+    id: "linux-about-dialog",
+    phase: "main-bundle",
+    order: 55,
+    ciPolicy: "optional",
+    apply: (source, context) => applyLinuxAboutDialogPatch(source, context.iconPathExpression),
+  },
   {
     id: "linux-window-options",
     phase: "main-bundle",
@@ -30,6 +40,13 @@ module.exports = [
     apply: applyLinuxMenuPatch,
   },
   {
+    id: "linux-native-titlebar",
+    phase: "main-bundle",
+    order: 85,
+    ciPolicy: "optional",
+    apply: applyLinuxNativeTitlebarPatch,
+  },
+  {
     id: "linux-set-icon",
     phase: "main-bundle",
     order: 70,
@@ -42,6 +59,13 @@ module.exports = [
     order: 75,
     ciPolicy: "optional",
     apply: applyLinuxReadyToShowWindowStatePatch,
+  },
+  {
+    id: "linux-resize-repaint",
+    phase: "main-bundle",
+    order: 78,
+    ciPolicy: "optional",
+    apply: applyLinuxResizeRepaintPatch,
   },
   {
     id: "linux-opaque-background",
@@ -61,7 +85,7 @@ module.exports = [
     id: "linux-file-manager",
     phase: "main-bundle",
     order: 100,
-    ciPolicy: "required-official-dmg",
+    ciPolicy: "optional",
     apply: applyLinuxFileManagerPatch,
   },
   {

@@ -31,6 +31,7 @@ permissions:
   contents: read
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   OFFICIAL_DMG_URL: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg
   OFFICIAL_DMG_PATH: /tmp/codex-official-dmg-ci/Codex.dmg
   DMG_CACHE_SCHEMA_VERSION: v1
@@ -65,9 +66,11 @@ jobs:
 
           curl -fsSLI "$OFFICIAL_DMG_URL" > "$headers_file"
 
-          last_modified="$(awk 'tolower($0) ~ /^last-modified:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); value=$0} END{print value}' "$headers_file")"
-          etag="$(awk 'tolower($0) ~ /^etag:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); gsub(/"/,""); value=$0} END{print value}' "$headers_file")"
-          content_length="$(awk 'tolower($0) ~ /^content-length:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); value=$0} END{print value}' "$headers_file")"
+          # Match header names case-insensitively without gawk's IGNORECASE,
+          # which is a no-op under mawk (the default awk on ubuntu runners).
+          last_modified="$(awk 'tolower($0) ~ /^last-modified:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); print; exit}' "$headers_file")"
+          etag="$(awk 'tolower($0) ~ /^etag:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); gsub(/"/,""); print; exit}' "$headers_file")"
+          content_length="$(awk 'tolower($0) ~ /^content-length:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); print; exit}' "$headers_file")"
 
           if [ -z "$last_modified" ]; then
             last_modified="unknown"
@@ -141,10 +144,16 @@ jobs:
           node scripts/ci/validate-patch-report.js patch-report.json --profile official-dmg-build
 
       - name: Upload official DMG metadata artifact
+        # The build step aborts on critical patch failures; keep uploading the
+        # patch report so the failure is diagnosable from the artifact.
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: official-dmg-metadata
-          path: official-dmg-metadata.json
+          path: |
+            official-dmg-metadata.json
+            patch-report.json
+          if-no-files-found: ignore
 
       - name: Write build summary
         run: |
@@ -160,4 +169,5 @@ jobs:
             echo "- Tested At (UTC): \`${{ steps.local-dmg.outputs.tested_at_utc }}\`"
             echo "- Cache Hit: \`${{ steps.dmg-cache.outputs.cache-hit || 'false' }}\`"
             echo "- Build command: \`make build-app DMG=$OFFICIAL_DMG_PATH\`"
+            echo "- Patch report: \`patch-report.json\`"
           } >> "$GITHUB_STEP_SUMMARY"
