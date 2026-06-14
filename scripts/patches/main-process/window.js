@@ -290,7 +290,10 @@ function applyLinuxReadyToShowWindowStatePatch(currentSource) {
   const patchedSource = currentSource.replace(readyToShowMaximizeRegex, (_match, windowVar, offset, source) => {
     const prefix = source.slice(Math.max(0, offset - 120), offset);
     const maximizedStateMatch = prefix.match(/([A-Za-z_$][\w$]*)&&process\.platform===`linux`&&[A-Za-z_$][\w$]*\.setIcon\(/);
-    const maximizedStateVar = maximizedStateMatch?.[1] ?? "false";
+    if (maximizedStateMatch == null) {
+      return _match;
+    }
+    const maximizedStateVar = maximizedStateMatch[1];
     patchedAny = true;
     return `${maximizedStateVar}&&${windowVar}.once(\`ready-to-show\`,()=>{${windowVar}.isDestroyed()||${windowVar}.maximize()})`;
   });

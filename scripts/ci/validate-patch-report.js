@@ -11,6 +11,11 @@ const {
   optionalDriftFromReport,
 } = require("../lib/patch-report.js");
 
+const PROFILE_ALIASES = new Map([
+  ["upstream-build", "official-dmg-build"],
+]);
+const KNOWN_PROFILES = new Set(["official-dmg-build"]);
+
 function usage() {
   return "Usage: validate-patch-report.js <patch-report.json> [--profile official-dmg-build]";
 }
@@ -51,8 +56,17 @@ function readReport(reportPath) {
   return report;
 }
 
+function normalizeProfile(profile) {
+  const normalized = PROFILE_ALIASES.get(profile) ?? profile;
+  if (!KNOWN_PROFILES.has(normalized)) {
+    throw new Error(`Unknown patch validation profile: ${profile}`);
+  }
+  return normalized;
+}
+
 function validateReport(report, profile) {
-  const requiredNames = requiredPatchNamesForProfile(profile);
+  const normalizedProfile = normalizeProfile(profile);
+  const requiredNames = requiredPatchNamesForProfile(normalizedProfile);
   const patchesByName = new Map(report.patches.map((patch) => [patch.name, patch]));
   const failures = [];
 
@@ -111,6 +125,7 @@ if (require.main === module) {
 
 module.exports = {
   SUCCESS_STATUSES,
+  normalizeProfile,
   readReport,
   validateReport,
 };

@@ -158,6 +158,27 @@ test("settings asset patch prefers generated Linux desktop settings bundle", () 
   }
 });
 
+test("settings asset patch tries keybinds asset after desktop settings drift", () => {
+  const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-settings-fallback-"));
+  const assetsDir = path.join(appDir, "webview", "assets");
+  fs.mkdirSync(assetsDir, { recursive: true });
+  const keybindsSettings =
+    `var KEYS={autoUpdateOnExit:"codex-linux-auto-update-on-exit"};` +
+    `function Settings(){return $.jsx(SettingsGroup,{children:$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close Codex",description:"When on, a ready update waits for Codex to close and then installs. When off, updates wait until you click Update."})})}`;
+  fs.writeFileSync(path.join(assetsDir, "linux-desktop-settings-linux.js"), "function Drifted(){return null}");
+  fs.writeFileSync(path.join(assetsDir, "keybinds-settings-linux.js"), keybindsSettings);
+
+  try {
+    assert.deepEqual(patchWrapperUpdateSettingsAssets(appDir), { matched: true, changed: 1 });
+    assert.match(
+      fs.readFileSync(path.join(assetsDir, "keybinds-settings-linux.js"), "utf8"),
+      /Check for Codex App updates/,
+    );
+  } finally {
+    fs.rmSync(appDir, { recursive: true, force: true });
+  }
+});
+
 test("integration exposes optional patches and declarative apply hooks when enabled", () => {
   withTempIntegrationConfig(["codex-wrapper-updater"], () => {
     assert.ok(enabledPortIntegrationIds({ integrationsRoot }).includes("codex-wrapper-updater"));
@@ -290,4 +311,30 @@ test("apply hook skip guard and lock keep marker without running manager", () =>
   assert.equal(locked.status, 0, locked.stderr);
   assert.equal(fs.existsSync(marker), true);
   assert.equal(fs.existsSync(invoked), false);
+});
+
+test("apply hook uses port-integration phase before legacy feature phase", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-phase-"));
+  const markerDir = path.join(temp, "codex-wrapper-updater");
+  const marker = path.join(markerDir, "pending");
+  const invoked = path.join(temp, "manager-invoked");
+  const manager = fakeManager(temp, `touch ${JSON.stringify(invoked)}\nexit 0\n`);
+  fs.mkdirSync(markerDir, { recursive: true });
+  fs.writeFileSync(marker, "pending\n");
+
+  const result = spawnSync("bash", [path.join(integrationDir, "apply-pending.sh")], {
+    env: {
+      ...process.env,
+      CODEX_LINUX_APP_STATE_DIR: temp,
+      CODEX_LINUX_FEATURE_HOOK_PHASE: "prelaunch",
+      CODEX_PORT_INTEGRATION_HOOK_PHASE: "manual",
+      CODEX_WRAPPER_UPDATER_SKIP_PRELAUNCH_ONCE: "1",
+      CODEX_UPDATE_MANAGER_PATH: manager,
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(invoked), true);
+  assert.equal(fs.existsSync(marker), false);
 });

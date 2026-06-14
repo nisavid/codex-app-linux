@@ -488,14 +488,18 @@ function applyLinuxAppServerFeatureEnablementPatch(currentSource) {
     // defaults are Linux-safe; the trailing extra is not.
     const dynamicBuilderExtraRegex =
       /(for\(let ([A-Za-z_$][\w$]*) of [A-Za-z_$][\w$]*\)\{let ([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\[\2\];\3!=null&&\(([A-Za-z_$][\w$]*)\[\2\]=\3\)\})return \4\[([A-Za-z_$][\w$]*)\]=([A-Za-z_$][\w$]*),\4\}/u;
-    const dynamicBuilderExtraMatch = currentSource.match(dynamicBuilderExtraRegex);
+    const dynamicBuilderExtraMatch = dynamicBuilderExtraRegex.exec(currentSource);
     if (dynamicBuilderExtraMatch != null) {
       const [, loopBlock, , , enablementVar, featureKeyVar] = dynamicBuilderExtraMatch;
       const featureKeyDeclaration = new RegExp(
         `${escapeRegExp(featureKeyVar)}=\`remote_plugin\``,
         "u",
       );
-      if (featureKeyDeclaration.test(currentSource)) {
+      const featureKeyScope = currentSource.slice(
+        Math.max(0, dynamicBuilderExtraMatch.index - 1000),
+        dynamicBuilderExtraMatch.index + loopBlock.length,
+      );
+      if (featureKeyDeclaration.test(featureKeyScope)) {
         return currentSource;
       }
       return currentSource.replace(

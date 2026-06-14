@@ -156,9 +156,12 @@ function main() {
 
   // Enforcement needs the report data even when no --report-json was requested.
   const report = reportJson == null && !enforceCritical ? null : createPatchReport();
-  patchExtractedApp(extractedDir, { report });
-  // Write the report before gating so CI artifact upload sees it even on failure.
-  writePatchReport(reportJson, report);
+  try {
+    patchExtractedApp(extractedDir, { report });
+  } finally {
+    // Write the report before gating so CI artifact upload sees it even on failure.
+    writePatchReport(reportJson, report);
+  }
 
   if (enforceCritical) {
     const failures = criticalFailuresFromReport(report);

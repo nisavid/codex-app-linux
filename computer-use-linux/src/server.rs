@@ -1663,12 +1663,18 @@ impl ComputerUseLinux {
             "COMPUTER_USE_LINUX_FORCE_PORTAL_KEYBOARD",
             "CODEX_COMPUTER_USE_FORCE_PORTAL_KEYBOARD",
         ]) {
-            return self.is_wayland_session() && !self.is_kde_wayland_session();
+            return self.is_wayland_session();
         }
         self.is_wayland_session() && !self.is_kde_wayland_session() && ydotool_socket().is_none()
     }
 
     fn should_prefer_kde_clipboard_text_backend(&self) -> bool {
+        if env_flag_enabled_any(&[
+            "COMPUTER_USE_LINUX_FORCE_PORTAL_KEYBOARD",
+            "CODEX_COMPUTER_USE_FORCE_PORTAL_KEYBOARD",
+        ]) {
+            return false;
+        }
         !env_flag_enabled_any(&[
             "COMPUTER_USE_LINUX_FORCE_YDOTOOL_KEYBOARD",
             "CODEX_COMPUTER_USE_FORCE_YDOTOOL_KEYBOARD",
@@ -2478,6 +2484,12 @@ fn apply_window_relative_click_coordinates(
         return Err(
             "Relative coordinate clicks require non-empty target-window bounds.".to_string(),
         );
+    }
+    if relative_x < 0 || relative_y < 0 {
+        return Err("Relative click coordinates must be inside target-window bounds.".to_string());
+    }
+    if relative_x as u32 >= bounds.width || relative_y as u32 >= bounds.height {
+        return Err("Relative click coordinates must be inside target-window bounds.".to_string());
     }
     let (origin_x, origin_y) = bounds.x.zip(bounds.y).ok_or_else(|| {
         "Relative coordinate clicks require target-window bounds with an origin.".to_string()
@@ -3325,6 +3337,30 @@ mod tests {
 
         assert!(error.contains("both x and y"));
         assert_eq!((params.x, params.y), (Some(7), None));
+    }
+
+    #[test]
+    fn relative_click_coordinates_must_stay_inside_bounds() {
+        let focus = focus_result_with_bounds(Some(WindowBounds {
+            x: Some(100),
+            y: Some(200),
+            width: 800,
+            height: 600,
+        }));
+
+        for (x, y) in [(-1, 9), (7, -1), (800, 9), (7, 600)] {
+            let mut params = ClickParams {
+                x: Some(x),
+                y: Some(y),
+                relative: Some(true),
+                ..Default::default()
+            };
+
+            let error = apply_window_relative_click_coordinates(&mut params, &focus).unwrap_err();
+
+            assert!(error.contains("inside target-window bounds"));
+            assert_eq!((params.x, params.y), (Some(x), Some(y)));
+        }
     }
 
     #[test]

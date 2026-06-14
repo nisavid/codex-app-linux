@@ -1,16 +1,16 @@
 # Frameless Titlebar
 
-This optional integration hides the Linux Electron titlebar overlay controls and
+This optional port integration hides the Electron titlebar overlay controls and
 removes the native menu chrome from the main Codex window. It is intended for
 Wayland compositors or window managers where compositor-managed decorations
 already provide the expected window controls, such as Hyprland setups.
 
-The default build leaves the existing Linux titlebar overlay behavior in place.
+The default build leaves the existing titlebar overlay behavior in place.
 Enable this only when the built-in Codex titlebar/buttons visually conflict
 with your desktop environment.
 
-Enable it by copying `port-integrations/integrations.example.json` to
-`port-integrations/integrations.json` and listing the integration id:
+Enable it by copying `port-integrations.example.json` to
+`port-integrations.json` and listing the port integration id:
 
 ```json
 {
@@ -21,11 +21,11 @@ Enable it by copying `port-integrations/integrations.example.json` to
 ```
 
 Then rerun `./install.sh` or the native package build flow so the ASAR patches
-are regenerated with this integration enabled.
+are regenerated with this port integration enabled.
 
 ## Testing
 
-Run the integration's unit tests from the repository root:
+Run the port integration's unit tests from the repository root:
 
 ```bash
 node --test port-integrations/frameless-titlebar/test.js

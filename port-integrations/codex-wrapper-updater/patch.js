@@ -210,24 +210,38 @@ function applyWrapperUpdateGeneralSettingsPatch(source) {
 function patchWrapperUpdateSettingsAssets(extractedDir) {
   try {
     const assetsDir = path.join(extractedDir, "webview", "assets");
+    let matchedSettingsAsset = false;
+    let alreadyPatchedSettingsAsset = false;
+    let lastSettingsError = null;
     for (const settingsAsset of [LINUX_DESKTOP_SETTINGS_ASSET, KEYBINDS_ASSET]) {
       const settingsPath = path.join(assetsDir, settingsAsset);
       if (!fs.existsSync(settingsPath)) {
         continue;
       }
+      matchedSettingsAsset = true;
       const current = fs.readFileSync(settingsPath, "utf8");
-      const patched = applyWrapperUpdateSettingsPatch(current);
-      if (patched === current) {
-        return { matched: true, changed: 0 };
+      try {
+        const patched = applyWrapperUpdateSettingsPatch(current);
+        if (patched === current) {
+          alreadyPatchedSettingsAsset = true;
+          continue;
+        }
+        fs.writeFileSync(settingsPath, patched, "utf8");
+        return { matched: true, changed: 1 };
+      } catch (error) {
+        lastSettingsError = error instanceof Error ? error.message : String(error);
       }
-      fs.writeFileSync(settingsPath, patched, "utf8");
-      return { matched: true, changed: 1 };
     }
 
     const generalSettingsAssets = fs
       .readdirSync(assetsDir)
       .filter((name) => /^general-settings-.*\.js$/.test(name));
     if (generalSettingsAssets.length === 0) {
+      if (matchedSettingsAsset) {
+        return alreadyPatchedSettingsAsset
+          ? { matched: true, changed: 0 }
+          : { matched: false, changed: 0, reason: lastSettingsError ?? "could not patch Linux settings asset" };
+      }
       return { matched: false, changed: 0, reason: `${LINUX_DESKTOP_SETTINGS_ASSET}, ${KEYBINDS_ASSET}, and general settings asset are not present` };
     }
 

@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const {
+  escapeRegExp,
   readDirectoryNames,
   requireName,
 } = require("./shared.js");
@@ -20,7 +21,7 @@ function isChromeNameExpr(nameExpr, chromeNameVar) {
 function chromeNamePatterns(chromeNameVar) {
   const namePatterns = [String.raw`\`chrome\``, "\"chrome\"", "'chrome'"];
   if (chromeNameVar != null) {
-    namePatterns.push(chromeNameVar);
+    namePatterns.push(escapeRegExp(chromeNameVar));
   }
   return namePatterns;
 }

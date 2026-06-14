@@ -1569,9 +1569,20 @@ fn clear_dmg_update_candidate(
     }
     state.artifact_paths.package_path = None;
     state.error_message = None;
-    state.notified_events.clear();
+    clear_dmg_update_notification_events(state);
     cache_cleanup::normalize_artifact_workspace_dir(&paths.cache_dir, state);
     persist_state(paths, state)
+}
+
+fn clear_dmg_update_notification_events(state: &mut PersistedState) {
+    state.notified_events.retain(|event| {
+        !event.starts_with("update_detected:")
+            && !event.starts_with("ready_to_install:")
+            && !event.starts_with("waiting_for_app_exit:")
+            && !event.starts_with("install_auth_required:")
+            && !event.starts_with("manual_install_required:")
+            && !event.starts_with("build_failed:")
+    });
 }
 
 fn installed_upstream_dmg_matches(config: &RuntimeConfig, sha256: &str) -> bool {
@@ -2183,10 +2194,6 @@ fn notify_failure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::{
-        matchers::{method, path},
-        Mock, MockServer, ResponseTemplate,
-    };
 
     const TRUSTED_TEST_DMG_SHA256: &str =
         "6d440c7133771935c860a5546bcd603f8b9b65b37e9b82bdb0019d4fd0c85b6a";
@@ -3292,7 +3299,7 @@ mod tests {
             .notified_events
             .insert("install_auth_required:2999.03.25.010203".to_string());
 
-        run_install_ready(&config, &mut state, &paths).await?;
+        let result = run_install_ready(&config, &mut state, &paths).await;
 
         if let Some(value) = previous_assume_agent {
             std::env::set_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT", value);
@@ -3300,6 +3307,7 @@ mod tests {
             std::env::remove_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT");
         }
 
+        result?;
         assert_eq!(state.status, UpdateStatus::WaitingForAppExit);
         assert!(!install_auth_retry_is_blocked(&state));
         Ok(())
@@ -3500,7 +3508,10 @@ mod tests {
         };
         paths.ensure_dirs()?;
 
-        let package_path = temp.path().join("dist/codex desktop.pkg.tar.zst");
+        let workspace = temp
+            .path()
+            .join("cache/workspaces/2999.03.25.010203+deadbeef");
+        let package_path = workspace.join("dist/codex desktop.pkg.tar.zst");
         std::fs::create_dir_all(
             package_path
                 .parent()
@@ -3527,6 +3538,13 @@ mod tests {
         let mut state = PersistedState::new(false);
         state.status = UpdateStatus::ReadyToInstall;
         state.candidate_version = Some("2999.03.25.010203+deadbeef".to_string());
+        mark_test_dmg_verified(&mut state, "2999.03.25.010203+deadbeef");
+        state.package_verification = Some(package_verification::record_built_package(
+            &package_path,
+            &workspace,
+            "2999.03.25.010203+deadbeef",
+            TRUSTED_TEST_DMG_SHA256,
+        )?);
         state.artifact_paths.package_path = Some(package_path);
 
         let result = runtime.block_on(run_install_ready(&config, &mut state, &paths));
@@ -3880,6 +3898,35 @@ mod tests {
         assert_eq!(state.artifact_paths.workspace_dir, None);
         assert_eq!(state.error_message, None);
         assert!(state.notified_events.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn same_dmg_recovery_keeps_unrelated_notification_markers() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = test_paths(temp.path());
+        paths.ensure_dirs()?;
+        let config = test_config(temp.path());
+        let sha256 = "51eeeba58394c4747cbc9d9fee7aa613500253fedd7ad5b114f48dfcb89a6cbb";
+        write_installed_build_info(&config, sha256)?;
+
+        let mut state = PersistedState::new(true);
+        state.status = UpdateStatus::PatchingApp;
+        state.candidate_version = Some("2026.06.12.120204+51eeeba5".to_string());
+        state.dmg_sha256 = Some(sha256.to_string());
+        state
+            .notified_events
+            .insert("update_detected:2026.06.12.120204+51eeeba5".to_string());
+        state.notified_events.insert("cli_missing".to_string());
+
+        assert!(complete_current_dmg_update_if_already_installed(
+            &config, &mut state, &paths
+        )?);
+
+        assert!(!state
+            .notified_events
+            .contains("update_detected:2026.06.12.120204+51eeeba5"));
+        assert!(state.notified_events.contains("cli_missing"));
         Ok(())
     }
 

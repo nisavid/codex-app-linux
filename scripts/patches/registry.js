@@ -238,7 +238,7 @@ function requiredPatchNamesForProfile(profile, options = {}) {
   }
   const linux = options.linuxTarget ?? detectLinuxTargetContext(options.linuxTargetOptions);
   const context = { linux, linuxTarget: linux, enableComputerUseUi: isComputerUseUiEnabled() };
-  return allPatchPolicies({ corePatchRoot: options.corePatchRoot })
+  return allPatchPolicies(options)
     .filter((patch) => patch.ciPolicy === REQUIRED_UPSTREAM)
     .filter((patch) => patch.appliesTo == null || patch.appliesTo(context) !== false)
     .map((patch) => patch.name);

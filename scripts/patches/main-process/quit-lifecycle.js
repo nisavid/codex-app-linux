@@ -9,6 +9,10 @@ function applyLinuxQuitGuardPatch(currentSource) {
   const quitGuardSuffix =
     "let codexLinuxQuitInProgress=!1,codexLinuxExplicitQuitApproved=!1,codexLinuxExplicitQuitDrainTimeoutMs=3e3,codexLinuxMarkQuitInProgress=()=>{codexLinuxQuitInProgress=!0},codexLinuxPrepareForExplicitQuit=()=>{codexLinuxExplicitQuitApproved=!0,codexLinuxMarkQuitInProgress()},codexLinuxShouldBypassQuitPrompt=()=>codexLinuxExplicitQuitApproved===!0,codexLinuxIsQuitInProgress=()=>codexLinuxQuitInProgress===!0;";
   const quitGuardPatch = `${quitGuardNeedle}${quitGuardSuffix}`;
+  const directivePrologueInsertionIndex = (source) => {
+    const directiveMatch = /^(?:(?:"use strict"|'use strict');)+/.exec(source);
+    return directiveMatch == null ? 0 : directiveMatch[0].length;
+  };
 
   if (patchedSource.includes("codexLinuxExplicitQuitApproved=!1")) {
     return patchedSource;
@@ -31,7 +35,8 @@ function applyLinuxQuitGuardPatch(currentSource) {
   }
 
   if (patchedSource.includes("require(`electron`)")) {
-    return `${quitGuardSuffix}${patchedSource}`;
+    const insertAt = directivePrologueInsertionIndex(patchedSource);
+    return `${patchedSource.slice(0, insertAt)}${quitGuardSuffix}${patchedSource.slice(insertAt)}`;
   }
 
   if (patchedSource.includes("require(`electron`)") && patchedSource.includes("require(`node:path`)")) {
@@ -52,9 +57,11 @@ function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {
     "process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())";
   const originalDrainSnippet =
     "Promise.all([...u.values()].map(e=>e.flush())).finally(()=>{d(),f.dispose(),n.app.quit()})";
+  const timeoutPromise =
+    "new Promise(e=>{let t=setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`?codexLinuxExplicitQuitDrainTimeoutMs:3e3);t.unref?.(),codexLinuxDrainPromise.finally(()=>clearTimeout(t))})";
   const patchedDrainSnippet =
     "(()=>{let codexLinuxFinalizeQuit=()=>{d(),f.dispose(),n.app.quit()},codexLinuxDrainPromise=Promise.all([...u.values()].map(e=>e.flush()));" +
-    `if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise,new Promise(e=>setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===\`number\`?codexLinuxExplicitQuitDrainTimeoutMs:3e3))]).finally(codexLinuxFinalizeQuit);return}` +
+    `if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise,${timeoutPromise}]).finally(codexLinuxFinalizeQuit);return}` +
     "codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()";
   let patchedAny = false;
 
@@ -69,7 +76,7 @@ function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {
     drainRegex,
     (_match, globalStatesVar, flushDisposeVar, disposablesVar, electronVar) => {
       patchedAny = true;
-      return `(()=>{let codexLinuxFinalizeQuit=()=>{${flushDisposeVar}(),${disposablesVar}.dispose(),${electronVar}.app.quit()},codexLinuxDrainPromise=Promise.all([...${globalStatesVar}.values()].map(e=>e.flush()));if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise,new Promise(e=>setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===\`number\`?codexLinuxExplicitQuitDrainTimeoutMs:3e3))]).finally(codexLinuxFinalizeQuit);return}codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()`;
+      return `(()=>{let codexLinuxFinalizeQuit=()=>{${flushDisposeVar}(),${disposablesVar}.dispose(),${electronVar}.app.quit()},codexLinuxDrainPromise=Promise.all([...${globalStatesVar}.values()].map(e=>e.flush()));if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise,${timeoutPromise}]).finally(codexLinuxFinalizeQuit);return}codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()`;
     },
   );
 

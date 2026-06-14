@@ -9,10 +9,12 @@ module.exports = [
     order: 180,
     ciPolicy: "optional",
     apply: patchLinuxChromeNativeHostRuntimeAssets,
-    status: (result, warnings) => ({
-      status: result?.changed
-        ? "applied"
-        : result?.matched
+	    status: (result, warnings) => ({
+	      status: result?.changed
+	        ? warnings.length > 0 && result?.matched
+	          ? "skipped-optional"
+	          : "applied"
+	        : result?.matched
           ? warnings.length > 0
             ? "skipped-optional"
             : "already-applied"

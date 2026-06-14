@@ -33,7 +33,7 @@ function replaceAvatarMethod(source, signatureRegex, replacement) {
 }
 
 function avatarCursorRegionPatch(electronVar) {
-  return `codexLinuxIsCursorInAvatarInteractiveRegion(e){let t=this.layout;if(t==null)return!1;let __codexCursor=${electronVar}.screen.getCursorScreenPoint(),__codexBounds=e.getContentBounds(),__codexX=__codexCursor.x-__codexBounds.x,__codexY=__codexCursor.y-__codexBounds.y,__codexWindowHit=__codexX>=0&&__codexY>=0&&__codexX<=__codexBounds.width&&__codexY<=__codexBounds.height;if(!__codexWindowHit)return!1;let __codexHit=e=>e!=null&&__codexX>=e.left&&__codexX<=e.left+e.width&&__codexY>=e.top&&__codexY<=e.top+e.height;return __codexHit(t.mascot)||__codexHit(t.tray)||__codexWindowHit}`;
+  return `codexLinuxIsCursorInAvatarInteractiveRegion(e){let t=this.layout;if(t==null)return!1;let __codexCursor=${electronVar}.screen.getCursorScreenPoint(),__codexBounds=e.getContentBounds(),__codexX=__codexCursor.x-__codexBounds.x,__codexY=__codexCursor.y-__codexBounds.y,__codexWindowHit=__codexX>=0&&__codexY>=0&&__codexX<=__codexBounds.width&&__codexY<=__codexBounds.height;if(!__codexWindowHit)return!1;let __codexHit=e=>e!=null&&__codexX>=e.left&&__codexX<=e.left+e.width&&__codexY>=e.top&&__codexY<=e.top+e.height;return __codexHit(t.mascot)||__codexHit(t.tray)}`;
 }
 
 function avatarInputShapePatch() {

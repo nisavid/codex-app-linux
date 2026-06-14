@@ -452,8 +452,8 @@ copy_enabled_local_integrations() {
     local config_path source_local_root target_local_root integration_id source_dir target_dir
 
     config_path="${CODEX_PORT_INTEGRATIONS_CONFIG:-}"
-    if [ -z "$config_path" ] && [ -f "$SOURCE_REPO_DIR/port-integrations/integrations.json" ]; then
-        config_path="$SOURCE_REPO_DIR/port-integrations/integrations.json"
+    if [ -z "$config_path" ] && [ -f "$SOURCE_REPO_DIR/port-integrations.json" ]; then
+        config_path="$SOURCE_REPO_DIR/port-integrations.json"
     fi
 
     [ -f "$config_path" ] || return 0

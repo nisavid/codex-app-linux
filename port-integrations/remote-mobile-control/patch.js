@@ -688,15 +688,15 @@ function applyLinuxRemoteControlIntegrationSyncHostScopePatch(source) {
 }
 
 function applyLinuxRemoteControlVisibilityPatch(source) {
+  if (source.includes(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT)) {
+    return source.replace(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT, REMOTE_CONTROL_VISIBILITY_REPLACEMENT);
+  }
   if (
     source.includes(REMOTE_CONTROL_VISIBILITY_REPLACEMENT) ||
     source.includes("remoteControlConnectionsState") &&
       source.includes("navigator.userAgent.includes(`Linux`)")
   ) {
     return source;
-  }
-  if (source.includes(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT)) {
-    return source.replace(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT, REMOTE_CONTROL_VISIBILITY_REPLACEMENT);
   }
   if (!source.includes(REMOTE_CONTROL_VISIBILITY_NEEDLE)) {
     if (!source.includes("remoteControlConnectionsState")) {

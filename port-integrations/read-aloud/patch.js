@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const {
+  escapeRegExp,
   requireName,
 } = require("../../scripts/patches/shared.js");
 
@@ -234,7 +235,8 @@ function importAlias(source, assetPrefix, exportName) {
 function detectJsxAlias(source) {
   const jsxFactory = importAlias(source, "jsx-runtime", "t");
   if (jsxFactory != null) {
-    const match = source.match(new RegExp(`\\b([A-Za-z_$][\\w$]*)=${jsxFactory}\\(\\)`));
+    const escapedJsxFactory = escapeRegExp(jsxFactory);
+    const match = source.match(new RegExp(`\\b([A-Za-z_$][\\w$]*)=${escapedJsxFactory}\\(\\)`));
     if (match != null) {
       return match[1];
     }
@@ -245,7 +247,8 @@ function detectJsxAlias(source) {
 function detectReactAlias(source) {
   const reactFactory = importAlias(source, "jsx-runtime", "n");
   if (reactFactory != null) {
-    const match = source.match(new RegExp(`\\b([A-Za-z_$][\\w$]*)=[A-Za-z_$][\\w$]*\\(${reactFactory}\\(\\),1\\)`));
+    const escapedReactFactory = escapeRegExp(reactFactory);
+    const match = source.match(new RegExp(`\\b([A-Za-z_$][\\w$]*)=[A-Za-z_$][\\w$]*\\(${escapedReactFactory}\\(\\),1\\)`));
     if (match != null) {
       return match[1];
     }

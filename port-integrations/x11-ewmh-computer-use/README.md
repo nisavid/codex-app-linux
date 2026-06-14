@@ -1,10 +1,10 @@
 # X11/EWMH Computer Use Port Integration
 
-This optional Port Integration stages the standalone `codex-computer-use-x11` MCP plugin into Codex Desktop Linux. It stays disabled by default and is enabled only when listed in `port-integrations/integrations.json`.
+This optional port integration stages the standalone `codex-computer-use-x11` MCP plugin into Codex Desktop Linux. It stays disabled by default and is enabled only when listed in `port-integrations.json`.
 
 ## Enable
 
-Enable through the git-ignored upstream file `port-integrations/integrations.json`:
+Enable through the git-ignored upstream file `port-integrations.json`:
 
 ```json
 { "enabled": ["x11-ewmh-computer-use"] }
@@ -65,9 +65,9 @@ CODEX_X11_COMPUTER_USE_BINARY=/path/to/codex-computer-use-x11
 
 ## Upstream alignment
 
-This integration wires the separate `codex-computer-use-x11` plugin as an opt-in Port Integration. It does not move X11/EWMH behavior into the core Computer Use backend and does not replace the bundled `computer-use` plugin.
+This port integration wires the separate `codex-computer-use-x11` plugin as an opt-in port integration. It does not move X11/EWMH behavior into the core Computer Use backend and does not replace the bundled `computer-use` plugin.
 
-`agent-sh/computer-use-linux` selectable backend/flavor integration is a separate future investigation. If that route proves a better fit, handle it in a separate change or pull request; no backend/flavor experiment may require enabling this integration by default or modifying core Computer Use behavior in this integration.
+`agent-sh/computer-use-linux` selectable backend/flavor work is a separate future investigation. If that route proves a better fit, handle it in a separate change or pull request; no backend/flavor experiment may require enabling this port integration by default or modifying core Computer Use behavior in this port integration.
 
 ## Non-goals
 

@@ -197,7 +197,12 @@ stage_from_source() {
     local cargo_cmd
     cargo_cmd="$(find_cargo)" || { echo "cargo not found for CODEX_X11_COMPUTER_USE_SOURCE build" >&2; return 1; }
     (cd "$source" && "$cargo_cmd" build --release >&2)
-    write_plugin_from_binary "$source/target/release/codex-computer-use-x11" "$TARGET_PLUGIN"
+    local cargo_target_dir="${CARGO_TARGET_DIR:-$source/target}"
+    case "$cargo_target_dir" in
+        /*) ;;
+        *) cargo_target_dir="$source/$cargo_target_dir" ;;
+    esac
+    write_plugin_from_binary "$cargo_target_dir/release/codex-computer-use-x11" "$TARGET_PLUGIN"
 }
 
 stage_from_download() {

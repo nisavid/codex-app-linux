@@ -156,11 +156,11 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
   const trayContextMethodNeedle =
     "trayMenuThreads={runningThreads:[],unreadThreads:[],pinnedThreads:[],recentThreads:[],usageLimits:[]};constructor(";
   const trayContextMethodPatch =
-    `trayMenuThreads={runningThreads:[],unreadThreads:[],pinnedThreads:[],recentThreads:[],usageLimits:[]};setLinuxTrayContextMenu(){let e=${electronVar}.Menu.buildFromTemplate(this.getNativeTrayMenuItems());this.tray.setContextMenu?.(e);return e}constructor(`;
+    `trayMenuThreads={runningThreads:[],unreadThreads:[],pinnedThreads:[],recentThreads:[],usageLimits:[]};setLinuxTrayContextMenu(){if(!this.tray)return null;let e=${electronVar}.Menu.buildFromTemplate(this.getNativeTrayMenuItems());this.tray.setContextMenu?.(e);return e}constructor(`;
   if (patchedSource.includes("setLinuxTrayContextMenu(){")) {
     patchedSource = patchedSource.replace(
-      /setLinuxTrayContextMenu\(\)\{let e=[A-Za-z_$][\w$]*\.Menu\.buildFromTemplate\(this\.getNativeTrayMenuItems\(\)\);/,
-      `setLinuxTrayContextMenu(){let e=${electronVar}.Menu.buildFromTemplate(this.getNativeTrayMenuItems());`,
+      /setLinuxTrayContextMenu\(\)\{(?:if\(!this\.tray\)return null;)?let e=[A-Za-z_$][\w$]*\.Menu\.buildFromTemplate\(this\.getNativeTrayMenuItems\(\)\);/,
+      `setLinuxTrayContextMenu(){if(!this.tray)return null;let e=${electronVar}.Menu.buildFromTemplate(this.getNativeTrayMenuItems());`,
     );
   } else if (patchedSource.includes(trayContextMethodNeedle)) {
     patchedSource = patchedSource.replace(trayContextMethodNeedle, trayContextMethodPatch);

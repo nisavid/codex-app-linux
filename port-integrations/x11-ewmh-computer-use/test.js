@@ -17,7 +17,6 @@ function upstreamRepoRoot() {
     process.env.CODEX_APP_LINUX_REPO,
     process.env.CODEX_APP_LINUX_FULL_PATH,
     path.resolve(integrationDir, "..", ".."),
-    "/home/as/Документы/AI_PROJECTS/codex-app-linux",
   ].filter(Boolean);
   for (const candidate of candidates) {
     if (fs.existsSync(path.join(candidate, "scripts/lib/port-integrations.js"))) {
@@ -204,6 +203,33 @@ test("x11-ewmh-computer-use stages a validated safe release tarball", () => {
   const pluginDir = path.join(workspace, "install/resources/plugins/openai-bundled/plugins/codex-computer-use-x11");
   assert.equal(fs.existsSync(path.join(pluginDir, ".mcp.json")), true);
   assert.equal(fs.existsSync(path.join(pluginDir, "bin/codex-computer-use-x11")), true);
+});
+
+test("x11-ewmh-computer-use source staging respects CARGO_TARGET_DIR", () => {
+  const workspace = tempDir("x11-ewmh-source-target-dir");
+  const sourceDir = path.join(workspace, "source");
+  const binDir = path.join(workspace, "bin");
+  const cargoTargetDir = path.join(workspace, "cargo-target");
+  fs.mkdirSync(sourceDir, { recursive: true });
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(path.join(sourceDir, "Cargo.toml"), "[package]\nname='codex-computer-use-x11'\nversion='0.0.0'\nedition='2021'\n");
+  fs.writeFileSync(
+    path.join(binDir, "cargo"),
+    `#!/usr/bin/env bash\nmkdir -p "$CARGO_TARGET_DIR/release"\nprintf '#!/bin/sh\\nexit 0\\n' > "$CARGO_TARGET_DIR/release/codex-computer-use-x11"\nchmod 0755 "$CARGO_TARGET_DIR/release/codex-computer-use-x11"\n`,
+  );
+  fs.chmodSync(path.join(binDir, "cargo"), 0o755);
+
+  runStage(workspace, {
+    CODEX_X11_COMPUTER_USE_SOURCE: sourceDir,
+    CARGO_TARGET_DIR: cargoTargetDir,
+    PATH: `${binDir}:${process.env.PATH}`,
+  });
+
+  const pluginBinary = path.join(
+    workspace,
+    "install/resources/plugins/openai-bundled/plugins/codex-computer-use-x11/bin/codex-computer-use-x11",
+  );
+  assert.equal(fs.existsSync(pluginBinary), true);
 });
 
 test("x11-ewmh-computer-use stays disabled until listed in integrations.json", () => {

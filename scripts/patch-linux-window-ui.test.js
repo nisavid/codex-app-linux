@@ -1170,11 +1170,11 @@ test("adds the Linux quit guard when electron/path/fs requires are split across 
 
 test("adds the Linux quit guard when only the Electron require is recognizable", () => {
   const source =
-    "const e=require(`./app-session.js`);let t=require(`electron`);class WindowManager{}";
+    "\"use strict\";const e=require(`./app-session.js`);let t=require(`electron`);class WindowManager{}";
 
   const patched = applyPatchTwice(applyLinuxQuitGuardPatch, source);
 
-  assert.match(patched, /^let codexLinuxQuitInProgress=!1/);
+  assert.match(patched, /^"use strict";let codexLinuxQuitInProgress=!1/);
   assert.match(patched, /codexLinuxExplicitQuitApproved=!1/);
   assert.match(patched, /codexLinuxMarkQuitInProgress=\(\)=>\{codexLinuxQuitInProgress=!0\}/);
   assert.match(patched, /codexLinuxPrepareForExplicitQuit=\(\)=>\{codexLinuxExplicitQuitApproved=!0,codexLinuxMarkQuitInProgress\(\)\}/);
@@ -1216,7 +1216,7 @@ test("adds a bounded will-quit drain fallback for Linux explicit quit", () => {
 
   assert.match(patched, /codexLinuxExplicitQuitDrainTimeoutMs=3e3/);
   assert.match(patched, /\(\(\)=>\{let codexLinuxFinalizeQuit=\(\)=>\{d\(\),f\.dispose\(\),n\.app\.quit\(\)\},codexLinuxDrainPromise=Promise\.all\(\[\.\.\.u\.values\(\)\]\.map\(e=>e\.flush\(\)\)\);/);
-  assert.match(patched, /if\(process\.platform===`linux`&&\(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress\(\)\)\)\{Promise\.race\(\[codexLinuxDrainPromise,new Promise\(e=>setTimeout\(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`\?codexLinuxExplicitQuitDrainTimeoutMs:3e3\)\)\]\)\.finally\(codexLinuxFinalizeQuit\);return\}/);
+  assert.match(patched, /if\(process\.platform===`linux`&&\(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress\(\)\)\)\{Promise\.race\(\[codexLinuxDrainPromise,new Promise\(e=>\{let t=setTimeout\(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`\?codexLinuxExplicitQuitDrainTimeoutMs:3e3\);t\.unref\?\.\(\),codexLinuxDrainPromise\.finally\(\(\)=>clearTimeout\(t\)\)\}\)\]\)\.finally\(codexLinuxFinalizeQuit\);return\}/);
   assert.doesNotMatch(patched, /\\`number\\`/);
   assert.match(patched, /codexLinuxDrainPromise\.finally\(codexLinuxFinalizeQuit\)\}\)\(\)/);
   assert.doesNotThrow(() => new Function(patched));
@@ -1241,7 +1241,7 @@ test("patches remaining before-quit and drain guards when another copy is alread
   const unpatchedDrain =
     "Promise.all([...u.values()].map(e=>e.flush())).finally(()=>{d(),f.dispose(),n.app.quit()})";
   const patchedDrain =
-    "(()=>{let codexLinuxFinalizeQuit=()=>{d(),f.dispose(),n.app.quit()},codexLinuxDrainPromise=Promise.all([...u.values()].map(e=>e.flush()));if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())){Promise.race([codexLinuxDrainPromise,new Promise(e=>setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`?codexLinuxExplicitQuitDrainTimeoutMs:3e3))]).finally(codexLinuxFinalizeQuit);return}codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()";
+    "(()=>{let codexLinuxFinalizeQuit=()=>{d(),f.dispose(),n.app.quit()},codexLinuxDrainPromise=Promise.all([...u.values()].map(e=>e.flush()));if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())){Promise.race([codexLinuxDrainPromise,new Promise(e=>{let t=setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`?codexLinuxExplicitQuitDrainTimeoutMs:3e3);t.unref?.(),codexLinuxDrainPromise.finally(()=>clearTimeout(t))})]).finally(codexLinuxFinalizeQuit);return}codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()";
   const patchedDrainSource = applyPatchTwice(
     applyLinuxWillQuitDrainTimeoutPatch,
     `${patchedDrain}function secondDrain(){${unpatchedDrain}}`,
@@ -1802,7 +1802,8 @@ test("adds Linux avatar overlay mouse passthrough recovery", () => {
   assert.match(patched, /this\.dragState!=null/);
   assert.match(patched, /this\.codexLinuxIsCursorInAvatarInteractiveRegion\(e\)/);
   assert.match(patched, /__codexWindowHit=__codexX>=0&&__codexY>=0&&__codexX<=__codexBounds\.width&&__codexY<=__codexBounds\.height/);
-  assert.match(patched, /return __codexHit\(t\.mascot\)\|\|__codexHit\(t\.tray\)\|\|__codexWindowHit/);
+  assert.match(patched, /return __codexHit\(t\.mascot\)\|\|__codexHit\(t\.tray\)/);
+  assert.doesNotMatch(patched, /return __codexHit\(t\.mascot\)\|\|__codexHit\(t\.tray\)\|\|__codexWindowHit/);
   assert.doesNotMatch(patched, /let r=r\.screen\.getCursorScreenPoint\(\)/);
   assert.match(patched, /catch\{t=!0\}/);
   assert.match(patched, /this\.pointerInteractive=t/);
@@ -1817,7 +1818,7 @@ test("adds Linux avatar overlay mouse passthrough recovery", () => {
   assert.match(patched, /this\.window===t&&\(this\.codexLinuxStopAvatarPassthroughRecovery\(\),this\.codexLinuxAvatarInputShapeKey=null,this\.codexLinuxAvatarCompositorHintsApplied=!1,this\.codexLinuxAvatarCompositorHintsApplying=!1,this\.cancelMomentum\(\)/);
 });
 
-test("Linux avatar overlay treats visible window content as interactive fallback", () => {
+test("Linux avatar overlay treats only shaped regions as interactive", () => {
   const patched = applyPatchTwice(
     applyLinuxAvatarOverlayMousePassthroughPatch,
     avatarOverlayBundleFixture(),
@@ -1861,7 +1862,7 @@ test("Linux avatar overlay treats visible window content as interactive fallback
     controller.codexLinuxIsCursorInAvatarInteractiveRegion({
       getContentBounds: () => ({ x: 5743, y: 936, width: 356, height: 320 }),
     }),
-    true,
+    false,
   );
   assert.equal(
     controller.codexLinuxIsCursorInAvatarInteractiveRegion({
@@ -2033,7 +2034,7 @@ test("adds Linux tray support including the platform guard", () => {
     patched,
     /\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&!this\.isAppQuitting&&!\(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress\(\)\)/,
   );
-  assert.match(patched, /setLinuxTrayContextMenu\(\)\{let e=n\.Menu\.buildFromTemplate/);
+  assert.match(patched, /setLinuxTrayContextMenu\(\)\{if\(!this\.tray\)return null;let e=n\.Menu\.buildFromTemplate/);
   assert.match(
     patched,
     /process\.platform===`linux`&&this\.setLinuxTrayContextMenu\(\),this\.tray\.on\(`click`/,
@@ -3162,6 +3163,7 @@ test("adds Linux package updater behind the existing app updater manager", () =>
   assert.match(patched, /this\.setInstallProgressPercent\(null\),codexLinuxQuitForUpdate\(\)/);
   assert.doesNotMatch(patched, /this\.options\.onInstallUpdatesRequested\?\.\(\)/);
   assert.match(patched, /n\.stdout\?\.includes\(`already installed`\)\?await codexLinuxShowUpdateMessage/);
+  assert.match(patched, /n\.stdout\?\.includes\(`Manual install required:`\)\?await codexLinuxShowUpdateMessage/);
   assert.match(patched, /if\(t\?\.status===`waiting_for_app_exit`\)/);
 });
 
@@ -4178,6 +4180,16 @@ test("auto-approves the current Browser Use node_repl runtime config builder", (
     patched,
     /e\.Pn\(\{codexCliPath:c\.codexCliPath,codexHome:f,extraEnv:y,nodeModuleDirs:d,nodePath:c\.nodePath,nodeReplPath:l\?t\.Cr\(c\.nodeReplPath\):c\.nodeReplPath,tools:\{js:\{approval_mode:`approve`\}\},platform:c\.platform/,
   );
+});
+
+test("does not duplicate Browser Use node_repl runtime tools config", () => {
+  const source =
+    "return e.Pn({codexCliPath:c.codexCliPath,nodeReplPath:c.nodeReplPath,platform:c.platform,tools:{js:{approval_mode:`manual`}},requestMeta:h})";
+
+  const patched = applyPatchTwice(applyBrowserUseNodeReplApprovalPatch, source);
+
+  assert.equal((patched.match(/tools:/g) || []).length, 1);
+  assert.equal(patched, source);
 });
 
 test("auto-approves the Electron 42 Browser Use node_repl runtime config builder", () => {
@@ -5545,6 +5557,18 @@ test("criticalFailuresFromReport agrees with validateReport and skips non-applic
   assert.ok(failures.some((failure) => failure.startsWith("req-bad:")));
   assert.ok(!failures.some((failure) => failure.startsWith("req-not-applicable:")));
   assert.ok(!failures.some((failure) => failure.startsWith("opt-bad:")));
+});
+
+test("validateReport rejects unknown profiles and preserves legacy profile alias", () => {
+  const report = {
+    patches: [],
+  };
+
+  assert.throws(
+    () => validateReport(report, "offical-dmg-build"),
+    /Unknown patch validation profile: offical-dmg-build/,
+  );
+  assert.deepEqual(validateReport(report, "upstream-build"), validateReport(report, "official-dmg-build"));
 });
 
 test("patchMainBundleSource survives a throwing optional patch without a report", () => {

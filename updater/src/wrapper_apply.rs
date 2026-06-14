@@ -326,7 +326,27 @@ fn stage_enabled_local_integrations(
     let target_integrations_root = wrapper_src.join("port-integrations");
     for id in enabled_integration_ids_from_config(integration_config) {
         let source_dir = source_local_root.join(&id);
-        if !source_dir.join("integration.json").is_file() {
+        let manifest_path = source_dir.join("integration.json");
+        if !manifest_path.is_file() {
+            continue;
+        }
+
+        let manifest_id = fs::read_to_string(&manifest_path)
+            .ok()
+            .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+            .and_then(|value| {
+                value
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+            });
+        if manifest_id.as_deref() != Some(id.as_str()) {
+            warn!(
+                path = %manifest_path.display(),
+                expected = %id,
+                actual = ?manifest_id,
+                "skipping local port integration with mismatched manifest id"
+            );
             continue;
         }
 
@@ -767,13 +787,17 @@ mod tests {
     }
 
     fn write_local_integration(root: &Path, id: &str) {
+        write_local_integration_with_manifest_id(root, id, id);
+    }
+
+    fn write_local_integration_with_manifest_id(root: &Path, id: &str, manifest_id: &str) {
         let integration_dir = root.join("builder/port-integrations/local").join(id);
         std::fs::create_dir_all(integration_dir.join("nested")).unwrap();
         std::fs::write(
             integration_dir.join("integration.json"),
             format!(
                 r#"{{
-  "id": "{id}",
+  "id": "{manifest_id}",
   "title": "Local Integration",
   "description": "Local test integration",
   "defaultEnabled": false,
@@ -840,6 +864,31 @@ mod tests {
             r#"{"id":"model-provider-switcher"}"#,
         )
         .unwrap();
+        std::fs::write(
+            &integration_config,
+            r#"{"enabled":["model-provider-switcher"]}"#,
+        )
+        .unwrap();
+
+        stage_enabled_local_integrations(&config, &wrapper_src, Some(&integration_config)).unwrap();
+
+        assert!(!wrapper_src
+            .join("port-integrations/local/model-provider-switcher/integration.json")
+            .exists());
+    }
+
+    #[test]
+    fn local_integration_staging_skips_manifest_id_mismatch() {
+        let root = tempdir().unwrap();
+        let config = test_config(root.path());
+        let wrapper_src = root.path().join("wrapper-src");
+        let integration_config = root.path().join("port-integrations.json");
+        write_local_integration_with_manifest_id(
+            root.path(),
+            "model-provider-switcher",
+            "other-id",
+        );
+        std::fs::create_dir_all(wrapper_src.join("port-integrations")).unwrap();
         std::fs::write(
             &integration_config,
             r#"{"enabled":["model-provider-switcher"]}"#,

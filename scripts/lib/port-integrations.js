@@ -45,10 +45,10 @@ function portIntegrationsRoot(options = {}) {
 }
 
 function portIntegrationsConfigPath(integrationsRoot, options = {}) {
-  if (options.integrationsConfigPath != null) {
+  if (options.integrationsConfigPath != null && String(options.integrationsConfigPath).trim() !== "") {
     return path.resolve(options.integrationsConfigPath);
   }
-  if (options.featuresConfigPath != null) {
+  if (options.featuresConfigPath != null && String(options.featuresConfigPath).trim() !== "") {
     return path.resolve(options.featuresConfigPath);
   }
   if (process.env.CODEX_PORT_INTEGRATIONS_CONFIG?.trim()) {

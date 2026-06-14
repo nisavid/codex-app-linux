@@ -50,6 +50,8 @@ assert_mode() {
 
     assert_file_exists "$path"
     actual="$(stat -c '%a' "$path")"
+    actual="$(printf '%03d' "$actual")"
+    expected="$(printf '%03d' "$expected")"
     [ "$actual" = "$expected" ] || fail "Expected $path mode $expected, got $actual"
 }
 
@@ -212,8 +214,8 @@ test_stage_common_package_files_resolves_tray_icon_deterministically() {
     local root="$workspace/root"
     local output_log="$workspace/output.log"
     local icon_source="$workspace/icon-source.png"
-    local tray_output="$root/opt/codex-desktop/.codex-linux/codex-desktop-tray.png"
-    local package_icon="$root/opt/codex-desktop/.codex-linux/codex-desktop.png"
+    local tray_output="$root/opt/codex-app/.codex-linux/codex-app-tray.png"
+    local package_icon="$root/opt/codex-app/.codex-linux/codex-app.png"
 
     mkdir -p "$workspace" "$root"
     make_fake_app "$app_dir"
@@ -223,10 +225,10 @@ test_stage_common_package_files_resolves_tray_icon_deterministically() {
 
     (
         export APP_DIR="$app_dir"
-        export PACKAGE_NAME="codex-desktop"
+        export PACKAGE_NAME="codex-app"
         export PACKAGE_WITH_UPDATER=0
         export ICON_SOURCE="$icon_source"
-        export DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-desktop.desktop"
+        export DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.desktop"
         export PACKAGED_RUNTIME_SOURCE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
         # shellcheck disable=SC1091
         source "$REPO_DIR/scripts/lib/package-common.sh"
@@ -253,7 +255,7 @@ test_stage_common_package_files_tray_icon_fallbacks_when_ambiguous_or_missing() 
     for scenario in ambiguous missing; do
         local app_dir="$workspace/$scenario-app"
         local root="$workspace/$scenario-root"
-        local tray_output="$root/opt/codex-desktop/.codex-linux/codex-desktop-tray.png"
+        local tray_output="$root/opt/codex-app/.codex-linux/codex-app-tray.png"
 
         mkdir -p "$root"
         make_fake_app "$app_dir"
@@ -265,10 +267,10 @@ test_stage_common_package_files_tray_icon_fallbacks_when_ambiguous_or_missing() 
 
         (
             export APP_DIR="$app_dir"
-            export PACKAGE_NAME="codex-desktop"
+            export PACKAGE_NAME="codex-app"
             export PACKAGE_WITH_UPDATER=0
             export ICON_SOURCE="$icon_source"
-            export DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-desktop.desktop"
+            export DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.desktop"
             export PACKAGED_RUNTIME_SOURCE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
             # shellcheck disable=SC1091
             source "$REPO_DIR/scripts/lib/package-common.sh"
@@ -4177,7 +4179,7 @@ JS
     assert_contains "$extracted/.vite/build/main-test.js" 'nativeImage.createFromPath(process.resourcesPath+`/../content/webview/assets/app-test.png`)'
     assert_contains "$extracted/.vite/build/main-test.js" '(process.platform===`win32`||process.platform===`linux`)&&!this.isAppQuitting'
     assert_contains "$extracted/.vite/build/main-test.js" '!this.isAppQuitting&&!(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())'
-    assert_contains "$extracted/.vite/build/main-test.js" 'setLinuxTrayContextMenu(){let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems())'
+    assert_contains "$extracted/.vite/build/main-test.js" 'setLinuxTrayContextMenu(){if(!this.tray)return null;let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems())'
     assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&this.setLinuxTrayContextMenu(),this.tray.on(`click`'
     assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`?this.openNativeTrayMenu():this.onTrayButtonClick()'
     assert_contains "$extracted/.vite/build/main-test.js" 'openNativeTrayMenu(){if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress()))return;'
@@ -5275,6 +5277,15 @@ test_patcher_enforce_critical_gate() {
     [ "$status" -ne 0 ] || fail "expected --enforce-critical to exit non-zero on critical patch failures"
     assert_contains "$output_log" 'Critical patch failures'
     [ -f "$report_json" ] || fail "expected patch report to be written despite enforcement failure"
+    node - "$report_json" <<'NODE' || fail "expected patch report to include at least one critical patch failure"
+const fs = require("node:fs");
+const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const critical = (report.patches || []).filter((patch) =>
+  patch.ciPolicy === "required-official-dmg" &&
+  ["failed-required", "skipped-required", "skipped-unknown"].includes(patch.status)
+);
+process.exit(critical.length > 0 ? 0 : 1);
+NODE
 }
 
 test_webview_probe_equivalence() {
@@ -5871,6 +5882,7 @@ EOF
         || fail "Expected local integration symlink target to be preserved"
     assert_file_not_exists "$managed_repo/port-integrations/local/repo-feature/integration.json"
     assert_file_not_exists "$managed_repo/port-integrations/local/missing-local/integration.json"
+    assert_file_not_exists "$managed_repo/port-integrations/local/bad id/integration.json"
     assert_file_exists "$managed_repo/port-integrations/repo-feature/integration.json"
 }
 

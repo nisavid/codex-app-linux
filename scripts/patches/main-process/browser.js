@@ -16,10 +16,48 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
 
   const currentRuntimeConfigRegex =
     /([A-Za-z_$][\w$]*)\.(Dn|Pn|Fa)\(\{([^{}]*?)nodeReplPath:([^,{}]+)(,)(?!tools:\{js:\{approval_mode:`approve`\}\})/g;
+  function runtimeConfigObjectHasTools(source, matchOffset) {
+    const objectStart = source.indexOf("{", matchOffset);
+    if (objectStart === -1) {
+      return false;
+    }
+    let depth = 0;
+    let quote = null;
+    let escaped = false;
+    for (let index = objectStart; index < source.length; index += 1) {
+      const char = source[index];
+      if (quote != null) {
+        if (escaped) {
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === quote) {
+          quote = null;
+        }
+        continue;
+      }
+      if (char === "\"" || char === "'" || char === "`") {
+        quote = char;
+        continue;
+      }
+      if (char === "{") {
+        depth += 1;
+      } else if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          return /(?:^|,)tools:/.test(source.slice(objectStart + 1, index));
+        }
+      }
+    }
+    return false;
+  }
   let patchedAnyCurrentRuntimeConfig = false;
   patchedSource = patchedSource.replace(
     currentRuntimeConfigRegex,
-    (_match, runtimeFactoryVar, runtimeFactoryMethod, configPrefix, nodeReplPathVar, comma) => {
+    (match, runtimeFactoryVar, runtimeFactoryMethod, configPrefix, nodeReplPathVar, comma, offset) => {
+      if (runtimeConfigObjectHasTools(patchedSource, offset)) {
+        return match;
+      }
       patchedAnyCurrentRuntimeConfig = true;
       return `${runtimeFactoryVar}.${runtimeFactoryMethod}({${configPrefix}nodeReplPath:${nodeReplPathVar}${comma}tools:{js:{approval_mode:\`approve\`}},`;
     },
