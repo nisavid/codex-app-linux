@@ -158,6 +158,33 @@ test("settings asset patch prefers generated Linux desktop settings bundle", () 
   }
 });
 
+test("settings asset patch treats already patched Linux settings as matched when general settings drift", () => {
+  const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-already-patched-settings-"));
+  const assetsDir = path.join(appDir, "webview", "assets");
+  fs.mkdirSync(assetsDir, { recursive: true });
+  const linuxDesktopSettings =
+    `var KEYS={autoUpdateOnExit:"codex-linux-auto-update-on-exit"};` +
+    `function Settings(){return $.jsx(SettingsGroup,{children:$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close Codex",description:"When on, a ready update waits for Codex to close and then installs. When off, updates wait until you click Update."})})}`;
+  const alreadyPatchedSettings = applyWrapperUpdateSettingsPatch(linuxDesktopSettings);
+  const generalSettings = `function Br(){return null}`;
+  fs.writeFileSync(path.join(assetsDir, "linux-desktop-settings-linux.js"), alreadyPatchedSettings);
+  fs.writeFileSync(path.join(assetsDir, "general-settings-z.js"), generalSettings);
+
+  try {
+    assert.deepEqual(patchWrapperUpdateSettingsAssets(appDir), { matched: true, changed: 0 });
+    assert.equal(
+      fs.readFileSync(path.join(assetsDir, "linux-desktop-settings-linux.js"), "utf8"),
+      alreadyPatchedSettings,
+    );
+    assert.equal(
+      fs.readFileSync(path.join(assetsDir, "general-settings-z.js"), "utf8"),
+      generalSettings,
+    );
+  } finally {
+    fs.rmSync(appDir, { recursive: true, force: true });
+  }
+});
+
 test("settings asset patch tries keybinds asset after desktop settings drift", () => {
   const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-settings-fallback-"));
   const assetsDir = path.join(appDir, "webview", "assets");

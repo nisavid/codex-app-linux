@@ -984,6 +984,8 @@ test("general settings patch follows current export map instead of stale Gn alia
   assert.match(patched, /k\(`get-global-state`,\{params:\{key:"codex-linux-read-aloud-enabled"\}\}\)/);
   assert.match(patched, /k\(`set-global-state`,\{params:\{key:"codex-linux-read-aloud-enabled",value:n\}\}\)/);
   assert.match(patched, /k\(`set-global-state`,\{params:\{key:"codex-linux-read-aloud-kokoro-speed",value:t\}\}\)/);
+  assert.match(patched, /let o=n,t=codexLinuxReadAloudPaceValue\(e\.currentTarget\.value\)/);
+  assert.match(patched, /catch\(e=>\{r\(o\),s\(e instanceof Error\?e\.message:String\(e\)\)\}\)/);
   assert.doesNotMatch(patched, /set-setting|get-setting/);
   assert.doesNotMatch(patched, /let e=S\(D\),t=F\(\),n=\{key:"codex-linux-read-aloud-enabled",default:!1\}/);
   assert.doesNotMatch(patched, /U\(e,n,t\)/);

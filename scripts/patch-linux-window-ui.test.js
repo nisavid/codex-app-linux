@@ -882,10 +882,7 @@ function currentLaunchActionBundleFixture() {
 }
 
 function currentLaunchActionBundleWithWindowApiDriftFixture() {
-  return currentLaunchActionBundleFixture()
-    .replaceAll("createFreshLocalWindow", "createFreshWindow")
-    .replace("getPrimaryWindow()??await M.createFreshWindow(`/`)", "getPrimaryWindow()??await M.createFreshWindow(`/`)")
-    .replace("let n=M.getPrimaryWindow(),r=n??await M.createFreshWindow(e);", "let n=M.getPrimaryWindow(),r=n??await M.createFreshWindow(e);");
+  return currentLaunchActionBundleFixture().replaceAll("createFreshLocalWindow", "createFreshWindow");
 }
 
 function settingsPersistenceBundleFixture() {
@@ -1216,7 +1213,7 @@ test("adds a bounded will-quit drain fallback for Linux explicit quit", () => {
 
   assert.match(patched, /codexLinuxExplicitQuitDrainTimeoutMs=3e3/);
   assert.match(patched, /\(\(\)=>\{let codexLinuxFinalizeQuit=\(\)=>\{d\(\),f\.dispose\(\),n\.app\.quit\(\)\},codexLinuxDrainPromise=Promise\.all\(\[\.\.\.u\.values\(\)\]\.map\(e=>e\.flush\(\)\)\);/);
-  assert.match(patched, /if\(process\.platform===`linux`&&\(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress\(\)\)\)\{Promise\.race\(\[codexLinuxDrainPromise,new Promise\(e=>\{let t=setTimeout\(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`\?codexLinuxExplicitQuitDrainTimeoutMs:3e3\);t\.unref\?\.\(\),codexLinuxDrainPromise\.finally\(\(\)=>clearTimeout\(t\)\)\}\)\]\)\.finally\(codexLinuxFinalizeQuit\);return\}/);
+  assert.match(patched, /if\(process\.platform===`linux`&&\(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress\(\)\)\)\{Promise\.race\(\[codexLinuxDrainPromise\.catch\(\(\)=>\{\}\),new Promise\(e=>\{let t=setTimeout\(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`\?codexLinuxExplicitQuitDrainTimeoutMs:3e3\);t\.unref\?\.\(\),codexLinuxDrainPromise\.catch\(\(\)=>\{\}\)\.finally\(\(\)=>clearTimeout\(t\)\)\}\)\]\)\.finally\(codexLinuxFinalizeQuit\);return\}/);
   assert.doesNotMatch(patched, /\\`number\\`/);
   assert.match(patched, /codexLinuxDrainPromise\.finally\(codexLinuxFinalizeQuit\)\}\)\(\)/);
   assert.doesNotThrow(() => new Function(patched));
@@ -1241,7 +1238,7 @@ test("patches remaining before-quit and drain guards when another copy is alread
   const unpatchedDrain =
     "Promise.all([...u.values()].map(e=>e.flush())).finally(()=>{d(),f.dispose(),n.app.quit()})";
   const patchedDrain =
-    "(()=>{let codexLinuxFinalizeQuit=()=>{d(),f.dispose(),n.app.quit()},codexLinuxDrainPromise=Promise.all([...u.values()].map(e=>e.flush()));if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())){Promise.race([codexLinuxDrainPromise,new Promise(e=>{let t=setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`?codexLinuxExplicitQuitDrainTimeoutMs:3e3);t.unref?.(),codexLinuxDrainPromise.finally(()=>clearTimeout(t))})]).finally(codexLinuxFinalizeQuit);return}codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()";
+    "(()=>{let codexLinuxFinalizeQuit=()=>{d(),f.dispose(),n.app.quit()},codexLinuxDrainPromise=Promise.all([...u.values()].map(e=>e.flush()));if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())){Promise.race([codexLinuxDrainPromise.catch(()=>{}),new Promise(e=>{let t=setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`?codexLinuxExplicitQuitDrainTimeoutMs:3e3);t.unref?.(),codexLinuxDrainPromise.catch(()=>{}).finally(()=>clearTimeout(t))})]).finally(codexLinuxFinalizeQuit);return}codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()";
   const patchedDrainSource = applyPatchTwice(
     applyLinuxWillQuitDrainTimeoutPatch,
     `${patchedDrain}function secondDrain(){${unpatchedDrain}}`,
@@ -2791,6 +2788,8 @@ test("keeps Linux desktop toggles visible with native Keyboard Shortcuts", () =>
     assert.match(linuxDesktopSource, /Warm start/);
     assert.match(linuxDesktopSource, /Install updates when you close Codex/);
     assert.match(linuxDesktopSource, /Build information/);
+    assert.match(linuxDesktopSource, /Enabled port integrations/);
+    assert.doesNotMatch(linuxDesktopSource, /Enabled features/);
     assert.match(linuxDesktopSource, /Linux source commit/);
     assert.match(linuxDesktopSource, /Copy commit/);
     assert.match(linuxDesktopSource, /Open commit/);

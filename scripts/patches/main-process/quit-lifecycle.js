@@ -58,10 +58,10 @@ function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {
   const originalDrainSnippet =
     "Promise.all([...u.values()].map(e=>e.flush())).finally(()=>{d(),f.dispose(),n.app.quit()})";
   const timeoutPromise =
-    "new Promise(e=>{let t=setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`?codexLinuxExplicitQuitDrainTimeoutMs:3e3);t.unref?.(),codexLinuxDrainPromise.finally(()=>clearTimeout(t))})";
+    "new Promise(e=>{let t=setTimeout(e,typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`?codexLinuxExplicitQuitDrainTimeoutMs:3e3);t.unref?.(),codexLinuxDrainPromise.catch(()=>{}).finally(()=>clearTimeout(t))})";
   const patchedDrainSnippet =
     "(()=>{let codexLinuxFinalizeQuit=()=>{d(),f.dispose(),n.app.quit()},codexLinuxDrainPromise=Promise.all([...u.values()].map(e=>e.flush()));" +
-    `if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise,${timeoutPromise}]).finally(codexLinuxFinalizeQuit);return}` +
+    `if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise.catch(()=>{}),${timeoutPromise}]).finally(codexLinuxFinalizeQuit);return}` +
     "codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()";
   let patchedAny = false;
 
@@ -76,7 +76,7 @@ function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {
     drainRegex,
     (_match, globalStatesVar, flushDisposeVar, disposablesVar, electronVar) => {
       patchedAny = true;
-      return `(()=>{let codexLinuxFinalizeQuit=()=>{${flushDisposeVar}(),${disposablesVar}.dispose(),${electronVar}.app.quit()},codexLinuxDrainPromise=Promise.all([...${globalStatesVar}.values()].map(e=>e.flush()));if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise,${timeoutPromise}]).finally(codexLinuxFinalizeQuit);return}codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()`;
+      return `(()=>{let codexLinuxFinalizeQuit=()=>{${flushDisposeVar}(),${disposablesVar}.dispose(),${electronVar}.app.quit()},codexLinuxDrainPromise=Promise.all([...${globalStatesVar}.values()].map(e=>e.flush()));if(${explicitQuitDrainGuard}){Promise.race([codexLinuxDrainPromise.catch(()=>{}),${timeoutPromise}]).finally(codexLinuxFinalizeQuit);return}codexLinuxDrainPromise.finally(codexLinuxFinalizeQuit)})()`;
     },
   );
 

@@ -261,7 +261,9 @@ function patchWrapperUpdateSettingsAssets(extractedDir) {
       }
     }
 
-    return { matched: false, changed: 0, reason: lastError ?? "could not patch general settings asset" };
+    return alreadyPatchedSettingsAsset
+      ? { matched: true, changed: 0 }
+      : { matched: false, changed: 0, reason: lastError ?? "could not patch general settings asset" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`WARN: Wrapper update settings patch skipped: ${message}`);
