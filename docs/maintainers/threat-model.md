@@ -1,6 +1,6 @@
 # Codex App Linux Threat Model
 
-Date: 2026-05-23
+Date: 2026-06-15
 
 This repository adapts the official OpenAI `Codex.dmg` into a Linux Electron
 app, builds native Linux packages, and ships `codex-app-updater` to check,
@@ -26,10 +26,10 @@ The highest-risk areas are:
    tightly bound to a verified package identity and digest.
 3. **Desktop and renderer containment.** The generated Electron app, local
    webview server, Codex CLI, Linux Computer Use backend, and default-enabled
-   remote-control/mobile port integration patches all run with the user's desktop
-   privileges. A renderer, plugin, localhost, CLI, or same-user XDG config
-   compromise can affect local files, screenshots, input, remote-control device
-   keys, and user processes.
+   port integrations all run with the user's desktop privileges. A renderer,
+   plugin, localhost, CLI, or same-user XDG config compromise can affect local
+   files, screenshots, input, remote-control device keys, helper command
+   selection, update prompts, and user processes.
 
 The repository already has meaningful hardening: HTTPS-only non-loopback DMG
 URLs, URL redaction, partial downloads, package metadata checks, private staged
@@ -40,10 +40,12 @@ privileged installs, default-enabled Electron sandboxing, release gate checks,
 Apple DMG verification tooling, descriptor-based required patch validation,
 sanitized Linux desktop-target launches, loopback-only no-cache webview serving,
 no-updater transition cleanup under package-owned support paths, default-enabled
-remote-control UI/mobile patching, and `0600` Linux remote-control device-key
-storage under XDG config. The remaining critical gaps are generated app security
-review evidence, public artifact provenance, and a general-readiness review for
-the experimental remote-control/mobile host boundary.
+remote-control UI/mobile patching, private AppShots temporary capture staging,
+and `0600` Linux remote-control device-key storage under XDG config. The
+remaining critical gaps are generated app security review evidence, public
+artifact provenance, Agent Workspaces main-process bridge hardening, and a
+general-readiness review for the experimental remote-control/mobile host
+boundary.
 
 ## Scope
 
@@ -103,6 +105,8 @@ Out of scope:
 - Remote-control/mobile Linux patches remain experimental. Account policy,
   enrollment, MFA, connected-client state, and remote-access decisions remain
   owned by OpenAI-hosted services and generated app flows.
+- Copilot account entitlement, quota, and request normalization decisions remain
+  owned by OpenAI-hosted services.
 - Linux remote-control device keys are software keys stored under XDG config.
   They are not hardware-backed or protected from same-user compromise.
 
@@ -138,6 +142,24 @@ Open questions that materially affect risk:
   and configurable integration patches to generated main-process, webview, and
   extracted-app bundles; required official-app patches must fail closed in
   patch reports. The source path is `port-integrations/`.
+- **Agent Workspaces port integration:** adds a generated app settings page,
+  staged Codex skill, prelaunch hook, and main-process bridge to
+  `agent-workspace-linux`; workspace profiles, permission JSON, command paths,
+  and acknowledgement params cross from generated webview/settings state to the
+  main process and local helper runtime.
+- **AppShots port integration:** exposes upstream AppShots on Linux, patches
+  main-process focused-window screenshot handlers, stages a bare-modifier
+  helper, and writes full-screen capture intermediates to private per-capture
+  temporary directories before returning cropped data URLs to the generated
+  app.
+- **Wrapper updater port integration:** adds generated app UI for local wrapper
+  update status, settings, and apply-on-exit markers; the runtime stays
+  user-context and delegates durable package/update behavior to
+  `codex-app-updater`.
+- **Copilot reasoning-effort port integration:** patches generated webview
+  settings so Copilot-auth sessions can select and persist non-medium reasoning
+  effort defaults; request authorization, entitlement, quota, and normalization
+  remain OpenAI-hosted service decisions.
 - **Linux open-target discovery:** default-enabled patching of generated app
   open-target behavior to discover terminals, IDEs, file managers, and
   `.desktop` entries, sanitize the launch environment, and invoke targets with
@@ -177,6 +199,10 @@ Open questions that materially affect risk:
 | Generated app bundle | extracted official app and patched ASAR | Linux Electron runtime | Renderer isolation, IPC, navigation, local file access |
 | Local webview origin | loopback HTTP server | Electron renderer | Same-user port spoofing, stale assets, served-asset substitution |
 | Port integration patches | generated app bundle | desktop launch helpers and platform integrations | Descriptor drift, command launch semantics, unsafe environment inheritance |
+| Agent Workspaces bridge | renderer settings, global state, profile and permission JSON | Electron main process and `agent-workspace-linux` | Helper command selection, renderer-supplied approvals, permission enforcement |
+| AppShots capture | renderer AppShots requests and desktop state | screenshot tools, temporary files, generated renderer result | Sensitive desktop capture exposure, temporary-file leakage, availability-gate drift |
+| Wrapper updater UI | generated webview settings and wrapper status markers | updater manager and after-exit/prelaunch hooks | Misleading update state, unwanted local rebuild or apply flow |
+| Copilot reasoning setting | generated webview preferences | OpenAI-hosted Copilot request handling | Client-side entitlement assumptions, quota or policy confusion |
 | Remote-control/mobile patches | official app and account/mobile service state | local UI gates, app-server config, XDG device-key store | Software key theft, misleading availability, confused authorization state |
 | User config/state/cache | XDG user-writable files | updater decisions and rebuild inputs | Path substitution, stale state, developer-mode misuse, secret leakage |
 | Updater rebuild | unprivileged user service | package builder scripts and artifacts | Builder-root trust, PATH/tool influence, package identity |
@@ -197,8 +223,17 @@ flowchart LR
   W --> E["Electron renderer"]
   E --> C["Codex CLI"]
   E --> M["Computer Use MCP backend"]
-  E --> RC["Remote-control/mobile port integration patches"]
+  E --> PI["Default port integrations"]
+  PI --> AW["Agent Workspaces"]
+  PI --> AS["AppShots"]
+  PI --> WR["Wrapper updater UI"]
+  PI --> CR["Copilot settings"]
+  PI --> RC["Remote-control/mobile patches"]
   M --> H["Desktop state, screenshots, input"]
+  AW --> CLI["agent-workspace-linux"]
+  AS --> H
+  WR --> U
+  CR --> OA["OpenAI services"]
   RC --> K["XDG software device-key store"]
   U --> B["Package builder"]
   B --> P["Native package"]
@@ -223,6 +258,10 @@ flowchart LR
   official OpenAI Codex DMG and reviewed patch set.
 - **Renderer and desktop-control boundary:** keep Electron, webview, CLI, and
   Computer Use behavior constrained to intended user-consented actions.
+- **Port integration control state:** treat generated webview settings,
+  integration global state, local helper paths, permission/profile JSON, update
+  markers, and feature preferences as user-writable inputs that must be
+  revalidated at the trusted action sink.
 - **Remote-control device keys and enrollment state:** protect software private
   keys, preserved app-server remote-control config, and UI state that implies
   whether another device can control or be controlled by this desktop.
@@ -243,6 +282,12 @@ flowchart LR
   by same-user processes.
 - Generated ASAR/webview content, renderer messages, plugin manifests, and
   Computer Use requests.
+- Agent Workspace settings state, renderer-supplied bridge params, local
+  permission/profile JSON, and configured command paths.
+- AppShots focused-window capture requests, accessibility output, screenshot
+  tool behavior, and temporary desktop-capture files.
+- Copilot model and reasoning-effort preferences persisted by generated webview
+  settings.
 - Remote-control app-server config values, generated remote UI
   bundle state, mobile enrollment messages, and XDG device-key files.
 - `.desktop` entries, icon files, PATH entries, XDG desktop/session variables,
@@ -276,6 +321,22 @@ flowchart LR
   inputs.
 - Computer Use must remain locally scoped, account/host-gated, and bound to
   user-consented desktop-control semantics.
+- Renderer-visible port integration controls must not be treated as security
+  boundaries unless the main process or backend enforces the same decision.
+- Platform enablement patches must preserve upstream account, rollout, and
+  availability gates unless the local integration supplies an equivalent
+  documented control.
+- Agent Workspaces helper command selection, permission files, and workspace
+  start acknowledgements must be enforced by the main process or helper runtime
+  before any local process launch.
+- Sensitive desktop captures must use private owner-only temporary staging and
+  deterministic cleanup.
+- Wrapper update UI state must not by itself authorize package installation;
+  durable update eligibility remains with `codex-app-updater` state,
+  verification, and install gates.
+- Copilot reasoning-effort defaults must not be treated as proof of entitlement
+  or quota; OpenAI-hosted services remain authoritative for Copilot request
+  acceptance and normalization.
 - Remote-control/mobile patches must not fabricate connected clients, MFA,
   enrollment, or remote environment state, and must store Linux device keys
   under private XDG config paths with owner-only file modes.
@@ -436,18 +497,16 @@ added.
 
 ### T5b: Remote-Control Or Mobile Host Enrollment Misstates Trust
 
-**Entry points:** default-enabled `remote-control-ui`, `remote-mobile-control`,
-`agent-workspace`, `appshots`, and `codex-wrapper-updater` port integrations,
-generated remote-control and Codex mobile webview bundles, app-server config
-preservation, Linux software device-key store, Agent Workspace profile and
-permission controls, AppShots focused-window capture, wrapper update markers,
-and OpenAI account/mobile enrollment flows.
+**Entry points:** default-enabled `remote-control-ui` and
+`remote-mobile-control` port integrations, generated remote-control and Codex
+mobile webview bundles, app-server config preservation, Linux software
+device-key store, and OpenAI account/mobile enrollment flows.
 
 **Abuse path:** a same-user process steals the Linux software private key, a
 patched UI implies a remote-control state that OpenAI-hosted services have not
-authorized, or
-bundle drift causes the fork to bypass an account-side availability, access, or
-enrollment guard instead of only exposing Linux host plumbing.
+authorized, or bundle drift causes the fork to bypass an account-side
+availability, access, or enrollment guard instead of only exposing Linux host
+plumbing.
 
 **Impact:** Medium to High. Successful abuse can affect whether another device
 can control the local desktop or whether this host can sign remote-control
@@ -457,18 +516,11 @@ end-to-end authorization path.
 **Existing mitigations:** default-enabled entry points expose Linux host
 plumbing without fabricating OpenAI enrollment, connected-client, or MFA state;
 patches are descriptor-scoped and fail soft; Linux device keys are stored in a
-per-user XDG config file with `0600` mode; Agent Workspaces requires an explicit
-settings-page approval before starting a hidden workspace and passes saved
-permission rules to the runtime; AppShots fails closed when focused-window
-capture inputs are unavailable and keeps global hotkeys inactive until selected;
-wrapper update checks remain off until enabled in Settings and failed applies
-preserve a retry marker instead of leaving a half-updated app; and tests cover
-key creation, signing, deletion, visibility gating, local host auto-connect
-selection, missing local host identity, refreshed connection snapshots, and
-Linux-specific copy.
+per-user XDG config file with `0600` mode; and tests cover key creation,
+signing, deletion, visibility gating, local host auto-connect selection, missing
+local host identity, refreshed connection snapshots, and Linux-specific copy.
 
-**Gaps:** Linux keys are software-only and same-user readable; fork-side tests
-cannot prove OpenAI account/mobile authorization semantics; connected-looking
+**Gaps:** Linux keys are software-only and same-user readable; connected-looking
 UI is not proof that the intended live host, app-server or managed daemon, and
 thread/session are current, reachable, and authorized; remote-control patches
 need fresh security review and the host-state matrix in
@@ -477,6 +529,96 @@ before being treated as general-ready functionality.
 
 **Priority:** High when touching remote-control/mobile behavior; Medium
 otherwise.
+
+### T5c: Agent Workspaces Bridge Launches A Renderer-Selected Helper Flow
+
+**Entry points:** default-enabled `agent-workspace` port integration, generated
+Agent Workspaces settings page, generated main-process bridge,
+`codex-linux-agent-workspace-command` global state, profile and permission JSON,
+workspace start acknowledgement params, prelaunch skill hook, and
+`agent-workspace-linux`.
+
+**Abuse path:** renderer-controlled or same-user state selects a helper command,
+profile, permission file, or acknowledgement param; the main process forwards
+the action to `agent-workspace-linux`; a workspace starts with a command or
+approval boundary the user did not intend.
+
+**Impact:** Medium to High. Successful abuse runs user-context local processes
+and can influence hidden workspace startup, mounted paths, app access,
+network policy, browser-session copies, and generated artifacts.
+
+**Existing mitigations:** the normal settings flow previews hidden workspace
+starts, forwards saved permission rules to the runtime, uses argument-vector
+process launches, avoids shell execution, expands only documented helper
+locations, and includes focused tests for command discovery, permission files,
+profile handling, viewer spawning, settings UI, and prelaunch skill staging.
+
+**Gaps:** the main process still needs hardening for executable selection and
+hidden-workspace approval before the settings UI can be treated as the security
+boundary; tracked in
+[issue #99](https://github.com/nisavid/codex-app-linux/issues/99).
+
+**Priority:** High when changing Agent Workspaces bridge behavior; Medium
+otherwise.
+
+### T5d: AppShots Captures Sensitive Desktop Content
+
+**Entry points:** default-enabled `appshots` port integration, upstream AppShots
+availability flag, composer capture requests, focused-window metadata,
+accessibility output, Linux screenshot tools, ImageMagick crop path,
+bare-modifier hotkey helper, and temporary capture files.
+
+**Abuse path:** a renderer or hotkey path triggers focused-window capture for
+the wrong app or at the wrong time; full-screen capture intermediates or cropped
+data expose sensitive desktop content before the user submits or discards it.
+
+**Impact:** Medium. Capture runs as the user and targets local desktop state;
+the main risk is same-user or renderer-mediated confidentiality loss rather
+than privilege escalation.
+
+**Existing mitigations:** AppShots preserves the upstream availability flag,
+fails closed when focused-window capture inputs are unavailable, stages
+temporary full-screen captures in owner-only per-capture directories, cleans up
+deterministically, keeps global hotkeys inactive until selected, and uses tests
+for availability gates, capture routing, hotkey options, stale settings repair,
+and private temporary staging.
+
+**Gaps:** Linux capture tooling remains best-effort and desktop-environment
+dependent; future capture backends need review for temporary-file handling,
+focused-window identity, and user-visible consent.
+
+**Priority:** Medium when changing AppShots capture behavior; Low otherwise.
+
+### T5e: Wrapper Update Or Copilot Preferences Misstate Authority
+
+**Entry points:** default-enabled `codex-wrapper-updater` and
+`copilot-reasoning-effort` port integrations, generated wrapper update button,
+wrapper status markers, integration-picker setting, Copilot model/reasoning
+preferences, and OpenAI-hosted Copilot request handling.
+
+**Abuse path:** generated UI state implies that a wrapper update or Copilot
+reasoning effort is authorized when the updater service or OpenAI-hosted service
+has not accepted it; a user acts on misleading local state or policy assumptions.
+
+**Impact:** Medium for wrapper update confusion before package install gates;
+Low to Medium for Copilot, depending on hosted entitlement, quota, and request
+normalization behavior.
+
+**Existing mitigations:** wrapper update checks remain off until enabled in
+Settings; failed applies preserve a retry marker instead of leaving a
+half-updated app; package installation still flows through updater verification
+and privileged install gates; Copilot reasoning changes remain client-side and
+do not claim service-side entitlement; tests cover wrapper markers, settings,
+hooks, and Copilot settings patching.
+
+**Gaps:** fork-side tests cannot prove OpenAI-hosted Copilot entitlement
+semantics; tracked in
+[issue #100](https://github.com/nisavid/codex-app-linux/issues/100). Wrapper
+update UI changes still need review for misleading status and privilege-boundary
+confusion.
+
+**Priority:** Medium when changing wrapper update UI or Copilot request
+settings; Low otherwise.
 
 ### T6: User Config, State, Or Cache Misleads The Updater
 
@@ -572,11 +714,18 @@ still contain arbitrary sensitive values.
    that surface changes.
 6. Review remote-control/mobile host enrollment, UI gates, and Linux device-key
    storage as the default-enabled surface evolves beyond experimental use.
-7. Review Linux open-target discovery heuristics and launch environment
+7. Harden and re-review Agent Workspaces helper command selection, permission
+   files, and hidden-workspace acknowledgement handling before treating its
+   settings UI as the security boundary.
+8. Review AppShots capture backends, focused-window identity, and temporary
+   staging whenever capture behavior changes.
+9. Review wrapper update UI state and Copilot reasoning-effort settings for
+   misleading authority or service-policy assumptions.
+10. Review Linux open-target discovery heuristics and launch environment
    sanitization when adding target families or `.desktop` handling.
-8. Review npm CLI auto-upgrade trust and add an approved-version or consent
+11. Review npm CLI auto-upgrade trust and add an approved-version or consent
    path.
-9. Redact credential-looking subprocess output before persistence.
+12. Redact credential-looking subprocess output before persistence.
 
 ## Focus Paths For Manual Security Review
 
@@ -593,6 +742,18 @@ still contain arbitrary sensitive values.
   port/bind assumptions.
 - `port-integrations/open-target-discovery/`: Linux desktop target discovery,
   `.desktop` parsing, argument-vector launches, and environment sanitization.
+- `port-integrations/agent-workspace/`: generated settings UI, main-process
+  bridge, command discovery, permission/profile JSON, hidden-workspace
+  acknowledgement params, staged skill, and prelaunch hook.
+- `port-integrations/appshots/`: generated AppShots availability, capture
+  routing, screenshot helper command execution, focused-window crop behavior,
+  hotkey helper, and temporary capture staging.
+- `port-integrations/codex-wrapper-updater/`: generated wrapper update UI,
+  status marker handling, settings toggles, integration-picker behavior, and
+  prelaunch/after-exit apply hooks.
+- `port-integrations/copilot-reasoning-effort/`: generated settings patching for
+  Copilot reasoning-effort defaults and assumptions about hosted entitlement
+  handling.
 - `port-integrations/remote-control-ui/` and
   `port-integrations/remote-mobile-control/`: port integrations for
   remote-control/mobile UI gates, app-server config preservation, Linux

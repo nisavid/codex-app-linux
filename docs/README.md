@@ -29,6 +29,9 @@ Use this index to choose the smallest document that matches your goal.
 - [Threat Model](maintainers/threat-model.md) describes trust boundaries,
   attacker assumptions, and priority threat paths for the Linux conversion,
   packaging, updater, and release flow.
+- [Security Best Practices](maintainers/security-best-practices.md) turns the
+  threat model into maintainer review rules for generated app patching and
+  default-enabled port integrations.
 - [Fork Divergences](maintainers/fork-divergences.md) is the canonical
   inventory of intentional differences from the Linux-port upstream, including
   names, paths, versioning, updater boundaries, Computer Use compatibility, and
@@ -51,6 +54,9 @@ Use this index to choose the smallest document that matches your goal.
   maintainer process for reproducible, non-sensitive README showcase assets.
 - [Threat Model](maintainers/threat-model.md) is the repository-scoped security
   model for scans and reviews.
+- [Security Best Practices](maintainers/security-best-practices.md) lists
+  secure-by-default expectations for generated app patching, local helper
+  bridges, desktop capture, and hosted-service gates.
 - [Security Backlog](maintainers/security-backlog.md) points to security
   backlog issues and routes supply-chain review through `@codex-security`.
 - [Remote Mobile Host Boundary Review](maintainers/remote-mobile-host-boundary-review.md)

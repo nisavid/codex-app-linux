@@ -31,7 +31,8 @@ Expected workflow:
 
 `@codex-security` is an additional security review gate. It does not replace
 the local build gate, CodeQL, package metadata inspection, threat-model updates,
-or human maintainer approval where those are required.
+project [security best practices](security-best-practices.md), or human
+maintainer approval where those are required.
 
 ## Migrated Issues
 
@@ -40,6 +41,7 @@ Highest priority:
 - [Authenticate updater DMG inputs before rebuild and install](https://github.com/nisavid/codex-app-linux/issues/53)
 - [Bind privileged installs to verified updater artifacts](https://github.com/nisavid/codex-app-linux/issues/54)
 - [Add verification evidence to hash-refresh PRs](https://github.com/nisavid/codex-app-linux/issues/55)
+- [Harden Agent Workspaces bridge command and start approval boundaries](https://github.com/nisavid/codex-app-linux/issues/99)
 
 Medium priority:
 
@@ -54,6 +56,7 @@ Medium priority:
 - [Harden updater user service filesystem surface](https://github.com/nisavid/codex-app-linux/issues/63)
 - [Add public package signing and provenance](https://github.com/nisavid/codex-app-linux/issues/64)
 - [Review npm CLI auto-upgrade trust](https://github.com/nisavid/codex-app-linux/issues/65)
+- [Validate Copilot reasoning effort entitlement semantics](https://github.com/nisavid/codex-app-linux/issues/100)
 
 Lower priority:
 

@@ -12,16 +12,23 @@ function warn(message, patchName) {
 }
 
 function applyLinuxAppshotAvailabilityPatch(currentSource) {
-  if (currentSource.includes("===`linux`||") && currentSource.includes("===`macOS`&&")) {
+  if (/return \([A-Za-z_$][\w$]*===`linux`\|\|[A-Za-z_$][\w$]*===`macOS`\)&&[A-Za-z_$][\w$]*/.test(currentSource)) {
     return currentSource;
   }
 
   let changed = false;
-  const patchedSource = currentSource.replace(
+  let patchedSource = currentSource.replace(
+    /return ([A-Za-z_$][\w$]*)===`linux`\|\|\1===`macOS`&&([A-Za-z_$][\w$]*)/g,
+    (match, platformVar, flagVar) => {
+      changed = true;
+      return `return (${platformVar}===\`linux\`||${platformVar}===\`macOS\`)&&${flagVar}`;
+    },
+  );
+  patchedSource = patchedSource.replace(
     /return ([A-Za-z_$][\w$]*)===`macOS`&&([A-Za-z_$][\w$]*)/g,
     (match, platformVar, flagVar) => {
       changed = true;
-      return `return ${platformVar}===\`linux\`||${platformVar}===\`macOS\`&&${flagVar}`;
+      return `return (${platformVar}===\`linux\`||${platformVar}===\`macOS\`)&&${flagVar}`;
     },
   );
 
@@ -260,8 +267,8 @@ async function codexLinuxAppshotScreenshot(e,t){
 let n=codexLinuxAppshotRequire(\`node:fs\`),r=codexLinuxAppshotRequire(\`node:os\`),i=codexLinuxAppshotRequire(\`node:path\`),a=codexLinuxAppshotRequire(\`node:child_process\`),o=codexLinuxAppshotRequire(\`electron\`).nativeImage,s=codexLinuxAppshotCropRects(e,t);
 if(s.length===0)return codexLinuxAppshotWarn(\`screenshot-crop-missing\`,{hasBounds:e?.bounds!=null}),null;
 for(let c of codexLinuxAppshotScreenshotCommands(e))for(let l of c.programs){
-let u=i.join(r.tmpdir(),\`codex-appshot-\${process.pid}-\${Date.now()}-\${Math.random().toString(16).slice(2)}.png\`),d=i.join(r.tmpdir(),\`codex-appshot-crop-\${process.pid}-\${Date.now()}-\${Math.random().toString(16).slice(2)}.png\`),f=c.output===\`append\`?[...c.args,u]:[...c.args,...c.output,u];
-try{
+	let p=n.mkdtempSync(i.join(r.tmpdir(),\`codex-appshot-\`));try{n.chmodSync(p,448)}catch{}let u=i.join(p,\`capture.png\`),d=i.join(p,\`crop.png\`),f=c.output===\`append\`?[...c.args,u]:[...c.args,...c.output,u];
+	try{
 await codexLinuxAppshotExecFile(a,l,f,{timeout:15000,maxBuffer:8388608});
 if(!n.existsSync(u)){codexLinuxAppshotWarn(\`screenshot-output-missing\`,{source:c.source,program:l});continue}
 let e=n.statSync(u);if(e.size<=0){codexLinuxAppshotWarn(\`screenshot-output-empty\`,{source:c.source,program:l});continue}
@@ -269,9 +276,9 @@ let t=await codexLinuxAppshotCropWithImageMagick({childProcess:a,fs:n,sourcePath
 if(t!=null)return{dataURL:t.dataURL,width:t.width,height:t.height,source:\`\${c.source}:imagemagick-window-crop\`};
 let r=codexLinuxAppshotCropNativeImage(o,u,s);
 if(r!=null)return{dataURL:r.image.toDataURL(),width:r.width,height:r.height,source:\`\${c.source}:integration-window-crop\`}
-}catch(e){codexLinuxAppshotWarn(\`screenshot-command-failed\`,{source:c.source,program:l,message:e instanceof Error?e.message:String(e),stderr:typeof e?.codexStderr===\`string\`?e.codexStderr.slice(0,200):\`\`})}
-finally{try{n.rmSync(u,{force:true})}catch{}try{n.rmSync(d,{force:true})}catch{}}
-}
+	}catch(e){codexLinuxAppshotWarn(\`screenshot-command-failed\`,{source:c.source,program:l,message:e instanceof Error?e.message:String(e),stderr:typeof e?.codexStderr===\`string\`?e.codexStderr.slice(0,200):\`\`})}
+	finally{try{n.rmSync(p,{recursive:true,force:true})}catch{}}
+	}
 return codexLinuxAppshotWarn(\`screenshot-all-commands-failed\`,{commandCount:codexLinuxAppshotScreenshotCommands(e).length}),null
 }
 function codexLinuxAppshotExecFile(e,t,n,r){return new Promise((i,a)=>{e.execFile(t,n,r,(e,t,n)=>{if(e!=null){e.codexStderr=String(n||\`\`);a(e);return}i({stdout:t,stderr:n})})})}
