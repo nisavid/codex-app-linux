@@ -680,10 +680,26 @@ def discover_integrations(root):
             "id": integration_id,
             "title": str(title),
             "description": str(description),
+            "defaultEnabled": data.get("defaultEnabled") is True,
         }
     return dict(sorted(integrations.items()))
 
-def read_enabled_ids(path):
+def normalize_config_ids(value, path, key):
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        die(f"port integrations config {path} must contain a {key} array")
+    result = []
+    seen = set()
+    for item in value:
+        if not isinstance(item, str) or not id_re.match(item):
+            die(f"Invalid port integration id in {path}: {item}")
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+def read_config_ids(path):
     if not path.exists():
         fallback = integrations_root / "integrations.example.json"
         legacy_fallback = integrations_root / "features.example.json"
@@ -692,27 +708,37 @@ def read_enabled_ids(path):
         elif legacy_fallback.exists():
             data = read_json(legacy_fallback, "port integrations example config") or {}
         else:
-            return []
+            return {"enabled": [], "disabled": []}
     else:
         data = read_json(path, "port integrations config") or {}
-    enabled = data.get("enabled", [])
-    if not isinstance(enabled, list):
-        die(f"port integrations config {path} must contain an enabled array")
+    return {
+        "enabled": normalize_config_ids(data.get("enabled"), path, "enabled"),
+        "disabled": normalize_config_ids(data.get("disabled"), path, "disabled"),
+    }
+
+def resolved_enabled_ids(config_enabled, config_disabled):
+    disabled = set(config_disabled)
     result = []
     seen = set()
-    for item in enabled:
-        if not isinstance(item, str) or not id_re.match(item):
-            die(f"Invalid port integration id in {path}: {item}")
-        if item not in seen:
-            seen.add(item)
-            result.append(item)
+    def add(integration_id):
+        if integration_id in disabled or integration_id in seen or integration_id not in integrations:
+            return
+        seen.add(integration_id)
+        result.append(integration_id)
+    for integration_id, integration in integrations.items():
+        if integration.get("defaultEnabled") is True:
+            add(integration_id)
+    for integration_id in config_enabled:
+        add(integration_id)
     return result
 
 def csv(ids):
     return ", ".join(ids) if ids else "none"
 
 integrations = discover_integrations(integrations_root)
-current = read_enabled_ids(config_path)
+current = read_config_ids(config_path)
+current_enabled = current["enabled"]
+current_disabled = current["disabled"]
 enable = split_ids(enable_raw)
 disable = split_ids(disable_raw)
 conflicting = sorted(set(enable) & set(disable))
@@ -723,36 +749,46 @@ for integration_id in enable:
     if integration_id not in integrations:
         die(f"Unknown port integration id: {integration_id}")
 for integration_id in disable:
-    if integration_id not in integrations and integration_id not in current:
+    if integration_id not in integrations and integration_id not in current_enabled and integration_id not in current_disabled:
         die(f"Unknown port integration id: {integration_id}")
 
-final = [integration_id for integration_id in current if integration_id not in set(disable)]
+final_enabled = [integration_id for integration_id in current_enabled if integration_id not in set(disable)]
 for integration_id in enable:
-    if integration_id not in final:
-        final.append(integration_id)
+    if integration_id not in final_enabled:
+        final_enabled.append(integration_id)
+
+final_disabled = [integration_id for integration_id in current_disabled if integration_id not in set(enable)]
+for integration_id in disable:
+    if integration_id not in final_disabled:
+        final_disabled.append(integration_id)
+
+final_resolved = resolved_enabled_ids(final_enabled, final_disabled)
 
 if apply_changes and (enable or disable):
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps({"enabled": final}, indent=2) + "\n")
+    config_path.write_text(
+        json.dumps({"enabled": final_enabled, "disabled": final_disabled}, indent=2) + "\n"
+    )
     print(f"[setup] Updated port integration config: {config_path}")
 elif not config_path.exists():
     print(f"[setup] port integration config: {config_path} (not created yet)")
 else:
     print(f"[setup] port integration config: {config_path}")
 
-print(f"[setup] Enabled port integrations: {csv(final)}")
+print(f"[setup] Enabled port integrations: {csv(final_resolved)}")
+print(f"[setup] Disabled port integrations: {csv(final_disabled)}")
 
-unknown_enabled = [integration_id for integration_id in final if integration_id not in integrations]
+unknown_enabled = [integration_id for integration_id in final_enabled if integration_id not in integrations]
 if unknown_enabled:
     warn(f"Enabled integration ids not found in this checkout: {csv(unknown_enabled)}")
 
-if "conversation-mode" in final and "read-aloud" not in final:
+if "conversation-mode" in final_resolved and "read-aloud" not in final_resolved:
     warn("conversation-mode is enabled without read-aloud; speech output requires the Read Aloud integration.")
 
 if integrations:
     print("[setup] Available port integrations:")
     for integration_id, integration in integrations.items():
-        state = "enabled" if integration_id in final else "available"
+        state = "enabled" if integration_id in final_resolved else "disabled" if integration_id in final_disabled else "available"
         sample = " (developer sample)" if integration_id == "example-integration" else ""
         print(f"[setup]   [{state}] {integration_id}{sample} - {integration['title']}")
 else:

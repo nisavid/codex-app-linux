@@ -12,7 +12,16 @@ function warn(message, patchName) {
 }
 
 function applyLinuxAppshotAvailabilityPatch(currentSource) {
-  if (/return \([A-Za-z_$][\w$]*===`linux`\|\|[A-Za-z_$][\w$]*===`macOS`\)&&[A-Za-z_$][\w$]*/.test(currentSource)) {
+  const normalizedGatePattern =
+    /return \([A-Za-z_$][\w$]*===`linux`\|\|[A-Za-z_$][\w$]*===`macOS`\)&&[A-Za-z_$][\w$]*/;
+  const legacyLinuxGatePattern =
+    /return ([A-Za-z_$][\w$]*)===`linux`\|\|\1===`macOS`&&([A-Za-z_$][\w$]*)/;
+  const legacyMacGatePattern = /return ([A-Za-z_$][\w$]*)===`macOS`&&([A-Za-z_$][\w$]*)/;
+  const hasNormalizedGate = normalizedGatePattern.test(currentSource);
+  const hasLegacyGate =
+    legacyLinuxGatePattern.test(currentSource) || legacyMacGatePattern.test(currentSource);
+
+  if (hasNormalizedGate && !hasLegacyGate) {
     return currentSource;
   }
 

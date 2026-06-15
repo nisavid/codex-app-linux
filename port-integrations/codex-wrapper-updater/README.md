@@ -8,7 +8,7 @@ This is intentionally distinct from the upstream Codex app update path. The
 upstream path tracks the official macOS DMG. This integration tracks newer builds of
 `codex-app` itself.
 
-## User-facing behavior
+## Control Surfaces
 
 - Settings -> General shows **Check for Codex App updates**.
 - Settings -> General also shows **Ask which integrations to enable on update**.
@@ -23,6 +23,9 @@ upstream path tracks the official macOS DMG. This integration tracks newer build
 - Clicking the button may show the integration picker, then writes a pending marker
   and quits Codex. The integration hook applies the wrapper update while the app is
   stopped.
+- Packages built with `PACKAGE_WITH_UPDATER=0` export
+  `CODEX_PACKAGE_HAS_UPDATER=0`; the in-app wrapper updater stays hidden and
+  stale pending markers are cleared because the package has no updater manager.
 
 ## Integration picker on update
 
@@ -85,6 +88,14 @@ generic port integration loader and hook runner. This integration owns:
 - the retry/apply hook;
 - the updater command integration for wrapper checks, integration selection, and
   applies.
+
+## Security Boundary
+
+Generated UI state records user intent only. `codex-app-updater` remains
+authoritative for wrapper candidate identity, rebuild inputs, package
+verification, and privileged install behavior. The bridge and runtime hook
+require an available updater manager before showing or acting on wrapper-update
+state.
 
 ## Build-time control
 
@@ -212,7 +223,9 @@ cleared, and the app is relaunched by the after-exit hook.
 
 The hook is fail-closed:
 
-- if `codex-app-updater` is missing, the marker is kept;
+- if `codex-app-updater` is missing from an updater-capable install, the marker
+  is kept;
+- if the package was built without updater support, stale markers are cleared;
 - if rebuild/install fails, the marker is kept;
 - if required build tools are missing, the marker is kept;
 - a lock directory prevents concurrent apply attempts;

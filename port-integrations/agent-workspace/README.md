@@ -69,6 +69,8 @@ GitHub release binary from
 <https://github.com/agent-sh/agent-workspace-linux/releases>, placed on `PATH`
 or at `~/.local/bin/agent-workspace-linux`.
 
+## Control Surfaces
+
 The bridge is intentionally allowlisted. It invokes `agent-workspace-linux`
 through `execFile`, never through a shell, and exposes only profile/workspace
 lifecycle actions needed by the UI. The install button also uses `execFile` with
@@ -95,7 +97,9 @@ The settings command field and `CODEX_AGENT_WORKSPACE_BIN` both expand a leading
 the backend; published npm installs and already-present global binaries are the
 default path, with the command field kept as an explicit override.
 
-Security note: the command field is stored in generated app global state and the
+## Security Boundary
+
+The command field is stored in generated app global state and the
 main-process bridge currently gives it highest precedence before invoking
 `execFile`. Hardening that command-selection boundary is tracked in
 [#99](https://github.com/nisavid/codex-app-linux/issues/99).
