@@ -30,13 +30,15 @@ targets. It reads the current user's desktop app entries and launches selected
 targets as that same user; see
 [`open-target-discovery/README.md`](open-target-discovery/README.md) for the
 scope and trust notes. Agent Workspaces remains controlled from its settings page
-and requires explicit approval before starting hidden workspaces. AppShots uses
-best-effort focused-window capture and keeps global hotkeys inactive until the
-user selects one. Wrapper update checks remain off at runtime until the user
-enables them in Settings. Copilot reasoning effort defaults only affect Copilot
-auth sessions. The remote control and voice integrations still depend on OpenAI
-account rollout, local audio, connected-client state, and host network
-availability.
+for the normal UI flow; main-process hardening for direct bridge calls is tracked
+in [#99](https://github.com/nisavid/codex-app-linux/issues/99). AppShots uses
+best-effort focused-window capture, preserves the upstream availability flag, and
+keeps global hotkeys inactive until the user selects one. Wrapper update checks
+remain off at runtime until the user enables them in Settings. Copilot reasoning
+effort defaults only affect Copilot auth sessions; backend entitlement semantics
+are tracked in [#100](https://github.com/nisavid/codex-app-linux/issues/100).
+The remote control and voice integrations still depend on OpenAI account rollout,
+local audio, connected-client state, and host network availability.
 
 To disable a default integration for a checkout build, copy `integrations.example.json`
 to the git-ignored `integrations.json`, add the integration id under `disabled`, then

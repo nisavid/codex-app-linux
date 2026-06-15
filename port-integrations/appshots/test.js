@@ -174,7 +174,16 @@ test("enables AppShots availability on Linux", () => {
     appshotAvailabilityBundleFixture(),
   );
 
-  assert.equal(patched, "function t(n,r){return n===`linux`||n===`macOS`&&r}");
+  assert.equal(patched, "function t(n,r){return (n===`linux`||n===`macOS`)&&r}");
+});
+
+test("upgrades older AppShots availability patch shape", () => {
+  const patched = applyPatchTwice(
+    applyLinuxAppshotAvailabilityPatch,
+    "function t(n,r){return n===`linux`||n===`macOS`&&r}",
+  );
+
+  assert.equal(patched, "function t(n,r){return (n===`linux`||n===`macOS`)&&r}");
 });
 
 test("finds only the raw renderer message sender", () => {
@@ -204,6 +213,12 @@ test("routes AppShots capture through the self-contained port integration", () =
   assert.match(patched, /codexLinuxAppshotBackendJson\(\[`state`,e\],10000\)/);
   assert.match(patched, /spectacle.*-b.*-n/);
   assert.match(patched, /programs:\[`spectacle`,`\/usr\/bin\/spectacle`\]/);
+  assert.match(patched, /mkdtempSync\(i\.join\(r\.tmpdir\(\),`codex-appshot-`\)\)/);
+  assert.match(patched, /chmodSync\(p,448\)/);
+  assert.match(patched, /i\.join\(p,`capture\.png`\)/);
+  assert.match(patched, /i\.join\(p,`crop\.png`\)/);
+  assert.match(patched, /rmSync\(p,\{recursive:true,force:true\}\)/);
+  assert.doesNotMatch(patched, /i\.join\(r\.tmpdir\(\),`codex-appshot-\$\{process\.pid\}/);
   assert.match(patched, /codexLinuxAppshotCropWithImageMagick/);
   assert.ok(
     patched.indexOf("await codexLinuxAppshotCropWithImageMagick") <

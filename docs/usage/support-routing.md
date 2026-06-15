@@ -68,6 +68,8 @@ Port integrations do not bypass OpenAI account policy or service-side rollouts. 
 a UI surface depends on OpenAI-hosted account state, MFA, connected-client
 state, audio availability, or remote-control enrollment, installing this fork
 does not change those requirements. Local control surfaces keep their own
-runtime gates: Agent Workspaces uses settings-page approval and permission rules,
-AppShots keeps global hotkeys inactive until selected, and wrapper update checks
-stay off until enabled in Settings.
+runtime gates: Agent Workspaces uses settings-page approval and permission rules
+for the normal UI flow, with main-process bridge hardening tracked in
+[#99](https://github.com/nisavid/codex-app-linux/issues/99); AppShots keeps
+global hotkeys inactive until selected; and wrapper update checks stay off until
+enabled in Settings.

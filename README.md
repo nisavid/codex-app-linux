@@ -215,9 +215,12 @@ discovery, Agent Workspaces, AppShots, wrapper updater, Copilot reasoning effort
 defaults, remote-control UI, mobile-control host patches, Read Aloud, Read Aloud
 MCP, and conversation mode. Open target discovery lets the Open menus discover
 Linux terminals, editors, and file managers from the current desktop session.
-Agent Workspaces keeps workspace start approval and permission controls in its
-settings page. AppShots keeps global hotkeys inactive until the user chooses one.
-Wrapper update checks stay off at runtime until enabled in Settings.
+Agent Workspaces keeps its normal workspace start approval flow and permission
+controls in its settings page. Main-process hardening for direct bridge calls is
+tracked in
+[`#99`](https://github.com/nisavid/codex-app-linux/issues/99). AppShots keeps
+global hotkeys inactive until the user chooses one. Wrapper update checks stay
+off at runtime until enabled in Settings.
 
 To disable default integrations or enable still-optional integrations, copy
 `port-integrations/integrations.example.json` to the git-ignored

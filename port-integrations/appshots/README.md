@@ -30,7 +30,11 @@ crops the image to the focused window bounds in Electron.
 Privacy and correctness constraints:
 
 - The integration may briefly create a full-screen temporary screenshot before
-  cropping it to the focused window.
+  cropping it to the focused window. The temporary full-screen and cropped image
+  files are staged inside a per-capture directory created under the system temp
+  directory with owner-only permissions, then removed after the capture attempt.
+- Linux AppShots availability still requires the upstream availability flag in
+  addition to the Linux platform match.
 - Capture fails closed when no focused window or usable bounds are available.
 - Capture fails closed when no screenshot tool is available or the crop does not
   intersect the captured image.
