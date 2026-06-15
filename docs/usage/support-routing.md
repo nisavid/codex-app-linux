@@ -67,4 +67,7 @@ current integration list and config format.
 Port integrations do not bypass OpenAI account policy or service-side rollouts. If
 a UI surface depends on OpenAI-hosted account state, MFA, connected-client
 state, audio availability, or remote-control enrollment, installing this fork
-does not change those requirements.
+does not change those requirements. Local control surfaces keep their own
+runtime gates: Agent Workspaces uses settings-page approval and permission rules,
+AppShots keeps global hotkeys inactive until selected, and wrapper update checks
+stay off until enabled in Settings.

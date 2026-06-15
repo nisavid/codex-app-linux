@@ -21,7 +21,11 @@ const {
 } = require("./patch.js");
 
 const defaultEnabledIntegrationIds = [
+  "agent-workspace",
+  "appshots",
+  "codex-wrapper-updater",
   "conversation-mode",
+  "copilot-reasoning-effort",
   "open-target-discovery",
   "read-aloud",
   "read-aloud-mcp",
@@ -85,7 +89,7 @@ function previouslyPatchedAppshotSettingsBundleFixture() {
   );
 }
 
-test("appshots stays disabled until listed in integrations.json", () => {
+test("appshots can be disabled in integrations.json", () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "appshots-integration-"));
   const configPath = path.join(tempDir, "integrations.json");
   const integrationsRoot = path.resolve(__dirname, "..");
@@ -101,7 +105,10 @@ test("appshots stays disabled until listed in integrations.json", () => {
 
     fs.writeFileSync(
       configPath,
-      `${JSON.stringify({ enabled: ["appshots"], disabled: defaultEnabledIntegrationIds })}\n`,
+      `${JSON.stringify({
+        enabled: ["appshots"],
+        disabled: defaultEnabledIntegrationIds.filter((id) => id !== "appshots"),
+      })}\n`,
     );
     const loaded = loadPortIntegrationPatchDescriptors({ integrationsRoot });
 

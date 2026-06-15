@@ -69,13 +69,13 @@ function withTempDir(fn) {
   }
 }
 
-function withTempIntegrationConfig(enabled, fn) {
+function withTempIntegrationConfig(enabled, fn, disabled = ["open-target-discovery"]) {
   const originalConfig = process.env.CODEX_PORT_INTEGRATIONS_CONFIG;
   return withTempDir((tmp) => {
     process.env.CODEX_PORT_INTEGRATIONS_CONFIG = path.join(tmp, "integrations.json");
     fs.writeFileSync(
       process.env.CODEX_PORT_INTEGRATIONS_CONFIG,
-      JSON.stringify({ enabled, disabled: ["open-target-discovery"] }, null, 2),
+      JSON.stringify({ enabled, disabled }, null, 2),
     );
     try {
       return fn();
@@ -165,12 +165,12 @@ test("recognizes Copilot reasoning effort UI patch with renamed scope aliases", 
   assert.deepEqual(warnings, []);
 });
 
-test("integration descriptor loader exposes the Copilot webview asset patches only when enabled", () => {
+test("integration descriptor loader exposes the Copilot webview asset patches unless disabled", () => {
   const integrationsRoot = path.resolve(__dirname, "..");
 
   withTempIntegrationConfig([], () => {
     assert.deepEqual(loadCopilotIntegrationPatchDescriptors(integrationsRoot), []);
-  });
+  }, ["copilot-reasoning-effort", "open-target-discovery"]);
 
   withTempIntegrationConfig(["copilot-reasoning-effort"], () => {
     const descriptors = loadCopilotIntegrationPatchDescriptors(integrationsRoot);

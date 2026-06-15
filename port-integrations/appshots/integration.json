@@ -1,8 +1,8 @@
 {
   "id": "appshots",
   "title": "AppShots port integration",
-  "description": "Opt-in AppShots port integration that captures and crops the focused window without core AppShots backend changes.",
-  "defaultEnabled": false,
+  "description": "AppShots port integration that captures and crops the focused window without core AppShots backend changes.",
+  "defaultEnabled": true,
   "entrypoints": {
     "patchDescriptors": "./patch.js"
   },

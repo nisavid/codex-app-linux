@@ -1,7 +1,8 @@
 {
   "id": "codex-wrapper-updater",
   "name": "Wrapper updater",
-  "description": "Adds an opt-in Codex App wrapper update button. The integration owns the button, marker, retry, and apply hook; core only provides generic integration hooks.",
+  "description": "Adds a Codex App wrapper update button. The integration owns the button, marker, retry, and apply hook; core only provides generic integration hooks.",
+  "defaultEnabled": true,
   "entrypoints": {
     "patchDescriptors": "./patch.js"
   },

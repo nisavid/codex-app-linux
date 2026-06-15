@@ -22,14 +22,20 @@ changed without moving code into the core patch registry.
 ## Defaults And Local Overrides
 
 This fork enables the current supported integration set by default:
-`open-target-discovery`, `remote-control-ui`, `remote-mobile-control`,
-`read-aloud`, `read-aloud-mcp`, and `conversation-mode`. Open target discovery
-improves the Linux Open menus with terminal, editor, and file-manager targets. It
-reads the current user's desktop app entries and launches selected targets as
-that same user; see
+`agent-workspace`, `appshots`, `codex-wrapper-updater`, `conversation-mode`,
+`copilot-reasoning-effort`, `open-target-discovery`, `read-aloud`,
+`read-aloud-mcp`, `remote-control-ui`, and `remote-mobile-control`. Open target
+discovery improves the Linux Open menus with terminal, editor, and file-manager
+targets. It reads the current user's desktop app entries and launches selected
+targets as that same user; see
 [`open-target-discovery/README.md`](open-target-discovery/README.md) for the
-scope and trust notes. The remote control and voice integrations still depend on
-OpenAI account rollout, local audio, connected-client state, and host network
+scope and trust notes. Agent Workspaces remains controlled from its settings page
+and requires explicit approval before starting hidden workspaces. AppShots uses
+best-effort focused-window capture and keeps global hotkeys inactive until the
+user selects one. Wrapper update checks remain off at runtime until the user
+enables them in Settings. Copilot reasoning effort defaults only affect Copilot
+auth sessions. The remote control and voice integrations still depend on OpenAI
+account rollout, local audio, connected-client state, and host network
 availability.
 
 To disable a default integration for a checkout build, copy `integrations.example.json`
@@ -41,6 +47,10 @@ rerun `./install.sh` or the package build:
   "enabled": [],
   "disabled": [
     "conversation-mode",
+    "agent-workspace",
+    "appshots",
+    "codex-wrapper-updater",
+    "copilot-reasoning-effort",
     "remote-control-ui",
     "remote-mobile-control",
     "read-aloud",

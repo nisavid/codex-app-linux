@@ -23,12 +23,32 @@ const {
 const integrationDir = __dirname;
 const integrationsRoot = path.resolve(integrationDir, "..");
 
+const defaultEnabledIntegrationIds = [
+  "agent-workspace",
+  "appshots",
+  "codex-wrapper-updater",
+  "conversation-mode",
+  "copilot-reasoning-effort",
+  "open-target-discovery",
+  "read-aloud",
+  "read-aloud-mcp",
+  "remote-control-ui",
+  "remote-mobile-control",
+];
+
 function withTempIntegrationConfig(enabled, fn) {
   const originalConfig = process.env.CODEX_PORT_INTEGRATIONS_CONFIG;
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-config-"));
   process.env.CODEX_PORT_INTEGRATIONS_CONFIG = path.join(tempDir, "integrations.json");
   try {
-    fs.writeFileSync(process.env.CODEX_PORT_INTEGRATIONS_CONFIG, JSON.stringify({ enabled }, null, 2));
+    const enabledSet = new Set(enabled);
+    fs.writeFileSync(
+      process.env.CODEX_PORT_INTEGRATIONS_CONFIG,
+      JSON.stringify({
+        enabled,
+        disabled: defaultEnabledIntegrationIds.filter((id) => !enabledSet.has(id)),
+      }, null, 2),
+    );
     return fn();
   } finally {
     if (originalConfig == null) {

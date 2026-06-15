@@ -19,7 +19,11 @@ const {
 } = require("./patch.js");
 
 const DEFAULT_INTEGRATION_IDS_WITHOUT_OPEN_TARGET = [
+  "agent-workspace",
+  "appshots",
+  "codex-wrapper-updater",
   "conversation-mode",
+  "copilot-reasoning-effort",
   "read-aloud",
   "read-aloud-mcp",
   "remote-control-ui",

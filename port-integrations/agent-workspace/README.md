@@ -1,14 +1,14 @@
 # Agent Workspaces port integration
 
-`agent-workspace` is an opt-in Codex Desktop port integration that adds the
+`agent-workspace` is a default-enabled Codex Desktop port integration that adds the
 `agent-workspace-linux` control surface to the app settings UI.
 
-Enable it in `port-integrations.json` before running the install/build
-pipeline:
+Disable it in `port-integrations.json` before running the install/build
+pipeline when the build should omit the settings page and bridge:
 
 ```json
 {
-  "enabled": [
+  "disabled": [
     "agent-workspace"
   ]
 }
@@ -160,7 +160,7 @@ workspace** card with the request, profile, purpose, setup/startup choices, and
 required acknowledgements. The bridge sends `--ack-hidden-workspace` and any
 needed policy acknowledgement only after the user presses **Approve and start**.
 
-Manual validation checklist for a build that enables this integration:
+Manual validation checklist for a build that includes this integration:
 
 1. Launch a side-by-side dev app from clean patched assets.
 2. Open **Settings → Agent Workspaces** and run **Smoke test**.
