@@ -972,6 +972,7 @@ SCRIPT
     assert_contains "$capture_dir/AppDir/codex-app.desktop" "X-AppImage-Version=2026.03.24.120000+appimage"
     assert_not_contains "$capture_dir/AppDir/codex-app.desktop" "codex-app-updater"
     assert_contains "$capture_dir/AppDir/opt/codex-app/.codex-linux/codex-packaged-runtime.sh" 'CHROME_DESKTOP="codex-app.desktop"'
+    assert_contains "$capture_dir/AppDir/opt/codex-app/.codex-linux/codex-packaged-runtime.sh" 'CODEX_PACKAGE_HAS_UPDATER="0"'
     assert_not_contains "$capture_dir/AppDir/opt/codex-app/.codex-linux/codex-packaged-runtime.sh" "/usr/share/applications"
     [ "$(cat "$capture_dir/arch")" = "$arch" ] || fail "Expected appimagetool ARCH=$arch"
     [ "$(cat "$capture_dir/version")" = "2026.03.24.120000+appimage" ] || fail "Expected appimagetool VERSION override"
@@ -3167,6 +3168,12 @@ if 'send_warm_start_launch_action "${LAUNCHER_ARGS[@]}"' not in source:
     raise SystemExit("warm-start handoff must not receive launcher-only multi-launch flags")
 if 'launch_electron "${LAUNCHER_ARGS[@]}"' not in source:
     raise SystemExit("Electron launch must receive sanitized launcher args")
+load_helper_pos = source.index('\nload_packaged_runtime_helper\n')
+source_env_pos = source.index('\nsource_feature_env_files\n', load_helper_pos)
+export_runtime_pos = source.index('\nexport_packaged_runtime_env\n', source_env_pos)
+feature_prelaunch_pos = source.index('\n    run_feature_prelaunch_hooks\n', export_runtime_pos)
+if not (load_helper_pos < source_env_pos < export_runtime_pos < feature_prelaunch_pos):
+    raise SystemExit("packaged runtime env must be exported before prelaunch hooks")
 if 'RUNNING_APP_PID="$(find_running_app_pid)"' not in detect_body:
     raise SystemExit("detect_warm_start must record a pid-file running app even when warm start is disabled")
 if '[ -S "$LAUNCH_ACTION_SOCKET" ] && RUNNING_APP_PID="$(discover_running_app_pid)"' not in detect_body:

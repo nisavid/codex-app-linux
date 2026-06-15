@@ -23,9 +23,9 @@ upstream path tracks the official macOS DMG. This integration tracks newer build
 - Clicking the button may show the integration picker, then writes a pending marker
   and quits Codex. The integration hook applies the wrapper update while the app is
   stopped.
-- Packages built with `PACKAGE_WITH_UPDATER=0` export
+- Packages built with `PACKAGE_WITH_UPDATER=0`, and AppImage builds, export
   `CODEX_PACKAGE_HAS_UPDATER=0`; the in-app wrapper updater stays hidden and
-  stale pending markers are cleared because the package has no updater manager.
+  stale pending markers are cleared because the artifact has no updater manager.
 
 ## Integration picker on update
 

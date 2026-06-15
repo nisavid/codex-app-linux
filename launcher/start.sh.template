@@ -2633,6 +2633,7 @@ export_feature_runtime_env
 load_packaged_runtime_helper
 prepend_managed_node_runtime_to_path
 source_feature_env_files
+export_packaged_runtime_env
 register_url_scheme_handlers
 reconcile_runtime_state
 detect_warm_start
@@ -2704,7 +2705,6 @@ if needs_cold_start; then
     fi
 fi
 
-export_packaged_runtime_env
 if needs_cold_start; then
     run_cold_start_hooks
     clear_bundled_marketplace_tmp_cache

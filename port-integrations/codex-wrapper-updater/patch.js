@@ -41,7 +41,7 @@ function applyMainBundlePatch(source) {
     `function codexLinuxWrapReadStatus(){try{let p=codexLinuxWrapStatePath();if(!p||!${fsVar}.existsSync(p))return null;return JSON.parse(${fsVar}.readFileSync(p,\`utf8\`))}catch{return null}}`,
     `function codexLinuxWrapShouldShow(s){return !!(s&&typeof s===\`object\`&&s.wrapper_dev_mode!==!0&&typeof s.candidate_wrapper_commit===\`string\`&&s.candidate_wrapper_commit.length>0)}`,
     `function codexLinuxWrapManagerPath(){for(let e of [process.env.CODEX_UPDATE_MANAGER_PATH,process.env.CODEX_APP_UPDATER_PATH])if(typeof e===\`string\`&&e.trim().length>0)return e;return\`codex-app-updater\`}`,
-    `function codexLinuxWrapPackageHasUpdater(){let v=process.env.CODEX_PACKAGE_HAS_UPDATER;if(v==null||v===\`\`)return!0;return!([\`0\`,\`false\`,\`no\`,\`off\`].includes(String(v).trim().toLowerCase()))}`,
+    `function codexLinuxWrapPackageHasUpdater(){let v=process.env.CODEX_PACKAGE_HAS_UPDATER;if(v==null||String(v).trim()===\`\`){let a=process.env.APPIMAGE;return!(a&&String(a).trim())}return!([\`0\`,\`false\`,\`no\`,\`off\`].includes(String(v).trim().toLowerCase()))}`,
     `function codexLinuxWrapIsExecutable(p){try{${fsVar}.accessSync(p,${fsVar}.constants.X_OK);return!0}catch{return!1}}`,
     `function codexLinuxWrapFindOnPath(c){let p=process.env.PATH||\`\`;for(let d of p.split(\`:\`)){if(!d)continue;let f=${pathVar}.join(d,c);if(codexLinuxWrapIsExecutable(f))return f}return null}`,
     `function codexLinuxWrapManagerAvailable(){if(!codexLinuxWrapPackageHasUpdater())return!1;let m=codexLinuxWrapManagerPath();if(!m)return!1;if(m.includes(\`/\`))return codexLinuxWrapIsExecutable(m);return codexLinuxWrapFindOnPath(m)!=null}`,
