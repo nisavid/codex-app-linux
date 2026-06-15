@@ -68,9 +68,9 @@ jobs:
 
           # Match header names case-insensitively without gawk's IGNORECASE,
           # which is a no-op under mawk (the default awk on ubuntu runners).
-          last_modified="$(awk 'tolower($0) ~ /^last-modified:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$headers_file")"
-          etag="$(awk 'tolower($0) ~ /^etag:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); gsub(/"/,""); print; exit}' "$headers_file")"
-          content_length="$(awk 'tolower($0) ~ /^content-length:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$headers_file")"
+          last_modified="$(awk 'tolower($0) ~ /^last-modified:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); value=$0} END{print value}' "$headers_file")"
+          etag="$(awk 'tolower($0) ~ /^etag:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); gsub(/"/,""); value=$0} END{print value}' "$headers_file")"
+          content_length="$(awk 'tolower($0) ~ /^content-length:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); value=$0} END{print value}' "$headers_file")"
 
           if [ -z "$last_modified" ]; then
             last_modified="unknown"
