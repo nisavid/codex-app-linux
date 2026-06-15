@@ -639,6 +639,14 @@ test("patch descriptor normalization rejects duplicate ids", () => {
   );
 });
 
+test("patch descriptor normalization aliases legacy required-upstream policy", () => {
+  const descriptors = normalizePatchDescriptors([
+    { id: "legacy-required", ciPolicy: "required-upstream", apply: (source) => source },
+  ]);
+
+  assert.equal(descriptors[0].ciPolicy, "required-official-dmg");
+});
+
 test("default core patch descriptors are grouped and unique", () => {
   const descriptors = corePatchDescriptors();
   const ids = descriptors.map((descriptor) => descriptor.id);

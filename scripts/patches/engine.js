@@ -19,6 +19,7 @@ const {
 } = require("./strategy-telemetry.js");
 
 const FAILED_REQUIRED = "failed-required";
+const LEGACY_REQUIRED_UPSTREAM = "required-upstream";
 const REQUIRED_UPSTREAM = "required-official-dmg";
 const SKIPPED_DISABLED = "skipped-disabled";
 const SKIPPED_OPTIONAL = "skipped-optional";
@@ -45,6 +46,7 @@ function normalizeDescriptor(descriptor, sourcePath = null, index = 0) {
     name: descriptor.name ?? id,
     phase: descriptor.phase ?? "main-bundle",
     sourceKind: descriptor.sourceKind ?? (descriptor.featureId != null ? "feature" : "core"),
+    ciPolicy: descriptor.ciPolicy === LEGACY_REQUIRED_UPSTREAM ? REQUIRED_UPSTREAM : descriptor.ciPolicy,
     order: descriptor.order ?? 10_000 + index,
     sourcePath,
   };

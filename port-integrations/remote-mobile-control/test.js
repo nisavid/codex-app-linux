@@ -1765,6 +1765,44 @@ test("patched Linux device-key provider can create, sign with, and delete a key"
   }
 });
 
+test("patched Linux device-key provider reclaims stale store locks", async () => {
+  const configHome = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-stale-key-lock-"));
+  try {
+    const patched = applyLinuxRemoteControlDeviceKeyPatch(syntheticMainBundle());
+    const context = {
+      Buffer,
+      Date,
+      Error,
+      JSON,
+      Promise,
+      console,
+      __filename: path.join(configHome, "main.js"),
+      module: { exports: {} },
+      process: {
+        env: { XDG_CONFIG_HOME: configHome },
+        pid: process.pid,
+        platform: "linux",
+      },
+      require,
+    };
+
+    const storePath = path.join(configHome, "codex-app", "remote-control-device-keys-v1.json");
+    const lockPath = `${storePath}.lock`;
+    fs.mkdirSync(lockPath, { recursive: true, mode: 0o700 });
+    const staleTime = new Date(Date.now() - 60_000);
+    fs.utimesSync(lockPath, staleTime, staleTime);
+
+    vm.runInNewContext(`${patched};module.exports=wV({resourcesPath:null});`, context);
+    const created = await context.module.exports.createDeviceKey("allow_os_protected_nonextractable");
+
+    assert.equal(created.protectionClass, "software_exportable");
+    assert.equal(fs.existsSync(lockPath), false);
+    assert.equal(fs.existsSync(storePath), true);
+  } finally {
+    fs.rmSync(configHome, { recursive: true, force: true });
+  }
+});
+
 test("remote mobile control integration participates in ASAR patching and reports", () => {
   withTempIntegrationRoot(["remote-mobile-control"], (root) => {
     withIntegrationRootEnv(root, () => {
