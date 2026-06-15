@@ -3504,6 +3504,7 @@ PY
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "CODEX_LINUX_FEATURES_CONFIG"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "port-integrations/integrations.json"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "port-integrations/features.json"
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/share/common.sh" "port-integrations/integrations.json"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "--force-x11"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "user-local.env"
     assert_contains "$REPO_DIR/contrib/user-local-install/README.md" "--force-x11"

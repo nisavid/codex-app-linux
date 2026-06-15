@@ -769,8 +769,12 @@ test("Linux remote-control device-key provider avoids upstream minified alias co
     vm.runInNewContext(`${patched};module.exports=pz({resourcesPath:null});`, context);
     const created = await context.module.exports.createDeviceKey("allow_os_protected_nonextractable");
     assert.equal(created.algorithm, "ecdsa_p256_sha256");
-    assert.equal(created.protectionClass, "os_protected_nonextractable");
+    assert.equal(created.protectionClass, "software_exportable");
     assert.match(created.keyId, /^[0-9a-f-]{36}$/u);
+    assert.equal(
+      fs.existsSync(path.join(configHome, "codex-app", "remote-control-device-keys-v1.json.lock")),
+      false,
+    );
   } finally {
     fs.rmSync(configHome, { recursive: true, force: true });
   }
@@ -1735,7 +1739,7 @@ test("patched Linux device-key provider can create, sign with, and delete a key"
     const client = context.module.exports;
     const created = await client.createDeviceKey("allow_os_protected_nonextractable");
     assert.equal(created.algorithm, "ecdsa_p256_sha256");
-    assert.equal(created.protectionClass, "os_protected_nonextractable");
+    assert.equal(created.protectionClass, "software_exportable");
     assert.match(created.publicKeySpkiDerBase64, /^[A-Za-z0-9+/]+=*$/);
 
     const readBack = await client.getDeviceKeyPublic(created.keyId);
@@ -1751,8 +1755,10 @@ test("patched Linux device-key provider can create, sign with, and delete a key"
 
     const storePath = path.join(configHome, "codex-app", "remote-control-device-keys-v1.json");
     assert.equal(fs.statSync(storePath).mode & 0o777, 0o600);
+    assert.equal(fs.existsSync(`${storePath}.lock`), false);
 
     await client.deleteDeviceKey(created.keyId);
+    assert.equal(fs.existsSync(`${storePath}.lock`), false);
     await assert.rejects(() => client.getDeviceKeyPublic(created.keyId), /not found/);
   } finally {
     fs.rmSync(configHome, { recursive: true, force: true });

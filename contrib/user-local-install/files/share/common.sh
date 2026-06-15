@@ -455,6 +455,9 @@ copy_enabled_local_integrations() {
     if [ -z "$config_path" ] && [ -f "$SOURCE_REPO_DIR/port-integrations.json" ]; then
         config_path="$SOURCE_REPO_DIR/port-integrations.json"
     fi
+    if [ -z "$config_path" ] && [ -f "$SOURCE_REPO_DIR/port-integrations/integrations.json" ]; then
+        config_path="$SOURCE_REPO_DIR/port-integrations/integrations.json"
+    fi
 
     [ -f "$config_path" ] || return 0
     source_local_root="$SOURCE_REPO_DIR/port-integrations/local"

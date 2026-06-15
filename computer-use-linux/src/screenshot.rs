@@ -668,6 +668,7 @@ fn unique_suffix() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
 
     fn test_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -749,21 +750,31 @@ mod tests {
 
     #[test]
     fn forced_backend_reads_env_override() {
-        // Only this test touches SCREENSHOT_BACKEND_ENV, so no cross-test race.
-        std::env::set_var(SCREENSHOT_BACKEND_ENV, "gnome-screenshot");
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+
+        unsafe {
+            std::env::set_var(SCREENSHOT_BACKEND_ENV, "gnome-screenshot");
+        }
         assert_eq!(
             forced_backend().unwrap(),
             Some(ScreenshotBackend::GnomeScreenshot)
         );
 
-        std::env::set_var(SCREENSHOT_BACKEND_ENV, "   ");
+        unsafe {
+            std::env::set_var(SCREENSHOT_BACKEND_ENV, "   ");
+        }
         assert_eq!(forced_backend().unwrap(), None);
 
-        std::env::set_var(SCREENSHOT_BACKEND_ENV, "bogus");
+        unsafe {
+            std::env::set_var(SCREENSHOT_BACKEND_ENV, "bogus");
+        }
         let error = forced_backend().unwrap_err();
         assert!(error.to_string().contains("not a recognized backend"));
 
-        std::env::remove_var(SCREENSHOT_BACKEND_ENV);
+        unsafe {
+            std::env::remove_var(SCREENSHOT_BACKEND_ENV);
+        }
         assert_eq!(forced_backend().unwrap(), None);
     }
 

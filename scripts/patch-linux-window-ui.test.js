@@ -3131,6 +3131,7 @@ test("adds Linux package updater behind the existing app updater manager", () =>
   assert.match(patched, /function codexLinuxReadUpdateState\(\)/);
   assert.match(patched, /function codexLinuxUpdateLifecycleState\(e\)/);
   assert.match(patched, /function codexLinuxUpdateManagerPath\(\)/);
+  assert.match(patched, /process\.env\.CODEX_UPDATE_MANAGER_PATH,process\.env\.CODEX_APP_UPDATER_PATH/);
   assert.match(patched, /async function codexLinuxShowUpdateMessage\(codexLinuxMessage,codexLinuxDetail\)/);
   assert.match(patched, /function codexLinuxInstallAfterQuit\(\)/);
   assert.match(patched, /function codexLinuxQuitForUpdate\(\)/);

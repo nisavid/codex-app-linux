@@ -1242,12 +1242,17 @@ async fn reconcile_pending_install(
                 mark_failed_and_persist(state, paths, error.to_string())?;
                 return Ok(());
             }
-            if let Err(error) =
-                expected_package_for_ready_install(state, &config.workspace_root, &package_path)
-            {
-                mark_failed_and_persist(state, paths, error.to_string())?;
-                return Ok(());
-            }
+            let expected_package = match expected_package_for_ready_install(
+                state,
+                &config.workspace_root,
+                &package_path,
+            ) {
+                Ok(expected) => expected,
+                Err(error) => {
+                    mark_failed_and_persist(state, paths, error.to_string())?;
+                    return Ok(());
+                }
+            };
 
             // The persisted `auto_install_on_app_exit` key is kept for config
             // compatibility. In this flow it controls whether the updater
@@ -1255,7 +1260,7 @@ async fn reconcile_pending_install(
             // install-ready trigger from the app/menu path.
             if state.auto_install_on_app_exit && liveness::is_app_running(config)? {
                 if !graphical_polkit_auth_agent_is_likely_available() {
-                    defer_install_for_manual_auth(state, paths, &package_path)?;
+                    defer_install_for_manual_auth(state, paths, &package_path, &expected_package)?;
                     maybe_notify_manual_install_required(state, paths, config.notifications)?;
                     return Ok(());
                 }
@@ -1313,7 +1318,7 @@ async fn reconcile_pending_install(
 
             if liveness::is_app_running(config)? {
                 if !graphical_polkit_auth_agent_is_likely_available() {
-                    defer_install_for_manual_auth(state, paths, &package_path)?;
+                    defer_install_for_manual_auth(state, paths, &package_path, &expected_package)?;
                     maybe_notify_manual_install_required(state, paths, config.notifications)?;
                     return Ok(());
                 }
@@ -1334,7 +1339,7 @@ async fn reconcile_pending_install(
             }
 
             if !graphical_polkit_auth_agent_is_likely_available() {
-                defer_install_for_manual_auth(state, paths, &package_path)?;
+                defer_install_for_manual_auth(state, paths, &package_path, &expected_package)?;
                 maybe_notify_manual_install_required(state, paths, config.notifications)?;
                 return Ok(());
             }
@@ -1452,9 +1457,9 @@ async fn run_install_ready(
 
     if liveness::is_app_running(config)? {
         if !graphical_polkit_auth_agent_is_likely_available() {
-            defer_install_for_manual_auth(state, paths, &package_path)?;
+            defer_install_for_manual_auth(state, paths, &package_path, &expected_package)?;
             maybe_send_manual_install_required_notification(config.notifications);
-            print_manual_install_required(&package_path);
+            print_manual_install_required(&package_path, &expected_package);
             return Ok(());
         }
         clear_install_auth_required_event(state, paths)?;
@@ -1471,9 +1476,9 @@ async fn run_install_ready(
     clear_install_auth_required_event(state, paths)?;
     state.waiting_for_app_exit_auto_install = false;
     if !graphical_polkit_auth_agent_is_likely_available() {
-        defer_install_for_manual_auth(state, paths, &package_path)?;
+        defer_install_for_manual_auth(state, paths, &package_path, &expected_package)?;
         maybe_send_manual_install_required_notification(config.notifications);
-        print_manual_install_required(&package_path);
+        print_manual_install_required(&package_path, &expected_package);
         return Ok(());
     }
     trigger_install(
@@ -2020,44 +2025,60 @@ fn install_auth_retry_is_blocked(state: &PersistedState) -> bool {
         .is_some_and(|event_key| state.notified_events.contains(event_key))
 }
 
-fn manual_install_required_message(package_path: &Path) -> String {
+fn manual_install_required_message(
+    package_path: &Path,
+    expected_package: &install::ExpectedPackage,
+) -> String {
     format!(
         "No graphical polkit authentication agent is available for pkexec. Run this from a terminal after closing Codex Desktop: {}",
-        manual_install_command(package_path)
+        manual_install_command(package_path, expected_package)
     )
 }
 
-fn manual_install_command(package_path: &Path) -> String {
+fn manual_install_command(
+    package_path: &Path,
+    expected_package: &install::ExpectedPackage,
+) -> String {
     let subcommand = match install::PackageKind::from_path(package_path) {
         install::PackageKind::Deb => "install-deb",
         install::PackageKind::Rpm => "install-rpm",
         install::PackageKind::Pacman => "install-pacman",
     };
     format!(
-        "sudo /usr/bin/codex-app-updater {subcommand} --path {}",
-        shell_quote_path(package_path)
+        "sudo /usr/bin/codex-app-updater {subcommand} --path {} --expected-sha256 {} --expected-package-name {} --expected-package-version {}",
+        shell_quote_path(package_path),
+        shell_quote_value(expected_package.sha256()),
+        shell_quote_value(expected_package.package_name()),
+        shell_quote_value(expected_package.package_version()),
     )
 }
 
 fn shell_quote_path(path: &Path) -> String {
-    let value = path.to_string_lossy();
+    shell_quote_value(&path.to_string_lossy())
+}
+
+fn shell_quote_value(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn print_manual_install_required(package_path: &Path) {
+fn print_manual_install_required(package_path: &Path, expected_package: &install::ExpectedPackage) {
     println!("Manual install required: no graphical polkit authentication agent is available.");
     println!("Run this from a terminal after closing Codex Desktop:");
-    println!("{}", manual_install_command(package_path));
+    println!("{}", manual_install_command(package_path, expected_package));
 }
 
 fn defer_install_for_manual_auth(
     state: &mut PersistedState,
     paths: &RuntimePaths,
     package_path: &Path,
+    expected_package: &install::ExpectedPackage,
 ) -> Result<()> {
     state.status = UpdateStatus::ReadyToInstall;
     state.waiting_for_app_exit_auto_install = false;
-    state.error_message = Some(manual_install_required_message(package_path));
+    state.error_message = Some(manual_install_required_message(
+        package_path,
+        expected_package,
+    ));
     persist_state(paths, state)
 }
 
@@ -3561,6 +3582,9 @@ mod tests {
         let message = state.error_message.as_deref().unwrap_or("");
         assert!(message.contains("No graphical polkit authentication agent"));
         assert!(message.contains("sudo /usr/bin/codex-app-updater install-pacman"));
+        assert!(message.contains("--expected-sha256"));
+        assert!(message.contains("--expected-package-name 'codex-app'"));
+        assert!(message.contains("--expected-package-version '2999.03.25.010203_deadbeef-1'"));
         assert!(message.contains("codex desktop.pkg.tar.zst'"));
         Ok(())
     }
