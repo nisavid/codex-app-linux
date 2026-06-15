@@ -123,10 +123,12 @@ build, package, or install flow unless you explicitly opt in through
 - **Host-gated:** Linux Computer Use is packaged, but real readiness depends on
   local AT-SPI, screenshot portal or compositor support, `ydotool`, and input
   permissions.
-- **Default port integrations:** remote-control UI, mobile-control host patches,
-  Read Aloud, Read Aloud MCP, conversation mode, and Open target discovery are
-  enabled by default. Account, rollout, MFA, connected-client, audio, and
-  host-network requirements still apply.
+- **Default port integrations:** Agent Workspaces, AppShots, wrapper updater,
+  Copilot reasoning effort defaults, remote-control UI, mobile-control host
+  patches, Read Aloud, Read Aloud MCP, conversation mode, and Open target
+  discovery are enabled by default. Integration-specific settings, account,
+  rollout, MFA, connected-client, audio, and host-network requirements still
+  apply.
 - **NixOS:** the flake exposes the default app, Computer Use UI compatibility
   outputs, remote-mobile compatibility aliases, and installer outputs with
   pinned DMG metadata.
@@ -209,10 +211,13 @@ behavior and local runtime helpers to this Linux port. The source path is
 and their user-facing concepts are not necessarily Linux-only Codex features.
 
 This fork enables the current supported integration set by default: Open target
-discovery, remote-control UI, mobile-control host patches, Read Aloud, Read
-Aloud MCP, and conversation mode. Open target discovery lets the Open menus
-discover Linux terminals, editors, and file managers from the current desktop
-session.
+discovery, Agent Workspaces, AppShots, wrapper updater, Copilot reasoning effort
+defaults, remote-control UI, mobile-control host patches, Read Aloud, Read Aloud
+MCP, and conversation mode. Open target discovery lets the Open menus discover
+Linux terminals, editors, and file managers from the current desktop session.
+Agent Workspaces keeps workspace start approval and permission controls in its
+settings page. AppShots keeps global hotkeys inactive until the user chooses one.
+Wrapper update checks stay off at runtime until enabled in Settings.
 
 To disable default integrations or enable still-optional integrations, copy
 `port-integrations/integrations.example.json` to the git-ignored
@@ -224,12 +229,14 @@ override shape; checkout builds ignore that persistent user file and use
 See [`port-integrations/README.md`](port-integrations/README.md) for the integration
 contract.
 
-The `remote-control-ui`, `remote-mobile-control`, `read-aloud`,
-`read-aloud-mcp`, and `conversation-mode` integrations expose or support official
-app surfaces through Linux-specific implementation code. Treat them as
-UI/runtime integrations, not as account-policy bypasses: OpenAI rollouts, MFA
-state, connected-client state, audio availability, and host network exposure
-still come from OpenAI-hosted services and your local environment.
+The `agent-workspace`, `appshots`, `codex-wrapper-updater`,
+`copilot-reasoning-effort`, `remote-control-ui`, `remote-mobile-control`,
+`read-aloud`, `read-aloud-mcp`, and `conversation-mode` integrations expose or
+support official app surfaces and local runtime helpers through Linux-specific
+implementation code. Treat them as UI/runtime integrations, not as account-policy
+bypasses: OpenAI rollouts, MFA state, connected-client state, audio availability,
+remote-control enrollment, and host network exposure still come from
+OpenAI-hosted services and your local environment.
 
 ## Native Package Details
 

@@ -35,7 +35,11 @@ const {
 } = require("./patch.js");
 
 const defaultEnabledIntegrationIds = [
+  "agent-workspace",
+  "appshots",
+  "codex-wrapper-updater",
   "conversation-mode",
+  "copilot-reasoning-effort",
   "open-target-discovery",
   "read-aloud",
   "read-aloud-mcp",
@@ -376,7 +380,7 @@ function findInput(root, predicate) {
   return findNode(root, (node) => node.type === "input" && predicate(node));
 }
 
-test("agent-workspace integration stays disabled until listed in integrations.json", () => {
+test("agent-workspace integration can be disabled in integrations.json", () => {
   withTempIntegrationConfig([], (root) => {
     assert.deepEqual(enabledPortIntegrationIds({ integrationsRoot: root }), []);
     assert.deepEqual(loadPortIntegrationPatchDescriptors({ integrationsRoot: root }), []);

@@ -1,6 +1,6 @@
 # codex-wrapper-updater
 
-Optional port integration that adds a **separate** in-app update path for the
+Default-enabled port integration that adds a **separate** in-app update path for the
 Codex App wrapper: this repository's Linux patches, bundled integrations,
 packaging glue, launcher, and `codex-app-updater`.
 
@@ -74,8 +74,8 @@ integrations the rebuild stages.
 
 ## Why this is a port integration
 
-The wrapper updater is opt-in and lives under `port-integrations/` because it is
-not a required compatibility patch for every Linux build. Core only provides the
+The wrapper updater lives under `port-integrations/` because it is a packaged
+runtime integration rather than a required core ASAR compatibility patch. Core only provides the
 generic port integration loader and hook runner. This integration owns:
 
 - the in-app wrapper update button;
@@ -86,13 +86,14 @@ generic port integration loader and hook runner. This integration owns:
 - the updater command integration for wrapper checks, integration selection, and
   applies.
 
-## Build-time opt-in
+## Build-time control
 
-Add the integration id to the local integration config:
+The integration is enabled by default in this fork. Disable it in the local
+integration config when the build should omit the wrapper update UI and hooks:
 
 ```json
 {
-  "enabled": ["codex-wrapper-updater"]
+  "disabled": ["codex-wrapper-updater"]
 }
 ```
 

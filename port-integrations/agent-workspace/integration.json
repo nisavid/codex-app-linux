@@ -1,8 +1,8 @@
 {
   "id": "agent-workspace",
   "title": "Agent Workspaces",
-  "description": "Adds an opt-in Linux settings page and Electron bridge for agent-workspace-linux hidden desktop environments.",
-  "defaultEnabled": false,
+  "description": "Adds a Linux settings page and Electron bridge for agent-workspace-linux hidden desktop environments.",
+  "defaultEnabled": true,
   "entrypoints": {
     "patchDescriptors": "./patch.js"
   },

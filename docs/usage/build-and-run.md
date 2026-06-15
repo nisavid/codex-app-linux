@@ -200,9 +200,13 @@ behavior and local runtime helpers to this Linux port. The source path is
 `port-integrations/`.
 
 This fork enables the current supported integration set by default: Open target
-discovery, remote-control UI, mobile-control host patches, Read Aloud, Read
-Aloud MCP, and conversation mode. Open target discovery lets the generated app
-discover Linux terminals, editors, and file managers for the Open menus.
+discovery, Agent Workspaces, AppShots, wrapper updater, Copilot reasoning effort
+defaults, remote-control UI, mobile-control host patches, Read Aloud, Read Aloud
+MCP, and conversation mode. Open target discovery lets the generated app discover
+Linux terminals, editors, and file managers for the Open menus. Agent Workspaces
+keeps workspace start approval and permission controls in its settings page.
+AppShots keeps global hotkeys inactive until the user chooses one. Wrapper update
+checks stay off at runtime until enabled in Settings.
 
 To disable default integrations or enable still-optional integrations, copy
 `port-integrations/integrations.example.json` to the git-ignored

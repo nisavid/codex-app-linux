@@ -4,11 +4,12 @@
 Linux. It attaches the focused window screenshot plus best-effort AT-SPI text
 to the composer.
 
-This integration is disabled by default. Enable it before building:
+This integration is enabled by default in this fork. Disable it before building
+when the build should omit AppShots on Linux:
 
 ```json
 {
-  "enabled": [
+  "disabled": [
     "appshots"
   ]
 }
@@ -49,5 +50,5 @@ Run the integration self-test:
 node --test port-integrations/appshots/test.js
 ```
 
-To test in the app, enable the integration, rebuild the dev app, open a chat, open
-the composer attachment/context menu, and use the AppShot entry.
+To test in the app, rebuild the dev app, open a chat, open the composer
+attachment/context menu, and use the AppShot entry.

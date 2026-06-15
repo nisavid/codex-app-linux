@@ -1,20 +1,20 @@
 # Copilot Reasoning Effort Defaults
 
-This optional port integration patches Codex webview bundles so Copilot-auth
+This default-enabled port integration patches Codex webview bundles so Copilot-auth
 sessions can persist and select reasoning effort defaults for new chats.
 
 By default, official OpenAI app bundle Copilot-auth paths only read and write
 `copilot-default-model`, hardcode the loaded reasoning effort to `medium`, and
 collapse Copilot model reasoning effort choices to one `medium` entry. This
-integration keeps those changes local and opt-in instead of shipping them as a core
-Linux compatibility patch.
+integration keeps those changes local to this fork instead of shipping them as a
+core Linux compatibility patch.
 
-Enable it by copying `port-integrations/integrations.example.json` to
+Disable it by copying `port-integrations/integrations.example.json` to
 `port-integrations/integrations.json` and adding the integration id:
 
 ```json
 {
-  "enabled": [
+  "disabled": [
     "copilot-reasoning-effort"
   ]
 }

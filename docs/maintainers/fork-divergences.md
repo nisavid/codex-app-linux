@@ -301,13 +301,15 @@ shapes. The current fork delta includes local identity updates, sanitized
 generated keybind literals, `CODEX_APP_LAUNCH_ACTION_SOCKET`, Linux window
 default refinements, opt-in multi-instance launch support, default-enabled
 Electron sandboxing with an explicit compatibility opt-out, and default-enabled
-Open target discovery through the port integration registry. It also keeps the Linux
-Computer Use plugin manifest gate default-on while keeping Computer Use UI
-patches opt-in through
+supported port integrations: Open target discovery, Agent Workspaces, AppShots,
+wrapper updater, Copilot reasoning effort defaults, remote-control UI,
+mobile-control host patches, Read Aloud, Read Aloud MCP, and conversation mode.
+It also keeps the Linux Computer Use plugin manifest gate default-on while
+keeping Computer Use UI patches opt-in through
 `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` or the persisted
 `codex-linux-computer-use-ui-enabled` setting. Remote-control UI and mobile
-remote-control host patches are default-enabled port integrations and keep private
-device-key material under `${XDG_CONFIG_HOME:-~/.config}/codex-app`.
+remote-control host patches keep private device-key material under
+`${XDG_CONFIG_HOME:-~/.config}/codex-app`.
 
 **Upstream baseline:** Upstream already carries Linux ASAR patching. This fork
 maintains local patch safety and selected Linux behavior changes on top of that

@@ -436,10 +436,12 @@ added.
 
 ### T5b: Remote-Control Or Mobile Host Enrollment Misstates Trust
 
-**Entry points:** default-enabled `remote-control-ui` and `remote-mobile-control`
-port integrations, generated remote-control and Codex mobile webview bundles,
-app-server config preservation, Linux software device-key store, and OpenAI
-account/mobile enrollment flows.
+**Entry points:** default-enabled `remote-control-ui`, `remote-mobile-control`,
+`agent-workspace`, `appshots`, and `codex-wrapper-updater` port integrations,
+generated remote-control and Codex mobile webview bundles, app-server config
+preservation, Linux software device-key store, Agent Workspace profile and
+permission controls, AppShots focused-window capture, wrapper update markers,
+and OpenAI account/mobile enrollment flows.
 
 **Abuse path:** a same-user process steals the Linux software private key, a
 patched UI implies a remote-control state that OpenAI-hosted services have not
@@ -453,12 +455,17 @@ enrollment payloads, although OpenAI account-side controls remain part of the
 end-to-end authorization path.
 
 **Existing mitigations:** default-enabled entry points expose Linux host
-plumbing without fabricating OpenAI enrollment, connected-client, or MFA
-state; patches are descriptor-scoped and fail soft; Linux device keys are stored
-in a per-user XDG config file with `0600` mode; and tests cover key creation,
-signing, deletion, visibility gating, local host auto-connect selection,
-missing local host identity, refreshed connection snapshots, and Linux-specific
-copy.
+plumbing without fabricating OpenAI enrollment, connected-client, or MFA state;
+patches are descriptor-scoped and fail soft; Linux device keys are stored in a
+per-user XDG config file with `0600` mode; Agent Workspaces requires an explicit
+settings-page approval before starting a hidden workspace and passes saved
+permission rules to the runtime; AppShots fails closed when focused-window
+capture inputs are unavailable and keeps global hotkeys inactive until selected;
+wrapper update checks remain off until enabled in Settings and failed applies
+preserve a retry marker instead of leaving a half-updated app; and tests cover
+key creation, signing, deletion, visibility gating, local host auto-connect
+selection, missing local host identity, refreshed connection snapshots, and
+Linux-specific copy.
 
 **Gaps:** Linux keys are software-only and same-user readable; fork-side tests
 cannot prove OpenAI account/mobile authorization semantics; connected-looking

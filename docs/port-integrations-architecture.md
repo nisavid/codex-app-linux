@@ -1,8 +1,9 @@
 # Port Integrations Architecture
 
-`port-integrations/` is the extension boundary for optional port integrations.
-Core keeps a small generic loader; integration-specific behavior lives in port
-integration directories and is disabled by default.
+`port-integrations/` is the extension boundary for configurable port
+integrations. Core keeps a small generic loader; integration-specific behavior
+lives in port integration directories and can be enabled by manifest default or
+local config.
 
 ## Layout
 
@@ -22,19 +23,28 @@ support risks.
 {
   "id": "my-integration",
   "title": "My Integration",
-  "description": "Optional port integration.",
+  "description": "Configurable port integration.",
   "defaultEnabled": false
 }
 ```
 
 Integration ids must match `^[a-z0-9][a-z0-9-]*$`. Repository and local integrations
 share one id namespace; local integrations cannot shadow repository integrations.
-`defaultEnabled: true` is rejected. Enabling always happens through the
-git-ignored `port-integrations.json` file:
+Repository integrations can set `defaultEnabled: true` when this fork supports
+them as part of the default package. Local config can enable additional
+integrations through the git-ignored `port-integrations.json` file:
 
 ```json
 {
   "enabled": ["my-integration"]
+}
+```
+
+Local config can also disable a default integration:
+
+```json
+{
+  "disabled": ["default-integration"]
 }
 ```
 
@@ -54,8 +64,9 @@ The build pipeline loads enabled integrations in these phases:
 
 Native packages copy the configured integration root into the packaged
 `update-builder` bundle, including `port-integrations/local/`, and write a
-sanitized `port-integrations.json` containing only the enabled ids. Local
-auto-updates therefore rebuild with the same opt-in integrations.
+sanitized `port-integrations.json` containing only the explicitly configured
+enabled ids. Local auto-updates therefore preserve configured integration
+choices.
 
 Declarative staged files are tracked in
 `.codex-linux/port-integrations-staged.json`. On the next install, the framework
@@ -211,6 +222,8 @@ and can enable them by id or list number.
 If a change is required for the basic Linux app to launch and behave correctly
 for most users, it belongs in core patches under `scripts/patches/`.
 
-If a change is optional, distro-specific, editor-specific, browser-specific,
+If a change is configurable, distro-specific, editor-specific, browser-specific,
 workflow-specific, or likely to add future support burden for a minority of
-users, put it in `port-integrations/` and keep it disabled by default.
+users, put it in `port-integrations/`. Keep narrow or dependency-specific
+integrations disabled by default; broadly useful and compatible integrations can
+be default-enabled when their control and security surfaces are documented.

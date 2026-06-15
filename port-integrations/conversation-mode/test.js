@@ -26,7 +26,11 @@ const {
 } = require("./patch.js");
 
 const DEFAULT_INTEGRATION_IDS = [
+  "agent-workspace",
+  "appshots",
+  "codex-wrapper-updater",
   "conversation-mode",
+  "copilot-reasoning-effort",
   "open-target-discovery",
   "read-aloud",
   "read-aloud-mcp",

@@ -1,8 +1,8 @@
 {
   "id": "copilot-reasoning-effort",
   "title": "Copilot Reasoning Effort Defaults",
-  "description": "Opt-in patch that lets Copilot-auth sessions persist and select reasoning effort defaults on Linux.",
-  "defaultEnabled": false,
+  "description": "Patch that lets Copilot-auth sessions persist and select reasoning effort defaults on Linux.",
+  "defaultEnabled": true,
   "entrypoints": {
     "patchDescriptors": "./patch.js"
   }
