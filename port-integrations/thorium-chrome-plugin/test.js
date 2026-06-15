@@ -267,3 +267,35 @@ test("Thorium patcher handles the current browser-client metadata shape", () => 
     fs.rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test("Thorium patcher handles the current generated Chrome browser client", () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thorium-generated-browser-client-"));
+  try {
+    const chromePlugin = path.join(workspace, "chrome");
+    const scriptsDir = path.join(chromePlugin, "scripts");
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(scriptsDir, "browser-client.mjs"),
+      'import{resolve as w$}from"path";import{homedir as x$,platform as S$}from"os";var md=w$(x$(),S$()==="win32"?"AppData\\\\Local\\\\Google\\\\Chrome\\\\User Data":"Library/Application Support/Google/Chrome"),codexLinuxChromeUserDataDirectories=()=>S$()==="linux"?[w$(x$(),".config","BraveSoftware","Brave-Browser"),w$(x$(),".config","google-chrome"),w$(x$(),".config","chromium")]:[md];var fk=async(e,t,r=md)=>{let n=w$(r,e,"Local Extension Settings",t);return n};P$=async(e,t)=>{let r=(await D$(e)).filter(n=>n.instanceId===t);return r.length===1?r[0]:null},D$=async e=>{let t=[];for(let r of codexLinuxChromeUserDataDirectories())try{let n=await c9(r);t.push(...await Promise.all(n.map(async o=>({...o,userDataDir:r,instanceId:await fk(o.id,e,r).catch(i=>(ne(i),null))}))))}catch(n){ne(n)}return t};\n',
+    );
+
+    const firstRun = run("node", [
+      path.join(repoRoot, "port-integrations", "thorium-chrome-plugin", "patch-chrome-plugin.js"),
+      chromePlugin,
+    ]);
+
+    const patched = fs.readFileSync(path.join(scriptsDir, "browser-client.mjs"), "utf8");
+    assert.match(patched, /"\.config","thorium"/);
+    assert.match(patched, /async\(e,t,r=md\)/);
+    assert.match(patched, /r\.length===1\?r\[0\]:null\},D\$=async/);
+    assert.doesNotMatch(firstRun.stderr, /missing patch target for Thorium Chrome profile/);
+
+    const secondRun = run("node", [
+      path.join(repoRoot, "port-integrations", "thorium-chrome-plugin", "patch-chrome-plugin.js"),
+      chromePlugin,
+    ]);
+    assert.doesNotMatch(secondRun.stderr, /missing patch target for Thorium Chrome profile/);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
