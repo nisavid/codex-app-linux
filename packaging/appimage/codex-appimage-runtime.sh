@@ -1,6 +1,7 @@
 #!/bin/bash
 
 codex_packaged_runtime_export_env() {
+    export CODEX_PACKAGE_HAS_UPDATER="0"
     export CHROME_DESKTOP="__PACKAGE_NAME__.desktop"
 
     if [ -n "${APPDIR:-}" ] && [ -f "$APPDIR/__PACKAGE_NAME__.desktop" ]; then

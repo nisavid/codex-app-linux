@@ -15,8 +15,16 @@ truthy() {
 }
 
 package_has_updater() {
-    case "${CODEX_PACKAGE_HAS_UPDATER:-1}" in
-        0|false|FALSE|no|NO|off|OFF) return 1 ;;
+    local v="${CODEX_PACKAGE_HAS_UPDATER-}"
+    v="${v#"${v%%[![:space:]]*}"}"
+    v="${v%"${v##*[![:space:]]}"}"
+    if [ -z "${CODEX_PACKAGE_HAS_UPDATER+x}" ] || [ -z "$v" ]; then
+        [ -n "${APPIMAGE:-}" ] && return 1
+        return 0
+    fi
+    v="${v,,}"
+    case "$v" in
+        0|false|no|off) return 1 ;;
         *) return 0 ;;
     esac
 }

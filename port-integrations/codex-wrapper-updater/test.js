@@ -83,6 +83,7 @@ test("main bundle patch writes app-state wrapper marker", () => {
   assert.match(patched, /CODEX_LINUX_APP_STATE_DIR/);
   assert.match(patched, /pick-integrations/);
   assert.match(patched, /CODEX_PACKAGE_HAS_UPDATER/);
+  assert.match(patched, /process\.env\.APPIMAGE/);
   assert.match(patched, /codexLinuxWrapManagerAvailable/);
   assert.match(patched, /codex-linux-integration-picker-on-update/);
   assert.match(patched, /codex-wrapper-updater/);
@@ -331,6 +332,57 @@ test("apply hook clears stale marker when package has no updater", () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(fs.existsSync(marker), false);
+  assert.match(result.stdout, /cleared stale marker/);
+});
+
+test("apply hook normalizes package updater flag before clearing stale marker", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-normalized-"));
+  const markerDir = path.join(temp, "codex-wrapper-updater");
+  const marker = path.join(markerDir, "pending");
+  fs.mkdirSync(markerDir, { recursive: true });
+  fs.writeFileSync(marker, "pending\n");
+
+  const result = spawnSync(resolveBashPath(), [path.join(integrationDir, "apply-pending.sh")], {
+    env: {
+      ...process.env,
+      CODEX_LINUX_APP_STATE_DIR: temp,
+      CODEX_LINUX_FEATURE_HOOK_PHASE: "prelaunch",
+      CODEX_PACKAGE_HAS_UPDATER: " False ",
+      CODEX_UPDATE_MANAGER_PATH: "",
+      CODEX_APP_UPDATER_PATH: "",
+      PATH: process.env.PATH,
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(marker), false);
+  assert.match(result.stdout, /cleared stale marker/);
+});
+
+test("apply hook treats AppImage sessions as no-updater unless explicitly flagged", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-appimage-"));
+  const markerDir = path.join(temp, "codex-wrapper-updater");
+  const marker = path.join(markerDir, "pending");
+  const invoked = path.join(temp, "manager-invoked");
+  const manager = fakeManager(temp, `touch ${JSON.stringify(invoked)}\nexit 0\n`);
+  fs.mkdirSync(markerDir, { recursive: true });
+  fs.writeFileSync(marker, "pending\n");
+
+  const result = spawnSync(resolveBashPath(), [path.join(integrationDir, "apply-pending.sh")], {
+    env: {
+      ...process.env,
+      CODEX_LINUX_APP_STATE_DIR: temp,
+      CODEX_LINUX_FEATURE_HOOK_PHASE: "prelaunch",
+      APPIMAGE: path.join(temp, "Codex.AppImage"),
+      CODEX_UPDATE_MANAGER_PATH: manager,
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(marker), false);
+  assert.equal(fs.existsSync(invoked), false);
   assert.match(result.stdout, /cleared stale marker/);
 });
 
