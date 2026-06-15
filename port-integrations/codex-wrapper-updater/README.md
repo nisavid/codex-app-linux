@@ -14,6 +14,8 @@ upstream path tracks the official macOS DMG. This integration tracks newer build
 - Settings -> General also shows **Ask which integrations to enable on update**.
 - Both settings are off/on independently: wrapper update checks are off by
   default, and the integration picker prompt defaults on when this integration is built.
+- When wrapper update checks are off, the in-app runtime does not spawn
+  `codex-app-updater check-wrapper`.
 - When wrapper update checks are on, `codex-app-updater` may check the
   wrapper repository for a newer Linux wrapper commit.
 - If a newer wrapper build is available, a small top-right **Update** button is

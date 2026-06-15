@@ -85,6 +85,11 @@ test("main bundle patch writes app-state wrapper marker", () => {
   assert.match(patched, /CODEX_PACKAGE_HAS_UPDATER/);
   assert.match(patched, /process\.env\.APPIMAGE/);
   assert.match(patched, /codexLinuxWrapManagerAvailable/);
+  assert.match(patched, /codexLinuxWrapWrapperUpdatesEnabled/);
+  assert.match(patched, /codex-linux-wrapper-updates-enabled/);
+  assert.match(patched, /if\(!codexLinuxWrapWrapperUpdatesEnabled\(\)\|\|!codexLinuxWrapManagerAvailable\(\)\)return/);
+  assert.match(patched, /show:e&&a&&codexLinuxWrapShouldShow/);
+  assert.match(patched, /wrapper-updates-disabled/);
   assert.match(patched, /codex-linux-integration-picker-on-update/);
   assert.match(patched, /codex-wrapper-updater/);
   assert.match(patched, /wrapper_dev_mode/);
