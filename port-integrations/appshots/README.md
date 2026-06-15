@@ -21,11 +21,15 @@ upstream AppShots hotkey settings row. It does not add AppShots-specific code
 to `computer-use-linux`, core patch modules, default patch flow, or packaged
 runtime hooks.
 
+## Control Surfaces
+
 For window metadata and AT-SPI text, the integration shells out to the bundled
 Linux Computer Use backend's existing `windows` and `state` commands. For the
 screenshot, it uses an available desktop screenshot CLI such as `grim`,
 `spectacle`, `gnome-screenshot`, `maim`, `scrot`, or ImageMagick `import`, then
 crops the image to the focused window bounds in Electron.
+
+## Security Boundary
 
 Privacy and correctness constraints:
 

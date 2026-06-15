@@ -67,6 +67,11 @@ function fakeManager(temp, body = "exit ${CODEX_FAKE_MANAGER_STATUS:-0}\n") {
   return manager;
 }
 
+function resolveBashPath() {
+  const result = spawnSync("bash", ["-lc", "command -v bash"], { encoding: "utf8" });
+  return result.status === 0 && result.stdout.trim() ? result.stdout.trim() : "bash";
+}
+
 test("main bundle patch writes app-state wrapper marker", () => {
   const source =
     `"use strict";var f=require("node:fs"),p=require("node:path"),c=require("node:child_process");` +
@@ -77,6 +82,8 @@ test("main bundle patch writes app-state wrapper marker", () => {
   assert.match(patched, /"codex-linux-wrapper-updater":async/);
   assert.match(patched, /CODEX_LINUX_APP_STATE_DIR/);
   assert.match(patched, /pick-integrations/);
+  assert.match(patched, /CODEX_PACKAGE_HAS_UPDATER/);
+  assert.match(patched, /codexLinuxWrapManagerAvailable/);
   assert.match(patched, /codex-linux-integration-picker-on-update/);
   assert.match(patched, /codex-wrapper-updater/);
   assert.match(patched, /wrapper_dev_mode/);
@@ -300,6 +307,31 @@ test("apply hook preserves marker on failure and clears it on success", () => {
   });
   assert.equal(succeeded.status, 0, succeeded.stderr);
   assert.equal(fs.existsSync(marker), false);
+});
+
+test("apply hook clears stale marker when package has no updater", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-no-updater-"));
+  const markerDir = path.join(temp, "codex-wrapper-updater");
+  const marker = path.join(markerDir, "pending");
+  fs.mkdirSync(markerDir, { recursive: true });
+  fs.writeFileSync(marker, "pending\n");
+
+  const result = spawnSync(resolveBashPath(), [path.join(integrationDir, "apply-pending.sh")], {
+    env: {
+      ...process.env,
+      CODEX_LINUX_APP_STATE_DIR: temp,
+      CODEX_LINUX_FEATURE_HOOK_PHASE: "prelaunch",
+      CODEX_PACKAGE_HAS_UPDATER: "0",
+      CODEX_UPDATE_MANAGER_PATH: "",
+      CODEX_APP_UPDATER_PATH: "",
+      PATH: process.env.PATH,
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(marker), false);
+  assert.match(result.stdout, /cleared stale marker/);
 });
 
 test("apply hook resolves marker from sanitized app id when app state dir is absent", () => {

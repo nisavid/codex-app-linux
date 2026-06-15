@@ -23,7 +23,7 @@ Disable it by copying `port-integrations/integrations.example.json` to
 Then rerun the install or package build so the ASAR patch step can apply the
 integration to the generated app.
 
-## What It Patches
+## Control Surfaces
 
 - `use-model-settings-*.js` reads and writes
   `copilot-default-reasoning-effort` next to `copilot-default-model`.

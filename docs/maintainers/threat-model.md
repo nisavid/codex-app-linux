@@ -103,8 +103,12 @@ Out of scope:
   it cannot directly become root.
 - LAN attackers matter if any future local service binds beyond loopback.
 - Remote-control/mobile Linux patches remain experimental. Account policy,
-  enrollment, MFA, connected-client state, and remote-access decisions remain
-  owned by OpenAI-hosted services and generated app flows.
+  enrollment, MFA, connected-client state, host network exposure, and
+  remote-access decisions remain owned by OpenAI-hosted services and generated
+  app flows.
+- Conversation and audio availability remain owned by OpenAI-hosted service
+  policy and local runtime dependencies; Linux patches expose plumbing but do
+  not authorize account-side voice/audio features.
 - Copilot account entitlement, quota, and request normalization decisions remain
   owned by OpenAI-hosted services.
 - Linux remote-control device keys are software keys stored under XDG config.
@@ -204,6 +208,7 @@ Open questions that materially affect risk:
 | Wrapper updater UI | generated webview settings and wrapper status markers | updater manager and after-exit/prelaunch hooks | Misleading update state, unwanted local rebuild or apply flow |
 | Copilot reasoning setting | generated webview preferences | OpenAI-hosted Copilot request handling | Client-side entitlement assumptions, quota or policy confusion |
 | Remote-control/mobile patches | official app and account/mobile service state | local UI gates, app-server config, XDG device-key store | Software key theft, misleading availability, confused authorization state |
+| Hosted availability and host exposure | OpenAI rollout, account, conversation/audio, remote-control, and host-network policy | generated Linux UI/runtime patches | Misleading local availability or exposure state |
 | User config/state/cache | XDG user-writable files | updater decisions and rebuild inputs | Path substitution, stale state, developer-mode misuse, secret leakage |
 | Updater rebuild | unprivileged user service | package builder scripts and artifacts | Builder-root trust, PATH/tool influence, package identity |
 | Privileged install | unprivileged updater/package path | `pkexec` and system package manager | TOCTOU, package substitution, root-owned payload install |
@@ -338,8 +343,11 @@ flowchart LR
   or quota; OpenAI-hosted services remain authoritative for Copilot request
   acceptance and normalization.
 - Remote-control/mobile patches must not fabricate connected clients, MFA,
-  enrollment, or remote environment state, and must store Linux device keys
-  under private XDG config paths with owner-only file modes.
+  enrollment, host network exposure, or remote environment state, and must store
+  Linux device keys under private XDG config paths with owner-only file modes.
+- Conversation/audio integrations must not fabricate hosted audio availability;
+  local Read Aloud or MCP helpers are runtime dependencies, not account-side
+  authorization.
 - Logs and state must not store credential-bearing URLs or credential-looking
   subprocess output.
 
@@ -500,13 +508,14 @@ added.
 **Entry points:** default-enabled `remote-control-ui` and
 `remote-mobile-control` port integrations, generated remote-control and Codex
 mobile webview bundles, app-server config preservation, Linux software
-device-key store, and OpenAI account/mobile enrollment flows.
+device-key store, host network exposure state, and OpenAI account/mobile
+enrollment flows.
 
 **Abuse path:** a same-user process steals the Linux software private key, a
 patched UI implies a remote-control state that OpenAI-hosted services have not
 authorized, or bundle drift causes the fork to bypass an account-side
-availability, access, or enrollment guard instead of only exposing Linux host
-plumbing.
+availability, access, host network exposure, or enrollment guard instead of only
+exposing Linux host plumbing.
 
 **Impact:** Medium to High. Successful abuse can affect whether another device
 can control the local desktop or whether this host can sign remote-control
@@ -514,7 +523,8 @@ enrollment payloads, although OpenAI account-side controls remain part of the
 end-to-end authorization path.
 
 **Existing mitigations:** default-enabled entry points expose Linux host
-plumbing without fabricating OpenAI enrollment, connected-client, or MFA state;
+plumbing without fabricating OpenAI enrollment, connected-client, MFA, or host
+network exposure state;
 patches are descriptor-scoped and fail soft; Linux device keys are stored in a
 per-user XDG config file with `0600` mode; and tests cover key creation,
 signing, deletion, visibility gating, local host auto-connect selection, missing

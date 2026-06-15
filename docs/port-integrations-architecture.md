@@ -227,4 +227,5 @@ workflow-specific, or likely to add future support burden for a minority of
 users, put it in `port-integrations/`. Keep narrow or dependency-specific
 integrations disabled by default; broadly useful and compatible integrations can
 be default-enabled when their control and security surfaces are documented and
-match the maintainer [security best practices](maintainers/security-best-practices.md).
+match the maintainer security best practices in
+[`docs/maintainers/security-best-practices.md`](./maintainers/security-best-practices.md).

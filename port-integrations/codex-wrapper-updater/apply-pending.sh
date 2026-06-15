@@ -14,6 +14,13 @@ truthy() {
     esac
 }
 
+package_has_updater() {
+    case "${CODEX_PACKAGE_HAS_UPDATER:-1}" in
+        0|false|FALSE|no|NO|off|OFF) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 resolve_app_id() {
     local candidate="${CODEX_LINUX_APP_ID:-${CODEX_APP_ID:-codex-app}}"
     case "$candidate" in
@@ -84,6 +91,12 @@ if ! mkdir "$lock_dir" 2>/dev/null; then
     exit 0
 fi
 trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT
+
+if ! package_has_updater; then
+    rm -f "$marker"
+    log "codex-app-updater is not available in this package; cleared stale marker"
+    exit 0
+fi
 
 manager="$(resolve_update_manager)" || {
     log "codex-app-updater is not available; leaving marker for retry"

@@ -72,6 +72,7 @@ codex_packaged_runtime_trigger_update_check() {
 }
 
 codex_packaged_runtime_export_env() {
+    export CODEX_PACKAGE_HAS_UPDATER="__CODEX_PACKAGE_ENABLE_UPDATER__"
     export CHROME_DESKTOP="codex-app.desktop"
     export BAMF_DESKTOP_FILE_HINT="/usr/share/applications/codex-app.desktop"
 }

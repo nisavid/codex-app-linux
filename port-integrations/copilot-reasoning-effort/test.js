@@ -69,13 +69,29 @@ function withTempDir(fn) {
   }
 }
 
-function withTempIntegrationConfig(enabled, fn, disabled = ["open-target-discovery"]) {
+const defaultEnabledIntegrationIds = [
+  "agent-workspace",
+  "appshots",
+  "codex-wrapper-updater",
+  "conversation-mode",
+  "copilot-reasoning-effort",
+  "open-target-discovery",
+  "read-aloud",
+  "read-aloud-mcp",
+  "remote-control-ui",
+  "remote-mobile-control",
+];
+
+function withTempIntegrationConfig(enabled, fn, disabled = null) {
   const originalConfig = process.env.CODEX_PORT_INTEGRATIONS_CONFIG;
   return withTempDir((tmp) => {
     process.env.CODEX_PORT_INTEGRATIONS_CONFIG = path.join(tmp, "integrations.json");
+    const enabledSet = new Set(enabled);
+    const effectiveDisabled =
+      disabled ?? defaultEnabledIntegrationIds.filter((id) => !enabledSet.has(id));
     fs.writeFileSync(
       process.env.CODEX_PORT_INTEGRATIONS_CONFIG,
-      JSON.stringify({ enabled, disabled }, null, 2),
+      JSON.stringify({ enabled, disabled: effectiveDisabled }, null, 2),
     );
     try {
       return fn();

@@ -186,6 +186,20 @@ test("upgrades older AppShots availability patch shape", () => {
   assert.equal(patched, "function t(n,r){return (n===`linux`||n===`macOS`)&&r}");
 });
 
+test("upgrades legacy AppShots availability gates when another gate is normalized", () => {
+  const source =
+    "function a(n,r){return (n===`linux`||n===`macOS`)&&r}" +
+    "function b(n,r){return n===`macOS`&&r}";
+  const patched = applyLinuxAppshotAvailabilityPatch(source);
+
+  assert.equal(
+    patched,
+    "function a(n,r){return (n===`linux`||n===`macOS`)&&r}" +
+      "function b(n,r){return (n===`linux`||n===`macOS`)&&r}",
+  );
+  assert.equal(applyLinuxAppshotAvailabilityPatch(patched), patched);
+});
+
 test("finds only the raw renderer message sender", () => {
   assert.equal(findMessageForViewSendFunction(appshotMainProcessBundleFixture()), "rS");
   assert.equal(

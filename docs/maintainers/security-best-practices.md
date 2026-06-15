@@ -43,9 +43,10 @@ conversation mode, Read Aloud, and Read Aloud MCP.
   identity, digest binding, and privileged install behavior remain updater
   responsibilities.
 - Keep OpenAI-hosted service semantics authoritative. Client-side settings for
-  Copilot reasoning effort, remote-control visibility, mobile state, or Computer
-  Use availability do not prove hosted entitlement, quota, enrollment, MFA, or
-  rollout status.
+  Copilot reasoning effort, remote-control visibility, mobile state,
+  conversation/audio availability, host network exposure, or Computer Use
+  availability do not prove hosted entitlement, quota, enrollment, MFA, rollout,
+  or exposure status.
 - Route any newly identified security gap that is outside the current PR's
   implementation scope to GitHub Issues and add it to
   [Security Backlog](security-backlog.md). Keep the threat model current when a
@@ -69,10 +70,14 @@ conversation mode, Read Aloud, and Read Aloud MCP.
   quota, and request normalization; validation is tracked in
   [issue #100](https://github.com/nisavid/codex-app-linux/issues/100).
 - **Remote-control and mobile host integrations:** do not fabricate connected
-  clients, MFA, enrollment, host identity, app-server reachability, or remote
-  environment state. Use
+  clients, MFA, enrollment, host identity, app-server reachability, host network
+  exposure, or remote environment state. Use
   [Remote Mobile Host Boundary Review](remote-mobile-host-boundary-review.md)
   for host-state evidence.
+- **Conversation mode and Read Aloud:** preserve hosted conversation/audio
+  availability checks and keep local TTS or MCP helpers behind their runtime
+  dependency checks. Local controls can prepare Linux plumbing, but they do not
+  authorize account-side voice or audio features.
 - **Open target discovery:** keep `.desktop` parsing narrow, reject URL-like or
   option-shaped targets before launch, sanitize app-internal environment
   variables, and treat user-local desktop entries as same-user trust inputs.
