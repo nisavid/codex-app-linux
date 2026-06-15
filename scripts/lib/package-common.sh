@@ -4,6 +4,10 @@ info() {
     echo "[INFO] $*" >&2
 }
 
+warn() {
+    echo "[WARN] $*" >&2
+}
+
 error() {
     echo "[ERROR] $*" >&2
     exit 1
@@ -809,6 +813,7 @@ stage_common_package_files() {
     normalize_app_payload_modes "$app_root"
     mkdir -p "$app_root/.codex-linux"
     cp "$ICON_SOURCE" "$app_root/.codex-linux/$PACKAGE_NAME.png"
+    cp "$(resolve_tray_icon_source "$app_root")" "$app_root/.codex-linux/$PACKAGE_NAME-tray.png"
     render_desktop_entry_doctor_helper "$app_root/.codex-linux/codex-app-desktop-entry-doctor.sh"
     render_desktop_entry "$root/usr/share/applications/$PACKAGE_NAME.desktop"
     cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"
@@ -827,6 +832,31 @@ stage_common_package_files() {
             "$support_root/no-updater-transition-cleanup.sh"
     fi
     render_packaged_runtime_helper "$support_root/packaged-runtime.sh"
+}
+
+resolve_tray_icon_source() {
+    local app_root="$1"
+    local assets_dir="$app_root/content/webview/assets"
+    local -a candidates=()
+    local candidate
+
+    if [ -d "$assets_dir" ]; then
+        while IFS= read -r -d '' candidate; do
+            candidates+=("$candidate")
+        done < <(find "$assets_dir" -maxdepth 1 -type f -name 'app-*.png' -print0 | sort -z)
+    fi
+
+    if [ "${#candidates[@]}" -eq 1 ]; then
+        printf '%s\n' "${candidates[0]}"
+        return 0
+    fi
+
+    if [ "${#candidates[@]}" -gt 1 ]; then
+        warn "Multiple tray icon candidates found in $assets_dir; falling back to package icon"
+    else
+        warn "Could not resolve a unique tray icon in $assets_dir; falling back to package icon"
+    fi
+    printf '%s\n' "$ICON_SOURCE"
 }
 
 stage_update_builder_bundle() {

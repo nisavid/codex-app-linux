@@ -69,7 +69,7 @@ state_dir="$(resolve_state_dir)" || {
 }
 marker_dir="$state_dir/codex-wrapper-updater"
 marker="$marker_dir/pending"
-phase="${CODEX_PORT_INTEGRATION_HOOK_PHASE:-manual}"
+phase="${CODEX_PORT_INTEGRATION_HOOK_PHASE:-${CODEX_LINUX_FEATURE_HOOK_PHASE:-manual}}"
 
 [ -f "$marker" ] || exit 0
 

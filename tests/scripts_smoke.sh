@@ -43,6 +43,18 @@ assert_file_not_exists() {
     [ ! -e "$path" ] || fail "Expected file not to exist: $path"
 }
 
+assert_mode() {
+    local path="$1"
+    local expected="$2"
+    local actual
+
+    assert_file_exists "$path"
+    actual="$(stat -c '%a' "$path")"
+    actual="$(printf '%03d' "$actual")"
+    expected="$(printf '%03d' "$expected")"
+    [ "$actual" = "$expected" ] || fail "Expected $path mode $expected, got $actual"
+}
+
 assert_contains() {
     local path="$1"
     local pattern="$2"
@@ -193,6 +205,85 @@ DESKTOP
     assert_not_contains "$rendered_desktop" "CheckForUpdates"
     assert_not_contains "$rendered_desktop" "InstallReadyUpdate"
     assert_not_contains "$rendered_desktop" "codex-app-updater"
+}
+
+test_stage_common_package_files_resolves_tray_icon_deterministically() {
+    info "Checking stage_common_package_files tray icon resolution"
+    local workspace="$TMP_DIR/package-common-tray"
+    local app_dir="$workspace/app"
+    local root="$workspace/root"
+    local output_log="$workspace/output.log"
+    local icon_source="$workspace/icon-source.png"
+    local tray_output="$root/opt/codex-app/.codex-linux/codex-app-tray.png"
+    local package_icon="$root/opt/codex-app/.codex-linux/codex-app.png"
+
+    mkdir -p "$workspace" "$root"
+    make_fake_app "$app_dir"
+    mkdir -p "$app_dir/content/webview/assets"
+    printf '%s\n' 'package-icon' > "$icon_source"
+    printf '%s\n' 'upstream-tray' > "$app_dir/content/webview/assets/app-main.png"
+
+    (
+        export APP_DIR="$app_dir"
+        export PACKAGE_NAME="codex-app"
+        export PACKAGE_WITH_UPDATER=0
+        export ICON_SOURCE="$icon_source"
+        export DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.desktop"
+        export PACKAGED_RUNTIME_SOURCE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        stage_common_package_files "$root"
+    ) >"$output_log" 2>&1
+
+    assert_file_exists "$package_icon"
+    assert_file_exists "$tray_output"
+    cmp -s "$icon_source" "$package_icon" || fail "Expected package icon copy to come from ICON_SOURCE"
+    cmp -s "$app_dir/content/webview/assets/app-main.png" "$tray_output" \
+        || fail "Expected tray icon copy to come from the unique upstream asset"
+    assert_not_contains "$output_log" "falling back to package icon"
+}
+
+test_stage_common_package_files_tray_icon_fallbacks_when_ambiguous_or_missing() {
+    info "Checking stage_common_package_files tray icon fallback behavior"
+    local workspace="$TMP_DIR/package-common-tray-fallback"
+    local icon_source="$workspace/icon-source.png"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$workspace"
+    printf '%s\n' 'package-icon' > "$icon_source"
+
+    for scenario in ambiguous missing; do
+        local app_dir="$workspace/$scenario-app"
+        local root="$workspace/$scenario-root"
+        local tray_output="$root/opt/codex-app/.codex-linux/codex-app-tray.png"
+
+        mkdir -p "$root"
+        make_fake_app "$app_dir"
+        mkdir -p "$app_dir/content/webview/assets"
+        if [ "$scenario" = "ambiguous" ]; then
+            printf '%s\n' 'upstream-a' > "$app_dir/content/webview/assets/app-alpha.png"
+            printf '%s\n' 'upstream-b' > "$app_dir/content/webview/assets/app-beta.png"
+        fi
+
+        (
+            export APP_DIR="$app_dir"
+            export PACKAGE_NAME="codex-app"
+            export PACKAGE_WITH_UPDATER=0
+            export ICON_SOURCE="$icon_source"
+            export DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-app.desktop"
+            export PACKAGED_RUNTIME_SOURCE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
+            # shellcheck disable=SC1091
+            source "$REPO_DIR/scripts/lib/package-common.sh"
+            stage_common_package_files "$root"
+        ) >>"$output_log" 2>&1
+
+        assert_file_exists "$tray_output"
+        cmp -s "$icon_source" "$tray_output" \
+            || fail "Expected tray icon fallback to come from ICON_SOURCE for $scenario"
+    done
+
+    assert_contains "$output_log" "Multiple tray icon candidates found"
+    assert_contains "$output_log" "Could not resolve a unique tray icon"
 }
 
 test_deb_builder_smoke() {
@@ -1000,6 +1091,290 @@ SCRIPT
     [ "$first_line" = "2" ] || fail "Expected make build-app-fresh to pass --fresh plus the default argument slot, got: $(cat "$install_log")"
     [ "$second_line" = "--fresh" ] || fail "Expected make build-app-fresh to pass --fresh first, got: $(cat "$install_log")"
     [ -z "$third_line" ] || fail "Expected make build-app-fresh default DMG argument to be empty, got: $(cat "$install_log")"
+}
+
+test_installer_refreshes_stale_cached_dmg_metadata() {
+    info "Checking installer DMG cache freshness metadata branches"
+    local workspace="$TMP_DIR/dmg-cache-refresh"
+    local bin_dir="$workspace/bin"
+    local url="https://persistent.oaistatic.com/codex-app-prod/Codex.dmg"
+    local url_sha256
+
+    url_sha256="$(printf '%s' "$url" | sha256sum | awk '{print $1}')"
+
+    mkdir -p "$bin_dir"
+
+    cat >"$bin_dir/curl" <<'SCRIPT'
+#!/usr/bin/env bash
+set -eu
+
+is_head=0
+for arg in "$@"; do
+    if [ "$arg" = "-fsSLI" ]; then
+        is_head=1
+    fi
+done
+
+if [ "$is_head" -eq 1 ]; then
+    printf '%s\n' "HEAD" >> "$TEST_CURL_LOG"
+    if [ "${TEST_HEAD_FAIL:-0}" = "1" ]; then
+        exit 22
+    fi
+    printf 'HTTP/2 200\r\n'
+    [ -z "${TEST_ETAG:-}" ] || printf 'ETag: %s\r\n' "$TEST_ETAG"
+    [ -z "${TEST_LAST_MODIFIED:-}" ] || printf 'Last-Modified: %s\r\n' "$TEST_LAST_MODIFIED"
+    [ -z "${TEST_CONTENT_LENGTH:-}" ] || printf 'Content-Length: %s\r\n' "$TEST_CONTENT_LENGTH"
+    printf '\r\n'
+    exit 0
+fi
+
+printf '%s\n' "GET" >> "$TEST_CURL_LOG"
+if [ "${TEST_GET_FAIL:-0}" = "1" ]; then
+    exit 23
+fi
+
+out=""
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "-o" ]; then
+        shift
+        out="$1"
+    fi
+    shift || true
+done
+
+[ -n "$out" ] || exit 2
+printf '%s' "${TEST_DOWNLOAD_CONTENT:-new}" >"$out"
+SCRIPT
+    chmod +x "$bin_dir/curl"
+
+    run_dmg_cache_case() {
+        local source_dir="$1"
+        local output_log="$2"
+        shift 2
+
+        mkdir -p "$source_dir"
+        : >"$source_dir/curl.log"
+        env "$@" \
+            PATH="$bin_dir:$PATH" \
+            TEST_SOURCE_DIR="$source_dir" \
+            TEST_CURL_LOG="$source_dir/curl.log" \
+            REPO_DIR="$REPO_DIR" \
+            bash <<'SCRIPT' >"$output_log" 2>&1
+set -Eeuo pipefail
+
+SCRIPT_DIR="$TEST_SOURCE_DIR"
+WORK_DIR="$(mktemp -d)"
+# shellcheck disable=SC1091
+source "$REPO_DIR/scripts/lib/install-helpers.sh"
+# shellcheck disable=SC1091
+source "$REPO_DIR/scripts/lib/dmg.sh"
+
+dmg_path="$(get_dmg)"
+[ "$dmg_path" = "$TEST_SOURCE_DIR/Codex.dmg" ]
+SCRIPT
+    }
+
+    local no_metadata="$workspace/no-metadata"
+    mkdir -p "$no_metadata"
+    printf '%s' "old" >"$no_metadata/Codex.dmg"
+    run_dmg_cache_case "$no_metadata" "$no_metadata/output.log" \
+        TEST_ETAG=fresh-etag \
+        TEST_LAST_MODIFIED="Thu, 04 Jun 2026 00:00:00 GMT" \
+        TEST_CONTENT_LENGTH=3 \
+        TEST_DOWNLOAD_CONTENT=new
+    [ "$(cat "$no_metadata/Codex.dmg")" = "new" ] || fail "Expected missing-metadata cache to refresh"
+    assert_contains "$no_metadata/Codex.dmg.metadata" "etag=fresh-etag"
+    assert_contains "$no_metadata/Codex.dmg.metadata" "url_sha256=$url_sha256"
+    assert_contains "$no_metadata/output.log" "Cached DMG has no upstream metadata"
+    assert_contains "$no_metadata/output.log" "Refreshing stale cached DMG"
+
+    local matching="$workspace/matching"
+    mkdir -p "$matching"
+    printf '%s' "old" >"$matching/Codex.dmg"
+    cat >"$matching/Codex.dmg.metadata" <<EOF
+url_sha256=$url_sha256
+etag=same-etag
+last_modified=Thu, 04 Jun 2026 00:00:00 GMT
+content_length=3
+EOF
+    run_dmg_cache_case "$matching" "$matching/output.log" \
+        TEST_ETAG=same-etag \
+        TEST_LAST_MODIFIED="Thu, 04 Jun 2026 00:00:00 GMT" \
+        TEST_CONTENT_LENGTH=3 \
+        TEST_DOWNLOAD_CONTENT=downloaded
+    [ "$(cat "$matching/Codex.dmg")" = "old" ] || fail "Expected matching metadata to reuse cache"
+    assert_not_contains "$matching/curl.log" "GET"
+    assert_contains "$matching/output.log" "Using cached DMG"
+
+    local differing="$workspace/differing"
+    mkdir -p "$differing"
+    printf '%s' "old" >"$differing/Codex.dmg"
+    cat >"$differing/Codex.dmg.metadata" <<EOF
+url_sha256=$url_sha256
+etag=old-etag
+last_modified=Thu, 04 Jun 2026 00:00:00 GMT
+content_length=3
+EOF
+    run_dmg_cache_case "$differing" "$differing/output.log" \
+        TEST_ETAG=fresh-etag \
+        TEST_LAST_MODIFIED="Thu, 04 Jun 2026 00:00:00 GMT" \
+        TEST_CONTENT_LENGTH=3 \
+        TEST_DOWNLOAD_CONTENT=new
+    [ "$(cat "$differing/Codex.dmg")" = "new" ] || fail "Expected differing metadata to refresh cache"
+    assert_contains "$differing/curl.log" "GET"
+
+    local failed_get="$workspace/failed-get"
+    mkdir -p "$failed_get"
+    printf '%s' "old" >"$failed_get/Codex.dmg"
+    cat >"$failed_get/Codex.dmg.metadata" <<EOF
+url_sha256=$url_sha256
+etag=old-etag
+last_modified=Thu, 04 Jun 2026 00:00:00 GMT
+content_length=3
+EOF
+    if run_dmg_cache_case "$failed_get" "$failed_get/output.log" \
+        TEST_ETAG=fresh-etag \
+        TEST_LAST_MODIFIED="Thu, 04 Jun 2026 00:00:00 GMT" \
+        TEST_CONTENT_LENGTH=3 \
+        TEST_GET_FAIL=1
+    then
+        fail "Expected failed replacement download to fail the refresh"
+    fi
+    [ "$(cat "$failed_get/Codex.dmg")" = "old" ] || fail "Expected failed refresh to preserve old DMG"
+    assert_contains "$failed_get/Codex.dmg.metadata" "etag=old-etag"
+    assert_file_not_exists "$failed_get/Codex.dmg.part"
+
+    local head_failure="$workspace/head-failure"
+    mkdir -p "$head_failure"
+    printf '%s' "old" >"$head_failure/Codex.dmg"
+    cat >"$head_failure/Codex.dmg.metadata" <<EOF
+url_sha256=$url_sha256
+etag=old-etag
+last_modified=Thu, 04 Jun 2026 00:00:00 GMT
+content_length=3
+EOF
+    run_dmg_cache_case "$head_failure" "$head_failure/output.log" TEST_HEAD_FAIL=1
+    [ "$(cat "$head_failure/Codex.dmg")" = "old" ] || fail "Expected HEAD failure to preserve cache"
+    assert_not_contains "$head_failure/curl.log" "GET"
+    assert_contains "$head_failure/output.log" "Could not check upstream DMG metadata"
+
+    local head_failure_mismatched_url="$workspace/head-failure-mismatched-url"
+    mkdir -p "$head_failure_mismatched_url"
+    printf '%s' "old" >"$head_failure_mismatched_url/Codex.dmg"
+    cat >"$head_failure_mismatched_url/Codex.dmg.metadata" <<EOF
+url_sha256=$url_sha256
+etag=old-etag
+last_modified=Thu, 04 Jun 2026 00:00:00 GMT
+content_length=3
+EOF
+    if run_dmg_cache_case "$head_failure_mismatched_url" "$head_failure_mismatched_url/output.log" \
+        CODEX_UPSTREAM_DMG_URL="https://example.com/Codex.dmg" \
+        TEST_HEAD_FAIL=1 \
+        TEST_GET_FAIL=1
+    then
+        fail "Expected HEAD failure with mismatched cached URL metadata to attempt refresh and fail"
+    fi
+    [ "$(cat "$head_failure_mismatched_url/Codex.dmg")" = "old" ] || fail "Expected failed mismatched-URL refresh to preserve old DMG"
+    assert_contains "$head_failure_mismatched_url/Codex.dmg.metadata" "etag=old-etag"
+    assert_contains "$head_failure_mismatched_url/curl.log" "GET"
+    assert_contains "$head_failure_mismatched_url/output.log" "cached DMG URL metadata does not match current URL"
+
+    local secret_url="$workspace/secret-url"
+    mkdir -p "$secret_url"
+    run_dmg_cache_case "$secret_url" "$secret_url/output.log" \
+        CODEX_UPSTREAM_DMG_URL="https://user:secret@example.com/Codex.dmg?token=topsecret#fragsecret" \
+        TEST_ETAG=opaque-etag \
+        TEST_CONTENT_LENGTH=3 \
+        TEST_DOWNLOAD_CONTENT=new
+    [ "$(cat "$secret_url/Codex.dmg")" = "new" ] || fail "Expected HTTPS override URL to download"
+    assert_contains "$secret_url/output.log" "URL: https://redacted@example.com/Codex.dmg?REDACTED"
+    assert_not_contains "$secret_url/output.log" "topsecret"
+    assert_not_contains "$secret_url/output.log" "fragsecret"
+    assert_not_contains "$secret_url/Codex.dmg.metadata" "topsecret"
+    assert_not_contains "$secret_url/Codex.dmg.metadata" "fragsecret"
+
+    local invalid_url="$workspace/invalid-url"
+    mkdir -p "$invalid_url"
+    if run_dmg_cache_case "$invalid_url" "$invalid_url/output.log" \
+        CODEX_UPSTREAM_DMG_URL="file:///tmp/Codex.dmg"
+    then
+        fail "Expected non-HTTPS upstream DMG URL to fail"
+    fi
+    assert_contains "$invalid_url/output.log" "Official DMG URL must be an HTTPS URL"
+}
+
+test_fresh_install_removes_cached_dmg_metadata() {
+    info "Checking --fresh removes cached DMG metadata"
+    local workspace="$TMP_DIR/fresh-dmg-metadata"
+    local source_dir="$workspace/source"
+
+    mkdir -p "$source_dir"
+    printf '%s' "metadata" >"$source_dir/Codex.dmg.metadata"
+
+    TEST_SOURCE_DIR="$source_dir" REPO_DIR="$REPO_DIR" bash <<'SCRIPT'
+set -Eeuo pipefail
+
+SCRIPT_DIR="$TEST_SOURCE_DIR"
+WORK_DIR="$(mktemp -d)"
+INSTALL_DIR="$TEST_SOURCE_DIR/codex-app"
+# shellcheck disable=SC1091
+source "$REPO_DIR/scripts/lib/install-helpers.sh"
+
+FRESH_INSTALL=1
+REUSE_CACHED_DMG=0
+prepare_install
+SCRIPT
+
+    assert_file_not_exists "$source_dir/Codex.dmg"
+    assert_file_not_exists "$source_dir/Codex.dmg.metadata"
+}
+
+test_rebuild_candidate_uses_validated_default_dmg() {
+    info "Checking rebuild-candidate default DMG validation flow"
+    local workspace="$TMP_DIR/rebuild-candidate-dmg"
+    local repo="$workspace/repo"
+    local explicit_dmg="$workspace/explicit.dmg"
+    local explicit_realpath
+    local first_line
+    local second_line
+
+    mkdir -p "$repo/scripts"
+    cp "$REPO_DIR/scripts/rebuild-candidate.sh" "$repo/scripts/rebuild-candidate.sh"
+    printf '%s' "cached" >"$repo/Codex.dmg"
+    printf '%s' "explicit" >"$explicit_dmg"
+    explicit_realpath="$(realpath "$explicit_dmg")"
+
+    cat >"$repo/install.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+set -eu
+{
+    printf 'CALL:'
+    for arg in "$@"; do
+        printf '<%s>' "$arg"
+    done
+    printf '\n'
+} >> "$TEST_REBUILD_LOG"
+SCRIPT
+    chmod +x "$repo/install.sh"
+
+    TEST_REBUILD_LOG="$workspace/default.log" \
+    CODEX_NEXT_APP_DIR="$workspace/next" \
+    REBUILD_REPORT_DIR="$workspace/report" \
+        bash "$repo/scripts/rebuild-candidate.sh" >"$workspace/default.out" 2>&1
+    first_line="$(sed -n '1p' "$workspace/default.log")"
+    second_line="$(sed -n '2p' "$workspace/default.log")"
+    [[ "$first_line" != *"Codex.dmg"* ]] || fail "Default inspect should let installer validate the cache: $first_line"
+    [[ "$second_line" == *"<$repo/Codex.dmg>"* ]] || fail "Default build should pin the validated cache: $second_line"
+    assert_contains "$workspace/default.out" "Using validated DMG for build"
+
+    TEST_REBUILD_LOG="$workspace/explicit.log" \
+    CODEX_NEXT_APP_DIR="$workspace/next-explicit" \
+    REBUILD_REPORT_DIR="$workspace/report-explicit" \
+        bash "$repo/scripts/rebuild-candidate.sh" "$explicit_dmg" >"$workspace/explicit.out" 2>&1
+    first_line="$(sed -n '1p' "$workspace/explicit.log")"
+    second_line="$(sed -n '2p' "$workspace/explicit.log")"
+    [[ "$first_line" == *"<$explicit_realpath>"* ]] || fail "Explicit inspect should receive explicit DMG: $first_line"
+    [[ "$second_line" == *"<$explicit_realpath>"* ]] || fail "Explicit build should receive explicit DMG: $second_line"
 }
 
 test_native_shortcut_targets_compose_existing_flows() {
@@ -2090,6 +2465,14 @@ SCRIPT
     assert_contains "$launcher_stderr" "CODEX_LINUX_WEBVIEW_PORT must be between 1 and 65535"
     assert_not_contains "$launcher_stderr" "integer expected"
 
+    XDG_CACHE_HOME="$workspace/help-cache" \
+        XDG_CONFIG_HOME="$workspace/help-config" \
+        XDG_RUNTIME_DIR="$workspace/help-runtime" \
+        XDG_STATE_HOME="$workspace/help-state" \
+        bash "$start_script" --help >"$launcher_stdout" 2>"$launcher_stderr"
+    assert_contains "$launcher_stdout" "electron-flags.conf"
+    assert_file_not_exists "$workspace/help-config/codex-desktop/electron-flags.conf"
+
     cat > "$launcher_probe_script" <<'SCRIPT'
 #!/bin/bash
 set -euo pipefail
@@ -2914,6 +3297,9 @@ set -Eeuo pipefail
 
 CODEX_LINUX_APP_ID="${CODEX_LINUX_APP_ID:-codex-app}"
 APP_STATE_DIR="${APP_STATE_DIR:-/tmp/codex-launcher-probe-state}"
+APP_CONFIG_DIR="${APP_CONFIG_DIR:-/tmp/codex-launcher-probe-config.$$}"
+USER_ELECTRON_FLAGS_FILE="${USER_ELECTRON_FLAGS_FILE:-$APP_CONFIG_DIR/electron-flags.conf}"
+FEATURE_ELECTRON_ARGS_DIR="${FEATURE_ELECTRON_ARGS_DIR:-}"
 
 print_state() {
     printf 'mode=%s wslg=%s ozone_platform=%s ozone_hint=%s gpu=%s gpu_arg=%s comp=%s gl_added=%s launch=' \
@@ -2938,9 +3324,14 @@ print_state() {
 case "${1:-}" in
     probe)
         shift
-        set_electron_defaults "$@"
+        load_feature_electron_args
+        load_user_electron_flags
+        set_electron_defaults "${FEATURE_ELECTRON_ARGS[@]}" "${USER_ELECTRON_FLAGS[@]}" "$@"
         build_electron_launch_args
         print_state
+        ;;
+    ensure-template)
+        ensure_user_electron_flags_file
         ;;
     *)
         echo "Usage: $0 probe [launcher args...]" >&2
@@ -3054,6 +3445,8 @@ PY
     assert_contains "$REPO_DIR/flake.nix" "Browser Use bundled marketplace metadata"
     assert_contains "$REPO_DIR/flake.nix" ".tmp/bundled-marketplaces/openai-bundled"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "is_interactive_terminal"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "LAUNCHER_INTERACTIVE_TERMINAL"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" 'detail=$(cat "$err" 2>/dev/null || true)'
     assert_contains "$REPO_DIR/updater/src/app.rs" "kdialog"
     assert_contains "$REPO_DIR/updater/src/app.rs" "zenity"
     assert_contains "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "CHROME_DESKTOP"
@@ -3111,6 +3504,7 @@ PY
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "CODEX_LINUX_FEATURES_CONFIG"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "port-integrations/integrations.json"
     assert_contains "$REPO_DIR/contrib/user-local-install/files/.local/bin/codex-app-update" "port-integrations/features.json"
+    assert_contains "$REPO_DIR/contrib/user-local-install/files/share/common.sh" "port-integrations/integrations.json"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "--force-x11"
     assert_contains "$REPO_DIR/contrib/user-local-install/install-user-local.sh" "user-local.env"
     assert_contains "$REPO_DIR/contrib/user-local-install/README.md" "--force-x11"
@@ -3131,8 +3525,8 @@ function functionBody(name, nextName) {
 function assertCacheLinks({ body, plugin }) {
   for (const required of [
     `marketplace_plugin_link="$marketplace_root/plugins/${plugin}"`,
-    'ln -sfn "$version" "$cache_root/latest"',
-    'ln -sfn "$cache_root/latest" "$marketplace_plugin_link"',
+    'replace_symlink "$version" "$cache_root/latest"',
+    'replace_symlink "$cache_root/latest" "$marketplace_plugin_link"',
   ]) {
     if (!body.includes(required)) {
       throw new Error(`${plugin} sync missing ${required}`);
@@ -3151,6 +3545,9 @@ assertCacheLinks({
   body: functionBody("sync_read_aloud_bundled_plugin_cache", "resolve_browser_use_runtime_env"),
   plugin: "read-aloud",
 });
+if (!launcher.includes('ln -sfnT "$target" "$link_path"')) {
+  throw new Error("replace_symlink must replace plugin links as paths, not as directory children");
+}
 NODE
 }
 
@@ -3293,6 +3690,7 @@ make_fake_chrome_official_app() {
     mkdir -p \
         "$resources_dir/plugins/openai-bundled/.agents/plugins" \
         "$chrome_dir/.codex-plugin" \
+        "$chrome_dir/skills/control-chrome" \
         "$chrome_dir/scripts"
 
     cat > "$resources_dir/plugins/openai-bundled/.agents/plugins/marketplace.json" <<'JSON'
@@ -3304,6 +3702,18 @@ JSON
     cat > "$chrome_dir/scripts/installManifest.mjs" <<'JS'
 var n={extensionId:"hehggadaopoacecdllhhajmbjkdcmajg",extensionHostName:"com.openai.codexextension"};var p=o=>{let t=`${o.extensionHostName}.json`,r={darwin:["Library/Application Support/Google/Chrome/NativeMessagingHosts"],linux:[".config/google-chrome/NativeMessagingHosts"],win32:["AppData/Local/OpenAI/extension"]}[m.platform()];return r.map(s=>l.resolve(m.homedir(),s,t))};
 JS
+    cat > "$chrome_dir/skills/control-chrome/SKILL.md" <<'MD'
+# Chrome
+
+```js
+const { setupBrowserRuntime } = await import("<plugin root>/scripts/browser-client.mjs");
+await setupBrowserRuntime({ globals: globalThis });
+globalThis.browser = await agent.browsers.get("extension");
+nodeRepl.write(await browser.documentation());
+```
+
+Use the browser bound to `browser` for tasks in this skill.
+MD
     cat > "$chrome_dir/scripts/extension-id.json" <<'JSON'
 {"extensionId":"hehggadaopoacecdllhhajmbjkdcmajg","extensionHostName":"com.openai.codexextension"}
 JSON
@@ -3313,6 +3723,7 @@ function lu(e){let t=globalThis.nodeRepl?.env[e];return typeof t=="string"?t:voi
 async fetchBlocked(e){let r=await bS(e.endpoint,{method:"GET"});if(!r.ok)throw new Error(ae(`Browser Use cannot determine if ${e.displayUrl} is allowed. Please try again later or use another source.`));let n=await r.json();return TF(n)}
 JS
     cat > "$chrome_dir/scripts/check-native-host-manifest.js" <<'JS'
+#!/usr/bin/env node
 function getNativeHostManifestLocation() {
   if (process.platform === "win32") {
     const registryKey = `${WINDOWS_NATIVE_HOST_REGISTRY_KEY_PREFIX}\\${expectedHostName}`;
@@ -3332,6 +3743,7 @@ function getNativeHostManifestLocation() {
 }
 JS
     cat > "$chrome_dir/scripts/installed-browsers.js" <<'JS'
+#!/usr/bin/env node
 const KNOWN_BROWSERS = [
   {
     name: "Google Chrome",
@@ -3343,17 +3755,20 @@ const KNOWN_BROWSERS = [
 ];
 JS
     cat > "$chrome_dir/scripts/chrome-is-running.js" <<'JS'
+#!/usr/bin/env node
 const CHROME_PROCESS_NAMES_BY_PLATFORM = {
   darwin: new Set(["Google Chrome", "Google Chrome Helper"]),
   win32: new Set(["chrome.exe"]),
 };
 JS
     cat > "$chrome_dir/scripts/check-extension-installed.js" <<'JS'
+#!/usr/bin/env node
 function resolveChromeUserDataDirectory() {
   return path.join(os.homedir(), ".config", "google-chrome");
 }
 JS
     cat > "$chrome_dir/scripts/open-chrome-window.js" <<'JS'
+#!/usr/bin/env node
 function resolveChromeUserDataDirectory() {
   return path.join(os.homedir(), ".config", "google-chrome");
 }
@@ -3409,6 +3824,11 @@ test_chrome_plugin_staging() {
 
     assert_file_exists "$host"
     [ -x "$host" ] || fail "Expected Chrome extension host to be executable: $host"
+    assert_mode "$chrome_dir/scripts/check-native-host-manifest.js" "755"
+    assert_mode "$chrome_dir/scripts/installed-browsers.js" "755"
+    assert_mode "$chrome_dir/scripts/chrome-is-running.js" "755"
+    assert_mode "$chrome_dir/scripts/check-extension-installed.js" "755"
+    assert_mode "$chrome_dir/scripts/open-chrome-window.js" "755"
     assert_contains "$chrome_dir/scripts/installManifest.mjs" "BraveSoftware/Brave-Browser/NativeMessagingHosts"
     assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/chromium/NativeMessagingHosts"
     assert_contains "$chrome_dir/scripts/installed-browsers.js" "Brave Browser"
@@ -3431,6 +3851,16 @@ test_chrome_plugin_staging() {
     assert_contains "$chrome_dir/scripts/browser-client.mjs" 'globalThis.nodeRepl?.env?.[e]'
     assert_not_contains "$chrome_dir/scripts/browser-client.mjs" 'globalThis.nodeRepl?.env[e]'
     assert_contains "$chrome_dir/scripts/browser-client.mjs" "codexLinuxSiteStatusAllowlistFallback"
+    assert_contains "$chrome_dir/skills/control-chrome/SKILL.md" "activeSummaries"
+    assert_contains "$chrome_dir/skills/control-chrome/SKILL.md" "No active Chrome user tabs"
+    assert_contains "$chrome_dir/skills/control-chrome/SKILL.md" "agent.browsers.list()"
+    assert_contains "$chrome_dir/skills/control-chrome/SKILL.md" "browser.tabs.new()"
+    assert_contains "$chrome_dir/skills/control-chrome/SKILL.md" "tabs: Array.isArray(tabs) ? tabs : []"
+    assert_contains "$chrome_dir/skills/control-chrome/SKILL.md" "...(error ? { error } : {})"
+    assert_contains "$chrome_dir/skills/control-chrome/SKILL.md" "Promise.race"
+    assert_contains "$chrome_dir/skills/control-chrome/SKILL.md" "Chrome profile tab probe timed out"
+    assert_not_contains "$chrome_dir/skills/control-chrome/SKILL.md" "{ error: String(error) }"
+    assert_not_contains "$chrome_dir/skills/control-chrome/SKILL.md" 'globalThis.browser = await agent.browsers.get("extension");'
     assert_contains "$install_dir/resources/plugins/openai-bundled/.agents/plugins/marketplace.json" '"name": "chrome"'
     assert_contains "$output_log" "Chrome plugin staged from official OpenAI DMG"
 }
@@ -3750,7 +4180,7 @@ JS
     assert_contains "$extracted/.vite/build/main-test.js" 'nativeImage.createFromPath(process.resourcesPath+`/../content/webview/assets/app-test.png`)'
     assert_contains "$extracted/.vite/build/main-test.js" '(process.platform===`win32`||process.platform===`linux`)&&!this.isAppQuitting'
     assert_contains "$extracted/.vite/build/main-test.js" '!this.isAppQuitting&&!(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())'
-    assert_contains "$extracted/.vite/build/main-test.js" 'setLinuxTrayContextMenu(){let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems())'
+    assert_contains "$extracted/.vite/build/main-test.js" 'setLinuxTrayContextMenu(){if(!this.tray)return null;let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems())'
     assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&this.setLinuxTrayContextMenu(),this.tray.on(`click`'
     assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`?this.openNativeTrayMenu():this.onTrayButtonClick()'
     assert_contains "$extracted/.vite/build/main-test.js" 'openNativeTrayMenu(){if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress()))return;'
@@ -3851,7 +4281,10 @@ if (!result.event.prevented || result.state.hideCalls !== 1) {
 NODE
 
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
-    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'nativeImage.createFromPath(process.resourcesPath' '1'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'nativeImage.createFromPath(process.resourcesPath' '3'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'nativeImage.createFromPath(process.resourcesPath+`/../.codex-linux/codex-app-tray.png`)' '1'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'nativeImage.createFromPath(process.resourcesPath+`/../.codex-linux/codex-app.png`)' '1'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'nativeImage.createFromPath(process.resourcesPath+`/../content/webview/assets/app-test.png`)' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`)&&!this.isAppQuitting' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'setLinuxTrayContextMenu(){' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&this.setLinuxTrayContextMenu(),this.tray.on(`click`' '1'
@@ -4682,12 +5115,6 @@ function assert(condition, message) {
   }
 }
 
-function extractConst(name) {
-  const match = launchPatchSource.match(new RegExp(`const ${name} =\\n    "((?:\\\\.|[^"])*)";`));
-  assert(match, `Could not extract ${name}`);
-  return JSON.parse(`"${match[1]}"`);
-}
-
 function extractCurrentLaunchActionPatch(source) {
   const settingsIndex = source.indexOf("codexLinuxGetSetting=");
   const statementIndex = source.lastIndexOf(";let ", settingsIndex);
@@ -4707,44 +5134,6 @@ if (trayQuitReferenceIndex !== -1) {
 }
 assert(quitGuardIndex < currentSource.indexOf("codexLinuxHandleLaunchActionArgs"), "Linux quit guard must be declared before launch-action helpers reference it");
 
-const startupPrewarmNeedle = "codexLinuxPrewarmHotkeyWindow(),A=Date.now(),await R.deepLinks.flushPendingDeepLinks()";
-const startupPrewarmPattern = /codexLinuxPrewarmHotkeyWindow\(\).*?await R\.deepLinks\.flushPendingDeepLinks\(\)/;
-const variants = [
-  ["old-flags-first", extractConst("oldLaunchActionPatch")],
-  ["deep-link-first-all-args", extractConst("deepLinkFirstLaunchActionPatch")],
-  ["warm-start-without-hotkey", extractConst("deepLinkAwareExistingWindowLaunchActionPatch")],
-  ["open-home-without-socket", extractConst("openHomeHotkeyWindowLaunchActionPatch")],
-  ["socket-without-controller-prewarm", extractConst("socketHotkeyWindowLaunchActionPatch")],
-  ["show-based-hotkey-window", extractConst("showBasedHotkeyWindowLaunchActionPatch")],
-  ["fresh-window", extractConst("freshWindowLaunchActionPatch")],
-];
-
-for (const [name, variant] of variants) {
-  const variantDir = path.join(workspace, `upgrade-${name}`);
-  fs.cpSync(baseExtracted, variantDir, { recursive: true });
-  const variantMainPath = path.join(variantDir, mainBundlePath);
-  const variantSource = currentSource
-    .replace(currentPatch, variant)
-    .replace(`process.platform===\`linux\`&&${startupPrewarmNeedle}`, "A=Date.now(),await R.deepLinks.flushPendingDeepLinks()")
-    .replace(startupPrewarmNeedle, "A=Date.now(),await R.deepLinks.flushPendingDeepLinks()");
-  fs.writeFileSync(variantMainPath, variantSource, "utf8");
-  childProcess.execFileSync(process.execPath, [patcher, variantDir], {
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const upgraded = fs.readFileSync(variantMainPath, "utf8");
-  assert(upgraded.includes("codexLinuxGetHotkeyWindowController="), `${name} variant did not include the hotkey controller accessor`);
-  assert(upgraded.includes("ensureHotkeyWindowController"), `${name} variant did not use the real hotkey window controller`);
-  assert(upgraded.includes("codexLinuxPrewarmHotkeyWindow="), `${name} variant did not include the hotkey prompt prewarm helper`);
-  assert(startupPrewarmPattern.test(upgraded), `${name} variant did not include startup hotkey prompt prewarming`);
-  assert(upgraded.includes("codexLinuxStartLaunchActionSocket="), `${name} variant did not include the fast warm-start socket handler`);
-  assert(upgraded.includes("o.mkdirSync(i.default.dirname(e)"), `${name} variant used the wrong fs namespace for the socket directory`);
-  assert(!upgraded.includes("o.default.mkdirSync"), `${name} variant kept the broken fs.default socket setup`);
-  assert(!upgraded.includes("let e=P.hotkeyWindowLifecycleManager;typeof e.openHome"), `${name} variant kept the fake lifecycle-manager openHome path`);
-  assert(!upgraded.includes("P.hotkeyWindowLifecycleManager.prewarm?.()"), `${name} variant kept the fake lifecycle-manager prewarm path`);
-  assert(!upgraded.includes("P.hotkeyWindowLifecycleManager.show()||await P.ensureHostWindow(z)"), `${name} variant kept the show-based hotkey handler`);
-  assert(!upgraded.includes("codexLinuxOpenNewChat="), `${name} variant kept the fresh-window handler`);
-  assert(!upgraded.includes("Array.isArray(e)&&R.deepLinks.queueProcessArgs(e)?!0"), `${name} variant kept broad deeplink routing`);
-}
 NODE
 }
 
@@ -4867,6 +5256,37 @@ test_linux_file_manager_patch_fails_soft() {
 
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
     assert_contains "$output_log" 'Failed to apply Linux File Manager Patch'
+}
+
+test_patcher_enforce_critical_gate() {
+    info "Checking --enforce-critical patcher gate"
+    local workspace="$TMP_DIR/enforce-critical-gate"
+    local extracted="$workspace/extracted"
+    local output_log="$workspace/output.log"
+    local report_json="$workspace/reports/patch-report.json"
+    local status=0
+
+    mkdir -p "$workspace"
+    # Minimal fixture: most required patches cannot match, so enforcement must fail.
+    make_fake_extracted_asar "$extracted" 'let n=require(`electron`);process.platform===`win32`&&D.removeMenu(),'
+
+    # Bare invocation stays fail-soft (exit 0) — build scripts opt into enforcement.
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1 \
+        || fail "expected bare patcher invocation to stay fail-soft on this fixture"
+
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" --enforce-critical --report-json "$report_json" "$extracted" >"$output_log" 2>&1 || status=$?
+    [ "$status" -ne 0 ] || fail "expected --enforce-critical to exit non-zero on critical patch failures"
+    assert_contains "$output_log" 'Critical patch failures'
+    [ -f "$report_json" ] || fail "expected patch report to be written despite enforcement failure"
+    node - "$report_json" <<'NODE' || fail "expected patch report to include at least one critical patch failure"
+const fs = require("node:fs");
+const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const critical = (report.patches || []).filter((patch) =>
+  patch.ciPolicy === "required-official-dmg" &&
+  ["failed-required", "skipped-required", "skipped-unknown"].includes(patch.status)
+);
+process.exit(critical.length > 0 ? 0 : 1);
+NODE
 }
 
 test_webview_probe_equivalence() {
@@ -5386,6 +5806,87 @@ test_user_local_install_preserves_persisted_x11_preference_on_refresh() {
     assert_contains "$preference_file" "CODEX_USER_LOCAL_OZONE_PLATFORM=auto"
 }
 
+test_user_local_prepare_build_repo_copies_enabled_local_features() {
+    info "Checking user-local managed checkout stages enabled local features"
+    local workspace="$TMP_DIR/user-local-local-features"
+    local origin_repo="$workspace/origin.git"
+    local source_repo="$workspace/source"
+    local managed_repo="$workspace/xdg-data/codex-app/managed-repo"
+    local install_env="$workspace/install.env"
+    local integration_config="$workspace/port-integrations.json"
+    local staged_local_integration="$managed_repo/port-integrations/local/local-tool"
+
+    mkdir -p "$workspace"
+    git init --bare --initial-branch=main "$origin_repo" >/dev/null
+    git clone "$origin_repo" "$source_repo" >/dev/null 2>&1
+    git -C "$source_repo" config user.name "Smoke Test"
+    git -C "$source_repo" config user.email "smoke@example.com"
+
+    mkdir -p "$source_repo/port-integrations/repo-feature"
+    printf '%s\n' '# Port Integrations' > "$source_repo/port-integrations/README.md"
+    printf '%s\n' '{"enabled":[]}' > "$source_repo/port-integrations/integrations.example.json"
+    printf '%s\n' '{"id":"repo-feature","title":"Repo Integration"}' \
+        > "$source_repo/port-integrations/repo-feature/integration.json"
+    printf '%s\n' '# Repo Integration' > "$source_repo/port-integrations/repo-feature/README.md"
+    git -C "$source_repo" add port-integrations
+    git -C "$source_repo" commit -m "base" >/dev/null
+    git -C "$source_repo" push -u origin main >/dev/null
+
+    mkdir -p "$source_repo/port-integrations/local/local-tool/nested"
+    mkdir -p "$source_repo/port-integrations/local/repo-feature"
+    printf '%s\n' '{"id":"local-tool","title":"Local Tool"}' \
+        > "$source_repo/port-integrations/local/local-tool/integration.json"
+    printf '%s\n' '# Local Tool' > "$source_repo/port-integrations/local/local-tool/README.md"
+    printf '%s\n' 'payload' > "$source_repo/port-integrations/local/local-tool/nested/payload.txt"
+    ln -s nested/payload.txt "$source_repo/port-integrations/local/local-tool/payload-link"
+    printf '%s\n' '{"id":"repo-feature","title":"Local Repo Integration"}' \
+        > "$source_repo/port-integrations/local/repo-feature/integration.json"
+    cat > "$integration_config" <<'JSON'
+{
+  "enabled": [
+    "local-tool",
+    "repo-feature",
+    "missing-local",
+    "bad id"
+  ]
+}
+JSON
+
+    (
+        export HOME="$workspace/home"
+        export XDG_DATA_HOME="$workspace/xdg-data"
+        export XDG_STATE_HOME="$workspace/xdg-state"
+        export CODEX_PORT_INTEGRATIONS_CONFIG="$integration_config"
+        mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
+
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/contrib/user-local-install/files/share/common.sh"
+
+        INSTALL_CONFIG_FILE="$install_env"
+        cat > "$INSTALL_CONFIG_FILE" <<EOF
+SOURCE_REPO_DIR=$(printf '%q' "$source_repo")
+MANAGED_REPO_DIR=$(printf '%q' "$managed_repo")
+REPO_ORIGIN_URL=$(printf '%q' "$origin_repo")
+REPO_DEFAULT_BRANCH=$(printf '%q' "main")
+OPT_ROOT=$(printf '%q' "$workspace/opt")
+EOF
+
+        prepare_build_repo
+    )
+
+    assert_file_exists "$staged_local_integration/integration.json"
+    [ "$(cat "$staged_local_integration/nested/payload.txt")" = "payload" ] \
+        || fail "Expected local integration nested payload to be copied"
+    [ -L "$staged_local_integration/payload-link" ] \
+        || fail "Expected local integration symlink to be preserved"
+    [ "$(readlink "$staged_local_integration/payload-link")" = "nested/payload.txt" ] \
+        || fail "Expected local integration symlink target to be preserved"
+    assert_file_not_exists "$managed_repo/port-integrations/local/repo-feature/integration.json"
+    assert_file_not_exists "$managed_repo/port-integrations/local/missing-local/integration.json"
+    assert_file_not_exists "$managed_repo/port-integrations/local/bad id/integration.json"
+    assert_file_exists "$managed_repo/port-integrations/repo-feature/integration.json"
+}
+
 test_user_local_prepare_build_repo_updates_existing_single_branch_fetch_refspec() {
     info "Checking user-local managed checkout can switch branches after a single-branch clone"
     local workspace="$TMP_DIR/user-local-single-branch-refspec"
@@ -5687,6 +6188,9 @@ main() {
     test_make_install_reports_missing_native_packages
     test_make_build_app_uses_installer_download_flow_by_default
     test_make_build_app_fresh_uses_installer_fresh_flow
+    test_installer_refreshes_stale_cached_dmg_metadata
+    test_fresh_install_removes_cached_dmg_metadata
+    test_rebuild_candidate_uses_validated_default_dmg
     test_native_shortcut_targets_compose_existing_flows
     test_setup_native_wizard_noninteractive_integration_writer
     test_setup_native_wizard_rejects_invalid_integration_ids
@@ -5752,6 +6256,7 @@ main() {
     test_linux_computer_use_gate_patch_smoke
     test_linux_computer_use_ui_opt_in_smoke
     test_linux_file_manager_patch_fails_soft
+    test_patcher_enforce_critical_gate
     test_user_local_prepare_build_repo_overlays_committed_local_changes
     test_user_local_prepare_build_repo_detects_default_branch_without_recorded_branch
     test_user_local_prepare_build_repo_ignores_stale_recorded_default_branch
@@ -5761,6 +6266,7 @@ main() {
     test_desktop_entry_doctor_repairs_only_legacy_generated_entries
     test_user_local_install_from_update_defers_record_only_metadata
     test_user_local_install_preserves_persisted_x11_preference_on_refresh
+    test_user_local_prepare_build_repo_copies_enabled_local_features
     test_user_local_prepare_build_repo_updates_existing_single_branch_fetch_refspec
     test_user_local_prepare_build_repo_handles_deleted_overlay_paths
     test_user_local_prepare_build_repo_removes_rename_source_paths

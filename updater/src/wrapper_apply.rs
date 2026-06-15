@@ -14,9 +14,14 @@
 //!   remain in place for a later retry.
 
 use anyhow::{Context, Result};
+use serde_json::Value;
 use std::{
-    os::unix::fs::PermissionsExt,
-    os::unix::process::CommandExt,
+    collections::HashSet,
+    fs,
+    os::unix::{
+        fs::{self as unix_fs, PermissionsExt},
+        process::CommandExt,
+    },
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -33,7 +38,7 @@ use crate::{
 };
 
 #[cfg(test)]
-const GIT_COMMAND_TIMEOUT: Duration = Duration::from_millis(200);
+const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 #[cfg(not(test))]
 const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
 const GIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -185,6 +190,7 @@ async fn apply_user_local(
         .map(Path::to_path_buf)
         .unwrap_or_else(|| app_dir.clone());
     let wrapper_src = ensure_wrapper_source(config, paths, candidate_commit)?;
+    stage_enabled_local_integrations(config, &wrapper_src, integration_config.as_deref())?;
     let install_sh = wrapper_src.join("install.sh");
     if !install_sh.is_file() {
         anyhow::bail!(
@@ -215,6 +221,153 @@ async fn apply_user_local(
 /// then the installed builder bundle's preserved integration config.
 fn effective_integration_config(config: &RuntimeConfig) -> Option<PathBuf> {
     crate::config::effective_integration_config_path(config)
+}
+
+fn valid_integration_id(id: &str) -> bool {
+    let mut bytes = id.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    if !first.is_ascii_lowercase() && !first.is_ascii_digit() {
+        return false;
+    }
+    bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+fn enabled_integration_ids_from_config(config_path: &Path) -> Vec<String> {
+    let content = match fs::read_to_string(config_path) {
+        Ok(content) => content,
+        Err(error) => {
+            warn!(path = %config_path.display(), error = %error, "could not read port integration config");
+            return Vec::new();
+        }
+    };
+    let value = match serde_json::from_str::<Value>(&content) {
+        Ok(value) => value,
+        Err(error) => {
+            warn!(path = %config_path.display(), error = %error, "could not parse port integration config");
+            return Vec::new();
+        }
+    };
+    let Some(enabled) = value.get("enabled").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    let mut seen = HashSet::new();
+    let mut ids = Vec::new();
+    for item in enabled {
+        let Some(id) = item.as_str() else {
+            continue;
+        };
+        if !valid_integration_id(id) || !seen.insert(id.to_string()) {
+            continue;
+        }
+        ids.push(id.to_string());
+    }
+    ids
+}
+
+fn copy_dir_all(source: &Path, target: &Path) -> Result<()> {
+    fs::create_dir_all(target).with_context(|| format!("Failed to create {}", target.display()))?;
+    for entry in
+        fs::read_dir(source).with_context(|| format!("Failed to read {}", source.display()))?
+    {
+        let entry = entry?;
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+        let metadata = fs::symlink_metadata(&source_path)
+            .with_context(|| format!("Failed to stat {}", source_path.display()))?;
+        let file_type = metadata.file_type();
+        if file_type.is_dir() {
+            copy_dir_all(&source_path, &target_path)?;
+        } else if file_type.is_symlink() {
+            let link_target = fs::read_link(&source_path)
+                .with_context(|| format!("Failed to read symlink {}", source_path.display()))?;
+            unix_fs::symlink(&link_target, &target_path).with_context(|| {
+                format!(
+                    "Failed to copy symlink {} to {}",
+                    source_path.display(),
+                    target_path.display()
+                )
+            })?;
+        } else if file_type.is_file() {
+            fs::copy(&source_path, &target_path).with_context(|| {
+                format!(
+                    "Failed to copy {} to {}",
+                    source_path.display(),
+                    target_path.display()
+                )
+            })?;
+            fs::set_permissions(&target_path, metadata.permissions()).with_context(|| {
+                format!("Failed to set permissions on {}", target_path.display())
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn stage_enabled_local_integrations(
+    config: &RuntimeConfig,
+    wrapper_src: &Path,
+    integration_config: Option<&Path>,
+) -> Result<()> {
+    let Some(integration_config) = integration_config else {
+        return Ok(());
+    };
+    if !integration_config.is_file() {
+        return Ok(());
+    }
+
+    let source_local_root = config.builder_bundle_root.join("port-integrations/local");
+    if !source_local_root.is_dir() {
+        return Ok(());
+    }
+
+    let target_integrations_root = wrapper_src.join("port-integrations");
+    for id in enabled_integration_ids_from_config(integration_config) {
+        let source_dir = source_local_root.join(&id);
+        let manifest_path = source_dir.join("integration.json");
+        if !manifest_path.is_file() {
+            continue;
+        }
+
+        let manifest_id = fs::read_to_string(&manifest_path)
+            .ok()
+            .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+            .and_then(|value| {
+                value
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+            });
+        if manifest_id.as_deref() != Some(id.as_str()) {
+            warn!(
+                path = %manifest_path.display(),
+                expected = %id,
+                actual = ?manifest_id,
+                "skipping local port integration with mismatched manifest id"
+            );
+            continue;
+        }
+
+        // If the fetched wrapper gained a real top-level integration with this
+        // id, prefer the upstream integration and avoid creating a duplicate.
+        if target_integrations_root
+            .join(&id)
+            .join("integration.json")
+            .is_file()
+        {
+            continue;
+        }
+
+        let target_dir = target_integrations_root.join("local").join(&id);
+        if target_dir.exists() {
+            fs::remove_dir_all(&target_dir)
+                .with_context(|| format!("Failed to remove {}", target_dir.display()))?;
+        }
+        copy_dir_all(&source_dir, &target_dir)?;
+    }
+    Ok(())
 }
 
 fn user_local_update_helper() -> Option<PathBuf> {
@@ -257,6 +410,8 @@ async fn apply_packaged(
 
     let wrapper_src = ensure_wrapper_source(config, paths, candidate_commit)?;
     seed_packaged_builder_payload(config, &wrapper_src)?;
+    let integration_config = effective_integration_config(config);
+    stage_enabled_local_integrations(config, &wrapper_src, integration_config.as_deref())?;
     let dmg_path = cached_or_downloaded_dmg(config, state, paths).await?;
 
     // Keep wrapper rebuild workspaces unique even when the official app version
@@ -629,6 +784,139 @@ mod tests {
             wrapper_remote: String::new(),
             wrapper_branch: "main".to_string(),
         }
+    }
+
+    fn write_local_integration(root: &Path, id: &str) {
+        write_local_integration_with_manifest_id(root, id, id);
+    }
+
+    fn write_local_integration_with_manifest_id(root: &Path, id: &str, manifest_id: &str) {
+        let integration_dir = root.join("builder/port-integrations/local").join(id);
+        std::fs::create_dir_all(integration_dir.join("nested")).unwrap();
+        std::fs::write(
+            integration_dir.join("integration.json"),
+            format!(
+                r#"{{
+  "id": "{manifest_id}",
+  "title": "Local Integration",
+  "description": "Local test integration",
+  "defaultEnabled": false,
+  "entrypoints": {{}}
+}}"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(integration_dir.join("README.md"), "# Local Integration\n").unwrap();
+        std::fs::write(integration_dir.join("nested/payload.txt"), "payload\n").unwrap();
+        unix_fs::symlink("nested/payload.txt", integration_dir.join("payload-link")).unwrap();
+    }
+
+    #[test]
+    fn stages_enabled_local_integrations_into_wrapper_source() {
+        let root = tempdir().unwrap();
+        let config = test_config(root.path());
+        let wrapper_src = root.path().join("wrapper-src");
+        let integration_config = root.path().join("port-integrations.json");
+        write_local_integration(root.path(), "model-provider-switcher");
+        std::fs::create_dir_all(wrapper_src.join("port-integrations")).unwrap();
+        std::fs::write(
+            &integration_config,
+            r#"{"enabled":["agent-workspace","model-provider-switcher","missing-local"]}"#,
+        )
+        .unwrap();
+
+        stage_enabled_local_integrations(&config, &wrapper_src, Some(&integration_config)).unwrap();
+
+        assert!(wrapper_src
+            .join("port-integrations/local/model-provider-switcher/integration.json")
+            .is_file());
+        assert_eq!(
+            std::fs::read_to_string(
+                wrapper_src
+                    .join("port-integrations/local/model-provider-switcher/nested/payload.txt")
+            )
+            .unwrap(),
+            "payload\n"
+        );
+        assert_eq!(
+            std::fs::read_link(
+                wrapper_src.join("port-integrations/local/model-provider-switcher/payload-link")
+            )
+            .unwrap(),
+            PathBuf::from("nested/payload.txt")
+        );
+        assert!(!wrapper_src
+            .join("port-integrations/local/missing-local/integration.json")
+            .exists());
+    }
+
+    #[test]
+    fn local_integration_staging_does_not_duplicate_upstream_integrations() {
+        let root = tempdir().unwrap();
+        let config = test_config(root.path());
+        let wrapper_src = root.path().join("wrapper-src");
+        let integration_config = root.path().join("port-integrations.json");
+        write_local_integration(root.path(), "model-provider-switcher");
+        std::fs::create_dir_all(wrapper_src.join("port-integrations/model-provider-switcher"))
+            .unwrap();
+        std::fs::write(
+            wrapper_src.join("port-integrations/model-provider-switcher/integration.json"),
+            r#"{"id":"model-provider-switcher"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &integration_config,
+            r#"{"enabled":["model-provider-switcher"]}"#,
+        )
+        .unwrap();
+
+        stage_enabled_local_integrations(&config, &wrapper_src, Some(&integration_config)).unwrap();
+
+        assert!(!wrapper_src
+            .join("port-integrations/local/model-provider-switcher/integration.json")
+            .exists());
+    }
+
+    #[test]
+    fn local_integration_staging_skips_manifest_id_mismatch() {
+        let root = tempdir().unwrap();
+        let config = test_config(root.path());
+        let wrapper_src = root.path().join("wrapper-src");
+        let integration_config = root.path().join("port-integrations.json");
+        write_local_integration_with_manifest_id(
+            root.path(),
+            "model-provider-switcher",
+            "other-id",
+        );
+        std::fs::create_dir_all(wrapper_src.join("port-integrations")).unwrap();
+        std::fs::write(
+            &integration_config,
+            r#"{"enabled":["model-provider-switcher"]}"#,
+        )
+        .unwrap();
+
+        stage_enabled_local_integrations(&config, &wrapper_src, Some(&integration_config)).unwrap();
+
+        assert!(!wrapper_src
+            .join("port-integrations/local/model-provider-switcher/integration.json")
+            .exists());
+    }
+
+    #[test]
+    fn malformed_integration_config_does_not_block_local_integration_staging() {
+        let root = tempdir().unwrap();
+        let config = test_config(root.path());
+        let wrapper_src = root.path().join("wrapper-src");
+        let integration_config = root.path().join("port-integrations.json");
+        write_local_integration(root.path(), "model-provider-switcher");
+        std::fs::create_dir_all(wrapper_src.join("port-integrations")).unwrap();
+        std::fs::write(&integration_config, "{not json").unwrap();
+
+        stage_enabled_local_integrations(&config, &wrapper_src, Some(&integration_config)).unwrap();
+
+        assert!(!wrapper_src
+            .join("port-integrations/local/model-provider-switcher/integration.json")
+            .exists());
     }
 
     #[tokio::test]

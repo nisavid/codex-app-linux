@@ -5,18 +5,23 @@ const fs = require("node:fs");
 const {
   requiredPatchNamesForProfile,
 } = require("../patches/registry.js");
+const {
+  SUCCESS_STATUSES,
+  criticalFailuresFromReport,
+  optionalDriftFromReport,
+} = require("../lib/patch-report.js");
 
-const SUCCESS_STATUSES = new Set(["applied", "already-applied"]);
-const DEFAULT_PROFILE = "official-dmg-build";
-const LEGACY_PROFILE_ALIASES = new Map([["upstream-build", DEFAULT_PROFILE]]);
-const KNOWN_PROFILES = new Set([DEFAULT_PROFILE, ...LEGACY_PROFILE_ALIASES.keys()]);
+const PROFILE_ALIASES = new Map([
+  ["upstream-build", "official-dmg-build"],
+]);
+const KNOWN_PROFILES = new Set(["official-dmg-build"]);
 
 function usage() {
   return "Usage: validate-patch-report.js <patch-report.json> [--profile official-dmg-build]";
 }
 
 function parseArgs(argv) {
-  let profile = DEFAULT_PROFILE;
+  let profile = "official-dmg-build";
   const positional = [];
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -38,10 +43,6 @@ function parseArgs(argv) {
   if (positional.length !== 1) {
     throw new Error(usage());
   }
-  if (!KNOWN_PROFILES.has(profile)) {
-    throw new Error(`Unknown patch validation profile: ${profile}`);
-  }
-  profile = LEGACY_PROFILE_ALIASES.get(profile) ?? profile;
 
   return { profile, reportPath: positional[0] };
 }
@@ -55,57 +56,54 @@ function readReport(reportPath) {
   return report;
 }
 
+function normalizeProfile(profile) {
+  const normalized = PROFILE_ALIASES.get(profile) ?? profile;
+  if (!KNOWN_PROFILES.has(normalized)) {
+    throw new Error(`Unknown patch validation profile: ${profile}`);
+  }
+  return normalized;
+}
+
 function validateReport(report, profile) {
-  const requiredNames = requiredPatchNamesForProfile(profile);
-  const entriesByName = new Map();
+  const normalizedProfile = normalizeProfile(profile);
+  const requiredNames = requiredPatchNamesForProfile(normalizedProfile);
+  const patchesByName = new Map(report.patches.map((patch) => [patch.name, patch]));
   const failures = [];
 
-  for (const [index, patch] of report.patches.entries()) {
-    if (patch == null || typeof patch !== "object") {
-      failures.push(`patch[${index}]: malformed patch entry`);
-      continue;
-    }
-    if (typeof patch.name !== "string" || patch.name.length === 0) {
-      failures.push(`patch[${index}]: missing patch name`);
-      continue;
-    }
-    if (typeof patch.status !== "string" || patch.status.length === 0) {
-      failures.push(`${patch.name}: missing patch status`);
-    }
-    if (!entriesByName.has(patch.name)) {
-      entriesByName.set(patch.name, []);
-    }
-    entriesByName.get(patch.name).push(patch);
-  }
-
-  for (const [name, entries] of entriesByName) {
-    if (entries.length > 1) {
-      failures.push(`${name}: duplicate patch entries`);
-    }
-  }
-
+  // A required patch that never ran leaves no report entry, so the
+  // report-driven check below cannot see it — catch it by name first.
   for (const name of requiredNames) {
-    const patches = entriesByName.get(name);
-    if (patches == null) {
+    if (!patchesByName.has(name)) {
       failures.push(`${name}: missing from patch report`);
-      continue;
     }
-    if (patches.length !== 1 || typeof patches[0].status !== "string") {
-      continue;
-    }
-    const patch = patches[0];
-    if (!SUCCESS_STATUSES.has(patch.status)) {
-      failures.push(`${name}: ${patch.status}${patch.reason ? ` (${patch.reason})` : ""}`);
-    }
+  }
+
+  // Shared predicate with the local build gate (patch-linux-window-ui.js
+  // --enforce-critical): any recorded critical patch with a non-success,
+  // applicable status fails validation.
+  for (const failure of criticalFailuresFromReport(report)) {
+    failures.push(`${failure.name}: ${failure.status}${failure.reason ? ` (${failure.reason})` : ""}`);
   }
 
   return failures;
+}
+
+function printOptionalDrift(report) {
+  const drift = optionalDriftFromReport(report);
+  if (drift.length === 0) {
+    return;
+  }
+  console.warn(`Optional patch drift (${drift.length}, non-failing):`);
+  for (const item of drift) {
+    console.warn(`- ${item.name}: ${item.status}${item.reason ? ` (${item.reason})` : ""}`);
+  }
 }
 
 function main() {
   try {
     const { profile, reportPath } = parseArgs(process.argv.slice(2));
     const report = readReport(reportPath);
+    printOptionalDrift(report);
     const failures = validateReport(report, profile);
     if (failures.length > 0) {
       console.error(`Required patch validation failed for profile ${profile}:`);
@@ -126,8 +124,8 @@ if (require.main === module) {
 }
 
 module.exports = {
-  KNOWN_PROFILES,
   SUCCESS_STATUSES,
+  normalizeProfile,
   readReport,
   validateReport,
 };

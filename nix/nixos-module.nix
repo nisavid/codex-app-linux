@@ -19,7 +19,47 @@ let
       "codex-app-computer-use-ui"
     else
       "codex-app";
-  desktopPackage = if cfg.package != null then cfg.package else flakePackages.${packageName};
+  basePackage = if cfg.package != null then cfg.package else flakePackages.${packageName};
+  codexCliPackage =
+    if cfg.cliPackage != null then
+      cfg.cliPackage
+    else if remoteCfg.enable then
+      remoteCfg.package
+    else
+      null;
+  codexCliPath = if codexCliPackage != null then lib.getExe' codexCliPackage "codex" else null;
+  # Thin wrapper that bakes CODEX_CLI_PATH into the launcher. The `.desktop`
+  # entry shipped by the package launches `<pkg>/bin/codex-app` by absolute
+  # path, so wrapping that binary (and repointing the desktop entry at the
+  # wrapper) makes Codex App locate the CLI no matter how it is started --
+  # graphical autostart, application launcher, terminal, or a warm-start handoff
+  # to an already-running instance -- without depending on the session/login
+  # `PATH` and without requiring a re-login for a config change to take effect.
+  # `--set-default` leaves an explicit `CODEX_CLI_PATH` in the environment in
+  # control, so users can still override the launched CLI.
+  withCodexCliPath =
+    base:
+    pkgs.symlinkJoin {
+      name = "${base.name}-codex-cli-path";
+      paths = [ base ];
+      nativeBuildInputs = [ pkgs.makeWrapper ];
+      postBuild = ''
+        if [ -e "$out/bin/codex-app" ]; then
+          rm -f "$out/bin/codex-app"
+          makeWrapper "${base}/bin/codex-app" "$out/bin/codex-app" \
+            --set-default CODEX_CLI_PATH "${codexCliPath}"
+        fi
+        desktopFile="$out/share/applications/codex-app.desktop"
+        if [ -e "$desktopFile" ]; then
+          target="$(readlink -f "$desktopFile")"
+          rm -f "$desktopFile"
+          substitute "$target" "$desktopFile" \
+            --replace-fail "${base}/bin/codex-app" "$out/bin/codex-app"
+        fi
+      '';
+      meta = base.meta or { };
+    };
+  desktopPackage = if codexCliPath != null then withCodexCliPath basePackage else basePackage;
   remoteControlPath = lib.makeSearchPath "bin" (
     [
       "/run/current-system/sw"
@@ -50,6 +90,30 @@ in
         this flake's package variants from
         {option}`programs.codexAppLinux.computerUseUi.enable` and
         {option}`programs.codexAppLinux.remoteMobileControl.enable`.
+      '';
+    };
+
+    cliPackage = lib.mkOption {
+      type = lib.types.nullOr lib.types.package;
+      default = null;
+      defaultText = lib.literalExpression "pkgs.codex";
+      example = lib.literalExpression "pkgs.codex";
+      description = ''
+        Codex CLI package that Codex App should launch. When set, the
+        installed Codex App launcher (and its `.desktop` entry) is wrapped so
+        it always starts with {env}`CODEX_CLI_PATH` pointing at this package's
+        `codex` binary. This lets Codex App locate the CLI regardless of how
+        it is started — graphical autostart, application launcher, terminal, or a
+        warm-start handoff to an already-running instance — without depending on
+        the session/login {env}`PATH` and without requiring a re-login for the
+        setting to take effect. An explicit {env}`CODEX_CLI_PATH` already in the
+        environment still wins.
+
+        When unset, the module falls back to
+        {option}`programs.codexAppLinux.remoteControl.package` if
+        {option}`programs.codexAppLinux.remoteControl.enable` is set;
+        otherwise the launcher is left unwrapped and Codex App relies on
+        discovering `codex` on {env}`PATH`.
       '';
     };
 

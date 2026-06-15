@@ -44,7 +44,13 @@ function portIntegrationsRoot(options = {}) {
   return defaultPortIntegrationsRoot();
 }
 
-function portIntegrationsConfigPath(integrationsRoot) {
+function portIntegrationsConfigPath(integrationsRoot, options = {}) {
+  if (options.integrationsConfigPath != null && String(options.integrationsConfigPath).trim() !== "") {
+    return path.resolve(options.integrationsConfigPath);
+  }
+  if (options.featuresConfigPath != null && String(options.featuresConfigPath).trim() !== "") {
+    return path.resolve(options.featuresConfigPath);
+  }
   if (process.env.CODEX_PORT_INTEGRATIONS_CONFIG?.trim()) {
     return path.resolve(process.env.CODEX_PORT_INTEGRATIONS_CONFIG.trim());
   }
@@ -199,8 +205,8 @@ function normalizeConfiguredIntegrationIdList(value, sourcePath, key) {
   return ids;
 }
 
-function readPortIntegrationsConfig(integrationsRoot) {
-  const configPath = portIntegrationsConfigPath(integrationsRoot);
+function readPortIntegrationsConfig(integrationsRoot, options = {}) {
+  const configPath = portIntegrationsConfigPath(integrationsRoot, options);
   if (!fs.existsSync(configPath)) {
     return { enabled: [], disabled: [] };
   }
@@ -217,7 +223,7 @@ function readPortIntegrationsConfig(integrationsRoot) {
 
 function enabledPortIntegrationIds(options = {}) {
   const integrationsRoot = portIntegrationsRoot(options);
-  const config = readPortIntegrationsConfig(integrationsRoot);
+  const config = readPortIntegrationsConfig(integrationsRoot, options);
   const disabled = new Set(config.disabled);
   const integrationsById = portIntegrationManifestMap({ ...options, integrationsRoot });
   const seen = new Set();
@@ -248,7 +254,7 @@ function enabledPortIntegrationIds(options = {}) {
 function resolvedPortIntegrationsConfig(options = {}) {
   const integrationsRoot = portIntegrationsRoot(options);
   const knownIntegrationIds = new Set(discoverPortIntegrationManifests({ ...options, integrationsRoot }).map((integration) => integration.id));
-  const config = readPortIntegrationsConfig(integrationsRoot);
+  const config = readPortIntegrationsConfig(integrationsRoot, options);
   const enabled = enabledPortIntegrationIds({ ...options, integrationsRoot });
   const disabled = config.disabled.filter((id) => knownIntegrationIds.has(id));
   return { enabled, disabled };
@@ -517,6 +523,9 @@ function wrapIntegrationPatchDescriptor(integration, descriptor, sourcePath, ind
     id: wrappedId,
     name: descriptor.name ?? wrappedId,
     ciPolicy: descriptor.ciPolicy ?? "optional",
+    sourceKind: descriptor.sourceKind ?? "integration",
+    integrationId: integration.id,
+    featureId: descriptor.featureId ?? integration.id,
     order: descriptor.order ?? 20_000 + integrationIndex * 100 + index * 10,
     sourcePath,
     apply: (target, context) => descriptor.apply(target, integrationContext(context, integration)),
@@ -580,6 +589,9 @@ function loadPortIntegrationPatchDescriptors(options = {}) {
         name: `integration:${integration.id}`,
         phase: "main-bundle",
         ciPolicy: "optional",
+        sourceKind: "integration",
+        integrationId: integration.id,
+        featureId: integration.id,
         apply: (source, context) => apply(source, integrationContext(context, integration)),
       });
       continue;

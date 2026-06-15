@@ -489,9 +489,11 @@ capture_official_dmg_metadata() {
     local etag="no-etag"
     local content_length="unknown"
     if curl -fsSLI "$OFFICIAL_DMG_URL" > "$headers_file"; then
-        last_modified="$(awk 'BEGIN{IGNORECASE=1} /^last-modified:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); print; exit}' "$headers_file")"
-        etag="$(awk 'BEGIN{IGNORECASE=1} /^etag:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); gsub(/"/,""); print; exit}' "$headers_file")"
-        content_length="$(awk 'BEGIN{IGNORECASE=1} /^content-length:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); print; exit}' "$headers_file")"
+        # Match header names case-insensitively without gawk's IGNORECASE,
+        # which is a no-op under mawk (the default awk in the CI containers).
+        last_modified="$(awk 'tolower($0) ~ /^last-modified:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); value=$0} END{print value}' "$headers_file")"
+        etag="$(awk 'tolower($0) ~ /^etag:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); gsub(/"/,""); value=$0} END{print value}' "$headers_file")"
+        content_length="$(awk 'tolower($0) ~ /^content-length:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); value=$0} END{print value}' "$headers_file")"
     fi
     rm -f "$headers_file"
 

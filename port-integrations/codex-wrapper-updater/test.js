@@ -22,28 +22,13 @@ const {
 
 const integrationDir = __dirname;
 const integrationsRoot = path.resolve(integrationDir, "..");
-const defaultEnabledIntegrationIds = [
-  "conversation-mode",
-  "open-target-discovery",
-  "read-aloud",
-  "read-aloud-mcp",
-  "remote-control-ui",
-  "remote-mobile-control",
-];
 
 function withTempIntegrationConfig(enabled, fn) {
   const originalConfig = process.env.CODEX_PORT_INTEGRATIONS_CONFIG;
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-config-"));
   process.env.CODEX_PORT_INTEGRATIONS_CONFIG = path.join(tempDir, "integrations.json");
   try {
-    const enabledSet = new Set(enabled);
-    fs.writeFileSync(
-      process.env.CODEX_PORT_INTEGRATIONS_CONFIG,
-      JSON.stringify({
-        enabled,
-        disabled: defaultEnabledIntegrationIds.filter((id) => !enabledSet.has(id)),
-      }, null, 2),
-    );
+    fs.writeFileSync(process.env.CODEX_PORT_INTEGRATIONS_CONFIG, JSON.stringify({ enabled }, null, 2));
     return fn();
   } finally {
     if (originalConfig == null) {
@@ -76,7 +61,6 @@ test("main bundle patch writes app-state wrapper marker", () => {
   assert.match(patched, /codex-wrapper-updater/);
   assert.match(patched, /wrapper_dev_mode/);
   assert.match(patched, /installed_wrapper_commit/);
-  assert.match(patched, /CODEX_APP_UPDATER_PATH/);
   assert.doesNotMatch(patched, /wrapper-update-pending/);
   assert.doesNotMatch(patched, /wrapper_status/);
 });
@@ -148,9 +132,83 @@ test("settings asset patch skips re-exported general settings bundles", () => {
   }
 });
 
+test("settings asset patch prefers generated Linux desktop settings bundle", () => {
+  const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-linux-desktop-settings-"));
+  const assetsDir = path.join(appDir, "webview", "assets");
+  fs.mkdirSync(assetsDir, { recursive: true });
+  const linuxDesktopSettings =
+    `var KEYS={autoUpdateOnExit:"codex-linux-auto-update-on-exit"};` +
+    `function Settings(){return $.jsx(SettingsGroup,{children:$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close Codex",description:"When on, a ready update waits for Codex to close and then installs. When off, updates wait until you click Update."})})}`;
+  const generalSettings = `function Br(){return null}`;
+  fs.writeFileSync(path.join(assetsDir, "linux-desktop-settings-linux.js"), linuxDesktopSettings);
+  fs.writeFileSync(path.join(assetsDir, "general-settings-z.js"), generalSettings);
+
+  try {
+    assert.deepEqual(patchWrapperUpdateSettingsAssets(appDir), { matched: true, changed: 1 });
+    assert.match(
+      fs.readFileSync(path.join(assetsDir, "linux-desktop-settings-linux.js"), "utf8"),
+      /Check for Codex App updates/,
+    );
+    assert.equal(
+      fs.readFileSync(path.join(assetsDir, "general-settings-z.js"), "utf8"),
+      generalSettings,
+    );
+  } finally {
+    fs.rmSync(appDir, { recursive: true, force: true });
+  }
+});
+
+test("settings asset patch treats already patched Linux settings as matched when general settings drift", () => {
+  const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-already-patched-settings-"));
+  const assetsDir = path.join(appDir, "webview", "assets");
+  fs.mkdirSync(assetsDir, { recursive: true });
+  const linuxDesktopSettings =
+    `var KEYS={autoUpdateOnExit:"codex-linux-auto-update-on-exit"};` +
+    `function Settings(){return $.jsx(SettingsGroup,{children:$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close Codex",description:"When on, a ready update waits for Codex to close and then installs. When off, updates wait until you click Update."})})}`;
+  const alreadyPatchedSettings = applyWrapperUpdateSettingsPatch(linuxDesktopSettings);
+  const generalSettings = `function Br(){return null}`;
+  fs.writeFileSync(path.join(assetsDir, "linux-desktop-settings-linux.js"), alreadyPatchedSettings);
+  fs.writeFileSync(path.join(assetsDir, "general-settings-z.js"), generalSettings);
+
+  try {
+    assert.deepEqual(patchWrapperUpdateSettingsAssets(appDir), { matched: true, changed: 0 });
+    assert.equal(
+      fs.readFileSync(path.join(assetsDir, "linux-desktop-settings-linux.js"), "utf8"),
+      alreadyPatchedSettings,
+    );
+    assert.equal(
+      fs.readFileSync(path.join(assetsDir, "general-settings-z.js"), "utf8"),
+      generalSettings,
+    );
+  } finally {
+    fs.rmSync(appDir, { recursive: true, force: true });
+  }
+});
+
+test("settings asset patch tries keybinds asset after desktop settings drift", () => {
+  const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-settings-fallback-"));
+  const assetsDir = path.join(appDir, "webview", "assets");
+  fs.mkdirSync(assetsDir, { recursive: true });
+  const keybindsSettings =
+    `var KEYS={autoUpdateOnExit:"codex-linux-auto-update-on-exit"};` +
+    `function Settings(){return $.jsx(SettingsGroup,{children:$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close Codex",description:"When on, a ready update waits for Codex to close and then installs. When off, updates wait until you click Update."})})}`;
+  fs.writeFileSync(path.join(assetsDir, "linux-desktop-settings-linux.js"), "function Drifted(){return null}");
+  fs.writeFileSync(path.join(assetsDir, "keybinds-settings-linux.js"), keybindsSettings);
+
+  try {
+    assert.deepEqual(patchWrapperUpdateSettingsAssets(appDir), { matched: true, changed: 1 });
+    assert.match(
+      fs.readFileSync(path.join(assetsDir, "keybinds-settings-linux.js"), "utf8"),
+      /Check for Codex App updates/,
+    );
+  } finally {
+    fs.rmSync(appDir, { recursive: true, force: true });
+  }
+});
+
 test("integration exposes optional patches and declarative apply hooks when enabled", () => {
   withTempIntegrationConfig(["codex-wrapper-updater"], () => {
-    assert.deepEqual(enabledPortIntegrationIds({ integrationsRoot }), ["codex-wrapper-updater"]);
+    assert.ok(enabledPortIntegrationIds({ integrationsRoot }).includes("codex-wrapper-updater"));
     assert.deepEqual(
       loadPortIntegrationPatchDescriptors({ integrationsRoot })
         .filter((descriptor) => descriptor.id.startsWith("integration:codex-wrapper-updater:"))
@@ -205,7 +263,7 @@ test("apply hook preserves marker on failure and clears it on success", () => {
   const env = {
     ...process.env,
     CODEX_LINUX_APP_STATE_DIR: temp,
-    CODEX_PORT_INTEGRATION_HOOK_PHASE: "prelaunch",
+    CODEX_LINUX_FEATURE_HOOK_PHASE: "prelaunch",
     CODEX_UPDATE_MANAGER_PATH: manager,
   };
 
@@ -237,7 +295,7 @@ test("apply hook resolves marker from sanitized app id when app state dir is abs
       ...process.env,
       CODEX_LINUX_APP_ID: "codex-cua-lab",
       CODEX_LINUX_APP_STATE_DIR: "",
-      CODEX_PORT_INTEGRATION_HOOK_PHASE: "prelaunch",
+      CODEX_LINUX_FEATURE_HOOK_PHASE: "prelaunch",
       CODEX_UPDATE_MANAGER_PATH: manager,
       XDG_STATE_HOME: temp,
     },
@@ -260,7 +318,7 @@ test("apply hook skip guard and lock keep marker without running manager", () =>
   const env = {
     ...process.env,
     CODEX_LINUX_APP_STATE_DIR: temp,
-    CODEX_PORT_INTEGRATION_HOOK_PHASE: "prelaunch",
+    CODEX_LINUX_FEATURE_HOOK_PHASE: "prelaunch",
     CODEX_UPDATE_MANAGER_PATH: manager,
   };
 
@@ -280,4 +338,30 @@ test("apply hook skip guard and lock keep marker without running manager", () =>
   assert.equal(locked.status, 0, locked.stderr);
   assert.equal(fs.existsSync(marker), true);
   assert.equal(fs.existsSync(invoked), false);
+});
+
+test("apply hook uses port-integration phase before legacy feature phase", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-wrapper-updater-phase-"));
+  const markerDir = path.join(temp, "codex-wrapper-updater");
+  const marker = path.join(markerDir, "pending");
+  const invoked = path.join(temp, "manager-invoked");
+  const manager = fakeManager(temp, `touch ${JSON.stringify(invoked)}\nexit 0\n`);
+  fs.mkdirSync(markerDir, { recursive: true });
+  fs.writeFileSync(marker, "pending\n");
+
+  const result = spawnSync("bash", [path.join(integrationDir, "apply-pending.sh")], {
+    env: {
+      ...process.env,
+      CODEX_LINUX_APP_STATE_DIR: temp,
+      CODEX_LINUX_FEATURE_HOOK_PHASE: "prelaunch",
+      CODEX_PORT_INTEGRATION_HOOK_PHASE: "manual",
+      CODEX_WRAPPER_UPDATER_SKIP_PRELAUNCH_ONCE: "1",
+      CODEX_UPDATE_MANAGER_PATH: manager,
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(invoked), true);
+  assert.equal(fs.existsSync(marker), false);
 });

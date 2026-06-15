@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, Utc};
 use fs4::{FileExt, TryLockError};
 use reqwest::Client;
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{
     ffi::OsString,
@@ -33,6 +34,24 @@ const CLI_MISSING_PROMPT_DISMISS_TTL: ChronoDuration = ChronoDuration::minutes(1
 const PROMPT_INSTALL_CLI_CANCELLED_EXIT_CODE: i32 = 10;
 const PROMPT_INSTALL_CLI_NO_BACKEND_EXIT_CODE: i32 = 11;
 const UPSTREAM_REQUEST_TIMEOUT_SECONDS: u64 = 600;
+const POLKIT_AUTH_AGENT_PROCESS_TOKENS: &[&str] = &[
+    "budgie-polkit",
+    "cinnamon-polkit",
+    "cosmic-osd",
+    "gnome-shell",
+    "hyprpolkitagent",
+    "io.elementary.desktop.agent-polkit",
+    "lxpolkit",
+    "lxqt-policykit-agent",
+    "mate-polkit",
+    "polkit-agent",
+    "polkit-dde-agent",
+    "polkit-gnome-authentication-agent",
+    "polkit-kde-authentication-agent",
+    "soteria",
+    "ukui-polkit",
+    "xfce-polkit",
+];
 
 /// Runs the updater command-line entrypoint.
 pub async fn run(cli: Cli) -> Result<()> {
@@ -505,7 +524,9 @@ async fn run_daemon(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(&config.workspace_root, state, paths)?;
+    complete_current_dmg_update_if_already_installed(config, state, paths)?;
     reconcile_cli_if_present_best_effort(config, state, paths, "daemon startup");
+    maybe_prune_workspace_cache(&config.workspace_root, state);
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
     if packaged_runtime_removed(config) {
@@ -563,7 +584,9 @@ async fn run_check_now(
 ) -> Result<()> {
     sync_and_persist(config, state, paths)?;
     recover_interrupted_install(&config.workspace_root, state, paths)?;
+    complete_current_dmg_update_if_already_installed(config, state, paths)?;
     reconcile_cli_if_present_best_effort(config, state, paths, "check-now");
+    maybe_prune_workspace_cache(&config.workspace_root, state);
     maybe_notify_cli_missing(state, paths, config.notifications)?;
     maybe_notify_installed(state, paths, config.notifications)?;
     if if_stale && state.status != UpdateStatus::Failed && remote_dmg_check_is_fresh(config, state)
@@ -741,6 +764,7 @@ fn run_status(
     json: bool,
 ) -> Result<()> {
     codex_cli::refresh_status(config, state, paths)?;
+    complete_current_dmg_update_if_already_installed(config, state, paths)?;
     complete_pending_install_if_already_installed(&config.workspace_root, state, paths)?;
     recover_interrupted_install(&config.workspace_root, state, paths)?;
     normalize_workspace_dir_and_persist(&config.workspace_root, state, paths)?;
@@ -1094,6 +1118,17 @@ async fn run_check_cycle(
             }
         };
 
+        if installed_upstream_dmg_matches(config, &downloaded.sha256) {
+            clear_dmg_update_candidate(
+                state,
+                paths,
+                Some(downloaded.path),
+                Some(downloaded.sha256),
+            )?;
+            info!("downloaded DMG hash matches installed app; no update detected");
+            return Ok(());
+        }
+
         if downloaded_dmg_is_blocked_by_rollback(
             state,
             &verified.version,
@@ -1207,18 +1242,28 @@ async fn reconcile_pending_install(
                 mark_failed_and_persist(state, paths, error.to_string())?;
                 return Ok(());
             }
-            if let Err(error) =
-                expected_package_for_ready_install(state, &config.workspace_root, &package_path)
-            {
-                mark_failed_and_persist(state, paths, error.to_string())?;
-                return Ok(());
-            }
+            let expected_package = match expected_package_for_ready_install(
+                state,
+                &config.workspace_root,
+                &package_path,
+            ) {
+                Ok(expected) => expected,
+                Err(error) => {
+                    mark_failed_and_persist(state, paths, error.to_string())?;
+                    return Ok(());
+                }
+            };
 
             // The persisted `auto_install_on_app_exit` key is kept for config
             // compatibility. In this flow it controls whether the updater
             // nudges a running app; installation still requires an explicit
             // install-ready trigger from the app/menu path.
             if state.auto_install_on_app_exit && liveness::is_app_running(config)? {
+                if !graphical_polkit_auth_agent_is_likely_available() {
+                    defer_install_for_manual_auth(state, paths, &package_path, &expected_package)?;
+                    maybe_notify_manual_install_required(state, paths, config.notifications)?;
+                    return Ok(());
+                }
                 clear_install_auth_required_event(state, paths)?;
                 set_waiting_for_app_exit(state, paths, true)?;
                 maybe_notify(
@@ -1272,6 +1317,11 @@ async fn reconcile_pending_install(
             }
 
             if liveness::is_app_running(config)? {
+                if !graphical_polkit_auth_agent_is_likely_available() {
+                    defer_install_for_manual_auth(state, paths, &package_path, &expected_package)?;
+                    maybe_notify_manual_install_required(state, paths, config.notifications)?;
+                    return Ok(());
+                }
                 clear_install_auth_required_event(state, paths)?;
                 maybe_notify(
                     state,
@@ -1285,6 +1335,12 @@ async fn reconcile_pending_install(
             }
 
             if install_auth_retry_is_blocked(state) {
+                return Ok(());
+            }
+
+            if !graphical_polkit_auth_agent_is_likely_available() {
+                defer_install_for_manual_auth(state, paths, &package_path, &expected_package)?;
+                maybe_notify_manual_install_required(state, paths, config.notifications)?;
                 return Ok(());
             }
 
@@ -1322,6 +1378,11 @@ async fn run_install_ready(
             "The previous install attempt could not be recovered. Check the updater log for details.",
         );
         return Err(anyhow::anyhow!(message));
+    }
+
+    if complete_current_dmg_update_if_already_installed(config, state, paths)? {
+        println!("Codex App is already up to date.");
+        return Ok(());
     }
 
     if complete_pending_install_if_already_installed(&config.workspace_root, state, paths)? {
@@ -1395,6 +1456,12 @@ async fn run_install_ready(
         };
 
     if liveness::is_app_running(config)? {
+        if !graphical_polkit_auth_agent_is_likely_available() {
+            defer_install_for_manual_auth(state, paths, &package_path, &expected_package)?;
+            maybe_send_manual_install_required_notification(config.notifications);
+            print_manual_install_required(&package_path, &expected_package);
+            return Ok(());
+        }
         clear_install_auth_required_event(state, paths)?;
         set_waiting_for_app_exit(state, paths, false)?;
         maybe_send_notification(
@@ -1407,6 +1474,13 @@ async fn run_install_ready(
     }
 
     clear_install_auth_required_event(state, paths)?;
+    state.waiting_for_app_exit_auto_install = false;
+    if !graphical_polkit_auth_agent_is_likely_available() {
+        defer_install_for_manual_auth(state, paths, &package_path, &expected_package)?;
+        maybe_send_manual_install_required_notification(config.notifications);
+        print_manual_install_required(&package_path, &expected_package);
+        return Ok(());
+    }
     trigger_install(
         state,
         paths,
@@ -1429,6 +1503,119 @@ fn expected_package_for_ready_install(
         state.dmg_sha256.as_deref(),
         state.package_verification.as_ref(),
     )
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstalledBuildInfo {
+    upstream_dmg: Option<InstalledUpstreamDmg>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstalledUpstreamDmg {
+    sha256: Option<String>,
+}
+
+fn complete_current_dmg_update_if_already_installed(
+    config: &RuntimeConfig,
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+) -> Result<bool> {
+    if !dmg_update_state_can_be_cleared_as_current(&state.status) {
+        return Ok(false);
+    }
+
+    if state.candidate_version.is_none() {
+        return Ok(false);
+    }
+
+    let Some(candidate_sha256) = state.dmg_sha256.clone() else {
+        return Ok(false);
+    };
+
+    if !installed_upstream_dmg_matches(config, &candidate_sha256) {
+        return Ok(false);
+    }
+
+    clear_dmg_update_candidate(state, paths, None, Some(candidate_sha256))?;
+    info!("recovered DMG update state because the candidate DMG is already installed");
+    Ok(true)
+}
+
+fn dmg_update_state_can_be_cleared_as_current(status: &UpdateStatus) -> bool {
+    matches!(
+        status,
+        UpdateStatus::UpdateDetected
+            | UpdateStatus::DownloadingDmg
+            | UpdateStatus::PreparingWorkspace
+            | UpdateStatus::PatchingApp
+            | UpdateStatus::BuildingPackage
+            | UpdateStatus::ReadyToInstall
+            | UpdateStatus::WaitingForAppExit
+            | UpdateStatus::Installing
+            | UpdateStatus::Failed
+    )
+}
+
+fn clear_dmg_update_candidate(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    dmg_path: Option<PathBuf>,
+    sha256: Option<String>,
+) -> Result<()> {
+    state.status = UpdateStatus::Idle;
+    state.waiting_for_app_exit_auto_install = false;
+    state.candidate_version = None;
+    if let Some(sha256) = sha256 {
+        state.dmg_sha256 = Some(sha256);
+    }
+    if let Some(dmg_path) = dmg_path {
+        state.artifact_paths.dmg_path = Some(dmg_path);
+    }
+    state.artifact_paths.package_path = None;
+    state.error_message = None;
+    clear_dmg_update_notification_events(state);
+    cache_cleanup::normalize_artifact_workspace_dir(&paths.cache_dir, state);
+    persist_state(paths, state)
+}
+
+fn clear_dmg_update_notification_events(state: &mut PersistedState) {
+    state.notified_events.retain(|event| {
+        !event.starts_with("update_detected:")
+            && !event.starts_with("ready_to_install:")
+            && !event.starts_with("waiting_for_app_exit:")
+            && !event.starts_with("install_auth_required:")
+            && !event.starts_with("manual_install_required:")
+            && !event.starts_with("build_failed:")
+    });
+}
+
+fn installed_upstream_dmg_matches(config: &RuntimeConfig, sha256: &str) -> bool {
+    installed_upstream_dmg_sha256(config).as_deref() == Some(sha256)
+}
+
+fn installed_upstream_dmg_sha256(config: &RuntimeConfig) -> Option<String> {
+    installed_build_info_paths(config)
+        .into_iter()
+        .find_map(|path| upstream_dmg_sha256_from_build_info(&path))
+}
+
+fn installed_build_info_paths(config: &RuntimeConfig) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(app_root) = config.app_executable_path.parent() {
+        paths.push(app_root.join(".codex-linux/build-info.json"));
+        paths.push(app_root.join("resources/codex-linux-build-info.json"));
+    }
+    paths
+}
+
+fn upstream_dmg_sha256_from_build_info(path: &Path) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    let build_info = serde_json::from_str::<InstalledBuildInfo>(&content).ok()?;
+    build_info
+        .upstream_dmg?
+        .sha256
+        .filter(|value| !value.is_empty())
 }
 
 fn complete_pending_install_if_already_installed(
@@ -1838,6 +2025,140 @@ fn install_auth_retry_is_blocked(state: &PersistedState) -> bool {
         .is_some_and(|event_key| state.notified_events.contains(event_key))
 }
 
+fn manual_install_required_message(
+    package_path: &Path,
+    expected_package: &install::ExpectedPackage,
+) -> String {
+    format!(
+        "No graphical polkit authentication agent is available for pkexec. Run this from a terminal after closing Codex Desktop: {}",
+        manual_install_command(package_path, expected_package)
+    )
+}
+
+fn manual_install_command(
+    package_path: &Path,
+    expected_package: &install::ExpectedPackage,
+) -> String {
+    let subcommand = match install::PackageKind::from_path(package_path) {
+        install::PackageKind::Deb => "install-deb",
+        install::PackageKind::Rpm => "install-rpm",
+        install::PackageKind::Pacman => "install-pacman",
+    };
+    format!(
+        "sudo /usr/bin/codex-app-updater {subcommand} --path {} --expected-sha256 {} --expected-package-name {} --expected-package-version {}",
+        shell_quote_path(package_path),
+        shell_quote_value(expected_package.sha256()),
+        shell_quote_value(expected_package.package_name()),
+        shell_quote_value(expected_package.package_version()),
+    )
+}
+
+fn shell_quote_path(path: &Path) -> String {
+    shell_quote_value(&path.to_string_lossy())
+}
+
+fn shell_quote_value(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn print_manual_install_required(package_path: &Path, expected_package: &install::ExpectedPackage) {
+    println!("Manual install required: no graphical polkit authentication agent is available.");
+    println!("Run this from a terminal after closing Codex Desktop:");
+    println!("{}", manual_install_command(package_path, expected_package));
+}
+
+fn defer_install_for_manual_auth(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    package_path: &Path,
+    expected_package: &install::ExpectedPackage,
+) -> Result<()> {
+    state.status = UpdateStatus::ReadyToInstall;
+    state.waiting_for_app_exit_auto_install = false;
+    state.error_message = Some(manual_install_required_message(
+        package_path,
+        expected_package,
+    ));
+    persist_state(paths, state)
+}
+
+fn maybe_notify_manual_install_required(
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+    enabled: bool,
+) -> Result<()> {
+    maybe_notify(
+        state,
+        paths,
+        enabled,
+        "manual_install_required",
+        "Codex update needs manual install",
+        "No graphical authentication agent was found for pkexec. Run codex-app-updater status for details.",
+    )
+}
+
+fn maybe_send_manual_install_required_notification(enabled: bool) {
+    maybe_send_notification(
+        enabled,
+        "Codex update needs manual install",
+        "No graphical authentication agent was found for pkexec. Run codex-app-updater status for details.",
+    );
+}
+
+fn graphical_polkit_auth_agent_is_likely_available() -> bool {
+    if std::env::var_os("CODEX_UPDATE_MANAGER_ASSUME_NO_POLKIT_AGENT").is_some() {
+        return false;
+    }
+    if std::env::var_os("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT").is_some() {
+        return true;
+    }
+    if !has_graphical_session() {
+        return false;
+    }
+    polkit_auth_agent_process_is_running()
+}
+
+fn polkit_auth_agent_process_is_running() -> bool {
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return true;
+    };
+
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        if !file_name
+            .to_string_lossy()
+            .chars()
+            .all(|character| character.is_ascii_digit())
+        {
+            continue;
+        }
+        let process_dir = entry.path();
+        let mut process_text = String::new();
+        if let Ok(comm) = fs::read_to_string(process_dir.join("comm")) {
+            process_text.push_str(&comm);
+            process_text.push('\n');
+        }
+        if let Ok(cmdline) = fs::read(process_dir.join("cmdline")) {
+            process_text.push_str(&String::from_utf8_lossy(&cmdline).replace('\0', " "));
+        }
+        if process_text_matches_polkit_auth_agent(&process_text) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn process_text_matches_polkit_auth_agent(process_text: &str) -> bool {
+    let normalized = process_text.to_ascii_lowercase();
+    if normalized.contains("polkitd") || normalized.contains("polkit-agent-helper") {
+        return false;
+    }
+    POLKIT_AUTH_AGENT_PROCESS_TOKENS
+        .iter()
+        .any(|token| normalized.contains(token))
+}
+
 fn clear_install_auth_required_event(
     state: &mut PersistedState,
     paths: &RuntimePaths,
@@ -1961,6 +2282,26 @@ mod tests {
             wrapper_remote: String::new(),
             wrapper_branch: "main".to_string(),
         }
+    }
+
+    fn write_installed_build_info(config: &RuntimeConfig, sha256: &str) -> Result<()> {
+        let app_root = config
+            .app_executable_path
+            .parent()
+            .expect("test app executable should have parent");
+        std::fs::create_dir_all(app_root.join(".codex-linux"))?;
+        std::fs::write(
+            app_root.join(".codex-linux/build-info.json"),
+            format!(
+                r#"{{
+  "upstreamDmg": {{
+    "sha256": "{sha256}"
+  }}
+}}
+"#
+            ),
+        )?;
+        Ok(())
     }
 
     #[test]
@@ -2664,7 +3005,9 @@ mod tests {
         paths.ensure_dirs()?;
         let settings_path = temp.path().join("settings.json");
         let previous_settings_file = std::env::var_os("CODEX_LINUX_SETTINGS_FILE");
+        let previous_assume_agent = std::env::var_os("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT");
         std::env::set_var("CODEX_LINUX_SETTINGS_FILE", &settings_path);
+        std::env::set_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT", "1");
         std::fs::write(
             &settings_path,
             r#"{"codex-linux-auto-update-on-exit": true}"#,
@@ -2714,6 +3057,11 @@ mod tests {
             std::env::set_var("CODEX_LINUX_SETTINGS_FILE", value);
         } else {
             std::env::remove_var("CODEX_LINUX_SETTINGS_FILE");
+        }
+        if let Some(value) = previous_assume_agent {
+            std::env::set_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT", value);
+        } else {
+            std::env::remove_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT");
         }
 
         result?;
@@ -2806,7 +3154,9 @@ mod tests {
         paths.ensure_dirs()?;
         let settings_path = temp.path().join("settings.json");
         let previous_settings_file = std::env::var_os("CODEX_LINUX_SETTINGS_FILE");
+        let previous_assume_agent = std::env::var_os("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT");
         std::env::set_var("CODEX_LINUX_SETTINGS_FILE", &settings_path);
+        std::env::set_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT", "1");
         std::fs::write(
             &settings_path,
             r#"{"codex-linux-auto-update-on-exit": false}"#,
@@ -2846,6 +3196,11 @@ mod tests {
             std::env::set_var("CODEX_LINUX_SETTINGS_FILE", value);
         } else {
             std::env::remove_var("CODEX_LINUX_SETTINGS_FILE");
+        }
+        if let Some(value) = previous_assume_agent {
+            std::env::set_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT", value);
+        } else {
+            std::env::remove_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT");
         }
 
         result?;
@@ -2921,6 +3276,9 @@ mod tests {
 
     #[tokio::test]
     async fn install_ready_waits_when_app_is_running() -> Result<()> {
+        let _env_guard = crate::test_util::env_lock();
+        let previous_assume_agent = std::env::var_os("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT");
+        std::env::set_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT", "1");
         let temp = tempfile::tempdir()?;
         let paths = RuntimePaths {
             config_file: temp.path().join("config/config.toml"),
@@ -2962,8 +3320,15 @@ mod tests {
             .notified_events
             .insert("install_auth_required:2999.03.25.010203".to_string());
 
-        run_install_ready(&config, &mut state, &paths).await?;
+        let result = run_install_ready(&config, &mut state, &paths).await;
 
+        if let Some(value) = previous_assume_agent {
+            std::env::set_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT", value);
+        } else {
+            std::env::remove_var("CODEX_UPDATE_MANAGER_ASSUME_POLKIT_AGENT");
+        }
+
+        result?;
         assert_eq!(state.status, UpdateStatus::WaitingForAppExit);
         assert!(!install_auth_retry_is_blocked(&state));
         Ok(())
@@ -3144,6 +3509,83 @@ mod tests {
             .to_string()
             .contains("Ready update trusted DMG verification is missing a digest"));
         assert_eq!(state.status, UpdateStatus::Failed);
+        Ok(())
+    }
+
+    #[test]
+    fn install_ready_stays_open_when_no_polkit_agent_is_available() -> Result<()> {
+        let _env_guard = crate::test_util::env_lock();
+        let runtime = tokio::runtime::Runtime::new()?;
+        let previous_no_agent = std::env::var_os("CODEX_UPDATE_MANAGER_ASSUME_NO_POLKIT_AGENT");
+        std::env::set_var("CODEX_UPDATE_MANAGER_ASSUME_NO_POLKIT_AGENT", "1");
+        let temp = tempfile::tempdir()?;
+        let paths = RuntimePaths {
+            config_file: temp.path().join("config/config.toml"),
+            state_file: temp.path().join("state/state.json"),
+            log_file: temp.path().join("state/service.log"),
+            cache_dir: temp.path().join("cache"),
+            state_dir: temp.path().join("state"),
+            config_dir: temp.path().join("config"),
+        };
+        paths.ensure_dirs()?;
+
+        let workspace = temp
+            .path()
+            .join("cache/workspaces/2999.03.25.010203+deadbeef");
+        let package_path = workspace.join("dist/codex desktop.pkg.tar.zst");
+        std::fs::create_dir_all(
+            package_path
+                .parent()
+                .expect("package path should have parent"),
+        )?;
+        std::fs::write(&package_path, b"pkg")?;
+
+        let config = RuntimeConfig {
+            dmg_url: "https://example.com/Codex.dmg".to_string(),
+            initial_check_delay_seconds: 1,
+            check_interval_hours: 6,
+            auto_install_on_app_exit: false,
+            notifications: false,
+            developer_mode: false,
+            workspace_root: temp.path().join("cache"),
+            builder_bundle_root: temp.path().join("builder"),
+            app_executable_path: std::env::current_exe()?,
+            cli_path: None,
+            enable_wrapper_updates: false,
+            wrapper_remote: String::new(),
+            wrapper_branch: "main".to_string(),
+        };
+
+        let mut state = PersistedState::new(false);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.candidate_version = Some("2999.03.25.010203+deadbeef".to_string());
+        mark_test_dmg_verified(&mut state, "2999.03.25.010203+deadbeef");
+        state.package_verification = Some(package_verification::record_built_package(
+            &package_path,
+            &workspace,
+            "2999.03.25.010203+deadbeef",
+            TRUSTED_TEST_DMG_SHA256,
+        )?);
+        state.artifact_paths.package_path = Some(package_path);
+
+        let result = runtime.block_on(run_install_ready(&config, &mut state, &paths));
+
+        if let Some(value) = previous_no_agent {
+            std::env::set_var("CODEX_UPDATE_MANAGER_ASSUME_NO_POLKIT_AGENT", value);
+        } else {
+            std::env::remove_var("CODEX_UPDATE_MANAGER_ASSUME_NO_POLKIT_AGENT");
+        }
+
+        result?;
+        assert_eq!(state.status, UpdateStatus::ReadyToInstall);
+        assert!(!state.waiting_for_app_exit_auto_install);
+        let message = state.error_message.as_deref().unwrap_or("");
+        assert!(message.contains("No graphical polkit authentication agent"));
+        assert!(message.contains("sudo /usr/bin/codex-app-updater install-pacman"));
+        assert!(message.contains("--expected-sha256"));
+        assert!(message.contains("--expected-package-name 'codex-app'"));
+        assert!(message.contains("--expected-package-version '2999.03.25.010203_deadbeef-1'"));
+        assert!(message.contains("codex desktop.pkg.tar.zst'"));
         Ok(())
     }
 
@@ -3438,6 +3880,152 @@ mod tests {
         assert!(state
             .notified_events
             .contains("installed:2026.04.25.054929+12345678"));
+        Ok(())
+    }
+
+    #[test]
+    fn in_progress_same_dmg_update_is_cleared_as_current() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = test_paths(temp.path());
+        paths.ensure_dirs()?;
+        let config = test_config(temp.path());
+        let sha256 = "51eeeba58394c4747cbc9d9fee7aa613500253fedd7ad5b114f48dfcb89a6cbb";
+        write_installed_build_info(&config, sha256)?;
+
+        let package_path = temp
+            .path()
+            .join("cache/workspaces/2026.06.12.120204+51eeeba5/dist/codex.pkg.tar.zst");
+
+        let mut state = PersistedState::new(true);
+        state.status = UpdateStatus::PatchingApp;
+        state.installed_version = "2026.06.12.094134-1".to_string();
+        state.candidate_version = Some("2026.06.12.120204+51eeeba5".to_string());
+        state.dmg_sha256 = Some(sha256.to_string());
+        state.artifact_paths.package_path = Some(package_path);
+        state.artifact_paths.workspace_dir = Some(
+            temp.path()
+                .join("cache/workspaces/2026.06.12.120204+51eeeba5"),
+        );
+        state.error_message = Some("interrupted rebuild".to_string());
+        state
+            .notified_events
+            .insert("update_detected:2026.06.12.120204+51eeeba5".to_string());
+
+        assert!(complete_current_dmg_update_if_already_installed(
+            &config, &mut state, &paths
+        )?);
+
+        assert_eq!(state.status, UpdateStatus::Idle);
+        assert_eq!(state.candidate_version, None);
+        assert_eq!(state.dmg_sha256.as_deref(), Some(sha256));
+        assert_eq!(state.artifact_paths.package_path, None);
+        assert_eq!(state.artifact_paths.workspace_dir, None);
+        assert_eq!(state.error_message, None);
+        assert!(state.notified_events.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn same_dmg_recovery_keeps_unrelated_notification_markers() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = test_paths(temp.path());
+        paths.ensure_dirs()?;
+        let config = test_config(temp.path());
+        let sha256 = "51eeeba58394c4747cbc9d9fee7aa613500253fedd7ad5b114f48dfcb89a6cbb";
+        write_installed_build_info(&config, sha256)?;
+
+        let mut state = PersistedState::new(true);
+        state.status = UpdateStatus::PatchingApp;
+        state.candidate_version = Some("2026.06.12.120204+51eeeba5".to_string());
+        state.dmg_sha256 = Some(sha256.to_string());
+        state
+            .notified_events
+            .insert("update_detected:2026.06.12.120204+51eeeba5".to_string());
+        state.notified_events.insert("cli_missing".to_string());
+
+        assert!(complete_current_dmg_update_if_already_installed(
+            &config, &mut state, &paths
+        )?);
+
+        assert!(!state
+            .notified_events
+            .contains("update_detected:2026.06.12.120204+51eeeba5"));
+        assert!(state.notified_events.contains("cli_missing"));
+        Ok(())
+    }
+
+    #[test]
+    fn in_progress_different_dmg_update_is_not_cleared() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = test_paths(temp.path());
+        paths.ensure_dirs()?;
+        let config = test_config(temp.path());
+        write_installed_build_info(
+            &config,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )?;
+
+        let mut state = PersistedState::new(true);
+        state.status = UpdateStatus::PatchingApp;
+        state.candidate_version = Some("2026.06.12.120204+51eeeba5".to_string());
+        state.dmg_sha256 =
+            Some("51eeeba58394c4747cbc9d9fee7aa613500253fedd7ad5b114f48dfcb89a6cbb".to_string());
+        state
+            .notified_events
+            .insert("update_detected:2026.06.12.120204+51eeeba5".to_string());
+
+        assert!(!complete_current_dmg_update_if_already_installed(
+            &config, &mut state, &paths
+        )?);
+
+        assert_eq!(state.status, UpdateStatus::PatchingApp);
+        assert_eq!(
+            state.candidate_version.as_deref(),
+            Some("2026.06.12.120204+51eeeba5")
+        );
+        assert!(state
+            .notified_events
+            .contains("update_detected:2026.06.12.120204+51eeeba5"));
+        Ok(())
+    }
+
+    #[test]
+    fn same_dmg_recovery_keeps_ready_wrapper_update_package() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = test_paths(temp.path());
+        paths.ensure_dirs()?;
+        let config = test_config(temp.path());
+        let sha256 = "51eeeba58394c4747cbc9d9fee7aa613500253fedd7ad5b114f48dfcb89a6cbb";
+        write_installed_build_info(&config, sha256)?;
+
+        let package_path = temp.path().join("dist/codex-app-wrapper.deb");
+        let workspace_dir = temp
+            .path()
+            .join("cache/workspaces/2026.06.12.120204+51eeeba5");
+        let wrapper_commit = "b".repeat(40);
+
+        let mut state = PersistedState::new(true);
+        state.status = UpdateStatus::ReadyToInstall;
+        state.dmg_sha256 = Some(sha256.to_string());
+        state.candidate_wrapper_commit = Some(wrapper_commit.clone());
+        state.candidate_wrapper_version = Some("0.9.0".to_string());
+        state.artifact_paths.package_path = Some(package_path.clone());
+        state.artifact_paths.workspace_dir = Some(workspace_dir.clone());
+
+        assert!(!complete_current_dmg_update_if_already_installed(
+            &config, &mut state, &paths
+        )?);
+
+        assert_eq!(state.status, UpdateStatus::ReadyToInstall);
+        assert_eq!(state.candidate_version, None);
+        assert_eq!(state.dmg_sha256.as_deref(), Some(sha256));
+        assert_eq!(
+            state.candidate_wrapper_commit.as_deref(),
+            Some(wrapper_commit.as_str())
+        );
+        assert_eq!(state.candidate_wrapper_version.as_deref(), Some("0.9.0"));
+        assert_eq!(state.artifact_paths.package_path, Some(package_path));
+        assert_eq!(state.artifact_paths.workspace_dir, Some(workspace_dir));
         Ok(())
     }
 
