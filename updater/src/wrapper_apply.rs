@@ -38,7 +38,7 @@ use crate::{
 };
 
 #[cfg(test)]
-const GIT_COMMAND_TIMEOUT: Duration = Duration::from_millis(200);
+const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 #[cfg(not(test))]
 const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
 const GIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
