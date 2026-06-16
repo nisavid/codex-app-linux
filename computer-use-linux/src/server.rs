@@ -31,6 +31,7 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use std::{
     env,
+    future::Future,
     os::unix::net::{UnixDatagram, UnixStream},
     path::PathBuf,
     process::{Command, Output, Stdio},
@@ -1108,7 +1109,7 @@ impl ComputerUseLinux {
     // The rmcp tool_handler macro only accepts a string literal here, so this
     // can't be env!("CARGO_PKG_VERSION"); the MCP safety check (CI) fails the
     // build if it drifts from the Cargo version.
-    version = "0.2.6-linux-alpha1",
+    version = "0.2.7-linux-alpha1",
     instructions = "Begin every turn that uses Computer Use by calling get_app_state. If diagnostics report disabled GNOME accessibility, call setup_accessibility before asking the user to retry. Use list_windows/focused_window before targeted keyboard input. If diagnostics report windowing.can_list_windows=false on GNOME, call setup_window_targeting to install the optional GNOME Shell extension backend, then ask the user to log out and back in if the setup report says a shell reload is required. This Linux backend can capture size-bounded screenshots through GNOME Shell or XDG Desktop Portal, read AT-SPI trees with action/value metadata, invoke native AT-SPI actions, set AT-SPI values or editable text, list/focus compositor windows through registered Linux window backends when the session permits it, attach best-effort terminal tty/process metadata to terminal windows, send coordinate or element-targeted click/scroll/drag input through the Wayland remote desktop portal when available, and send layout-safe literal type_text through KDE clipboard integration on Plasma Wayland or through portal keysyms on other Wayland sessions before falling back to ydotool. Screenshot results include width/height for the returned image plus coordinate_width/coordinate_height and scale for desktop coordinate conversion; request more detail with max_width, max_height, max_bytes, format=jpeg, quality, or a smaller target/crop instead of relying on unbounded screenshots. Tools with readOnlyHint=false may mutate local desktop or application state; hosts should require approval for actions that can submit, delete, send, purchase, or overwrite data. For element-targeted actions, prefer element_index from the latest get_app_state result; click, perform_action, and set_value can also use semantic role/name/text/states selectors when the target is unique. type_text and press_key accept optional window_id, pid, app_id, wm_class, title, tty, terminal_pid, terminal_command, or terminal_cwd selectors and refuse targeted input if focus cannot be verified."
 )]
 impl ServerHandler for ComputerUseLinux {}
@@ -2778,10 +2779,8 @@ where
 }
 
 fn ydotool_type_timeout(text: &str) -> Duration {
-    let text_seconds = (text.chars().count() as u64)
-        .div_ceil(YDOTOOL_TYPE_CHARS_PER_SECOND)
-        .max(YDOTOOL_TIMEOUT.as_secs());
-    Duration::from_secs(text_seconds)
+    let text_seconds = (text.chars().count() as u64).div_ceil(YDOTOOL_TYPE_CHARS_PER_SECOND);
+    Duration::from_secs(YDOTOOL_TIMEOUT.as_secs().saturating_add(text_seconds))
 }
 
 const EVDEV_KEY_LEFTCTRL: i32 = 29;
@@ -2858,26 +2857,22 @@ async fn run_kde_clipboard_paste_text(
 async fn kde_clipboard_contents() -> std::result::Result<String, String> {
     let connection = kde_clipboard_connection().await?;
     let proxy = kde_clipboard_proxy(&connection).await?;
-    let output: String = timeout(
-        KDE_CLIPBOARD_DBUS_TIMEOUT,
+    let output: String = kde_clipboard_dbus_operation(
+        "getClipboardContents",
         proxy.call("getClipboardContents", &()),
     )
-    .await
-    .map_err(|_| "KDE clipboard getClipboardContents timed out".to_string())?
-    .map_err(|error| format!("KDE clipboard getClipboardContents failed: {error}"))?;
+    .await?;
     Ok(output)
 }
 
 async fn kde_set_clipboard_contents(text: &str) -> std::result::Result<(), String> {
     let connection = kde_clipboard_connection().await?;
     let proxy = kde_clipboard_proxy(&connection).await?;
-    let _: () = timeout(
-        KDE_CLIPBOARD_DBUS_TIMEOUT,
+    let _: () = kde_clipboard_dbus_operation(
+        "setClipboardContents",
         proxy.call("setClipboardContents", &(text)),
     )
-    .await
-    .map_err(|_| "KDE clipboard setClipboardContents timed out".to_string())?
-    .map_err(|error| format!("KDE clipboard setClipboardContents failed: {error}"))?;
+    .await?;
     Ok(())
 }
 
@@ -2890,14 +2885,40 @@ async fn kde_clipboard_connection() -> std::result::Result<ZbusConnection, Strin
 async fn kde_clipboard_proxy(
     connection: &ZbusConnection,
 ) -> std::result::Result<ZbusProxy<'_>, String> {
-    ZbusProxy::new(
-        connection,
-        KDE_KLIPPER_SERVICE,
-        KDE_KLIPPER_PATH,
-        KDE_KLIPPER_INTERFACE,
+    kde_clipboard_dbus_operation(
+        "proxy creation",
+        ZbusProxy::new(
+            connection,
+            KDE_KLIPPER_SERVICE,
+            KDE_KLIPPER_PATH,
+            KDE_KLIPPER_INTERFACE,
+        ),
     )
     .await
-    .map_err(|error| format!("failed to create KDE clipboard proxy: {error}"))
+}
+
+async fn kde_clipboard_dbus_operation<T, F>(
+    operation: &'static str,
+    future: F,
+) -> std::result::Result<T, String>
+where
+    F: Future<Output = zbus::Result<T>>,
+{
+    kde_clipboard_dbus_operation_with_timeout(operation, future, KDE_CLIPBOARD_DBUS_TIMEOUT).await
+}
+
+async fn kde_clipboard_dbus_operation_with_timeout<T, F>(
+    operation: &'static str,
+    future: F,
+    timeout_duration: Duration,
+) -> std::result::Result<T, String>
+where
+    F: Future<Output = zbus::Result<T>>,
+{
+    timeout(timeout_duration, future)
+        .await
+        .map_err(|_| format!("KDE clipboard {operation} timed out"))?
+        .map_err(|error| format!("KDE clipboard {operation} failed: {error}"))
 }
 
 fn ydotool_output_error(output: Output) -> String {
@@ -3606,6 +3627,19 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn kde_clipboard_dbus_operation_times_out_when_pending() {
+        let error = kde_clipboard_dbus_operation_with_timeout(
+            "proxy creation",
+            std::future::pending::<zbus::Result<()>>(),
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error, "KDE clipboard proxy creation timed out");
+    }
+
     #[test]
     fn cached_element_index_resolves_to_bounds_center() {
         let backend = ComputerUseLinux::default();
@@ -3905,8 +3939,10 @@ mod tests {
 
     #[test]
     fn ydotool_type_timeout_scales_with_text_length() {
-        assert_eq!(ydotool_type_timeout("short").as_secs(), 10);
-        assert!(ydotool_type_timeout(&"x".repeat(500)).as_secs() > 10);
+        assert_eq!(ydotool_type_timeout("").as_secs(), 10);
+        assert_eq!(ydotool_type_timeout("x").as_secs(), 11);
+        assert_eq!(ydotool_type_timeout(&"x".repeat(200)).as_secs(), 20);
+        assert_eq!(ydotool_type_timeout(&"x".repeat(500)).as_secs(), 35);
     }
 
     #[tokio::test]
