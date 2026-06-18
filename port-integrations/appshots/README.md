@@ -51,7 +51,7 @@ Privacy and correctness constraints:
   the left and right modifier keycodes, so tapping only one physical modifier
   twice does not trigger AppShots. It uses `xinput` and `xmodmap`, so it is
   expected to work on X11 sessions and fail closed elsewhere.
-- On Wayland, the feature stages an Electron args hook that enables
+- On Wayland, the port integration stages an Electron args hook that enables
   `GlobalShortcutsPortal`, and the settings dropdown hides the X11-only bare
   modifier shortcuts.
 

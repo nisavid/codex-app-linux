@@ -140,3 +140,25 @@ test("watch mode waits for the cold-start electron process before self-terminati
     fs.rmSync(appDir, { recursive: true, force: true });
   }
 });
+
+test("normalizes invalid timing environment overrides", () => {
+  const { appDir } = makeFakeApp();
+  try {
+    const result = spawnSync("bash", [REAPER, appDir, "once"], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CODEX_NODE_REPL_REAPER_INTERVAL: "0",
+        CODEX_NODE_REPL_REAPER_STARTUP_GRACE: "bad",
+        CODEX_NODE_REPL_REAPER_KILL_GRACE: "-1",
+      },
+    });
+
+    assert.equal(result.status, 0, `reaper failed: ${result.stderr}\n${result.stdout}`);
+    assert.match(result.stderr, /invalid CODEX_NODE_REPL_REAPER_INTERVAL='0'; using 300/);
+    assert.match(result.stderr, /invalid CODEX_NODE_REPL_REAPER_STARTUP_GRACE='bad'; using 120/);
+    assert.match(result.stderr, /invalid CODEX_NODE_REPL_REAPER_KILL_GRACE='-1'; using 5/);
+  } finally {
+    fs.rmSync(appDir, { recursive: true, force: true });
+  }
+});

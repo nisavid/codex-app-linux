@@ -392,6 +392,17 @@ fix_bundled_marketplace_tmp_permissions() {
     find "$marketplace_tmp_root" -type f -exec chmod u+rw {} + 2>/dev/null || true
 }
 
+monitor_bundled_marketplace_tmp_permissions() {
+    (
+        local remaining=40
+        while [ "$remaining" -gt 0 ]; do
+            fix_bundled_marketplace_tmp_permissions
+            sleep 0.25
+            remaining=$((remaining - 1))
+        done
+    ) &
+}
+
 clear_bundled_marketplace_tmp_cache() {
     local codex_home="${CODEX_HOME:-$HOME/.codex}"
     local marketplace_tmp_root="$codex_home/.tmp/bundled-marketplaces"
@@ -2393,7 +2404,7 @@ reap_orphaned_runtime_processes() {
     [ "${#pids[@]}" -gt 0 ] || return 0
 
     for pid in "${pids[@]}"; do
-        if [ -d "/proc/$pid" ]; then
+        if pid_is_orphaned_runtime_process "$pid"; then
             echo "Stopping orphaned Codex runtime process after stale launch state: $(pid_summary "$pid")"
             kill "$pid" 2>/dev/null || true
         fi
@@ -2402,7 +2413,7 @@ reap_orphaned_runtime_processes() {
     for _ in $(seq 1 20); do
         still_running=0
         for pid in "${pids[@]}"; do
-            if kill -0 "$pid" 2>/dev/null; then
+            if pid_is_orphaned_runtime_process "$pid"; then
                 still_running=1
                 break
             fi
@@ -2412,7 +2423,7 @@ reap_orphaned_runtime_processes() {
     done
 
     for pid in "${pids[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
+        if pid_is_orphaned_runtime_process "$pid"; then
             echo "WARN: orphaned Codex runtime process is still running after SIGTERM; sending SIGKILL: $(pid_summary "$pid")"
             kill -9 "$pid" 2>/dev/null || true
         fi
@@ -2421,7 +2432,7 @@ reap_orphaned_runtime_processes() {
     for _ in $(seq 1 10); do
         still_running=0
         for pid in "${pids[@]}"; do
-            if kill -0 "$pid" 2>/dev/null; then
+            if pid_is_orphaned_runtime_process "$pid"; then
                 still_running=1
                 break
             fi
@@ -2431,7 +2442,7 @@ reap_orphaned_runtime_processes() {
     done
 
     for pid in "${pids[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
+        if pid_is_orphaned_runtime_process "$pid"; then
             echo "WARN: orphaned Codex runtime process is still running after SIGKILL: $(pid_summary "$pid")"
         fi
     done
@@ -3096,13 +3107,13 @@ prepend_managed_node_runtime_to_path
 source_feature_env_files
 export_packaged_runtime_env
 register_url_scheme_handlers
-log_phase "initial_launch_state_refresh_start"
-refresh_launch_state
-log_phase "initial_launch_state_refreshed"
 trap cleanup_launcher EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
+log_phase "initial_launch_state_refresh_start"
+refresh_launch_state
+log_phase "initial_launch_state_refreshed"
 
 if send_warm_start_launch_action "${LAUNCHER_ARGS[@]}"; then
     echo "Sent launch args over warm-start IPC"

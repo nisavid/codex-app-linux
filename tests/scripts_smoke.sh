@@ -3329,8 +3329,13 @@ if 'pid_in_same_launch_instance "$pid"' not in discover_body:
 instance_match_body = source.split("pid_in_same_launch_instance() {", 1)[1].split("discover_running_app_pid() {", 1)[0]
 if 'CODEX_LINUX_INSTANCE_ID=$CODEX_LINUX_INSTANCE_ID' not in instance_match_body or 'CODEX_LINUX_MULTI_LAUNCH=1' not in instance_match_body:
     raise SystemExit("pid_in_same_launch_instance must match instance identity from the process environment")
-if not re.search(r'log_phase "initial_launch_state_refresh_start"\s+refresh_launch_state\s+log_phase "initial_launch_state_refreshed"\s+trap cleanup_launcher EXIT', source):
-    raise SystemExit("launcher must do an initial runtime-state refresh before warm-start IPC")
+trap_pos = source.index("trap cleanup_launcher EXIT")
+refresh_start_pos = source.index('log_phase "initial_launch_state_refresh_start"')
+refresh_pos = source.index("refresh_launch_state", refresh_start_pos)
+refresh_done_pos = source.index('log_phase "initial_launch_state_refreshed"', refresh_pos)
+warm_ipc_pos = source.index('if send_warm_start_launch_action "${LAUNCHER_ARGS[@]}"; then')
+if not (trap_pos < refresh_start_pos < refresh_pos < refresh_done_pos < warm_ipc_pos):
+    raise SystemExit("launcher must install cleanup traps before the initial runtime-state refresh and warm-start IPC")
 if "trap 'exit 130' INT" not in source or "trap 'exit 143' TERM" not in source or "trap 'exit 129' HUP" not in source:
     raise SystemExit("launcher must cleanup through EXIT after INT/TERM/HUP")
 if not re.search(r'if needs_cold_start; then\s+acquire_launcher_lock\s+log_phase "launcher_lock_ready"\s+refresh_launch_state_quick\s+log_phase "launch_state_refreshed_under_lock"', source):

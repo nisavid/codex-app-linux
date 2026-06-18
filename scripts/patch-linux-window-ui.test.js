@@ -2670,25 +2670,19 @@ test("enforced bootstrap lock takes the Linux lock with upstream flag off and ex
         },
       },
     };
-    const previous = process.env.CODEX_LINUX_MULTI_LAUNCH;
+    const env = { ...process.env };
     if (multiLaunch) {
-      process.env.CODEX_LINUX_MULTI_LAUNCH = "1";
+      env.CODEX_LINUX_MULTI_LAUNCH = "1";
     } else {
-      delete process.env.CODEX_LINUX_MULTI_LAUNCH;
+      delete env.CODEX_LINUX_MULTI_LAUNCH;
     }
-    try {
-      new Function("t", "n", "b", patched)(t, n, false);
-    } finally {
-      if (previous == null) {
-        delete process.env.CODEX_LINUX_MULTI_LAUNCH;
-      } else {
-        process.env.CODEX_LINUX_MULTI_LAUNCH = previous;
-      }
-    }
+    new Function("t", "n", "b", "process", patched)(t, n, false, {
+      env,
+      platform: "linux",
+    });
     return calls;
   };
 
-  // process.platform is linux in CI and on dev machines for this repo.
   const winner = run({ lockResult: true, multiLaunch: false });
   assert.equal(winner.lock, 1);
   assert.equal(winner.exit, 0);
@@ -4520,6 +4514,19 @@ test("hydrates local chat search results before navigating", () => {
   );
   assert.doesNotMatch(patched, /t\[23\]!==s\.threadKey/);
   assert.doesNotMatch(patched, /t\[23\]=s\.threadKey/);
+});
+
+test("skips chat search hydration when thread-key helpers drift", () => {
+  const source = [
+    "function FS(e,t,n){let r=A(e);if(r!=null){t(r);return}n(L(e))}",
+    "function tF({cloudTasks:e,conversationsMeta:t,hostIds:n}){return[...t.flatMap(e=>{if(!n.has(e.hostId??`local`))return[];let t=e.cwd??``,r=ye(e),i=(E(e)??t)||e.id,a=Dn(e.id);return[{kind:`local`,threadKey:Le(a),conversationId:a,threadId:e.id,title:r,searchTitle:i,cwd:t,branch:e.gitInfo?.branch??``,updatedAt:e.updatedAt,searchPreview:null}]}),...e?.map(e=>({kind:`remote`,threadKey:de(e.id)}))??[]]}",
+    "function aF(e){let t=Dn(e.threadId);return{kind:`local`,threadKey:Le(t),conversationId:t,threadId:e.threadId,title:e.title,searchTitle:e.title,cwd:e.cwd,branch:``,updatedAt:e.updatedAt,searchPreview:e.searchPreview}}",
+    "function MF(){let y=[He],C=`abc`,T=9;return $t({queryKey:[`command-menu-thread-search`,y,C,T],queryFn:async()=>(await Promise.allSettled(y.map(e=>nt(`search-threads-for-host`,{hostId:e,query:C,limit:T})))).flatMap(IF)})}",
+    "function NF(e){return e.key}function PF(e){return e.routeKey}",
+    "function qF(e){let t=(0,Q.c)(40),{close:r,navigateToLocalConversation:o,result:s}=e,d=Fc(),v;t[20]!==r||t[21]!==d||t[22]!==o||t[23]!==s.threadKey?(v=()=>{FS(s.threadKey,o,d),r()},t[20]=r,t[21]=d,t[22]=o,t[23]=s.threadKey,t[24]=v):v=t[24];return v}",
+  ].join("");
+
+  assert.equal(applyLinuxChatSearchHydrationPatch(source), source);
 });
 
 test("resolves the requested live Linux Browser Use route window by id", () => {

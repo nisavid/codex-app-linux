@@ -442,9 +442,13 @@ function applyLinuxChatSearchHydrationPatch(currentSource) {
     "return{kind:`local`,hostId:e.hostId??`local`,threadKey:",
   );
 
+  let patchedThreadKeyHelpers = false;
   patchedSource = patchedSource.replace(
     /function ([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\{return \2\.threadKey\}function ([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\{return \4\.threadKey\}/u,
-    "function $1($2){return $2}function $3($4){return $4}",
+    (_match, localThreadKeyFn, localThreadKeyArg, routeThreadKeyFn, routeThreadKeyArg) => {
+      patchedThreadKeyHelpers = true;
+      return `function ${localThreadKeyFn}(${localThreadKeyArg}){return ${localThreadKeyArg}}function ${routeThreadKeyFn}(${routeThreadKeyArg}){return ${routeThreadKeyArg}}`;
+    },
   );
 
   let patchedResultSelectCache = false;
@@ -475,6 +479,15 @@ function applyLinuxChatSearchHydrationPatch(currentSource) {
     console.warn(
       "WARN: Could not find chat search result selection cache — skipping Linux chat search hydration patch",
     );
+    return currentSource;
+  }
+
+  if (!patchedThreadKeyHelpers) {
+    if (currentSource.includes("search-threads-for-host") && currentSource.includes("threadKey")) {
+      console.warn(
+        "WARN: Could not find chat search thread-key helpers — skipping Linux chat search hydration patch",
+      );
+    }
     return currentSource;
   }
 

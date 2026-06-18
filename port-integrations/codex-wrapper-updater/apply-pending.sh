@@ -60,6 +60,15 @@ run_prelaunch_apply_with_watchdog() {
     local use_setsid=0
     local line
 
+    terminate_apply_process() {
+        local signal="$1"
+        if [ "$use_setsid" -eq 1 ]; then
+            kill "$signal" -- "-$apply_pid" 2>/dev/null || true
+        else
+            kill "$signal" "$apply_pid" 2>/dev/null || true
+        fi
+    }
+
     if command -v setsid >/dev/null 2>&1; then
         setsid "$manager" apply-wrapper-update >"$output_file" 2>&1 &
         use_setsid=1
@@ -70,13 +79,12 @@ run_prelaunch_apply_with_watchdog() {
 
     while kill -0 "$apply_pid" 2>/dev/null; do
         if [ "$ticks" -ge "$limit_ticks" ]; then
-            if [ "$use_setsid" -eq 1 ]; then
-                kill -- "-$apply_pid" 2>/dev/null || true
-                kill -9 -- "-$apply_pid" 2>/dev/null || true
-            else
-                kill "$apply_pid" 2>/dev/null || true
-                kill -9 "$apply_pid" 2>/dev/null || true
-            fi
+            terminate_apply_process -TERM
+            for _ in $(seq 1 10); do
+                kill -0 "$apply_pid" 2>/dev/null || break
+                sleep 0.1
+            done
+            kill -0 "$apply_pid" 2>/dev/null && terminate_apply_process -KILL
             while IFS= read -r line || [ -n "$line" ]; do
                 printf '%s\n' "$line"
             done < "$output_file" 2>/dev/null || true

@@ -29,7 +29,7 @@ reap independently.
 ## Enable
 
 Add to `port-integrations.json` or the packaged override at
-`${XDG_CONFIG_HOME:-~/.config}/codex-app/port-integrations.json`:
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-app/port-integrations.json`:
 
 ```json
 { "enabled": ["node-repl-reaper"] }

@@ -26,7 +26,7 @@ function applyLinuxAppshotAvailabilityPatch(currentSource) {
   const hasLegacyGate =
     legacyLinuxGatePattern.test(currentSource) || legacyMacGatePattern.test(currentSource);
 
-  if ((hasNormalizedGate && !hasLegacyGate) || normalizedCurrentGate) {
+  if ((hasNormalizedGate && !hasLegacyGate) || (normalizedCurrentGate && !hasLegacyGate)) {
     return currentSource;
   }
 
