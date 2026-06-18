@@ -56,6 +56,7 @@ pending package.
 | Electron hangs while the CLI is outdated | Re-run the launcher, then inspect `~/.cache/codex-app/launcher.log` and `~/.local/state/codex-app-updater/service.log`. The CLI preflight is best-effort, uses a 1-hour registry lookup cooldown, falls back to `npm install -g --prefix ~/.local` when global install fails, and warns instead of blocking when automatic refresh fails. |
 | GPU, Vulkan, or Wayland errors | The launcher sets `--ozone-platform-hint=auto` by default and adds `--enable-features=WaylandWindowDecorations` only when `--ozone-platform=wayland` is selected. To force X11, try `./codex-app/start.sh --ozone-platform=x11`. |
 | Window flickering | Try `CODEX_ELECTRON_DISABLE_GPU_COMPOSITING=1 ./codex-app/start.sh` to use the legacy compositing workaround. If flickering persists, try `./codex-app/start.sh --disable-gpu`. |
+| Transparent or dark sidebar | Check whether the Linux opaque-window patch was applied, then rebuild from a current checkout. |
 | Sandbox errors | The launcher keeps Electron sandboxing enabled by default. As a temporary compatibility fallback, run `CODEX_APP_DISABLE_ELECTRON_SANDBOX=1 ./codex-app/start.sh` and treat that mode as lower security. |
 | `gh auth status` works in a terminal but fails inside Codex App | The app shell may be using isolated XDG paths or missing keyring DBus access. See [GitHub CLI auth in app-launched shells](../github-cli-auth.md). |
 | Rust installer or managed Node runtime fails on hardened hosts | If `/tmp` is mounted `noexec`, set `TMPDIR` and `XDG_CACHE_HOME` to executable user-owned directories before install/build commands. |
@@ -91,6 +92,39 @@ sed -n '1,200p' ~/.cache/codex-app/launcher.log
 
 Port collisions and incomplete extracted assets should now fail fast in the
 launcher log instead of hanging silently.
+
+## Transparent Or Dark Sidebar
+
+If the left sidebar looks black, translucent, or shows the desktop through it,
+first confirm whether the Linux opaque-window patch was applied. This is
+usually patch drift rather than a GPU flag issue.
+
+For a native package built by the updater, inspect the latest report:
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+reports = sorted(Path("~/.cache/codex-app-updater/workspaces").expanduser().glob("*/reports/patch-report.json"))
+report = reports[-1]
+data = json.loads(report.read_text())
+print(report)
+for patch in data.get("patches", []):
+    if patch.get("name") == "linux-opaque-background":
+        print(patch.get("status"), patch.get("reason", ""))
+PY
+```
+
+If `linux-opaque-background` is `skipped-*`, update this checkout and rebuild
+from the same DMG or a fresh one:
+
+```bash
+git pull --ff-only
+make build-app DMG=~/.cache/codex-app-updater/downloads/Codex.dmg
+make package
+make install
+```
 
 ## Updater Recovery Notes
 

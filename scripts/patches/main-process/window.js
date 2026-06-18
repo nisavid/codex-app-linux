@@ -42,8 +42,12 @@ function applyLinuxWindowOptionsPatch(currentSource, iconAsset) {
 
   const iconPathExpression = `process.resourcesPath+\`/../content/webview/assets/${iconAsset}\``;
   const iconPathNeedle = `icon:${iconPathExpression}`;
+  const setIconNeedle = `setIcon(${iconPathExpression})`;
+  const readyToShowSetIconInsertionPattern = /[A-Za-z_$][\w$]*\.once\(`ready-to-show`,\(\)=>\{/;
 
   const windowOptionsNeedle = "...process.platform===`win32`?{autoHideMenuBar:!0}:{},";
+  const currentLinuxAutoHideMenuBarNeedle =
+    "...process.platform===`win32`||process.platform===`linux`?{autoHideMenuBar:!0}:{},";
   const legacyLinuxSystemTitlebarNeedle =
     `...process.platform===\`win32\`||process.platform===\`linux\`?{autoHideMenuBar:!0,...process.platform===\`linux\`?{${iconPathNeedle}}:{}}:{},`;
   const windowOptionsReplacement =
@@ -58,7 +62,16 @@ function applyLinuxWindowOptionsPatch(currentSource, iconAsset) {
     return patchedSource.split(windowOptionsNeedle).join(windowOptionsReplacement);
   }
 
-  if (patchedSource !== currentSource || patchedSource.includes(iconPathNeedle)) {
+  if (patchedSource.includes(currentLinuxAutoHideMenuBarNeedle)) {
+    return patchedSource.split(currentLinuxAutoHideMenuBarNeedle).join(windowOptionsReplacement);
+  }
+
+  if (
+    patchedSource !== currentSource ||
+    patchedSource.includes(iconPathNeedle) ||
+    patchedSource.includes(setIconNeedle) ||
+    readyToShowSetIconInsertionPattern.test(patchedSource)
+  ) {
     return patchedSource;
   }
 

@@ -410,6 +410,117 @@ function applyLinuxBrowserUseNonLocalNavigationPatch(currentSource) {
   return currentSource;
 }
 
+function applyLinuxChatSearchHydrationPatch(currentSource) {
+  if (currentSource.includes("function codexLinuxHydrateSearchConversation(")) {
+    return currentSource;
+  }
+
+  if (!currentSource.includes("search-threads-for-host")) {
+    return currentSource;
+  }
+
+  let patchedSource = currentSource;
+  const requestAliasMatch = patchedSource.match(
+    /([A-Za-z_$][\w$]*)\(`search-threads-for-host`,\{hostId:[A-Za-z_$][\w$]*,query:/u,
+  );
+  const requestAlias = requestAliasMatch?.[1] ?? null;
+
+  const asyncSearchNeedle =
+    /([A-Za-z_$][\w$]*)\.map\(([A-Za-z_$][\w$]*)=>([A-Za-z_$][\w$]*)\(`search-threads-for-host`,\{hostId:\2,query:([A-Za-z_$][\w$]*),limit:([A-Za-z_$][\w$]*)\}\)\)/u;
+  patchedSource = patchedSource.replace(
+    asyncSearchNeedle,
+    (_match, hostsVar, hostVar, requestVar, queryVar, limitVar) =>
+      `${hostsVar}.map(${hostVar}=>${requestVar}(\`search-threads-for-host\`,{hostId:${hostVar},query:${queryVar},limit:${limitVar}}).then(codexLinuxSearchResults=>codexLinuxSearchResults.map(codexLinuxSearchResult=>({...codexLinuxSearchResult,hostId:${hostVar}}))))`,
+  );
+
+  patchedSource = patchedSource.replace(
+    /return\[\{kind:`local`,threadKey:/g,
+    "return[{kind:`local`,hostId:e.hostId??`local`,threadKey:",
+  );
+  patchedSource = patchedSource.replace(
+    /return\{kind:`local`,threadKey:/g,
+    "return{kind:`local`,hostId:e.hostId??`local`,threadKey:",
+  );
+
+  patchedSource = patchedSource.replace(
+    /function ([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\{return \2\.threadKey\}function ([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\{return \4\.threadKey\}/u,
+    "function $1($2){return $2}function $3($4){return $4}",
+  );
+
+  let patchedResultSelectCache = false;
+  const resultSelectCachePattern =
+    /(?<cache>[A-Za-z_$][\w$]*)\[(?<closeSlot>\d+)\]!==(?<close>[A-Za-z_$][\w$]*)\|\|\k<cache>\[(?<routeSlot>\d+)\]!==(?<route>[A-Za-z_$][\w$]*)\|\|\k<cache>\[(?<localSlot>\d+)\]!==(?<local>[A-Za-z_$][\w$]*)\|\|\k<cache>\[(?<resultSlot>\d+)\]!==(?<result>[A-Za-z_$][\w$]*)\.threadKey\?\((?<callback>[A-Za-z_$][\w$]*)=\(\)=>\{(?<select>[A-Za-z_$][\w$]*)\(\k<result>\.threadKey,\k<local>,\k<route>\),\k<close>\(\)\},\k<cache>\[\k<closeSlot>\]=\k<close>,\k<cache>\[\k<routeSlot>\]=\k<route>,\k<cache>\[\k<localSlot>\]=\k<local>,\k<cache>\[\k<resultSlot>\]=\k<result>\.threadKey,\k<cache>\[(?<callbackSlot>\d+)\]=\k<callback>\):\k<callback>=\k<cache>\[\k<callbackSlot>\]/u;
+  patchedSource = patchedSource.replace(
+    resultSelectCachePattern,
+    (...args) => {
+      const {
+        cache: cacheVar,
+        closeSlot,
+        close: closeVar,
+        routeSlot,
+        route: routeVar,
+        localSlot,
+        local: localVar,
+        resultSlot,
+        result: resultVar,
+        callbackSlot,
+        callback: callbackVar,
+        select: selectFn,
+      } = args[args.length - 1];
+      patchedResultSelectCache = true;
+      return `${cacheVar}[${closeSlot}]!==${closeVar}||${cacheVar}[${routeSlot}]!==${routeVar}||${cacheVar}[${localSlot}]!==${localVar}||${cacheVar}[${resultSlot}]!==${resultVar}?(${callbackVar}=()=>{${selectFn}(${resultVar},${localVar},${routeVar}),${closeVar}()},${cacheVar}[${closeSlot}]=${closeVar},${cacheVar}[${routeSlot}]=${routeVar},${cacheVar}[${localSlot}]=${localVar},${cacheVar}[${resultSlot}]=${resultVar},${cacheVar}[${callbackSlot}]=${callbackVar}):${callbackVar}=${cacheVar}[${callbackSlot}]`;
+    },
+  );
+  if (!patchedResultSelectCache) {
+    console.warn(
+      "WARN: Could not find chat search result selection cache — skipping Linux chat search hydration patch",
+    );
+    return currentSource;
+  }
+
+  if (requestAlias == null) {
+    if (patchedSource !== currentSource) {
+      console.warn(
+        "WARN: Could not find chat search request helper — skipping Linux chat search hydration patch",
+      );
+      return currentSource;
+    }
+    return currentSource;
+  }
+
+  const routePattern =
+    /function ([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*)\)\{let ([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\(\2\);if\(\5!=null\)\{\3\(\5\);return\}\4\(([A-Za-z_$][\w$]*)\(\2\)\)\}/u;
+  const routeMatch = patchedSource.match(routePattern);
+  if (routeMatch == null) {
+    if (
+      currentSource.includes("search-threads-for-host") &&
+      currentSource.includes("threadKey")
+    ) {
+      console.warn(
+        "WARN: Could not find chat search route handler — skipping Linux chat search hydration patch",
+      );
+    }
+    return currentSource;
+  }
+
+  const [
+    routeNeedle,
+    routeFn,
+    targetArg,
+    localNavigateArg,
+    routeNavigateArg,
+    conversationVar,
+    localThreadKeyFn,
+    routeThreadKeyFn,
+  ] = routeMatch;
+  const helper = `function codexLinuxSearchThreadKey(e){return e&&typeof e===\`object\`?e.threadKey:e}function codexLinuxHydrateSearchConversation(e,t){try{if(e==null||typeof e!==\`object\`||e.kind!==\`local\`)return Promise.resolve();let n=e.hostId??\`local\`,r=${requestAlias}(\`load-recent-conversation-ids-for-host\`,{hostId:n,conversationIds:[t]}),i=new Promise(e=>globalThis.setTimeout(e,1500));return Promise.race([r,i]).catch(()=>{})}catch{return Promise.resolve()}}`;
+  const routePatch =
+    `${helper}async function ${routeFn}(${targetArg},${localNavigateArg},${routeNavigateArg}){let codexLinuxRouteKey=codexLinuxSearchThreadKey(${targetArg}),${conversationVar}=${localThreadKeyFn}(codexLinuxRouteKey);if(${conversationVar}!=null){await codexLinuxHydrateSearchConversation(${targetArg},${conversationVar});${localNavigateArg}(${conversationVar});return}${routeNavigateArg}(${routeThreadKeyFn}(codexLinuxRouteKey))}`;
+  patchedSource = patchedSource.replace(routeNeedle, routePatch);
+
+  return patchedSource;
+}
+
 function applyLinuxBrowserUseExternalAvailabilityPatch(currentSource) {
   const externalFeatureNeedle = "featureName:`browser_use_external`";
   const statsigNeedle = "410065390";
@@ -478,6 +589,33 @@ function applyLinuxAppServerFeatureEnablementPatch(currentSource) {
     return currentSource;
   }
 
+  function sanitizeFeatureArrayItems(featureArrayItems) {
+    return featureArrayItems
+      .split(",")
+      .filter((entry) => {
+        const featureMatch = entry.trim().match(/^`([^`]+)`$/u);
+        return featureMatch != null && supportedFeatures.has(featureMatch[1]);
+      })
+      .join(",");
+  }
+
+  function sanitizeFeatureArrayDeclaration(source, arrayVar) {
+    const arrayDeclarationRegex = new RegExp(
+      `(var\\s+${escapeRegExp(arrayVar)}=\\[)([^\\]]*?)(\\])`,
+      "u",
+    );
+    const match = source.match(arrayDeclarationRegex);
+    if (match == null) {
+      return source;
+    }
+    const [, prefix, featureArrayItems, suffix] = match;
+    const supportedFeatureArrayItems = sanitizeFeatureArrayItems(featureArrayItems);
+    if (supportedFeatureArrayItems === featureArrayItems) {
+      return source;
+    }
+    return source.replace(arrayDeclarationRegex, `${prefix}${supportedFeatureArrayItems}${suffix}`);
+  }
+
   const featureArrayRegex =
     /var ([A-Za-z_$][\w$]*)=\[([^\]]*?)\];function ([A-Za-z_$][\w$]*)\(\)\{let [\s\S]{0,2400}?statsig_default_enable_features[\s\S]{0,2400}?set-experimental-feature-enablement-for-host/u;
   const featureArrayMatch = currentSource.match(featureArrayRegex);
@@ -487,22 +625,19 @@ function applyLinuxAppServerFeatureEnablementPatch(currentSource) {
     // that copies supported defaults, then adds a gated extra. The copied
     // defaults are Linux-safe; the trailing extra is not.
     const dynamicBuilderExtraRegex =
-      /(for\(let ([A-Za-z_$][\w$]*) of [A-Za-z_$][\w$]*\)\{let ([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\[\2\];\3!=null&&\(([A-Za-z_$][\w$]*)\[\2\]=\3\)\})return \4\[([A-Za-z_$][\w$]*)\]=([A-Za-z_$][\w$]*),\4\}/u;
-    const dynamicBuilderExtraMatch = dynamicBuilderExtraRegex.exec(currentSource);
+      /(for\(let ([A-Za-z_$][\w$]*) of ([A-Za-z_$][\w$]*)\)\{let ([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\[\2\];\4!=null&&\(([A-Za-z_$][\w$]*)\[\2\]=\4\)\})return \5\[([A-Za-z_$][\w$]*)\]=([A-Za-z_$][\w$]*),\5\}/u;
+    const dynamicBuilderExtraMatch = currentSource.match(dynamicBuilderExtraRegex);
     if (dynamicBuilderExtraMatch != null) {
-      const [, loopBlock, , , enablementVar, featureKeyVar] = dynamicBuilderExtraMatch;
+      const [, loopBlock, , arrayVar, , enablementVar, featureKeyVar] = dynamicBuilderExtraMatch;
       const featureKeyDeclaration = new RegExp(
         `${escapeRegExp(featureKeyVar)}=\`remote_plugin\``,
         "u",
       );
-      const featureKeyScope = currentSource.slice(
-        Math.max(0, dynamicBuilderExtraMatch.index - 1000),
-        dynamicBuilderExtraMatch.index + loopBlock.length,
-      );
-      if (featureKeyDeclaration.test(featureKeyScope)) {
-        return currentSource;
+      const arraySanitizedSource = sanitizeFeatureArrayDeclaration(currentSource, arrayVar);
+      if (featureKeyDeclaration.test(currentSource)) {
+        return arraySanitizedSource;
       }
-      return currentSource.replace(
+      return arraySanitizedSource.replace(
         dynamicBuilderExtraRegex,
         `${loopBlock}return ${enablementVar}}`,
       );
@@ -521,13 +656,7 @@ function applyLinuxAppServerFeatureEnablementPatch(currentSource) {
   }
 
   const [, arrayVar, featureArrayItems] = featureArrayMatch;
-  const supportedFeatureArrayItems = featureArrayItems
-    .split(",")
-    .filter((entry) => {
-      const featureMatch = entry.trim().match(/^`([^`]+)`$/u);
-      return featureMatch != null && supportedFeatures.has(featureMatch[1]);
-    })
-    .join(",");
+  const supportedFeatureArrayItems = sanitizeFeatureArrayItems(featureArrayItems);
   if (supportedFeatureArrayItems === featureArrayItems) {
     return currentSource;
   }
@@ -551,6 +680,171 @@ function applyLinuxAppServerFeatureEnablementPatch(currentSource) {
     featureArrayPatch,
     currentSource.slice(featureArrayIndex + featureArrayNeedle.length),
   ].join("");
+}
+
+function applyLinuxAppServerBackfillWaitPatch(currentSource) {
+  const helperSource =
+    "function codexLinuxIsStateDbBackfillMessage(e){return typeof e===`string`&&e.toLowerCase().includes(`state db backfill is running`)}" +
+    "function codexLinuxStateDbBackfillMessage(e){return`Codex state database backfill is still running; waiting up to 5 minutes before surfacing a startup error. ${e}`}" +
+    "function codexLinuxAppServerBackfillTimeoutMs(e,t){return t===3e4&&(e===`thread/start`||e===`config/read`||e===`account/read`)?3e5:t}";
+  const parserNeedle =
+    /function\s+([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\{if\(\2\.startsWith\(`Parse Error`\)\)return\{code:`restart-required`\};/;
+  const parserPatchedRegex =
+    /codexLinuxIsStateDbBackfillMessage\([A-Za-z_$][\w$]*\)\)return\{code:`connection-failed`/;
+  const timeoutNeedle =
+    /createRequest\(([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*)\)\{let ([A-Za-z_$][\w$]*)=([^,]+),([A-Za-z_$][\w$]*)=\3\?\.timeoutMs\?\?0,/;
+  const timeoutPatchedRegex =
+    /(?:^|[;,])\s*[A-Za-z_$][\w$]*=codexLinuxAppServerBackfillTimeoutMs\([A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*\)/;
+  const shouldPatchParser = parserNeedle.test(currentSource) || parserPatchedRegex.test(currentSource);
+  const shouldPatchTimeout = timeoutNeedle.test(currentSource) || timeoutPatchedRegex.test(currentSource);
+  const topLevelInsertionPointBefore = (source, index) => {
+    let depth = 0;
+    let state = "code";
+    let insertionPoint = 0;
+    for (let i = 0; i < index; i += 1) {
+      const char = source[i];
+      const next = source[i + 1];
+      if (state === "code") {
+        if (char === "/" && next === "/") {
+          state = "line-comment";
+          i += 1;
+        } else if (char === "/" && next === "*") {
+          state = "block-comment";
+          i += 1;
+        } else if (char === "\"" || char === "'") {
+          state = char;
+        } else if (char === "`") {
+          state = "template";
+        } else if (char === "{") {
+          depth += 1;
+        } else if (char === "}") {
+          depth = Math.max(0, depth - 1);
+        } else if (char === ";" && depth === 0) {
+          insertionPoint = i + 1;
+        }
+      } else if (state === "line-comment") {
+        if (char === "\n" || char === "\r") {
+          state = "code";
+        }
+      } else if (state === "block-comment") {
+        if (char === "*" && next === "/") {
+          state = "code";
+          i += 1;
+        }
+      } else if (state === "template") {
+        if (char === "\\") {
+          i += 1;
+        } else if (char === "`") {
+          state = "code";
+        }
+      } else if (char === "\\") {
+        i += 1;
+      } else if (char === state) {
+        state = "code";
+      }
+    }
+    return insertionPoint;
+  };
+  let patchedSource = currentSource;
+  let changed = false;
+
+  if (!patchedSource.includes("function codexLinuxIsStateDbBackfillMessage(")) {
+    // Insert helpers at module top-level so they're visible to ALL scopes.
+    // The helpers must not land inside the Sentry error handler because
+    // createRequest() calls them from a different scope.
+    const currentTopLevelAnchors = [
+      "function fi(e,t){let n=hi(t.originalException);",
+    ];
+    const legacyAnchors = [
+      "function za(e){let t=La.safeParse(e);return t.success?new Ba(t.data):e}",
+      "function za(e){",
+    ];
+    let inserted = false;
+    for (const anchor of currentTopLevelAnchors) {
+      const anchorIndex = patchedSource.indexOf(anchor);
+      if (
+        anchorIndex !== -1 &&
+        patchedSource.indexOf(anchor, anchorIndex + anchor.length) === -1
+      ) {
+        patchedSource = patchedSource.replace(anchor, `${helperSource}${anchor}`);
+        changed = true;
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) {
+      const legacyAnchor = legacyAnchors.find((anchor) => patchedSource.includes(anchor));
+      if (legacyAnchor != null) {
+        patchedSource = patchedSource.replace(legacyAnchor, `${helperSource}${legacyAnchor}`);
+        changed = true;
+        inserted = true;
+      }
+    }
+    if (!inserted && shouldPatchTimeout) {
+      const timeoutMatch = patchedSource.match(timeoutNeedle);
+      const classIndex = timeoutMatch?.index == null
+        ? -1
+        : patchedSource.lastIndexOf("=class{", timeoutMatch.index);
+      if (classIndex !== -1) {
+        const statementStart = topLevelInsertionPointBefore(patchedSource, classIndex);
+        patchedSource =
+          patchedSource.slice(0, statementStart) +
+          helperSource +
+          patchedSource.slice(statementStart);
+        changed = true;
+      }
+    }
+  }
+
+  if (shouldPatchParser && !parserPatchedRegex.test(patchedSource)) {
+    const parserPatched = patchedSource.replace(
+      parserNeedle,
+      (_match, fnName, messageVar) => {
+        const helperPrefix = patchedSource.includes("function codexLinuxIsStateDbBackfillMessage(")
+          ? ""
+          : helperSource;
+        return `${helperPrefix}function ${fnName}(${messageVar}){if(codexLinuxIsStateDbBackfillMessage(${messageVar}))return{code:\`connection-failed\`,message:codexLinuxStateDbBackfillMessage(${messageVar})};if(${messageVar}.startsWith(\`Parse Error\`))return{code:\`restart-required\`};`;
+      },
+    );
+    if (parserPatched !== patchedSource) {
+      patchedSource = parserPatched;
+      changed = true;
+    }
+  }
+
+  if (
+    shouldPatchTimeout &&
+    !timeoutPatchedRegex.test(patchedSource) &&
+    patchedSource.includes("function codexLinuxAppServerBackfillTimeoutMs(")
+  ) {
+    const timeoutPatched = patchedSource.replace(
+      timeoutNeedle,
+      (_match, methodVar, paramsVar, optionsVar, requestIdVar, requestIdExpr, timeoutVar) =>
+        `createRequest(${methodVar},${paramsVar},${optionsVar}){let ${requestIdVar}=${requestIdExpr},${timeoutVar}=${optionsVar}?.timeoutMs??0;${timeoutVar}=codexLinuxAppServerBackfillTimeoutMs(${methodVar},${timeoutVar});let `,
+    );
+    if (timeoutPatched !== patchedSource) {
+      patchedSource = timeoutPatched;
+      changed = true;
+    }
+  }
+
+  if (
+    (shouldPatchParser || shouldPatchTimeout) &&
+    !patchedSource.includes("function codexLinuxIsStateDbBackfillMessage(")
+  ) {
+    console.warn(
+      "WARN: Could not insert app-server backfill wait helper — startup backfill may still time out early",
+    );
+  } else if (
+    (shouldPatchParser && !parserPatchedRegex.test(patchedSource)) ||
+    (shouldPatchTimeout && !timeoutPatchedRegex.test(patchedSource))
+  ) {
+    console.warn(
+      "WARN: App-server backfill wait patch applied only partially — startup backfill may still time out early",
+    );
+  }
+
+  return patchedSource;
 }
 
 function applyLinuxI18nGatePatch(currentSource) {
@@ -899,6 +1193,8 @@ function applyBrowserAnnotationScreenshotPatch(currentSource) {
     // Already patched.
   } else if (/=\([A-Za-z_$][\w$]*\?[A-Za-z_$][\w$]*:![A-Za-z_$][\w$]*&&[A-Za-z_$][\w$]*!=null\?[A-Za-z_$][\w$]*\.filter\(e=>e\.id!==[A-Za-z_$][\w$]*\.id\):[A-Za-z_$][\w$]*\)\.flatMap/.test(patchedSource)) {
     // Already patched with the current upstream symbol names.
+  } else if (/=\([A-Za-z_$][\w$]*\?[A-Za-z_$][\w$]*\?\.kind===`comment`\?[A-Za-z_$][\w$]*\.filter\(e=>e\.id===[A-Za-z_$][\w$]*\.annotation\.id\):\[\]:[A-Za-z_$][\w$]*==null\?[A-Za-z_$][\w$]*:[A-Za-z_$][\w$]*\.filter\(e=>e\.id!==[A-Za-z_$][\w$]*\.id\)\)\.flatMap/.test(patchedSource)) {
+    // Already patched with the current comment-preload selected-comment shape.
   } else if (patchedSource.includes(allMarkersInScreenshotNeedle)) {
     patchedSource = patchedSource.replace(allMarkersInScreenshotNeedle, selectedMarkerInScreenshotPatch);
   } else {
@@ -914,6 +1210,10 @@ function applyBrowserAnnotationScreenshotPatch(currentSource) {
       "Je=(We?N?.kind===`comment`?me:[]:qe==null?me:me.filter(e=>e.id!==qe.id)).flatMap";
     const latestCommentPreloadMarkersPatch =
       "Je=(We?N?.kind===`comment`?Ue:[]:qe==null?me:me.filter(e=>e.id!==qe.id)).flatMap";
+    const currentCommentPreloadSelectedMarkersNeedle =
+      "Ye=(Ge?M?.kind===`comment`?he:[]:Je==null?he:he.filter(e=>e.id!==Je.id)).flatMap";
+    const currentCommentPreloadSelectedMarkersPatch =
+      "Ye=(Ge?M?.kind===`comment`?We:[]:Je==null?he:he.filter(e=>e.id!==Je.id)).flatMap";
     if (patchedSource.includes(currentMarkersPatch)) {
       // Already patched.
     } else if (patchedSource.includes(currentSelectedMarkersPatch)) {
@@ -921,6 +1221,8 @@ function applyBrowserAnnotationScreenshotPatch(currentSource) {
     } else if (patchedSource.includes(currentCommentPreloadMarkersPatch)) {
       // Already patched.
     } else if (patchedSource.includes(latestCommentPreloadMarkersPatch)) {
+      // Already patched.
+    } else if (patchedSource.includes(currentCommentPreloadSelectedMarkersPatch)) {
       // Already patched.
     } else if (patchedSource.includes(currentMarkersNeedle)) {
       patchedSource = patchedSource.replace(currentMarkersNeedle, currentMarkersPatch);
@@ -935,6 +1237,11 @@ function applyBrowserAnnotationScreenshotPatch(currentSource) {
       patchedSource = patchedSource.replace(
         latestCommentPreloadMarkersNeedle,
         latestCommentPreloadMarkersPatch,
+      );
+    } else if (patchedSource.includes(currentCommentPreloadSelectedMarkersNeedle)) {
+      patchedSource = patchedSource.replace(
+        currentCommentPreloadSelectedMarkersNeedle,
+        currentCommentPreloadSelectedMarkersPatch,
       );
     } else {
       console.warn("WARN: Could not find browser annotation screenshot markers — skipping screenshot marker patch");
@@ -1480,7 +1787,9 @@ function patchCommentPreloadBundle(extractedDir) {
 
 module.exports = {
   applyBrowserAnnotationScreenshotPatch,
+  applyLinuxAppServerBackfillWaitPatch,
   applyLinuxAppServerFeatureEnablementPatch,
+  applyLinuxChatSearchHydrationPatch,
   applyLinuxBrowserUseAvailabilityPatch,
   applyLinuxBrowserUseExternalAvailabilityPatch,
   applyLinuxBrowserUseNonLocalNavigationPatch,

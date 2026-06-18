@@ -36,6 +36,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   defaults.
 - Nix builds now use refreshed pins for the current official DMG bundle and
   static crates.io downloads.
+- The avatar overlay is focusable on Linux so inline pet reply inputs can accept
+  keyboard input after being clicked, while still staying above the main Codex
+  window as an overlay.
+- Plugin marketplace browsing now preserves upstream's `remote_plugin`
+  feature sync on Linux, so current app servers can load the remote OpenAI
+  curated catalog instead of falling back to only locally installed plugins.
+- The opt-in `remote-mobile-control` cold-start hook no longer removes
+  `~/.local/bin/codex` when the launcher is actively using that symlink as
+  `CODEX_CLI_PATH`.
+- The in-app updater no longer quits into a broken `pkexec` install path when a
+  minimal window-manager session has no graphical polkit authentication agent;
+  it keeps the rebuilt package ready and reports a terminal `sudo
+  /usr/bin/codex-app-updater ... --path ...` command instead.
 - The opt-in Linux AppShots bare-modifier shortcuts now require left and right
   modifier keycodes, preventing a fast double-tap on one physical Alt or Shift
   key from opening AppShots.

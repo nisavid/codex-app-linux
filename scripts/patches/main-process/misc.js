@@ -111,8 +111,112 @@ function applyLinuxRemoteControlConfigPreservationPatch(currentSource) {
   return currentSource;
 }
 
+function applyLinuxXdgDocumentsDirPatch(currentSource) {
+  if (currentSource.includes("codexLinuxXdgDocumentsDir")) {
+    return currentSource;
+  }
+
+  const fsVar = requireName(currentSource, "node:fs");
+  if (fsVar == null) {
+    console.warn("WARN: Could not find fs require — skipping Linux XDG documents dir patch");
+    return currentSource;
+  }
+
+  const documentsDirRegex =
+    /function ([A-Za-z_$][\w$]*)\(\{desktopPaths:([A-Za-z_$][\w$]*),homeDir:([A-Za-z_$][\w$]*),platform:([A-Za-z_$][\w$]*)\}\)\{return ([A-Za-z_$][\w$]*)\(\3,\2\.getPath\(`home`\),\4\)\?\2\.getPath\(`documents`\):([A-Za-z_$][\w$]*)\(\4\)\.join\(\3,`Documents`\)\}/u;
+  const match = currentSource.match(documentsDirRegex);
+  if (match == null) {
+    if (
+      currentSource.includes("getPath(`documents`)") &&
+      currentSource.includes(".join(") &&
+      currentSource.includes("`Documents`")
+    ) {
+      console.warn(
+        "WARN: Could not find documents directory resolver — skipping Linux XDG documents dir patch",
+      );
+    }
+    return currentSource;
+  }
+
+  const [, fnName, desktopPathsVar, homeDirVar, platformVar, sameHomeFn, pathFactoryFn] = match;
+  const helper = [
+    "function codexLinuxXdgDocumentsDir({fs:e,homeDir:t,path:n}){try{",
+    "let r=process.env.XDG_CONFIG_HOME?.trim(),i=r&&n.isAbsolute(r)?n.join(r,`user-dirs.dirs`):n.join(t,`.config`,`user-dirs.dirs`);",
+    "if(!e.existsSync(i))return null;",
+    "let a=e.readFileSync(i,`utf8`).match(/^XDG_DOCUMENTS_DIR=([\"'])(.*)\\1/m);",
+    "if(a==null)return null;",
+    "let o=a[2].replace(/\\\\(.)/g,`$1`);",
+    "if(o===`$HOME`)return t;",
+    "if(o.startsWith(`$HOME/`))return n.join(t,o.slice(6));",
+    "if(o.startsWith(`~/`))return n.join(t,o.slice(2));",
+    "return n.isAbsolute(o)?o:n.join(t,o)",
+    "}catch{return null}}",
+  ].join("");
+  const patchedFn =
+    `${helper}function ${fnName}({desktopPaths:${desktopPathsVar},homeDir:${homeDirVar},platform:${platformVar}}){` +
+    `if(${platformVar}===\`linux\`){let __codexLinuxDocumentsDir=codexLinuxXdgDocumentsDir({fs:${fsVar},homeDir:${homeDirVar},path:${pathFactoryFn}(${platformVar})});` +
+    "if(__codexLinuxDocumentsDir!=null)return __codexLinuxDocumentsDir}" +
+    `return ${sameHomeFn}(${homeDirVar},${desktopPathsVar}.getPath(\`home\`),${platformVar})?${desktopPathsVar}.getPath(\`documents\`):${pathFactoryFn}(${platformVar}).join(${homeDirVar},\`Documents\`)}`;
+
+  return currentSource.replace(documentsDirRegex, () => patchedFn);
+}
+
+function applyLinuxLocalAppServerFeatureEnablementHandlerPatch(currentSource) {
+  const method = "set-local-app-server-feature-enablement";
+  const handler =
+    "async e=>{let t=e?.params??e??{},n={},r=(e,t)=>{typeof t===`boolean`&&(n[e]=t)};if(t.enablement&&typeof t.enablement===`object`)for(let[e,n]of Object.entries(t.enablement))r(e,n);let i=t.featureName??t.feature_name??t.name??t.feature??null,a=t.enabled;i!=null&&r(i,a);for(let e of[`remote_control`,`remote_plugin`,`memories`,`tool_suggest`,`tool_call_mcp_elicitation`,`plugins`,`apps`])r(e,t[e]);let o=this.sharedObjectRepository?.get?.(`local_app_server_feature_enablement`)??{};return this.sharedObjectRepository?.set?.(`local_app_server_feature_enablement`,{...o,...n}),Object.prototype.hasOwnProperty.call(n,`remote_control`)&&this.sharedObjectRepository?.set?.(`local_remote_control_enabled`,n.remote_control),{enabled:n}}";
+  let patchedSource = currentSource;
+
+  if (!patchedSource.includes(`methods:[\`${method}\`]`)) {
+    const approvalHandlerRegex =
+      /(registerInternalServerRequestHandler\(\{methods:\[`item\/commandExecution\/requestApproval`,`mcpServer\/elicitation\/request`\],handler:[^}]+?\}\),)([A-Za-z_$][\w$]*\.registerInternalServerRequestHandler\(\{methods:\[`attestation\/generate`\])/u;
+    const match = patchedSource.match(approvalHandlerRegex);
+    if (match == null) {
+      if (
+        patchedSource.includes("registerInternalServerRequestHandler") &&
+        patchedSource.includes("item/commandExecution/requestApproval") &&
+        patchedSource.includes("attestation/generate")
+      ) {
+        console.warn(
+          "WARN: Could not find local app-server feature enablement internal handler insertion point — skipping Linux app-server feature enablement internal handler patch",
+        );
+      }
+    } else {
+      const [, approvalRegistration, nextRegistration] = match;
+      const receiverVar = nextRegistration.slice(0, nextRegistration.indexOf("."));
+      patchedSource = patchedSource.replace(
+        approvalHandlerRegex,
+        `${approvalRegistration}${receiverVar}.registerInternalServerRequestHandler({methods:[\`${method}\`],handler:${handler}}),${nextRegistration}`,
+      );
+    }
+  }
+
+  if (!patchedSource.includes(`"${method}":async`)) {
+    const fetchHandlerRegex =
+      /("set-vs-context":async\(\)=>\{throw new [A-Za-z_$][\w$]*\},)/u;
+    if (fetchHandlerRegex.test(patchedSource)) {
+      patchedSource = patchedSource.replace(
+        fetchHandlerRegex,
+        `$1"${method}":${handler},`,
+      );
+    } else if (
+      patchedSource.includes("not implemented in the current Electron process") &&
+      patchedSource.includes("handleVSCodeRequest") &&
+      patchedSource.includes("handlers=")
+    ) {
+      console.warn(
+        "WARN: Could not find local app-server feature enablement Electron handler insertion point — skipping Linux app-server feature enablement Electron handler patch",
+      );
+    }
+  }
+
+  return patchedSource;
+}
+
 module.exports = {
   applyLinuxFileManagerPatch,
   applyLinuxGitOriginsSourceFallbackPatch,
+  applyLinuxLocalAppServerFeatureEnablementHandlerPatch,
   applyLinuxRemoteControlConfigPreservationPatch,
+  applyLinuxXdgDocumentsDirPatch,
 };
