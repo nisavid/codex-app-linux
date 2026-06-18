@@ -212,7 +212,10 @@ function applyLinuxAppshotSettingsHotkeyPatch(currentSource) {
     return currentSource;
   }
 
-  const stateDataVar = currentSource.match(/\{data:([A-Za-z_$][\w$]*)\}=/)?.[1] ?? null;
+  const stateDataVar =
+    currentSource.match(
+      /(?:^|[;,])(?:let|const|var)?\s*\{data:([A-Za-z_$][\w$]*)\}\s*=\s*[A-Za-z_$][\w$]*\(`appshot-hotkey-state`/,
+    )?.[1] ?? null;
   if (stateDataVar == null) {
     if (currentSource.includes("appshot-hotkey-state") || currentSource.includes("DoubleCommand")) {
       warn("Could not find AppShots settings state binding", "Linux AppShots settings hotkey patch");

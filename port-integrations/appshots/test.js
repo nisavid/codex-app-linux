@@ -374,7 +374,10 @@ test("enables Linux AppShots hotkeys for stored upstream controller shape", () =
 test("shows Linux AppShots accelerator choices in settings", () => {
   const patched = applyPatchTwice(
     applyLinuxAppshotSettingsHotkeyPatch,
-    appshotSettingsBundleFixture(),
+    appshotSettingsBundleFixture().replace(
+      "function N(){let{data:h}=l(`appshot-hotkey-state`",
+      "function N(){let{data:z}=l(`unrelated-state`),{data:h}=l(`appshot-hotkey-state`",
+    ),
   );
 
   assert.match(patched, /navigator\.userAgent\.includes\(`Linux`\)/);
@@ -385,6 +388,7 @@ test("shows Linux AppShots accelerator choices in settings", () => {
   );
   assert.match(patched, /codexLinuxAppshotHotkeyOptions\(h\)\.find/);
   assert.match(patched, /codexLinuxAppshotHotkeyOptions\(h\)\.map/);
+  assert.doesNotMatch(patched, /codexLinuxAppshotHotkeyOptions\(z\)/);
   assert.doesNotMatch(patched, /\bM\.find\(/);
   assert.doesNotMatch(patched, /\bM\.map\(/);
   assert.match(patched, /hotkey:`DoubleOption`,label:`Alt \+ Alt`/);
