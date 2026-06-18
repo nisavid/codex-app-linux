@@ -29,5 +29,5 @@ if [ -f "$pid_file" ]; then
     rm -f "$pid_file"
 fi
 
-"$reaper" "$app_dir" watch &
+"$reaper" "$app_dir" watch 9>&- &
 printf '%s\n' "$!" > "$pid_file"

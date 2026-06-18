@@ -254,11 +254,19 @@ function linuxAppshotWaylandHelperSource() {
   return "function codexLinuxAppshotIsWayland(){return process.platform===`linux`&&((process.env.XDG_SESSION_TYPE||``).toLowerCase()===`wayland`||!!process.env.WAYLAND_DISPLAY)}";
 }
 
+function prependLinuxAppshotHelper(source, helperSource) {
+  const strictDirective = source.match(/^(?:"use strict";|'use strict';)/)?.[0] ?? null;
+  if (strictDirective == null) {
+    return `${helperSource}${source}`;
+  }
+  return `${strictDirective}${helperSource}${source.slice(strictDirective.length)}`;
+}
+
 function withLinuxAppshotWaylandHelper(source) {
   if (source.includes("function codexLinuxAppshotIsWayland")) {
     return source;
   }
-  return `${linuxAppshotWaylandHelperSource()}${source}`;
+  return prependLinuxAppshotHelper(source, linuxAppshotWaylandHelperSource());
 }
 
 function findMessageForViewSendFunction(source) {

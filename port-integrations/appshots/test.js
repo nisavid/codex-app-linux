@@ -328,6 +328,12 @@ test("enables AppShots hotkeys and bare modifiers on Linux", () => {
   assert.doesNotMatch(patched, /codexLinuxAppshotRegisterBareModifierHotkey/);
 });
 
+test("preserves AppShots hotkey strict mode when adding the Wayland helper", () => {
+  const patched = applyLinuxAppshotHotkeyPatch(`"use strict";${appshotHotkeyMainBundleFixture()}`);
+
+  assert.match(patched, /^"use strict";function codexLinuxAppshotIsWayland/);
+});
+
 test("enables Linux AppShots hotkeys for stored upstream controller shape", () => {
   const patched = applyPatchTwice(
     applyLinuxAppshotHotkeyPatch,

@@ -27,7 +27,9 @@ function makeFakeApp() {
 function pidAlive(pid) {
   try {
     process.kill(pid, 0);
-    return true;
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const state = stat.slice(stat.lastIndexOf(")") + 2).split(/\s+/, 1)[0];
+    return state !== "Z";
   } catch {
     return false;
   }
