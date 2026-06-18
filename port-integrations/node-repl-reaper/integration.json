@@ -1,0 +1,25 @@
+{
+  "id": "node-repl-reaper",
+  "title": "Browser Use node_repl Reaper",
+  "description": "Reaps Browser Use node_repl helper processes leaked by the Codex app-server.",
+  "defaultEnabled": false,
+  "resources": [
+    {
+      "source": "reaper.sh",
+      "target": ".codex-linux/node-repl-reaper.sh",
+      "mode": "0755"
+    }
+  ],
+  "runtimeHooks": {
+    "coldStart": {
+      "source": "cold-start-hook.sh",
+      "name": "node-repl-reaper",
+      "mode": "0755"
+    },
+    "afterExit": {
+      "source": "after-exit-hook.sh",
+      "name": "node-repl-reaper",
+      "mode": "0755"
+    }
+  }
+}

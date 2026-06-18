@@ -66,6 +66,7 @@ To enable a still-optional integration, list it under `enabled`:
 ```json
 {
   "enabled": [
+    "node-repl-reaper",
     "zed-opener"
   ],
   "disabled": []

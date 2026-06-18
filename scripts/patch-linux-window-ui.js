@@ -64,6 +64,10 @@ const {
   applyLinuxTrayCloseSettingPatch,
 } = require("./patches/launch-actions.js");
 const {
+  applyLinuxProjectlessXdgDocumentsDirPatch,
+  patchProjectlessDocumentsAssets,
+} = require("./patches/projectless-documents.js");
+const {
   applyBrowserUseNodeReplApprovalPatch,
   applyLinuxAboutDialogPatch,
   applyLinuxBrowserUseRouteLivenessPatch,
@@ -76,6 +80,7 @@ const {
   applyLinuxGitOriginsSourceFallbackPatch,
   applyLinuxMenuPatch,
   applyLinuxNativeTitlebarPatch,
+  applyLinuxLocalAppServerFeatureEnablementHandlerPatch,
   applyLinuxOpaqueBackgroundPatch,
   applyLinuxQuitGuardPatch,
   applyLinuxReadyToShowWindowStatePatch,
@@ -86,6 +91,7 @@ const {
   applyLinuxTrayPatch,
   applyLinuxWillQuitDrainTimeoutPatch,
   applyLinuxWindowOptionsPatch,
+  applyLinuxXdgDocumentsDirPatch,
 } = require("./patches/main-process.js");
 const {
   applyLinuxAvatarOverlayMousePassthroughPatch,
@@ -113,6 +119,7 @@ const {
   applyLinuxBrowserUseNonLocalNavigationPatch,
   applyLinuxConfigWriteVersionConflictPatch,
   applyLinuxI18nGatePatch,
+  applyLinuxAppServerBackfillWaitPatch,
   applyLinuxProfileSettingsMenuPatch,
   applyLinuxOpaqueWindowsDefaultPatch,
   applyLinuxFastModeModelGuardPatch,
@@ -199,6 +206,7 @@ module.exports = {
   applyLinuxAppSunsetPatch,
   applyLinuxAppUpdaterBridgePatch,
   applyLinuxAppUpdaterMenuPatch,
+  applyLinuxAppServerBackfillWaitPatch,
   applyLinuxAvatarOverlayMousePassthroughPatch,
   applyLinuxBrowserUseAvailabilityPatch,
   applyLinuxBrowserUseExternalAvailabilityPatch,
@@ -225,6 +233,8 @@ module.exports = {
   applyLinuxLaunchActionArgsPatch,
   applyLinuxMenuPatch,
   applyLinuxNativeTitlebarPatch,
+  applyLinuxLocalAppServerFeatureEnablementHandlerPatch,
+  applyLinuxProjectlessXdgDocumentsDirPatch,
   applyLinuxMultiInstanceBootstrapPatch,
   applyLinuxOpaqueBackgroundPatch,
   applyLinuxOpaqueWindowsDefaultPatch,
@@ -240,6 +250,7 @@ module.exports = {
   applyLinuxTrayPatch,
   applyLinuxWillQuitDrainTimeoutPatch,
   applyLinuxWindowOptionsPatch,
+  applyLinuxXdgDocumentsDirPatch,
   applySubagentNicknameMetadataPatch,
   createPatchReport,
   corePatchDescriptors,
@@ -263,6 +274,7 @@ module.exports = {
   patchLinuxMultiInstanceBootstrap,
   patchLinuxAppUpdaterBridge,
   patchLinuxChromeNativeHostRuntimeAssets,
+  patchProjectlessDocumentsAssets,
   patchMainBundleSource,
   patchPackageJson,
   resolveDesktopName,
