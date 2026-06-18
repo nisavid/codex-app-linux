@@ -3142,6 +3142,7 @@ reap_body = source.split("reap_orphaned_runtime_processes() {", 1)[1].split("rec
 match_executable_body = source.split("pid_matches_executable() {", 1)[1].split("find_running_app_pid() {", 1)[0]
 arg0_path_body = source.split("pid_cmdline_arg0_path() {", 1)[1].split("pid_arg0_matches_path() {", 1)[0]
 arg0_match_body = source.split("pid_arg0_matches_path() {", 1)[1].split("pid_environ_lines() {", 1)[0]
+identity_env_body = source.split("pid_has_app_identity_env() {", 1)[1].split("pid_matches_executable() {", 1)[0]
 foreign_body = source.split("pid_is_foreign_codex_electron() {", 1)[1].split("discover_running_app_pid() {", 1)[0]
 summary_body = source.split("pid_summary() {", 1)[1].split("pid_is_orphaned_runtime_process() {", 1)[0]
 if 'LAUNCHER_ARGS=()' not in source:
@@ -3208,6 +3209,10 @@ if '"$expected"|"$expected "*' not in arg0_match_body:
     raise SystemExit("launcher process discovery must accept exact argv0 paths and no-NUL cmdline fallbacks")
 if "/proc/[0-9]*/exe" in source or 'readlink -f "/proc/$pid/exe"' in source or 'canonical_path "$SCRIPT_DIR/electron"' in source:
     raise SystemExit("launcher process discovery must not scan or canonicalize /proc exe paths; autofs can block those stats")
+if "CODEX_LINUX_APP_ID=$CODEX_LINUX_APP_ID" not in identity_env_body or "CODEX_APP_ID=$CODEX_LINUX_APP_ID" not in identity_env_body:
+    raise SystemExit("launcher process discovery must verify Codex app identity from the process environment")
+if 'pid_has_app_identity_env "$pid" || return 1' not in match_executable_body:
+    raise SystemExit("launcher process discovery must not trust argv0 without Codex app identity")
 if "command -v fuser" in source or "timeout 1 fuser" in source or "launcher_lock_holder_pids" in source:
     raise SystemExit("launcher lock diagnostics must not require fuser/timeout or scan /proc fd targets")
 if "command -v timeout" in source or re.search(r'(^|[ \t])timeout[ \t]+"?\\$', source, re.M):

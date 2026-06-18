@@ -1562,6 +1562,15 @@ pid_environ_lines() {
     tr '\0' '\n' 2>/dev/null < "/proc/$pid/environ" || true
 }
 
+pid_has_app_identity_env() {
+    local pid="$1"
+    local env_lines
+
+    env_lines=$'\n'"$(pid_environ_lines "$pid")"$'\n'
+    [[ "$env_lines" == *$'\n'"CODEX_LINUX_APP_ID=$CODEX_LINUX_APP_ID"$'\n'* ]] ||
+    [[ "$env_lines" == *$'\n'"CODEX_APP_ID=$CODEX_LINUX_APP_ID"$'\n'* ]]
+}
+
 pid_matches_executable() {
     local pid="$1"
     local expected="$2"
@@ -1572,6 +1581,7 @@ pid_matches_executable() {
     actual="$(pid_cmdline_arg0_path "$pid")"
     pid_arg0_matches_path "$actual" "$expected" || return 1
     pid_is_current_user "$pid" || return 1
+    pid_has_app_identity_env "$pid" || return 1
     ! pid_is_electron_helper "$pid"
 }
 
@@ -1610,15 +1620,12 @@ pid_in_same_launch_instance() {
 
 pid_matches_app_identity() {
     local pid="$1"
-    local env_lines
     local cmdline
 
     [[ "$pid" =~ ^[0-9]+$ ]] || return 1
     [ -d "/proc/$pid" ] || return 1
     pid_is_current_user "$pid" || return 1
-    env_lines=$'\n'"$(pid_environ_lines "$pid")"$'\n'
-    if [[ "$env_lines" == *$'\n'"CODEX_LINUX_APP_ID=$CODEX_LINUX_APP_ID"$'\n'* ]] ||
-       [[ "$env_lines" == *$'\n'"CODEX_APP_ID=$CODEX_LINUX_APP_ID"$'\n'* ]]; then
+    if pid_has_app_identity_env "$pid"; then
         return 0
     fi
     cmdline="$(pid_cmdline "$pid")"
