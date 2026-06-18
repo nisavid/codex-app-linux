@@ -214,7 +214,7 @@ function applyLinuxAppshotSettingsHotkeyPatch(currentSource) {
 
   const stateDataVar =
     currentSource.match(
-      /(?:^|[;,])(?:let|const|var)?\s*\{data:([A-Za-z_$][\w$]*)\}\s*=\s*[A-Za-z_$][\w$]*\(`appshot-hotkey-state`/,
+      /(?:^|[{};,])(?:let|const|var)?\s*\{data:([A-Za-z_$][\w$]*)\}\s*=\s*[A-Za-z_$][\w$]*\(`appshot-hotkey-state`/,
     )?.[1] ?? null;
   if (stateDataVar == null) {
     if (currentSource.includes("appshot-hotkey-state") || currentSource.includes("DoubleCommand")) {

@@ -372,6 +372,10 @@ test("enables Linux AppShots hotkeys for stored upstream controller shape", () =
 });
 
 test("shows Linux AppShots accelerator choices in settings", () => {
+  const basePatched = applyPatchTwice(
+    applyLinuxAppshotSettingsHotkeyPatch,
+    appshotSettingsBundleFixture(),
+  );
   const patched = applyPatchTwice(
     applyLinuxAppshotSettingsHotkeyPatch,
     appshotSettingsBundleFixture().replace(
@@ -382,6 +386,7 @@ test("shows Linux AppShots accelerator choices in settings", () => {
 
   assert.match(patched, /navigator\.userAgent\.includes\(`Linux`\)/);
   assert.match(patched, /codexLinuxAppshotHotkeyOptions=e=>/);
+  assert.match(basePatched, /codexLinuxAppshotHotkeyOptions\(h\)\.find/);
   assert.match(
     patched,
     /e\?\.linuxWayland\?\[\{hotkey:`Ctrl\+Super\+A`,label:`Ctrl \+ Super \+ A`\}\]:\[\{hotkey:`DoubleOption`,label:`Alt \+ Alt`\}/,
