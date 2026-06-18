@@ -2279,6 +2279,18 @@ adopt_discovered_webview_server() {
     return 1
 }
 
+reclassify_started_webview_for_running_app() {
+    local pid="${STARTED_WEBVIEW_PID:-}"
+
+    [ -n "$pid" ] || return 0
+    running_app_is_active || return 0
+    pid_is_webview_server "$pid" || return 0
+
+    ADOPTED_WEBVIEW_PID="$pid"
+    STARTED_WEBVIEW_PID=""
+    echo "Preserving webview server pid=$pid owned by running Codex App pid=$RUNNING_APP_PID after launch state refresh"
+}
+
 ensure_webview_server() {
     local stop_status
 
@@ -3038,6 +3050,7 @@ refresh_launch_state_quick() {
     RUNNING_APP_PID=""
     if pid="$(find_running_app_pid)"; then
         set_detected_running_app "$pid"
+        reclassify_started_webview_for_running_app
     fi
 }
 

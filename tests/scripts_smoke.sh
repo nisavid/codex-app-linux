@@ -3131,6 +3131,7 @@ identity_body = source.split("pid_has_codex_webview_server_identity() {", 1)[1].
 stale_body = source.split("pid_is_stale_webview_server() {", 1)[1].split("stop_owned_webview_server() {", 1)[0]
 multi_body = source.split("configure_multi_launch_instance() {", 1)[1].split('WEBVIEW_ORIGIN="http://127.0.0.1:$CODEX_LINUX_WEBVIEW_PORT"', 1)[0]
 adopt_body = source.split("adopt_existing_webview_server() {", 1)[1].split("ensure_webview_server() {", 1)[0]
+reclassify_body = source.split("reclassify_started_webview_for_running_app() {", 1)[1].split("ensure_webview_server() {", 1)[0]
 ensure_body = source.split("ensure_webview_server() {", 1)[1].split("wait_for_webview_server", 1)[0]
 gui_prompt_body = source.split("run_gui_cli_prompt() {", 1)[1].split("prompt_install_missing_cli() {", 1)[0]
 background_preflight_body = source.split("run_cli_preflight_background() {", 1)[1].split("is_interactive_terminal() {", 1)[0]
@@ -3303,6 +3304,10 @@ if 'STARTED_WEBVIEW_PID="$pid"' not in adopt_body:
     raise SystemExit("adopt_existing_webview_server must still own orphaned servers when no live app is running")
 if "running_app_is_active" not in adopt_body:
     raise SystemExit("adopt_existing_webview_server must detect live-app reuse before cleanup")
+if 'ADOPTED_WEBVIEW_PID="$pid"' not in reclassify_body or 'STARTED_WEBVIEW_PID=""' not in reclassify_body:
+    raise SystemExit("lock-time launch-state refresh must transfer webview ownership to the running app")
+if "reclassify_started_webview_for_running_app" not in source.split("refresh_launch_state_quick() {", 1)[1].split("launch_electron() {", 1)[0]:
+    raise SystemExit("lock-time launch-state refresh must preserve a live app webview server")
 if "if adopt_existing_webview_server; then" not in ensure_body:
     raise SystemExit("ensure_webview_server must split adoption from origin verification")
 if "stop_stale_webview_server" not in ensure_body:
