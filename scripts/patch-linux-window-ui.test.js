@@ -2928,6 +2928,8 @@ test("adds Linux launch actions through current setSecondInstanceArgsHandler bun
   assert.match(launchPatched, /process\.env\.CODEX_LINUX_INSTANCE_ID\?\.trim\(\)/);
   assert.match(launchPatched, /let n=require\(`node:path`\),r=require\(`node:fs`\),i=require\(`node:net`\);r\.mkdirSync\(n\.dirname\(e\)/);
   assert.match(launchPatched, /let a=i\.createServer/);
+  assert.match(launchPatched, /t\.write\?\.\(`ok\\n`\),codexLinuxHandleLaunchActionArgs\(i\)/);
+  assert.doesNotMatch(launchPatched, /then\(\(\)=>\{t\.end\?\.\(`ok\\n`\)\}\)/);
   assert.doesNotMatch(launchPatched, /f\.default\.createServer/);
   assert.doesNotMatch(launchPatched, /o\.mkdirSync\(i\.default\.dirname\(e\)/);
   assert.match(launchPatched, /R\.desktopNotificationManager\.dismissByNavigationPath\(e\)/);

@@ -3182,7 +3182,7 @@ if (
     "client.shutdown(socket.SHUT_WR)" not in send_body
     or "while b\"\\n\" not in response" not in send_body
     or "client.recv(32)" not in send_body
-    or "response.startswith(b\"ok\\n\")" not in send_body
+    or re.search(r'if\s+not\s+response\.startswith\(b["\']ok\\n["\']\)', send_body) is None
     or "except (socket.timeout, OSError)" not in send_body
 ):
     raise SystemExit("warm-start IPC client must require an ok\\n acknowledgement before succeeding")
@@ -5140,8 +5140,13 @@ async function boot(settings = {}, env = { CODEX_APP_LAUNCH_ACTION_SOCKET: "/tmp
           handlers[event](payload);
         }
       },
-      end(output) {
+      write(output) {
         this.outputs.push(output);
+      },
+      end(output) {
+        if (output !== undefined) {
+          this.outputs.push(output);
+        }
       },
       destroy() {
         this.destroyed = true;
