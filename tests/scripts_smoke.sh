@@ -3178,8 +3178,14 @@ if 'CODEX_ELECTRON_USER_DATA_DIR="$APP_STATE_DIR/electron-user-data"' not in mul
     raise SystemExit("multi-launch must force a per-instance Electron user-data dir")
 if 'send_warm_start_launch_action "${LAUNCHER_ARGS[@]}"' not in source:
     raise SystemExit("warm-start handoff must not receive launcher-only multi-launch flags")
-if "client.shutdown(socket.SHUT_WR)" not in send_body or "response = client.recv(32)" not in send_body:
-    raise SystemExit("warm-start IPC client must read the Electron socket acknowledgement")
+if (
+    "client.shutdown(socket.SHUT_WR)" not in send_body
+    or "while b\"\\n\" not in response" not in send_body
+    or "client.recv(32)" not in send_body
+    or "response.startswith(b\"ok\\n\")" not in send_body
+    or "except (socket.timeout, OSError)" not in send_body
+):
+    raise SystemExit("warm-start IPC client must require an ok\\n acknowledgement before succeeding")
 if 'launch_electron "${LAUNCHER_ARGS[@]}"' not in source:
     raise SystemExit("Electron launch must receive sanitized launcher args")
 load_helper_pos = source.index('\nload_packaged_runtime_helper\n')

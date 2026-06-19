@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const {
+  escapeRegExp,
   findCodexRequestWebviewAsset,
   findImportedAsset,
   findRequiredWebviewAsset,
@@ -200,7 +201,9 @@ function inferSettingsRowExportName(source) {
 
   for (const rawExport of exportMatch[1].split(",")) {
     const exportPart = rawExport.trim();
-    const aliasedMatch = exportPart.match(new RegExp(`^${localName}\\s+as\\s+([A-Za-z_$][\\w$]*)$`));
+    const aliasedMatch = exportPart.match(
+      new RegExp(`^${escapeRegExp(localName)}\\s+as\\s+([A-Za-z_$][\\w$]*)$`),
+    );
     if (aliasedMatch != null) {
       return aliasedMatch[1];
     }

@@ -2944,9 +2944,15 @@ test("adds Linux launch actions through current setSecondInstanceArgsHandler bun
 });
 
 test("uses collision-safe modules for launch-action socket in shadowed startup scopes", () => {
-  const source = currentLaunchActionBundleFixture().replace(
+  const fixture = currentLaunchActionBundleFixture();
+  const source = fixture.replace(
     "async function CN(){let{setSecondInstanceArgsHandler:l}=t.y(),g={reportNonFatal(){}}",
     "async function CN(){let{desktopSentry:o,setSecondInstanceArgsHandler:l}=t.y(),f=n.O.allowDebugMenu(),g={reportNonFatal(){}}",
+  );
+  assert.notEqual(
+    source,
+    fixture,
+    "shadowed-scope fixture rewrite must match expected launch prelude",
   );
 
   const patched = applyPatchTwice(applyLinuxLaunchActionArgsPatch, source);
