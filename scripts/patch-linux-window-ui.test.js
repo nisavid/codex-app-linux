@@ -360,6 +360,36 @@ test("subagent nickname metadata patch accepts current official DMG patched alia
   assert.deepEqual(warnings, []);
 });
 
+test("subagent nickname metadata patch accepts current host config source shape", () => {
+  const source = [
+    "function ae(e){return e}",
+    "function Qe(e){if(e==null||typeof e==`string`)return null;let t=$e(e);return t==null?null:et(t)}",
+    "function $e(e){return`subAgent`in e?e.subAgent:null}",
+    "function et(e){return typeof e==`string`?tt():`thread_spawn`in e?{parentThreadId:ae(e.thread_spawn.parent_thread_id),depth:e.thread_spawn.depth,agentNickname:e.thread_spawn.agent_nickname,agentRole:e.thread_spawn.agent_role}:tt()}",
+    "function tt(){return{parentThreadId:null,depth:null,agentNickname:null,agentRole:null}}",
+    "function nt(e){return Qe(e?.source)?.parentThreadId!=null}",
+  ].join("");
+  const { value: patched, warnings } = captureWarns(() =>
+    applyPatchTwice(applySubagentNicknameMetadataPatch, source),
+  );
+
+  assert.match(patched, /`subAgent`in e\?e\.subAgent:`subagent`in e\?e\.subagent:null/);
+  assert.deepEqual(warnings, []);
+
+  const sandbox = {
+    result: null,
+  };
+  vm.runInNewContext(
+    `${patched};result={source:Qe({subagent:{thread_spawn:{parent_thread_id:\`parent\`,depth:1,agent_nickname:\`Pepper Potts\`,agent_role:\`worker\`}}}).agentNickname,role:Qe({subagent:{thread_spawn:{parent_thread_id:\`parent\`,depth:1,agent_nickname:\`Pepper Potts\`,agent_role:\`worker\`}}}).agentRole};`,
+    sandbox,
+  );
+
+  assert.deepEqual(JSON.parse(JSON.stringify(sandbox.result)), {
+    source: "Pepper Potts",
+    role: "worker",
+  });
+});
+
 test("Linux target context parses distro, package, and desktop details", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-linux-target-"));
   try {
@@ -1031,7 +1061,10 @@ function createNativeKeyboardShortcutsSettingsFixture() {
   );
   writeAsset("general-settings-A.js", "hotkey-window-hotkey-state");
   writeAsset("toggle-A.js", "export{t};");
-  writeAsset("settings-row-A.js", "export{n};");
+  writeAsset(
+    "settings-row-A.js",
+    "function a(e){let{label:t,description:n,control:r}=e;return null}function s(e){let{label:t,children:n}=e;return null}export{s as n,a as r};",
+  );
   writeAsset("settings-content-layout-A.js", "export{n,r,t};");
   writeAsset("settings-group-A.js", "export{n,t};");
   writeAsset("settings-surface-A.js", "export{t};");
@@ -2534,6 +2567,37 @@ test("adds Linux tray support for current minified window and startup identifier
   assert.equal((patched.match(/\[codex-linux\] Failed to set up system tray/g) ?? []).length, 1);
 });
 
+test("adds Linux tray support for current appBrand tray setup and icon fallback", () => {
+  const iconPathExpression = "process.resourcesPath+`/../content/webview/assets/app-test.png`";
+  const source = [
+    "let a=require(`electron`),s=require(`node:path`),t={Is:{Codex:`codex`}},h2=`icon.png`;",
+    "async function H5(e){return process.platform!==`win32`&&process.platform!==`darwin`?null:(z5=!0,L5??R5??(B5||=(a.app.on(`before-quit`,()=>{U5()}),!0),R5=(async()=>{let t=await W5(e.appBrand,e.repoRoot),n=new a.Tray(t.defaultIcon);return z5?(n.setToolTip(a.app.getName()),L5=new Y1(n,e.onTrayButtonClick,e.onTrayMenuOpenMainWindow,e.onTrayMenuOpenNewThread,e.onTrayMenuOpenRecentThread,e.getChronicleSidecarControlState,e.toggleChronicleSidecar,t,r.$(),a.app.getName()),L5):(n.destroy(),null)})().finally(()=>{R5=null}),R5))}",
+    "async function W5(e,n){if(process.platform===`darwin`){let e=[...a.app.isPackaged?[(0,s.join)(process.resourcesPath,`codexTemplate.png`)]:[],(0,s.join)(n,`electron`,`src`,`icons`,`codexTemplate.png`)];for(let t of e){let e=a.nativeImage.createFromPath(t);if(!e.isEmpty())return e.setTemplateImage(!0),{defaultIcon:e,chronicleRunningIcon:G5(e)}}let t=await a.app.getFileIcon(process.execPath,{size:`normal`});return{defaultIcon:t,chronicleRunningIcon:G5(t)}}let r=e===t.Is.Codex?[...a.app.isPackaged?[(0,s.join)(process.resourcesPath,h2)]:[],(0,s.join)(n,`electron`,`src`,`icons`,h2)]:[];for(let e of r){let t=a.nativeImage.createFromPath(e);if(!t.isEmpty())return{defaultIcon:t,chronicleRunningIcon:null}}return{defaultIcon:await a.app.getFileIcon(process.execPath,{size:`small`}),chronicleRunningIcon:null}}",
+    "let ye=async()=>{O=!0;try{await H5({appBrand:i,repoRoot:M.repoRoot})}catch(e){O=!1}};E&&ye();",
+  ].join("");
+
+  const patched = applyPatchTwice(applyLinuxTrayPatch, source, iconPathExpression);
+
+  assert.match(
+    patched,
+    /process\.platform!==`win32`&&process\.platform!==`darwin`&&process\.platform!==`linux`\?null:/,
+  );
+  assert.match(patched, /let __codexLinuxTrayIcon=a\.nativeImage\.createFromPath/);
+  assert.match(patched, /let __codexLinuxAppIcon=a\.nativeImage\.createFromPath/);
+  assert.match(
+    patched,
+    /let __codexLinuxUpstreamTrayIcon=a\.nativeImage\.createFromPath\(process\.resourcesPath\+`\/\.\.\/content\/webview\/assets\/app-test\.png`\)/,
+  );
+  assert.match(
+    patched,
+    /\(E\|\|process\.platform===`linux`&&\(typeof codexLinuxIsTrayEnabled!==`function`\|\|codexLinuxIsTrayEnabled\(\)\)\)&&ye\(\);/,
+  );
+  assert.match(
+    patched,
+    /catch\(e\)\{O=!1;process\.platform===`linux`&&console\.warn\(`\[codex-linux\] Failed to set up system tray`,e\)\}/,
+  );
+});
+
 test("scopes dynamic tray startup matching to the tray initializer", () => {
   const source = [
     "async function aa(e){return e.buildFlavor}",
@@ -2862,8 +2926,10 @@ test("adds Linux launch actions through current setSecondInstanceArgsHandler bun
   assert.match(launchPatched, /codexLinuxDefaultLaunchActionSocket=\(\)=>/);
   assert.match(launchPatched, /process\.env\.CODEX_APP_LAUNCH_ACTION_SOCKET\?\.trim\(\)\|\|process\.env\.CODEX_DESKTOP_LAUNCH_ACTION_SOCKET\?\.trim\(\)\|\|codexLinuxDefaultLaunchActionSocket\(\)/);
   assert.match(launchPatched, /process\.env\.CODEX_LINUX_INSTANCE_ID\?\.trim\(\)/);
-  assert.match(launchPatched, /f\.default\.createServer/);
-  assert.match(launchPatched, /o\.mkdirSync\(i\.default\.dirname\(e\)/);
+  assert.match(launchPatched, /let n=require\(`node:path`\),r=require\(`node:fs`\),i=require\(`node:net`\);r\.mkdirSync\(n\.dirname\(e\)/);
+  assert.match(launchPatched, /let a=i\.createServer/);
+  assert.doesNotMatch(launchPatched, /f\.default\.createServer/);
+  assert.doesNotMatch(launchPatched, /o\.mkdirSync\(i\.default\.dirname\(e\)/);
   assert.match(launchPatched, /R\.desktopNotificationManager\.dismissByNavigationPath\(e\)/);
   assert.match(launchPatched, /codexLinuxHasDeepLink\(e\)&&z\.deepLinks\.queueProcessArgs\(e\)/);
   assert.match(launchPatched, /e\.includes\(`--prompt-chat`\)/);
@@ -2875,6 +2941,22 @@ test("adds Linux launch actions through current setSecondInstanceArgsHandler bun
     prewarmPatched,
     /process\.platform===`linux`&&codexLinuxPrewarmHotkeyWindow\(\),A=Date\.now\(\),await z\.deepLinks\.flushPendingDeepLinks\(\)/,
   );
+});
+
+test("uses collision-safe modules for launch-action socket in shadowed startup scopes", () => {
+  const source = currentLaunchActionBundleFixture().replace(
+    "async function CN(){let{setSecondInstanceArgsHandler:l}=t.y(),g={reportNonFatal(){}}",
+    "async function CN(){let{desktopSentry:o,setSecondInstanceArgsHandler:l}=t.y(),f=n.O.allowDebugMenu(),g={reportNonFatal(){}}",
+  );
+
+  const patched = applyPatchTwice(applyLinuxLaunchActionArgsPatch, source);
+
+  assert.match(patched, /codexLinuxStartLaunchActionSocket=\(\)=>\{if\(process\.platform!==`linux`\)return;try\{/);
+  assert.match(patched, /let n=require\(`node:path`\),r=require\(`node:fs`\),i=require\(`node:net`\);r\.mkdirSync\(n\.dirname\(e\)/);
+  assert.match(patched, /let a=i\.createServer/);
+  assert.match(patched, /t\.on\(`error`,e=>\{g\.reportNonFatal\(e instanceof Error\?e:`Failed Linux launch action socket client`,\{kind:`linux-launch-action-socket-client-error`\}\)\}\)/);
+  assert.doesNotMatch(patched, /o\.mkdirSync/);
+  assert.doesNotMatch(patched, /f\.default\.createServer/);
 });
 
 test("adds Linux launch actions when captured window identifiers contain dollar signs", () => {
@@ -3169,9 +3251,11 @@ test("keeps Linux desktop toggles visible with native Keyboard Shortcuts", () =>
     assert.match(linuxDesktopSource, /Linux source commit/);
     assert.match(linuxDesktopSource, /Copy commit/);
     assert.match(linuxDesktopSource, /Open commit/);
+    assert.match(linuxDesktopSource, /href:url/);
     assert.match(linuxDesktopSource, /codex-linux-get-build-info/);
     assert.match(linuxDesktopSource, /codex-linux-system-tray-enabled/);
     assert.match(linuxDesktopSource, /codex-linux-auto-update-on-exit/);
+    assert.match(linuxDesktopSource, /import\{r as SettingsRow\}from"\.\/settings-row-A\.js"/);
     assert.match(linuxDesktopSource, /import\{z as __post\}from"\.\/setting-storage-A\.js"/);
 
     assert.match(

@@ -28,7 +28,7 @@ the official OpenAI app, DMG, app bundle, or hosted services. Once the surface
 is clear, concise terms such as `upstream`, `DMG`, or `app bundle` are fine.
 
 The current comparison baseline is upstream commit
-`d260319464d9d8aeb555212834a9fef9586fb89c` (2026-06-17). Claims below describe
+`933413a679df51886ea05d1d0eeb8057e44bf764` (2026-06-18). Claims below describe
 the current tree's diff against that baseline, with current source files taking
 precedence over generated output.
 

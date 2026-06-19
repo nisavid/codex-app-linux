@@ -1830,6 +1830,10 @@ client.settimeout(1.0)
 try:
     client.connect(socket_path)
     client.sendall(payload)
+    client.shutdown(socket.SHUT_WR)
+    response = client.recv(32)
+    if not response.startswith(b"ok\n"):
+        sys.exit(1)
 finally:
     client.close()
 PY
