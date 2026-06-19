@@ -976,6 +976,9 @@ function applySubagentNicknameMetadataPatch(currentSource) {
     /`subAgent`in ([A-Za-z_$][\w$]*)\?\1\.subAgent:`subagent`in \1\?\1\.subagent:null/u;
   const nicknamePatchedRegex =
     /([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.agentNickname\)\?\?\1\(\2\.agent_nickname\)\?\?\1\([A-Za-z_$][\w$]*\(\2\.source\)\?\.agentNickname\)/u;
+  const hasNicknameResolver =
+    currentSource.includes("?.agentNickname") ||
+    /[A-Za-z_$][\w$]*\([A-Za-z_$][\w$]*\.agentNickname\)\?\?[A-Za-z_$][\w$]*\(/u.test(currentSource);
 
   const sourceShapeNeedle =
     "function Mi(e){return`subAgent`in e?e.subAgent:null}function Ni(e){return typeof e==`string`?Pi():`thread_spawn`in e?{parentThreadId:j(e.thread_spawn.parent_thread_id),depth:e.thread_spawn.depth,agentNickname:e.thread_spawn.agent_nickname,agentRole:e.thread_spawn.agent_role}:Pi()}";
@@ -1017,7 +1020,10 @@ function applySubagentNicknameMetadataPatch(currentSource) {
 
   if (
     patchedSource === currentSource &&
-    !(sourceShapePatchedRegex.test(currentSource) && nicknamePatchedRegex.test(currentSource)) &&
+    !(
+      sourceShapePatchedRegex.test(currentSource) &&
+      (!hasNicknameResolver || nicknamePatchedRegex.test(currentSource))
+    ) &&
     (currentSource.includes("agentNickname") ||
       currentSource.includes("agent_nickname") ||
       currentSource.includes("thread_spawn"))

@@ -3125,6 +3125,9 @@ detect_body = source.split("detect_warm_start() {", 1)[1].split("send_warm_start
 launch_body = source.split("launch_electron() {", 1)[1].split("load_packaged_runtime_helper", 1)[0]
 runtime_body = source.split("trap cleanup_launcher EXIT", 1)[1].split("launch_electron", 1)[0]
 webview_probe_body = source.split("webview_port_is_open() {", 1)[1].split("wait_for_webview_server() {", 1)[0]
+wait_body = source.split("wait_for_webview_server() {", 1)[1].split("verify_webview_origin() {", 1)[0]
+send_body = source.split("send_warm_start_launch_action() {", 1)[1].split("webview_origin_is_reachable() {", 1)[0]
+prelaunch_hooks_body = source.split("run_feature_prelaunch_hooks() {", 1)[1].split("bundled_plugin_version() {", 1)[0]
 cold_start_hooks_body = source.split("run_cold_start_hooks() {", 1)[1].split("run_cli_preflight() {", 1)[0]
 stop_body = source.split("stop_owned_webview_server() {", 1)[1].split("owned_webview_server_pid() {", 1)[0]
 identity_body = source.split("pid_has_codex_webview_server_identity() {", 1)[1].split("pid_is_webview_server() {", 1)[0]
@@ -3175,6 +3178,14 @@ if 'CODEX_ELECTRON_USER_DATA_DIR="$APP_STATE_DIR/electron-user-data"' not in mul
     raise SystemExit("multi-launch must force a per-instance Electron user-data dir")
 if 'send_warm_start_launch_action "${LAUNCHER_ARGS[@]}"' not in source:
     raise SystemExit("warm-start handoff must not receive launcher-only multi-launch flags")
+if (
+    "client.shutdown(socket.SHUT_WR)" not in send_body
+    or "while b\"\\n\" not in response" not in send_body
+    or "client.recv(32)" not in send_body
+    or re.search(r'if\s+not\s+response\.startswith\(b["\']ok\\n["\']\)', send_body) is None
+    or "except (socket.timeout, OSError)" not in send_body
+):
+    raise SystemExit("warm-start IPC client must require an ok\\n acknowledgement before succeeding")
 if 'launch_electron "${LAUNCHER_ARGS[@]}"' not in source:
     raise SystemExit("Electron launch must receive sanitized launcher args")
 load_helper_pos = source.index('\nload_packaged_runtime_helper\n')
@@ -5043,6 +5054,39 @@ async function boot(settings = {}, env = { CODEX_APP_LAUNCH_ACTION_SOCKET: "/tmp
   const context = {
     console,
     process: { platform: "linux", env },
+    require(moduleName) {
+      if (moduleName === "node:path") {
+        return {
+          dirname(path) {
+            state.dirnameCalls.push(path);
+            return "/tmp";
+          },
+          join(...parts) {
+            return parts.join("/").replace(/\/+/g, "/");
+          },
+        };
+      }
+      if (moduleName === "node:fs") {
+        return {
+          mkdirSync(...args) {
+            state.mkdirSyncCalls.push(args);
+          },
+          rmSync(...args) {
+            state.rmSyncCalls.push(args);
+          },
+        };
+      }
+      if (moduleName === "node:net") {
+        return {
+          createServer(handler) {
+            state.createServerCalls++;
+            state.socketConnectionHandler = handler;
+            return state.socketServer;
+          },
+        };
+      }
+      throw new Error(`Unexpected require(${moduleName})`);
+    },
     __codexSmoke: state,
   };
   context.globalThis = context;
@@ -5096,8 +5140,13 @@ async function boot(settings = {}, env = { CODEX_APP_LAUNCH_ACTION_SOCKET: "/tmp
           handlers[event](payload);
         }
       },
-      end(output) {
+      write(output) {
         this.outputs.push(output);
+      },
+      end(output) {
+        if (output !== undefined) {
+          this.outputs.push(output);
+        }
       },
       destroy() {
         this.destroyed = true;
