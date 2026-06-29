@@ -93,7 +93,7 @@ jobs:
 
       - name: Restore cached official DMG
         id: dmg-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ env.OFFICIAL_DMG_PATH }}
           key: official-dmg-${{ env.DMG_CACHE_SCHEMA_VERSION }}-${{ steps.official-metadata.outputs.cache_segment }}
